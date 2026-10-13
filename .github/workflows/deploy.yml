@@ -1,6 +1,7 @@
 name: Deploy
 
-# Deploys only main, and only after CI passed on that exact commit: staging
+# Deploys only main, and only after CI passed on that exact commit (automatic
+# runs via workflow_run; manual runs check the CI run for the commit): staging
 # first, then production behind the protected `production` GitHub Environment
 # (human reviewer, deployment branch main). Cloudflare credentials are exposed
 # only to the deploy step, never to checkout, setup or `pnpm install` scripts.
@@ -28,6 +29,8 @@ jobs:
        (github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.event == 'push' &&
         github.event.workflow_run.head_branch == 'main'))
+    permissions:
+      actions: read
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
     steps:
@@ -36,6 +39,18 @@ jobs:
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           DISPATCH_SHA: ${{ github.sha }}
         run: echo "sha=${RUN_SHA:-$DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
+      # A manual run redeploys main only if CI already passed on that exact commit.
+      - name: Require a green CI push run for the commit
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          ok=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${SHA}&event=push&status=success" --jq '.total_count')
+          if [ "${ok:-0}" -lt 1 ]; then
+            echo "::error::no successful CI push run for ${SHA}; refusing to deploy"
+            exit 1
+          fi
 
   staging:
     needs: gate
