@@ -30,10 +30,10 @@ Desktop UX (agentkit#2300), account dashboard (ak-web#569), discovery/exec
 ## Phases
 | # | Phase | Repo | Status |
 |---|---|---|---|
-| 1 | Tag `go/v0.1.0`; staging audience (#13). Trusting ak-web's staging issuer waits for #568 on staging | ak-vault | in progress |
-| 2 | Vault token mint (device key possession, `sid`/`did`, aud per env) + revocation outbox/webhook + revoke-all | ak-web (#568) | pending |
-| 3 | Gates: `secrets` excluded from auto-update, zero-HTTP sync-off test, offline resolve test, resolve benchmark rig | agentkit | pending |
-| 4 | Sync client design (UX, schemas, local state, mapping v1 store to akv1 items) reviewed before code | agentkit (#2298) | pending |
+| 1 | Tag `go/v0.1.0`; staging audience (#13). Trusting ak-web's staging issuer waits for #568 on staging | ak-vault | done: #13 shipped (#19), `go/v0.1.0`; protocol revision #20 shipped (#23), `go/v0.2.0`. Staging issuer switch moves to phase 6 |
+| 2 | Vault token mint (device key possession, `sid`/`did`, aud per env) + revocation outbox/webhook + revoke-all | ak-web (#568) | merged to dev (ak-web#571), flag off |
+| 3 | Gates: `secrets` excluded from auto-update, zero-HTTP sync-off test, offline resolve test, resolve benchmark rig | agentkit | PR agentkit#2318 in review |
+| 4 | Sync client design (UX, schemas, local state, mapping v1 store to akv1 items) reviewed before code | agentkit (#2298) | done: design revision 2 (`agentkit-sync-client-design.md`), reviewed |
 | 5 | Sync client implementation: device key, token client, genesis/enroll (SAS), push/pull with CAS and conflicts, recovery | agentkit (#2298) | pending |
 | 6 | Staging soak wiring and evidence on #8 | all | pending |
 
