@@ -71,6 +71,13 @@ describe('landing site', () => {
     expect(res.headers.get('Permissions-Policy')).toBeTruthy();
   });
 
+  it('marks site responses no-transform so the proxy cannot inject scripts', async () => {
+    for (const path of ['/', '/security/', '/index.md', '/site.js', '/does-not-exist']) {
+      const directives = ((await fetchRaw(path)).headers.get('Cache-Control') ?? '').split(',').map((d) => d.trim());
+      expect(directives, path).toContain('no-transform');
+    }
+  });
+
   it('serves Markdown twins as UTF-8 text/markdown', async () => {
     for (const path of ['/index.md', '/security/index.md']) {
       const res = await fetchRaw(path);
