@@ -84,7 +84,7 @@ it exists, #8 stays `blocked` and sync is not GA.
 
 | Target | Owner | Conditions |
 |---|---|---|
-| `resolve` warm-cache p95 overhead < 50 ms, never blocked by the Worker | AgentKit client (agentkit#2298) | Defined test rig and workload, recorded with the result |
+| `resolve` warm-cache p95 overhead < 50 ms, never blocked by the Worker | AgentKit client (agentkit#2298) | Overhead = p95 with sync enabled minus p95 with sync off, same backend, process model and machine; must hold on each supported backend (memory, keychain, file). Rig and workload recorded with the result |
 | Set on device A visible on device B < 60 s | AgentKit client + this Worker | Only when **both** devices run an active sync service and the network is healthy; a CLI without a background service syncs on its next invocation |
 
 ## Red-team scenarios
