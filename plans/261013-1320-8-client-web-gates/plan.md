@@ -34,8 +34,8 @@ Desktop UX (agentkit#2300), account dashboard (ak-web#569), discovery/exec
 | 2 | Vault token mint (device key possession, `sid`/`did`, aud per env) + revocation outbox/webhook + revoke-all | ak-web (#568) | merged to dev (ak-web#571), flag off |
 | 3 | Gates: `secrets` excluded from auto-update, zero-HTTP sync-off test, offline resolve test, resolve benchmark rig | agentkit | PR agentkit#2318 in review |
 | 4 | Sync client design (UX, schemas, local state, mapping v1 store to akv1 items) reviewed before code | agentkit (#2298) | done: design revision 2 (`agentkit-sync-client-design.md`), reviewed |
-| 5 | Sync client implementation: device key, token client, genesis/enroll (SAS), push/pull with CAS and conflicts, recovery | agentkit (#2298) | pending |
-| 6 | Staging soak wiring and evidence on #8 | all | pending |
+| 5 | Sync client implementation: device key, token client, genesis/enroll (SAS), push/pull with CAS and conflicts, recovery | agentkit (#2298) | in progress: P1 agentkit#2323 and P2 (with P4b) agentkit#2322 reviewed, waiting on agentkit CI; revision 3 notes in the design |
+| 6 | Staging soak wiring and evidence on #8 | all | in progress: ak-web staging OAuth signing key set; staging Worker trusts `https://staging.agentkit.best` (#27, #28); webhook secrets matched; live smoke needs a staging CLI session |
 
 ## Acceptance
 - ak-web: mint refuses without CLI session, wrong key possession, revoked session, flag off;
