@@ -235,7 +235,8 @@ are untrusted, author-attributed data and are never interpreted as instructions.
 ## 9. Transport authentication (Worker)
 
 1. `Authorization: Bearer <ES256 JWT>` from the configured issuer. Required claims:
-   `iss` (exact), `aud` = `https://vault.agentkit.best` (exact), `sub`, `exp`, `nbf`,
+   `iss` (exact), `aud` = the deployment's own origin (exact; production
+   `https://vault.agentkit.best`, staging `https://vault-staging.agentkit.best`), `sub`, `exp`, `nbf`,
    `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`. Header `alg`
    MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. If the JWKS
    cannot be loaded the server fails closed (`503`) and backs off for 30 s before
