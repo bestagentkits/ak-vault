@@ -58,7 +58,16 @@ export interface Authorized {
   next?: MembershipState;
 }
 
-function authorizeGenesis(req: VaultRequest, sql: SqlStorage): Authorized {
+/**
+ * Genesis checks that need no vault storage: event, author/owner binding, scope and
+ * proof signature (its `jti` is not burned). Run before a new vault's schema is
+ * created so a rejected genesis leaves no storage behind.
+ */
+export function preflightGenesis(req: VaultRequest): void {
+  authorizeGenesis(req, null);
+}
+
+function authorizeGenesis(req: VaultRequest, sql: SqlStorage | null): Authorized {
   const body = parseBodyObject(req.body);
   requireKeys(body, ['event'], ['wraps']);
   const state = MembershipStore.verifyGenesis(body['event'], req.vaultId);

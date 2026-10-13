@@ -9,7 +9,8 @@ import { randomId } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';
 import { LIMITS } from '../src/limits.js';
 import { RECORD_USAGE_KEY } from '../src/vault/item-store.js';
-import { call } from './helpers/api-client.js';
+import { call, type CallOptions } from './helpers/api-client.js';
+import { VaultDurableObject } from '../src/vault/vault-durable-object.js';
 import { dumpDurableObject } from './helpers/disclosure-scan.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
@@ -33,6 +34,41 @@ describe('non-existent vaults', () => {
     const dump = await dumpDurableObject(stubFor(vid));
     expect(dump.tables).toEqual([]);
     expect(dump.text).toBe('');
+  });
+
+  it('a rejected genesis leaves the Durable Object storage empty', async () => {
+    const intruder = await VaultFixture.create();
+    const victim = VaultFixture.local();
+    const cases: [VaultFixture['owner'], string, unknown, CallOptions][] = [
+      // Malformed genesis body.
+      [intruder.owner, `/v1/vaults/${randomId()}`, { event: {} }, {}],
+      // A valid genesis replayed by another account (sub/author mismatch).
+      [intruder.owner, `/v1/vaults/${victim.vaultId}`, victim.genesisBody(), {}],
+      // The right author with a proof signed by another key.
+      [victim.owner, `/v1/vaults/${victim.vaultId}`, victim.genesisBody(), { proofSecret: intruder.owner.keys.signSecret }],
+      // A read-only token.
+      [victim.owner, `/v1/vaults/${victim.vaultId}`, victim.genesisBody(), { scope: 'vault:read' }],
+    ];
+    for (const [device, path, body, opts] of cases) {
+      const res = await call(device, 'PUT', path, body, opts);
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      const vid = path.split('/')[3]!;
+      const dump = await dumpDurableObject(stubFor(vid));
+      expect(dump.tables).toEqual([]);
+    }
+    // The genuine genesis still succeeds afterwards.
+    expect((await victim.putGenesis()).status).toBe(201);
+  });
+
+  it('an existing vault keeps working when its Durable Object is reloaded', async () => {
+    const fx = await VaultFixture.create();
+    await runInDurableObject(stubFor(fx.vaultId), async (_instance, state) => {
+      // A fresh instance over the same storage, as after a deploy or eviction.
+      const reloaded = new VaultDurableObject(state, env);
+      expect((reloaded as unknown as { schemaReady: boolean }).schemaReady).toBe(true);
+    });
+    const res = await call(fx.owner, 'GET', `/v1/vaults/${fx.vaultId}/membership`);
+    expect(res.status).toBe(200);
   });
 
   it('genesis still creates the vault', async () => {

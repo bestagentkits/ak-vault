@@ -26,11 +26,15 @@ export function enforceRateLimit(sql: SqlStorage, did: string, nowMs: number): v
   }
 }
 
-/** Verify `AKV-Proof` against `signPub` and burn its `jti` for this device. */
-export function verifyRequestProof(sql: SqlStorage, req: VaultRequest, signPub: string): void {
+/**
+ * Verify `AKV-Proof` against `signPub` and burn its `jti` for this device. With
+ * `sql === null` only the signature and bindings are checked and nothing is
+ * written (genesis preflight before the vault has storage).
+ */
+export function verifyRequestProof(sql: SqlStorage | null, req: VaultRequest, signPub: string): void {
   if (!req.proof) throw new ApiError('unauthorized');
   const did = req.claims.did;
-  sql.exec('DELETE FROM proof_jti WHERE expires_at < ?', req.nowMs);
+  sql?.exec('DELETE FROM proof_jti WHERE expires_at < ?', req.nowMs);
   try {
     const proof = verifyProof(req.proof, {
       htm: req.method,
@@ -40,9 +44,9 @@ export function verifyRequestProof(sql: SqlStorage, req: VaultRequest, signPub: 
       now: req.nowMs,
       signPub,
       maxSkewMs: LIMITS.clock_skew_seconds * 1000,
-      isReplay: (jti) => sql.exec('SELECT 1 FROM proof_jti WHERE did = ? AND jti = ?', did, jti).toArray().length > 0,
+      isReplay: (jti) => (sql ? sql.exec('SELECT 1 FROM proof_jti WHERE did = ? AND jti = ?', did, jti).toArray().length > 0 : false),
     });
-    sql.exec('INSERT INTO proof_jti (did, jti, expires_at) VALUES (?, ?, ?)', did, proof.jti, req.nowMs + LIMITS.proof_jti_ttl_seconds * 1000);
+    sql?.exec('INSERT INTO proof_jti (did, jti, expires_at) VALUES (?, ?, ?)', did, proof.jti, req.nowMs + LIMITS.proof_jti_ttl_seconds * 1000);
   } catch (err) {
     if (isAkvError(err) && err.code === 'invalid_signature') throw new ApiError('invalid_signature', { status: 401 });
     throw new ApiError('unauthorized');

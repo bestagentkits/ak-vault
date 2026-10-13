@@ -4,9 +4,10 @@
  * (membership, proof, scope, role) -> idempotency -> one `transactionSync` per
  * mutation. Errors leave as stable codes with fixed messages.
  *
- * No storage is written for a vault that does not exist: the schema is created
- * lazily by the first genesis attempt, and every other op answers 404 before the
- * rate counter or proof `jti` tables are touched. Only genesis can create state.
+ * No storage is written for a vault that does not exist: every op other than
+ * genesis answers 404 before the rate counter or proof `jti` tables are touched,
+ * and genesis creates the schema only after a storage-free preflight (event,
+ * author/owner, scope, proof signature) passes. Only a valid genesis creates state.
  */
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env.js';
@@ -20,7 +21,7 @@ import { handleGenesis, handleMembershipGet, handleMembershipPost, handleWrapsGe
 import { MembershipStore } from './membership-store.js';
 import { getRecovery, putRecovery } from './recovery-store.js';
 import { enforceRateLimit } from './request-guard.js';
-import { authorize, type Authorized } from './vault-authorization.js';
+import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
 import { isMutation, type VaultRequest } from './vault-request.js';
 import { VAULT_SCHEMA } from './vault-schema.js';
 
@@ -53,8 +54,10 @@ export class VaultDurableObject extends DurableObject<Env> {
 
   async handle(req: VaultRequest): Promise<ApiResult> {
     try {
-      if (req.op === 'genesis') this.ensureSchema();
-      else if (!this.vaultExists()) throw new ApiError('not_found');
+      if (req.op === 'genesis') {
+        if (!this.schemaReady) preflightGenesis(req);
+        this.ensureSchema();
+      } else if (!this.vaultExists()) throw new ApiError('not_found');
       enforceRateLimit(this.sql, req.claims.did, req.nowMs);
       if (isMutation(req.op)) validateIdempotencyKey(req.idempotencyKey);
       const auth = authorize(req, this.sql, this.membership);
