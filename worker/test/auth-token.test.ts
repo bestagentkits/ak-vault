@@ -11,6 +11,7 @@ declare global {
   namespace Cloudflare {
     interface Env {
       TEST_DEPLOYED_AUDIENCES: string;
+      TEST_DEPLOYED_ISSUERS: string;
     }
   }
 }
@@ -79,6 +80,15 @@ describe('token verification', () => {
       expect(refused.status).toBe(401);
       expect(refused.json).toEqual({ error: { code: 'unauthorized', message: 'authentication failed' } });
     }
+  });
+
+  it('trusts each environment\'s own ak-web issuer, with keys fetched from its JWKS', () => {
+    type PerEnv = Record<'production' | 'staging', string | null>;
+    const { issuer, jwksUrl, inlineJwks } = JSON.parse(env.TEST_DEPLOYED_ISSUERS) as { issuer: PerEnv; jwksUrl: PerEnv; inlineJwks: PerEnv };
+    expect(issuer).toEqual({ production: 'https://agentkit.best', staging: 'https://staging.agentkit.best' });
+    expect(jwksUrl).toEqual({ production: 'https://agentkit.best/.well-known/jwks.json', staging: 'https://staging.agentkit.best/.well-known/jwks.json' });
+    // No deployed environment may pin inline keys: they would bypass the issuer's rotation.
+    expect(inlineJwks).toEqual({ production: null, staging: null });
   });
 
   it('rejects a tampered payload and a missing bearer', async () => {

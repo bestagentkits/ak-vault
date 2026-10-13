@@ -12,7 +12,7 @@ export interface Env {
   VAULT_AUDIENCE: string;
   /** JWKS endpoint; used when `VAULT_JWKS_JSON` is unset. */
   VAULT_JWKS_URL?: string;
-  /** Inline public JWKS (staging test issuer, tests). Takes precedence over the URL. */
+  /** Inline public JWKS (integration tests only). Takes precedence over the URL. */
   VAULT_JWKS_JSON?: string;
   /** HMAC key for the revocation webhook (secret, never in config). */
   REVOCATION_WEBHOOK_SECRET?: string;

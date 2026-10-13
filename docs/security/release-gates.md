@@ -40,8 +40,11 @@ evidence does not count.
 
 ## Staging soak
 
-Staging runs on `vault-staging.agentkit.best` against ak-web's staging issuer
-(test-only keys). The soak uses at least two enrolled devices with active sync
+Staging runs on `vault-staging.agentkit.best` and trusts ak-web staging's issuer and
+JWKS; its tokens are minted by ak-web staging for real CLI sessions. Keeping staging's
+signing keys separate from production's is ak-web's responsibility, so before the soak
+confirm the two JWKS endpoints share no key material (compare the keys' `x`/`y`
+coordinates, not only their `kid`s). The soak uses at least two enrolled devices with active sync
 services, exercises the red-team scenarios and the runbook rehearsals, and records
 error rates and latency. The soak duration is an owner decision recorded on #8.
 

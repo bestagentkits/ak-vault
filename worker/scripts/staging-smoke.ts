@@ -1,21 +1,30 @@
 /**
- * End-to-end smoke test against a deployed STAGING Worker.
+ * End-to-end smoke test against a deployed STAGING Worker, with vault tokens
+ * minted by ak-web staging exactly as a real client gets them.
  *
- *   STAGING_ISSUER_PRIVATE_JWK_PATH=~/.ak-vault/staging-issuer-private-jwk.json \
+ *   AK_STAGING_SESSION_TOKEN_PATH=<file holding an ak staging CLI session token> \
  *     tsx scripts/staging-smoke.ts [https://vault-staging.agentkit.best] [proof-origin]
+ *
+ * Optional: AK_STAGING_WEB_ORIGIN (ak-web origin that mints tokens, default
+ * https://staging.agentkit.best) and AK_STAGING_SMOKE_STATE_PATH (device key state,
+ * default ~/.ak-vault/staging-smoke-devices.json). The session must be an email
+ * sign-in device session; ak CLI session tokens are short-lived, so refresh the
+ * file right before a run.
  *
  * `proof-origin` is only for a local `wrangler dev --env staging` run, where the
  * runtime rewrites request URLs to the route host with the local protocol; pass
  * http://vault-staging.agentkit.best so AKV-Proof binds the URL the Worker sees.
  *
- * Creates a throwaway vault with synthetic keys and data, then checks: healthz,
- * meta, genesis (with the owner wrap), enrolling a second device with its wrap
- * (checked against the signed digest),
- * a write, a CAS conflict that is preserved, and that a stale offline write
- * cannot resurrect a deleted item. Prints only step names and HTTP statuses —
- * never keys, tokens, proofs or response bodies. Exits non-zero on any failure.
+ * The vault account is the token `sub`. The two smoke devices are reused across
+ * runs (see staging-smoke-device-state.ts) because ak-web binds device keys per
+ * account and caps them; each run creates a fresh vault, which the Worker does not
+ * cap per account. Checks: healthz, meta (sync on, issuer matches ak-web's tokens),
+ * genesis (with the owner wrap), enrolling a second device with its wrap (checked
+ * against the signed digest), a write, a CAS conflict that is preserved, and that a
+ * stale offline write cannot resurrect a deleted item. Prints only step names, HTTP
+ * statuses and stable error codes: never keys, tokens, proofs or response bodies.
+ * Exits non-zero on any failure.
  */
-import { readFileSync } from 'node:fs';
 import {
   b64encode,
   buildGenesisEvent,
@@ -37,40 +46,22 @@ import {
   type TombstonePayload,
   type JsonObject,
 } from '@ak-vault/protocol';
+import { DEFAULT_AK_WEB_ORIGIN, fail, parseSecureOrigin, readCliSession, vaultTokenSource } from './staging-smoke-ak-web-token.js';
+import { DEFAULT_STATE_PATH, loadDeviceSecrets, type DeviceSecrets } from './staging-smoke-device-state.js';
 
-const ISSUER = 'https://staging-test-issuer.ak-vault.invalid';
 const AUDIENCE = 'https://vault-staging.agentkit.best';
-const base = new URL(process.argv[2] ?? 'https://vault-staging.agentkit.best').origin;
+const base = parseSecureOrigin(process.argv[2] ?? 'https://vault-staging.agentkit.best', 'the Worker URL');
 const proofOrigin = new URL(process.argv[3] ?? base).origin;
+const akWebOrigin = parseSecureOrigin(process.env['AK_STAGING_WEB_ORIGIN'] || DEFAULT_AK_WEB_ORIGIN, 'AK_STAGING_WEB_ORIGIN');
+const session = readCliSession(process.env['AK_STAGING_SESSION_TOKEN_PATH']);
+const secrets = loadDeviceSecrets(process.env['AK_STAGING_SMOKE_STATE_PATH'] || DEFAULT_STATE_PATH, session.userId, ['owner', 'laptop']);
+const tokenFor = vaultTokenSource({ akWebOrigin, audience: AUDIENCE, session });
 
-function fail(message: string): never {
-  process.stderr.write(`FAIL ${message}\n`);
-  process.exit(1);
-}
-
-function loadIssuerKey(): Promise<{ key: CryptoKey; kid: string }> {
-  const path = process.env['STAGING_ISSUER_PRIVATE_JWK_PATH'];
-  if (!path) fail('STAGING_ISSUER_PRIVATE_JWK_PATH is not set');
-  let jwk: JsonWebKey & { kid?: string };
-  try {
-    jwk = JSON.parse(readFileSync(path, 'utf8')) as JsonWebKey & { kid?: string };
-  } catch {
-    fail('cannot read the staging issuer key file');
-  }
-  if (jwk.kty !== 'EC' || jwk.crv !== 'P-256' || !jwk.d || !jwk.kid?.startsWith('staging-test-')) fail('key file is not a staging test ES256 private JWK');
-  const kid = jwk.kid;
-  return crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']).then((key) => ({ key, kid }));
-}
-
-const issuer = await loadIssuerKey();
-const part = (v: unknown) => b64encode(utf8Encode(JSON.stringify(v)));
-
-async function mintToken(account: string, device: DeviceKeys): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const claims = { iss: ISSUER, aud: AUDIENCE, sub: account, did: device.record.device_id, sid: `smoke-${randomId()}`, jti: randomId(), scope: 'vault:read vault:write', iat: now, nbf: now, exp: now + 120 };
-  const input = `${part({ alg: 'ES256', typ: 'JWT', kid: issuer.kid })}.${part(claims)}`;
-  const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, issuer.key, new Uint8Array(utf8Encode(input))));
-  return `${input}.${b64encode(sig)}`;
+/** A smoke device: its protocol keys plus the label and seed its tokens are minted with. */
+interface SmokeDevice {
+  label: string;
+  keys: DeviceKeys;
+  secrets: DeviceSecrets;
 }
 
 interface Result {
@@ -78,20 +69,20 @@ interface Result {
   json: Record<string, unknown> | null;
 }
 
-async function request(device: DeviceKeys | null, account: string, method: string, path: string, body?: unknown): Promise<Result> {
+async function request(device: SmokeDevice | null, method: string, path: string, body?: unknown): Promise<Result> {
   const url = `${base}${path}`;
   const bytes = body === undefined ? new Uint8Array() : utf8Encode(JSON.stringify(body));
   const headers: Record<string, string> = {};
   if (device) {
-    const token = await mintToken(account, device);
+    const { token } = await tokenFor(device.label, device.secrets.signSeed);
     headers['Authorization'] = `Bearer ${token}`;
-    headers['AKV-Proof'] = buildProof({ htm: method, htu: `${proofOrigin}${path}`, ts: Date.now(), token, body: bytes, secretKey: device.signSecret });
+    headers['AKV-Proof'] = buildProof({ htm: method, htu: `${proofOrigin}${path}`, ts: Date.now(), token, body: bytes, secretKey: device.keys.signSecret });
   }
   if (method !== 'GET') headers['Idempotency-Key'] = randomId();
   if (bytes.length > 0) headers['Content-Type'] = 'application/json';
   let res: Response;
   try {
-    res = await fetch(url, { method, headers, ...(method === 'GET' ? {} : { body: new Uint8Array(bytes) }), signal: AbortSignal.timeout(15_000) });
+    res = await fetch(url, { method, headers, ...(method === 'GET' ? {} : { body: new Uint8Array(bytes) }), redirect: 'error', signal: AbortSignal.timeout(15_000) });
   } catch {
     fail(`${method} ${path.replace(/[A-Za-z0-9_-]{22}/g, ':id')} network error`);
   }
@@ -111,10 +102,30 @@ function expectStatus(step: string, res: Result, status: number, code?: string):
   process.stdout.write(`ok   ${step} (${res.status}${code ? ` ${code}` : ''})\n`);
 }
 
-// Synthetic vault and devices.
-const account = `smoke-${randomId()}`;
-const owner = createDeviceKeys({ account, role: 'owner', kind: 'human' });
-const laptop = createDeviceKeys({ account, role: 'owner', kind: 'human' });
+expectStatus('healthz', await request(null, 'GET', '/healthz'), 200);
+const meta = await request(null, 'GET', '/v1/meta');
+expectStatus('meta', meta, 200);
+if (meta.json?.['sync_enabled'] !== true) fail('sync is disabled on the target');
+const auth = meta.json?.['auth'] as { issuer?: unknown; audience?: unknown } | undefined;
+if (auth?.audience !== AUDIENCE) fail('the target does not use the staging audience');
+
+// The vault account is whoever ak-web says the session belongs to: the token `sub`.
+const ownerToken = await tokenFor('owner', (secrets['owner'] as DeviceSecrets).signSeed);
+if (ownerToken.iss !== auth.issuer) fail('the target does not trust the issuer of ak-web tokens');
+if (ownerToken.sub !== session.userId) fail('ak-web minted a token for a different account than the session');
+const account = ownerToken.sub;
+if ((await tokenFor('laptop', (secrets['laptop'] as DeviceSecrets).signSeed)).sub !== account) fail('ak-web minted device tokens for different accounts');
+
+function smokeDevice(label: string): SmokeDevice {
+  const deviceSecrets = secrets[label] as DeviceSecrets;
+  return { label, secrets: deviceSecrets, keys: createDeviceKeys({ account, role: 'owner', kind: 'human', signSeed: deviceSecrets.signSeed, kxSecret: deviceSecrets.kxSecret }) };
+}
+
+// Synthetic vault on the persistent smoke devices.
+const ownerDevice = smokeDevice('owner');
+const laptopDevice = smokeDevice('laptop');
+const owner = ownerDevice.keys;
+const laptop = laptopDevice.keys;
 const vaultId = randomId();
 const vk = randomBytes(32);
 const recovery = signKeyPairFromSeed(randomBytes(32));
@@ -128,11 +139,6 @@ function record(device: DeviceKeys, itemId: string, base: number, value: string 
   return signRecord({ vault_id: vaultId, item_id: itemId, base_revision: base, key_epoch: 1, tombstone, author, ts: Date.now(), resolves: [], env }, device.signSecret);
 }
 
-expectStatus('healthz', await request(null, account, 'GET', '/healthz'), 200);
-const meta = await request(null, account, 'GET', '/v1/meta');
-expectStatus('meta', meta, 200);
-if (meta.json?.['sync_enabled'] !== true) fail('sync is disabled on the target');
-
 // Wraps are made first: each device-adding event signs the digest of its wrap set.
 const ownerWrap = wrapToDevice({ vk, vaultId, keyEpoch: 1, recipient: owner.record });
 const genesis = buildGenesisEvent(
@@ -144,7 +150,7 @@ const genesis = buildGenesisEvent(
   },
   owner.signSecret,
 );
-expectStatus('genesis', await request(owner, account, 'PUT', v, { event: genesis, wraps: [ownerWrap] }), 201);
+expectStatus('genesis', await request(ownerDevice, 'PUT', v, { event: genesis, wraps: [ownerWrap] }), 201);
 
 const state = verifyMembershipChain([genesis]);
 const laptopWrap = wrapToDevice({ vk, vaultId, keyEpoch: 1, recipient: laptop.record });
@@ -153,20 +159,20 @@ const add = nextMembershipEvent(
   { type: 'device_add', ts: Date.now(), author: owner.record.device_id, body: { device: laptop.record as unknown as JsonObject, sas: b64encode(randomBytes(32)), wraps_digest: wrapsDigest([laptopWrap]) } },
   owner.signSecret,
 );
-expectStatus('enroll device with wrap', await request(owner, account, 'POST', `${v}/membership`, { event: add, wraps: [laptopWrap] }), 201);
-const wraps = await request(laptop, account, 'GET', `${v}/wraps?membership_seq=1`);
+expectStatus('enroll device with wrap', await request(ownerDevice, 'POST', `${v}/membership`, { event: add, wraps: [laptopWrap] }), 201);
+const wraps = await request(laptopDevice, 'GET', `${v}/wraps?membership_seq=1`);
 expectStatus('fetch signed wrap set', wraps, 200);
 verifyDeviceWraps(add, (wraps.json?.['wraps'] ?? []) as unknown[]);
 
 const itemId = randomId();
-expectStatus('write', await request(owner, account, 'PUT', `${v}/items/${itemId}`, record(owner, itemId, 0, 'synthetic-1')), 200);
-expectStatus('CAS advance', await request(laptop, account, 'PUT', `${v}/items/${itemId}`, record(laptop, itemId, 1, 'synthetic-2')), 200);
+expectStatus('write', await request(ownerDevice, 'PUT', `${v}/items/${itemId}`, record(owner, itemId, 0, 'synthetic-1')), 200);
+expectStatus('CAS advance', await request(laptopDevice, 'PUT', `${v}/items/${itemId}`, record(laptop, itemId, 1, 'synthetic-2')), 200);
 const stale = record(owner, itemId, 1, 'synthetic-stale');
-expectStatus('CAS conflict preserved', await request(owner, account, 'PUT', `${v}/items/${itemId}`, stale), 409, 'conflict');
+expectStatus('CAS conflict preserved', await request(ownerDevice, 'PUT', `${v}/items/${itemId}`, stale), 409, 'conflict');
 const offline = record(laptop, itemId, 2, 'synthetic-offline');
-expectStatus('delete', await request(owner, account, 'PUT', `${v}/items/${itemId}`, record(owner, itemId, 2, null)), 200);
-expectStatus('no resurrection', await request(laptop, account, 'PUT', `${v}/items/${itemId}`, offline), 409, 'tombstoned');
-const changes = await request(laptop, account, 'GET', `${v}/changes`);
+expectStatus('delete', await request(ownerDevice, 'PUT', `${v}/items/${itemId}`, record(owner, itemId, 2, null)), 200);
+expectStatus('no resurrection', await request(laptopDevice, 'PUT', `${v}/items/${itemId}`, offline), 409, 'tombstoned');
+const changes = await request(laptopDevice, 'GET', `${v}/changes`);
 expectStatus('pull changes', changes, 200);
 const kinds = (changes.json?.['changes'] as { kind: string }[] | undefined)?.map((c) => c.kind) ?? [];
 if (!kinds.includes('conflict')) fail('pull did not return the preserved conflict branch');

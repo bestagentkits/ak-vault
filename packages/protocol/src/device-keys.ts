@@ -14,7 +14,7 @@ export interface CreateDeviceArgs {
   account: string;
   role: Role;
   kind: DeviceKind;
-  /** Inject fixed secrets (test vectors only); random otherwise. */
+  /** Inject existing secrets (test vectors, persisted keys); random otherwise. */
   signSeed?: Uint8Array;
   kxSecret?: Uint8Array;
 }
