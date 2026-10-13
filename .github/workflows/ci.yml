@@ -58,4 +58,7 @@ jobs:
         with:
           fetch-depth: 0
       # gitleaks CLI via its official image (the action needs a license for orgs)
-      - run: docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:v8.28.0 git . --redact --no-banner --config .gitleaks.toml
+      - name: gitleaks (full history)
+        run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo --entrypoint sh ghcr.io/gitleaks/gitleaks:v8.28.0
+          -c 'git config --global --add safe.directory /repo && gitleaks git . --redact --no-banner --config .gitleaks.toml --exit-code 1'
