@@ -1,0 +1,17 @@
+/**
+ * Landing site delivery through the assets binding. The Worker runs first for
+ * every request (`run_worker_first: true`) so static responses get the same
+ * security headers as the API, and Markdown twins get an explicit UTF-8
+ * `text/markdown` type.
+ */
+import type { Env } from '../env.js';
+import { withSecurityHeaders } from './responses.js';
+
+export async function serveAsset(request: Request, env: Pick<Env, 'ASSETS'>): Promise<Response> {
+  const response = await env.ASSETS.fetch(request);
+  const out = withSecurityHeaders(response);
+  const { pathname } = new URL(request.url);
+  if (pathname.endsWith('.md') && response.ok) out.headers.set('Content-Type', 'text/markdown; charset=utf-8');
+  if (pathname === '/llms.txt' && response.ok) out.headers.set('Content-Type', 'text/plain; charset=utf-8');
+  return out;
+}

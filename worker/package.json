@@ -1,0 +1,26 @@
+{
+  "name": "ak-vault-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env staging",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env=\"\"",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json && tsc -p test/tsconfig.json && tsc -p tsconfig.node.json",
+    "smoke:staging": "tsx scripts/staging-smoke.ts"
+  },
+  "dependencies": {
+    "@ak-vault/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.0",
+    "@cloudflare/workers-types": "^5.20261013.1",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4",
+    "wrangler": "^4.149.0"
+  }
+}
