@@ -6,6 +6,7 @@
  * mint tokens. Nothing here is a real credential.
  */
 import { webcrypto } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { cloudflareTest } from '@cloudflare/vitest-plugin';
 import { defineConfig } from 'vitest/config';
 import { unstable_readConfig } from 'wrangler';
@@ -16,9 +17,11 @@ const publicJwk = await webcrypto.subtle.exportKey('jwk', pair.publicKey);
 const privateJwk = await webcrypto.subtle.exportKey('jwk', pair.privateKey);
 
 // Audiences as deployed, read from wrangler.jsonc so tests check the real configuration.
+// `env: ''` selects the top level even when CLOUDFLARE_ENV is set in the shell.
+const wranglerPath = fileURLToPath(new URL('./wrangler.jsonc', import.meta.url));
 const deployedAudiences = Object.fromEntries(
   (['production', 'staging'] as const).map((name) => {
-    const config = unstable_readConfig({ config: './wrangler.jsonc', env: name === 'production' ? undefined : name }, {});
+    const config = unstable_readConfig({ config: wranglerPath, env: name === 'production' ? '' : name }, {});
     return [name, config.vars['VAULT_AUDIENCE']];
   }),
 );

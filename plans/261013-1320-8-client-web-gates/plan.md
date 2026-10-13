@@ -16,7 +16,8 @@ so the soak can start.
 - Production sync stays off (`VAULT_SYNC_ENABLED=false`). External review on #8
   cannot be self-attested; #8 stays `blocked` until it exists.
 - No custom crypto: the CLI uses `github.com/bestagentkits/ak-vault/go/akv1`.
-- ak-web: vault tokens are a separate mint path, not a generic OAuth resource; MCP/API
+- ak-web: vault tokens are a dedicated mint path (the "vault OAuth resource" of #568), not an
+  entry in the generic OAuth resource list; MCP/API
   token verification is not loosened. New secrets go through `lib/env.ts`.
 - agentkit: secret surfaces stay out of the operational sync outbox; work lands on
   `dev` via PRs; ASCII-only literals; universal flags on new commands.
@@ -29,7 +30,7 @@ Desktop UX (agentkit#2300), account dashboard (ak-web#569), discovery/exec
 ## Phases
 | # | Phase | Repo | Status |
 |---|---|---|---|
-| 1 | Tag `go/v0.1.0`; staging audience + ak-web staging issuer (#13) | ak-vault | pending |
+| 1 | Tag `go/v0.1.0`; staging audience (#13). Trusting ak-web's staging issuer waits for #568 on staging | ak-vault | in progress |
 | 2 | Vault token mint (device key possession, `sid`/`did`, aud per env) + revocation outbox/webhook + revoke-all | ak-web (#568) | pending |
 | 3 | Gates: `secrets` excluded from auto-update, zero-HTTP sync-off test, offline resolve test, resolve benchmark rig | agentkit | pending |
 | 4 | Sync client design (UX, schemas, local state, mapping v1 store to akv1 items) reviewed before code | agentkit (#2298) | pending |
