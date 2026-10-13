@@ -8,7 +8,10 @@
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
   "preview_urls": false,
-  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  // Platform invocation logs record full URLs (raw vault/item IDs) and request
+  // metadata, bypassing the operational logger contract, so only our own
+  // redacted console logs are kept.
+  "observability": { "enabled": true, "head_sampling_rate": 1, "logs": { "invocation_logs": false } },
   // The Worker runs first for every request so static pages get security headers too.
   "assets": {
     "directory": "./public",
