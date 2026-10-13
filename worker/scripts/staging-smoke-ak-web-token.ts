@@ -14,8 +14,8 @@
  * name, an HTTP status and at most ak-web's stable error code: never a token, key,
  * signature or response body.
  */
-import { lstatSync, readFileSync } from 'node:fs';
-import { dirname, relative, resolve, isAbsolute } from 'node:path';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { b64decode, b64encode, deviceIdFromSignPub, signDetached, signKeyPairFromSeed, utf8Decode } from '@ak-vault/protocol';
 
@@ -33,12 +33,21 @@ export function fail(message: string): never {
   process.exit(1);
 }
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const REPO_ROOT = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '../..'));
+
+/** Resolve symlinks through the nearest existing ancestor of a path that may not exist yet. */
+function realPathOf(path: string): string {
+  const absolute = resolve(path);
+  if (existsSync(absolute)) return realpathSync(absolute);
+  const parent = dirname(absolute);
+  return parent === absolute ? absolute : join(realPathOf(parent), basename(absolute));
+}
 
 /** Secret files live outside the checkout so they can never be committed. */
 export function assertOutsideRepo(path: string, what: string): void {
-  const rel = relative(REPO_ROOT, resolve(path));
-  if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) fail(`${what} must be outside the repository`);
+  const rel = relative(REPO_ROOT, realPathOf(path));
+  const outside = rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  if (!outside) fail(`${what} must be outside the repository`);
 }
 
 /**
