@@ -1,0 +1,332 @@
+{
+  "version": 1,
+  "description": "Cross-implementation edge cases (spec §11). recovery_key_display_valid: decodeRecoveryKey(input) MUST return rk; recovery_key_display_invalid: decoding is ASCII-only and MUST fail. x25519_*: wrong-length keys MUST fail with bad_request (public key derivation, X25519, unwrapFromDevice, wrapToDevice with recipient.kx_pub b64 and ephemeral_secret). ed25519_valid: verifyObject(context, object, public_key) MUST succeed; ed25519_invalid: MUST fail with invalid_signature under strict RFC 8032 (S < L, canonical A and R, no small-order A, cofactorless equation); all but s_not_reduced verify under a lenient ZIP-215 cofactored verifier.",
+  "recovery_key_display_valid": [
+    {
+      "name": "lowercase_tab_separated",
+      "input": "chr4\th40f\t9d5n\thz3f\t3mh0\tjxah\tf2qg\tv1g8\txwh3\tvmxw\tdt48\tks33\tkt00",
+      "rk": "ZHBIkA9LS1j8bx0iCXVReK8NhgjvIj3TvG6IieRjnoA"
+    },
+    {
+      "name": "crlf_and_vertical_tab_separated",
+      "input": "CHR4\r\n\u000bH40F\r\n\u000b9D5N\r\n\u000bHZ3F\r\n\u000b3MH0\r\n\u000bJXAH\r\n\u000bF2QG\r\n\u000bV1G8\r\n\u000bXWH3\r\n\u000bVMXW\r\n\u000bDT48\r\n\u000bKS33\r\n\u000bKT00",
+      "rk": "ZHBIkA9LS1j8bx0iCXVReK8NhgjvIj3TvG6IieRjnoA"
+    }
+  ],
+  "recovery_key_display_invalid": [
+    {
+      "name": "dotless_i_for_1",
+      "display": "CHR4-H40F-9D5N-HZ3F-3MH0-JXAH-F2QG-VıG8-XWH3-VMXW-DT48-KS33-KT00",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "long_s_for_s",
+      "display": "CHR4-H40F-9D5N-HZ3F-3MH0-JXAH-F2QG-V1G8-XWH3-VMXW-DT48-Kſ33-KT00",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "fullwidth_digit",
+      "display": "CHR４-H40F-9D5N-HZ3F-3MH0-JXAH-F2QG-V1G8-XWH3-VMXW-DT48-KS33-KT00",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "no_break_space_separator",
+      "display": "CHR4 H40F 9D5N HZ3F 3MH0 JXAH F2QG V1G8 XWH3 VMXW DT48 KS33 KT00",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "ideographic_space_separator",
+      "display": "CHR4　H40F　9D5N　HZ3F　3MH0　JXAH　F2QG　V1G8　XWH3　VMXW　DT48　KS33　KT00",
+      "expect_error": "bad_request"
+    }
+  ],
+  "x25519_public_key_invalid": [
+    {
+      "name": "secret_31_bytes",
+      "secret": "LrCocqkSkQsUbxcMUmuaMDR8Z_23qxDZJitF2AJ1Xw",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "secret_33_bytes",
+      "secret": "VfdGNONbuuB4-0O12Sh2sth-lU3K6jp8XhmGe4q5Y28B",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "secret_empty",
+      "secret": "",
+      "expect_error": "bad_request"
+    }
+  ],
+  "x25519_shared_invalid": [
+    {
+      "name": "secret_31_bytes",
+      "secret": "LrCocqkSkQsUbxcMUmuaMDR8Z_23qxDZJitF2AJ1Xw",
+      "public_key": "xxt-dlGedNKfAmN91UJ9jTnp9P-6iFLkiMhZvtWhrT4",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "public_key_31_bytes",
+      "secret": "0M-dZ8XEpmaFMUwEpFUr3Dxuo2LwUSS7mQoEQ6ylF_4",
+      "public_key": "xxt-dlGedNKfAmN91UJ9jTnp9P-6iFLkiMhZvtWhrQ",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "public_key_33_bytes",
+      "secret": "0M-dZ8XEpmaFMUwEpFUr3Dxuo2LwUSS7mQoEQ6ylF_4",
+      "public_key": "xxt-dlGedNKfAmN91UJ9jTnp9P-6iFLkiMhZvtWhrT4A",
+      "expect_error": "bad_request"
+    }
+  ],
+  "unwrap_from_device_invalid": [
+    {
+      "name": "kx_secret_31_bytes",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+      "kx_secret": "LrCocqkSkQsUbxcMUmuaMDR8Z_23qxDZJitF2AJ1Xw",
+      "wrap": {
+        "v": 1,
+        "alg": "x25519-xc20p",
+        "rcpt": "HuCy7tB5ixWPisxMZQdTTA",
+        "key_epoch": 1,
+        "epk": "xxt-dlGedNKfAmN91UJ9jTnp9P-6iFLkiMhZvtWhrT4",
+        "n": "629eHYDXolKRalXnJ8upSpXGVCbwKXys",
+        "ct": "aX7s4nr_FJRxnU-6FLphHr28zCppxeZWpf8czk4FOLKSeEvEGKKxxjO5d1Jc5-kb"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "kx_secret_33_bytes",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+      "kx_secret": "VfdGNONbuuB4-0O12Sh2sth-lU3K6jp8XhmGe4q5Y28B",
+      "wrap": {
+        "v": 1,
+        "alg": "x25519-xc20p",
+        "rcpt": "HuCy7tB5ixWPisxMZQdTTA",
+        "key_epoch": 1,
+        "epk": "xxt-dlGedNKfAmN91UJ9jTnp9P-6iFLkiMhZvtWhrT4",
+        "n": "629eHYDXolKRalXnJ8upSpXGVCbwKXys",
+        "ct": "aX7s4nr_FJRxnU-6FLphHr28zCppxeZWpf8czk4FOLKSeEvEGKKxxjO5d1Jc5-kb"
+      },
+      "expect_error": "bad_request"
+    }
+  ],
+  "wrap_to_device_invalid": [
+    {
+      "name": "ephemeral_secret_31_bytes",
+      "vk": "-GR5HPRgk4X35J6OwW-PHIAvWLjBy88rw2zIX-Ht1kU",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "nonce": "629eHYDXolKRalXnJ8upSpXGVCbwKXys",
+      "recipient": {
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "kx_pub": "LqtEeFnOdQnH87ofhDVV9PNJHIEajekVqv-SDVZR9Sc"
+      },
+      "ephemeral_secret": "LrCocqkSkQsUbxcMUmuaMDR8Z_23qxDZJitF2AJ1Xw",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "recipient_kx_pub_31_bytes",
+      "vk": "-GR5HPRgk4X35J6OwW-PHIAvWLjBy88rw2zIX-Ht1kU",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "nonce": "629eHYDXolKRalXnJ8upSpXGVCbwKXys",
+      "recipient": {
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "kx_pub": "xxt-dlGedNKfAmN91UJ9jTnp9P-6iFLkiMhZvtWhrQ"
+      },
+      "ephemeral_secret": "0M-dZ8XEpmaFMUwEpFUr3Dxuo2LwUSS7mQoEQ6ylF_4",
+      "expect_error": "bad_request"
+    }
+  ],
+  "ed25519_valid": [
+    {
+      "name": "baseline",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "baseline",
+        "n": 0,
+        "sig": "3gvlJ5_J3F-Q8SwVPS-5rTBsbBMCqiQiA9UjMKpERsWd5qjthZMeD69T2IBAjYfi3FJiH42pjaz_2RkYKZwgCw"
+      },
+      "public_key": "VVHDRqr7KBSFsCaSgakWABZV_zARqdbG5rG56pGLTrE"
+    }
+  ],
+  "ed25519_invalid": [
+    {
+      "name": "s_not_reduced",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "s_not_reduced",
+        "n": 0,
+        "sig": "3AJvukGuKtlwwLbloyvE-3W2AJgxcbpmhWllQWMHbzdWlyN0toKp9nNjD4ksTNL2zMFnehwj39lnbsptTu9AHA"
+      },
+      "public_key": "VVHDRqr7KBSFsCaSgakWABZV_zARqdbG5rG56pGLTrE",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "small_order_public_key_identity",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "small_order_public_key_identity",
+        "n": 0,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "public_key": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "small_order_public_key_order2",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "small_order_public_key_order2",
+        "n": 0,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "public_key": "7P_______________________________________38",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "small_order_public_key_order4_a",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "small_order_public_key_order4_a",
+        "n": 6,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "small_order_public_key_order4_b",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "small_order_public_key_order4_b",
+        "n": 3,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "small_order_public_key_order8_a",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "small_order_public_key_order8_a",
+        "n": 14,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "public_key": "JuiVj8KyJ7BFw_SJ8u-Y8NXfrAXTxjM5sTgCiG1T_AU",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "small_order_public_key_order8_b",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "small_order_public_key_order8_b",
+        "n": 0,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "public_key": "JuiVj8KyJ7BFw_SJ8u-Y8NXfrAXTxjM5sTgCiG1T_IU",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "small_order_public_key_order8_c",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "small_order_public_key_order8_c",
+        "n": 7,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "public_key": "xxdqcD1N2E-6PAt2DRBnDyogU_osOczGTsf9d5KsA3o",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "small_order_public_key_order8_d",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "small_order_public_key_order8_d",
+        "n": 3,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "public_key": "xxdqcD1N2E-6PAt2DRBnDyogU_osOczGTsf9d5KsA_o",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "non_canonical_public_key_identity_y_plus_p",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "non_canonical_public_key_identity_y_plus_p",
+        "n": 0,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "public_key": "7v_______________________________________38",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "non_canonical_public_key_identity_negative_zero",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "non_canonical_public_key_identity_negative_zero",
+        "n": 0,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "public_key": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "non_canonical_public_key_order2_negative_zero",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "non_canonical_public_key_order2_negative_zero",
+        "n": 2,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "public_key": "7P________________________________________8",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "non_canonical_r_y_plus_p",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "non_canonical_r_y_plus_p",
+        "n": 0,
+        "sig": "7v_______________________________________3_wvorXhQY-bA3jUpiwwtvNLxWwuv2JQTG_fQokm-viAg"
+      },
+      "public_key": "VVHDRqr7KBSFsCaSgakWABZV_zARqdbG5rG56pGLTrE",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "non_canonical_r_negative_zero",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "non_canonical_r_negative_zero",
+        "n": 0,
+        "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAID_puzx8ZfKuV1mBWEWcklW4aQuMEa1p_mI9k7CvtnjAA"
+      },
+      "public_key": "VVHDRqr7KBSFsCaSgakWABZV_zARqdbG5rG56pGLTrE",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "r_with_torsion_component",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "r_with_torsion_component",
+        "n": 0,
+        "sig": "8Jk_C5liFWoA2Jv1rOi2c59wsNkt7x94l7RqZmTZMWb4p9HZ5Q4U2sHI-zvMDA4GoG0Q7oxYw1-AOzxfeWQUDg"
+      },
+      "public_key": "VVHDRqr7KBSFsCaSgakWABZV_zARqdbG5rG56pGLTrE",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "public_key_with_torsion_component",
+      "context": "akv1/checkpoint",
+      "object": {
+        "edge": "public_key_with_torsion_component",
+        "n": 0,
+        "sig": "f9fn_HGGyASkhOKqjVKQzxP1Lu1Q7qmoI5utkCNGb2yggOyozFq5gmVT_1691y21Ft2Q6Q2JVFOQCAciNH-NBg"
+      },
+      "public_key": "i8xZzzRZr61QC2LIL72TbZ-0pn2u4amoGmDgc_eE_iY",
+      "expect_error": "invalid_signature"
+    }
+  ]
+}

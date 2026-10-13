@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "description": "Transport proof (spec §9.2). header = b64(cjson(proof)) \".\" b64(Ed25519 sig over utf8(\"akv1/proof\")||0x0A||cjson(proof)); proof = {htm,htu,ts,jti,ath:b64 sha256(utf8(token)),bh:b64 sha256(body)}. build: inputs MUST produce `header`. cases: verifyProof(header, verify) with signer public key `sign_pub` MUST return `proof`. invalid: MUST fail with expect_error (window is |now-ts| <= 60000 ms; seen_jtis simulates the replay cache).",
+  "sign_pub": "6HmixYpiJSFzQIgnT27y_mTRwBNlDQ-HiRJOPm32aXc",
+  "sign_seed": "JmQceyqzla3nwUtUYBqZ04OZJQ38K0z3iMLB8KFVODc",
+  "build": {
+    "htm": "POST",
+    "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+    "ts": 1767225600000,
+    "jti": "N47irkhnHLD_DfSQB4pX3g",
+    "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+    "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+    "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA"
+  },
+  "cases": [
+    {
+      "name": "valid",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA",
+      "verify": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+        "now": 1767225630000,
+        "seen_jtis": []
+      },
+      "proof": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "ts": 1767225600000,
+        "jti": "N47irkhnHLD_DfSQB4pX3g",
+        "ath": "5RgiF35xot8oIL8ltewRZiapBDg_INxcTfN4b7Zd0ao",
+        "bh": "9BUXV6AuiGhZqvLcGfA_o4ncfDtdJ9ck913er63Hv0o"
+      }
+    },
+    {
+      "name": "valid_at_window_edge",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA",
+      "verify": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+        "now": 1767225540000,
+        "seen_jtis": []
+      },
+      "proof": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "ts": 1767225600000,
+        "jti": "N47irkhnHLD_DfSQB4pX3g",
+        "ath": "5RgiF35xot8oIL8ltewRZiapBDg_INxcTfN4b7Zd0ao",
+        "bh": "9BUXV6AuiGhZqvLcGfA_o4ncfDtdJ9ck913er63Hv0o"
+      }
+    },
+    {
+      "name": "valid_get_empty_body",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI0N0RFUXBqOEhCU2EtX1RJbVctNUpDZXVRZVJrbTVOTXBKV1pHM2hTdUZVIiwiaHRtIjoiR0VUIiwiaHR1IjoiaHR0cHM6Ly92YXVsdC5hZ2VudGtpdC5iZXN0L3YxL3ZhdWx0cy8waUFPYkI1azE2cWMyQXZVSjdNR1BRL3JlY29yZHMiLCJqdGkiOiJYazh3cVNwMDE2dExKcUh2Tk1qMjZBIiwidHMiOjE3NjcyMjU2MDAwMDB9.5X8q3cRP2EkaeJx_eE-me_557KnaLKd7C96wThhijvbkIWTP3ObsdnvmUKoA1acZpu_C_8u7uw4q-NpjuEvtCQ",
+      "verify": {
+        "htm": "GET",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "",
+        "now": 1767225630000,
+        "seen_jtis": []
+      },
+      "proof": {
+        "htm": "GET",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "ts": 1767225600000,
+        "jti": "Xk8wqSp016tLJqHvNMj26A",
+        "ath": "5RgiF35xot8oIL8ltewRZiapBDg_INxcTfN4b7Zd0ao",
+        "bh": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "expired",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA",
+      "verify": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+        "now": 1767225660001,
+        "seen_jtis": []
+      },
+      "expect_error": "unauthorized"
+    },
+    {
+      "name": "from_future",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA",
+      "verify": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+        "now": 1767225539999,
+        "seen_jtis": []
+      },
+      "expect_error": "unauthorized"
+    },
+    {
+      "name": "wrong_htm",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA",
+      "verify": {
+        "htm": "PUT",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+        "now": 1767225630000,
+        "seen_jtis": []
+      },
+      "expect_error": "unauthorized"
+    },
+    {
+      "name": "wrong_htu",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA",
+      "verify": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/members",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+        "now": 1767225630000,
+        "seen_jtis": []
+      },
+      "expect_error": "unauthorized"
+    },
+    {
+      "name": "wrong_ath_other_token",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA",
+      "verify": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFsx",
+        "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+        "now": 1767225630000,
+        "seen_jtis": []
+      },
+      "expect_error": "unauthorized"
+    },
+    {
+      "name": "wrong_bh_other_body",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA",
+      "verify": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "eyJ0YW1wZXJlZCI6dHJ1ZX0",
+        "now": 1767225630000,
+        "seen_jtis": []
+      },
+      "expect_error": "unauthorized"
+    },
+    {
+      "name": "replayed_jti",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA",
+      "verify": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+        "now": 1767225630000,
+        "seen_jtis": [
+          "N47irkhnHLD_DfSQB4pX3g"
+        ]
+      },
+      "expect_error": "unauthorized"
+    },
+    {
+      "name": "signed_by_other_device",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.TP38PdR-NL3z-5FgjlNH4aJ7vg9bYTmDvbG7Gdd6aMMBf8O6hSnvyaH507MxQzt2hpxry8LTWKOqyLsccROvBQ",
+      "verify": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+        "now": 1767225630000,
+        "seen_jtis": []
+      },
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "malformed_three_parts",
+      "header": "eyJhdGgiOiI1UmdpRjM1eG90OG9JTDhsdGV3UlppYXBCRGdfSU54Y1RmTjRiN1pkMGFvIiwiYmgiOiI5QlVYVjZBdWlHaFpxdkxjR2ZBX280bmNmRHRkSjljazkxM2VyNjNIdjBvIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vdmF1bHQuYWdlbnRraXQuYmVzdC92MS92YXVsdHMvMGlBT2JCNWsxNnFjMkF2VUo3TUdQUS9yZWNvcmRzIiwianRpIjoiTjQ3aXJraG5ITERfRGZTUUI0cFgzZyIsInRzIjoxNzY3MjI1NjAwMDAwfQ.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA.x",
+      "verify": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+        "now": 1767225630000,
+        "seen_jtis": []
+      },
+      "expect_error": "unauthorized"
+    },
+    {
+      "name": "non_canonical_proof_json",
+      "header": "eyJhdGgiOiAiNVJnaUYzNXhvdDhvSUw4bHRld1JaaWFwQkRnX0lOeGNUZk40YjdaZDBhbyIsImJoIjoiOUJVWFY2QXVpR2hacXZMY0dmQV9vNG5jZkR0ZEo5Y2s5MTNlcjYzSHYwbyIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL3ZhdWx0LmFnZW50a2l0LmJlc3QvdjEvdmF1bHRzLzBpQU9iQjVrMTZxYzJBdlVKN01HUFEvcmVjb3JkcyIsImp0aSI6Ik40N2lya2huSExEX0RmU1FCNHBYM2ciLCJ0cyI6MTc2NzIyNTYwMDAwMH0.9N_Cm2uYvLBSyha1oqgPApMlTcrf40GySmb7ldWzqEMvMPmyLqSXX81NJ9laQkusx6aoQbaK62ZuXamrzMnFCA",
+      "verify": {
+        "htm": "POST",
+        "htu": "https://vault.agentkit.best/v1/vaults/0iAObB5k16qc2AvUJ7MGPQ/records",
+        "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3QifQ.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlLW5vdC1yZWFs",
+        "body": "eyJleGFtcGxlIjoicmVxdWVzdCBib2R5IiwibiI6MX0",
+        "now": 1767225630000,
+        "seen_jtis": []
+      },
+      "expect_error": "unauthorized"
+    }
+  ]
+}

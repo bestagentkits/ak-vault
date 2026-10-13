@@ -1,0 +1,208 @@
+{
+  "version": 1,
+  "description": "XChaCha20-Poly1305 envelope (spec §3.1). cases: seal(key, nonce, plaintext, aad=cjson(aad)) MUST produce `envelope` exactly and open MUST return `plaintext` (b64). invalid: opening `envelope` with key and aad MUST fail with expect_error; nonce_reuse: a receiver checking `envelopes` (same key) for unique nonces MUST reject.",
+  "cases": [
+    {
+      "name": "utf8_text",
+      "key": "unfZydlZlLNYCUopX4jVhYcGysKt3rqHI-ihFh3qcjI",
+      "aad": {
+        "ctx": "akv1/test",
+        "vault_id": "AAAAAAAAAAAAAAAAAAAAAA",
+        "n": 7
+      },
+      "aad_cjson": "{\"ctx\":\"akv1/test\",\"n\":7,\"vault_id\":\"AAAAAAAAAAAAAAAAAAAAAA\"}",
+      "kid": "e1",
+      "nonce": "UID_bhTJFQqLCSLTX0CCdwAj6PYsVT7m",
+      "plaintext": "aGVsbG8gYWt2MSDinJM",
+      "envelope": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "UID_bhTJFQqLCSLTX0CCdwAj6PYsVT7m",
+        "ct": "FMLUIN2GhW-K-26-h4zrR2RRtyf4QkpJgYVBtPOV"
+      }
+    },
+    {
+      "name": "empty_plaintext",
+      "key": "unfZydlZlLNYCUopX4jVhYcGysKt3rqHI-ihFh3qcjI",
+      "aad": {
+        "ctx": "akv1/test",
+        "vault_id": "AAAAAAAAAAAAAAAAAAAAAA",
+        "n": 7
+      },
+      "aad_cjson": "{\"ctx\":\"akv1/test\",\"n\":7,\"vault_id\":\"AAAAAAAAAAAAAAAAAAAAAA\"}",
+      "kid": "e1",
+      "nonce": "sBGjAg7wpVYXmKU2KDVTSHpKso65iXd0",
+      "plaintext": "",
+      "envelope": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "sBGjAg7wpVYXmKU2KDVTSHpKso65iXd0",
+        "ct": "61CjHYDthLNsJlU5aDRamw"
+      }
+    },
+    {
+      "name": "binary_256",
+      "key": "unfZydlZlLNYCUopX4jVhYcGysKt3rqHI-ihFh3qcjI",
+      "aad": {
+        "ctx": "akv1/test",
+        "vault_id": "AAAAAAAAAAAAAAAAAAAAAA",
+        "n": 7
+      },
+      "aad_cjson": "{\"ctx\":\"akv1/test\",\"n\":7,\"vault_id\":\"AAAAAAAAAAAAAAAAAAAAAA\"}",
+      "kid": "e2",
+      "nonce": "VU93ZEl1EQNCkyyf3N2QUvkHe7LSe1C1",
+      "plaintext": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn-AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq-wsbKztLW2t7i5uru8vb6_wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t_g4eLj5OXm5-jp6uvs7e7v8PHy8_T19vf4-fr7_P3-_w",
+      "envelope": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e2",
+        "n": "VU93ZEl1EQNCkyyf3N2QUvkHe7LSe1C1",
+        "ct": "4oCTExWHvVGNk_vrrndDWzJB_WMXo_Bv_FU0xrLnrShS_lBDKpMBw-JlFKges14dfLIGhFJiv8pK_dCjpvRt7kbNCpLG-4sbnv_w3caGCflOD-75XM-AyPJdPG9dgHtOVMIAzWl_IyThmByOYlnNldq_54UQ8cLeukw1xMrTjHMc-Vk-lrms2cuuZ5CZIMyzfZFJ0dtGaVGf9ekKCZUQ0zJGGfl49mnaEeJE2cpGsdxqEg8lIO6PENYbrasPUn6F8CHyQDYZ-oVWq9K86t8usmhcyPG6dIZq8GQFfNCbtDY6cgDzF9fBCy4l4UQqTJbh81mSBr6iMvJIJ66mcCPAuLzYrU_CoeKvS4qBTZ7SpyY"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "tampered_ciphertext",
+      "key": "unfZydlZlLNYCUopX4jVhYcGysKt3rqHI-ihFh3qcjI",
+      "aad": {
+        "ctx": "akv1/test",
+        "vault_id": "AAAAAAAAAAAAAAAAAAAAAA",
+        "n": 7
+      },
+      "envelope": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "UID_bhTJFQqLCSLTX0CCdwAj6PYsVT7m",
+        "ct": "FcLUIN2GhW-K-26-h4zrR2RRtyf4QkpJgYVBtPOV"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "wrong_aad",
+      "key": "unfZydlZlLNYCUopX4jVhYcGysKt3rqHI-ihFh3qcjI",
+      "aad": {
+        "ctx": "akv1/test",
+        "vault_id": "AAAAAAAAAAAAAAAAAAAAAA",
+        "n": 8
+      },
+      "envelope": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "UID_bhTJFQqLCSLTX0CCdwAj6PYsVT7m",
+        "ct": "FMLUIN2GhW-K-26-h4zrR2RRtyf4QkpJgYVBtPOV"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "unsupported_version",
+      "key": "unfZydlZlLNYCUopX4jVhYcGysKt3rqHI-ihFh3qcjI",
+      "aad": {
+        "ctx": "akv1/test",
+        "vault_id": "AAAAAAAAAAAAAAAAAAAAAA",
+        "n": 7
+      },
+      "envelope": {
+        "v": 2,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "UID_bhTJFQqLCSLTX0CCdwAj6PYsVT7m",
+        "ct": "FMLUIN2GhW-K-26-h4zrR2RRtyf4QkpJgYVBtPOV"
+      },
+      "expect_error": "unsupported_version"
+    },
+    {
+      "name": "unknown_alg",
+      "key": "unfZydlZlLNYCUopX4jVhYcGysKt3rqHI-ihFh3qcjI",
+      "aad": {
+        "ctx": "akv1/test",
+        "vault_id": "AAAAAAAAAAAAAAAAAAAAAA",
+        "n": 7
+      },
+      "envelope": {
+        "v": 1,
+        "alg": "aes256gcm",
+        "kid": "e1",
+        "n": "UID_bhTJFQqLCSLTX0CCdwAj6PYsVT7m",
+        "ct": "FMLUIN2GhW-K-26-h4zrR2RRtyf4QkpJgYVBtPOV"
+      },
+      "expect_error": "unsupported_version"
+    },
+    {
+      "name": "short_nonce",
+      "key": "unfZydlZlLNYCUopX4jVhYcGysKt3rqHI-ihFh3qcjI",
+      "aad": {
+        "ctx": "akv1/test",
+        "vault_id": "AAAAAAAAAAAAAAAAAAAAAA",
+        "n": 7
+      },
+      "envelope": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "UID_bhTJFQqLCSLTX0CCdwAj6PYsVT",
+        "ct": "FMLUIN2GhW-K-26-h4zrR2RRtyf4QkpJgYVBtPOV"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "padded_base64",
+      "key": "unfZydlZlLNYCUopX4jVhYcGysKt3rqHI-ihFh3qcjI",
+      "aad": {
+        "ctx": "akv1/test",
+        "vault_id": "AAAAAAAAAAAAAAAAAAAAAA",
+        "n": 7
+      },
+      "envelope": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "UID_bhTJFQqLCSLTX0CCdwAj6PYsVT7m=",
+        "ct": "FMLUIN2GhW-K-26-h4zrR2RRtyf4QkpJgYVBtPOV"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "extra_field",
+      "key": "unfZydlZlLNYCUopX4jVhYcGysKt3rqHI-ihFh3qcjI",
+      "aad": {
+        "ctx": "akv1/test",
+        "vault_id": "AAAAAAAAAAAAAAAAAAAAAA",
+        "n": 7
+      },
+      "envelope": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "UID_bhTJFQqLCSLTX0CCdwAj6PYsVT7m",
+        "ct": "FMLUIN2GhW-K-26-h4zrR2RRtyf4QkpJgYVBtPOV",
+        "x": 1
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "nonce_reuse",
+      "envelopes": [
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "uvqCmSKhS_fHMq48TWUAST97ieyCV2c4",
+          "ct": "d9gDzteVjffxjwdDqwSyMXlunTZ_"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "uvqCmSKhS_fHMq48TWUAST97ieyCV2c4",
+          "ct": "YtQS0s1AuIYvrGd_vCCElAi-pDtULw"
+        }
+      ],
+      "expect_error": "bad_request"
+    }
+  ]
+}

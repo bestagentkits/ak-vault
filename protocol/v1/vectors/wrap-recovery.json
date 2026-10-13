@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "description": "Recovery key (spec §3.4). display = Crockford base32 of rk (MSB-first, uppercase, 52 symbols, groups of 4 joined by \"-\"). Decoding is case-insensitive, ignores \"-\" and spaces, maps I/L->1 and O->0. kek = HKDF-SHA256(rk, salt=utf8(\"akv1\"), info=\"akv1/recovery-kek\", 32); ct = XC20P(kek, nonce, vk, aad={ctx:\"akv1/rk-wrap\",vault_id,key_epoch}). invalid_display: decoding MUST fail; invalid: unwrap MUST fail with expect_error.",
+  "cases": [
+    {
+      "name": "recovery_wrap",
+      "rk": "OTk1OEZp9eRQ3kp2-nnchUlHUwrt88uVYSV5Lao33i0",
+      "display": "74WK-AE26-D7TY-8M6Y-99VF-MYEW-GN4M-EMRA-XQSW-Q5B1-4NWJ-VAHQ-VRPG",
+      "kek": "v7yxJJiZPX9_bOUDhq599LI-81nGsI2HnJOwZOw3BrE",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "nonce": "RyYVnqTLqkIG_udLhqsyNQ8-aCGrqfel",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "wrap": {
+        "v": 1,
+        "alg": "rk-xc20p",
+        "key_epoch": 1,
+        "n": "RyYVnqTLqkIG_udLhqsyNQ8-aCGrqfel",
+        "ct": "1Oo4MEW4Qc989a0HdGTHnlqqG56dvyeum-IpuWStIAL6i8TWpogUbRB28gZXGROx"
+      }
+    },
+    {
+      "name": "all_zero_display",
+      "rk": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "display": "0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000"
+    }
+  ],
+  "decode_aliases": [
+    {
+      "input": "74wk ae26 d7ty 8m6y 99vf myew gn4m emra xqsw q5bl 4nwj vahq vrpg",
+      "rk": "OTk1OEZp9eRQ3kp2-nnchUlHUwrt88uVYSV5Lao33i0"
+    }
+  ],
+  "invalid_display": [
+    {
+      "name": "invalid_symbol_u",
+      "display": "74WK-AE26-D7TY-8M6Y-99VF-MYEW-GN4M-EMRA-XQSW-Q5B1-4NWJ-VAHQ-VRUG",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "too_short",
+      "display": "74WK-AE26-D7TY-8M6Y-99VF-MYEW-GN4M-EMRA-XQSW-Q5B1-4NWJ-VAHQ-VRP",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "non_zero_padding_bits",
+      "display": "74WK-AE26-D7TY-8M6Y-99VF-MYEW-GN4M-EMRA-XQSW-Q5B1-4NWJ-VAHQ-VRP1",
+      "expect_error": "bad_request"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "wrong_recovery_key",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "rk": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "wrap": {
+        "v": 1,
+        "alg": "rk-xc20p",
+        "key_epoch": 1,
+        "n": "RyYVnqTLqkIG_udLhqsyNQ8-aCGrqfel",
+        "ct": "1Oo4MEW4Qc989a0HdGTHnlqqG56dvyeum-IpuWStIAL6i8TWpogUbRB28gZXGROx"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "key_epoch_changed",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "rk": "OTk1OEZp9eRQ3kp2-nnchUlHUwrt88uVYSV5Lao33i0",
+      "wrap": {
+        "v": 1,
+        "alg": "rk-xc20p",
+        "key_epoch": 3,
+        "n": "RyYVnqTLqkIG_udLhqsyNQ8-aCGrqfel",
+        "ct": "1Oo4MEW4Qc989a0HdGTHnlqqG56dvyeum-IpuWStIAL6i8TWpogUbRB28gZXGROx"
+      },
+      "expect_error": "decrypt_failed"
+    }
+  ]
+}
