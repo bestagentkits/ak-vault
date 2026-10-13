@@ -73,12 +73,19 @@ names, HTTP statuses and stable error codes.
   repository and reused across runs, because ak-web binds a device key to one
   account and caps live device keys per account. Each run creates a new synthetic
   vault; the Worker has no per-account vault limit, and these vaults are abandoned.
+- Write the session token into a `0600` file without echoing it, and delete the
+  file after the run; the smoke refuses a file that group or others can read.
 - `device_revoked` or `device_conflict` from ak-web means the stored keys can no
   longer mint (revoked, or bound to another account). Delete the state file to bind
   new keys, and revoke the old ones in the ak-web account if they are still live.
+  `device_limit` means the account holds too many live device keys; revoke unused
+  ones there.
 - A failure right after minting that the target does not trust ak-web's issuer
-  means the Worker's issuer or JWKS settings (Wrangler config) do not match ak-web's
-  staging deployment.
+  means the Worker's issuer or JWKS settings do not match ak-web's staging
+  deployment. Check the Wrangler config, and that no `VAULT_JWKS_JSON` secret is set
+  on the environment (it would override the JWKS URL).
+- Staging no longer uses a test-only issuer; delete any old staging test issuer
+  private key left on operator machines.
 
 **Protocol revisions without a version bump.** A revision listed under "Revisions" in
 the [spec](../protocol/v1/spec.md#revisions) changes wire bodies, so a vault created

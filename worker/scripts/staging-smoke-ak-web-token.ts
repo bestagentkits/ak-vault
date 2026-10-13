@@ -14,7 +14,7 @@
  * name, an HTTP status and at most ak-web's stable error code: never a token, key,
  * signature or response body.
  */
-import { readFileSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import { b64decode, b64encode, deviceIdFromSignPub, signDetached, signKeyPairFromSeed, utf8Decode } from '@ak-vault/protocol';
 
 export const VAULT_TOKEN_REQUEST_CONTEXT = 'akv1/vault-token-request';
@@ -31,10 +31,18 @@ export function fail(message: string): never {
   process.exit(1);
 }
 
-/** Refuse a secret-bearing file that group or others can read (POSIX only). */
-export function assertPrivateFile(path: string, what: string): void {
+/**
+ * Refuse a secret-bearing path that is a symlink or not ours (POSIX only). A file
+ * must not be accessible to group or others; a directory holding one must not be
+ * writable by them, or they could swap the file.
+ */
+export function assertPrivatePath(path: string, what: string): void {
   if (process.platform === 'win32') return;
-  if ((statSync(path).mode & 0o077) !== 0) fail(`${what} must not be readable by group or others (chmod 600)`);
+  const st = lstatSync(path);
+  if (st.isSymbolicLink() || st.uid !== process.getuid?.()) fail(`${what} must be owned by you and not a symlink`);
+  if (st.isDirectory() ? (st.mode & 0o022) !== 0 : (st.mode & 0o077) !== 0) {
+    fail(`${what} must not be ${st.isDirectory() ? 'writable' : 'accessible'} by group or others`);
+  }
 }
 
 /** HTTPS only; plain HTTP is allowed for a local ak-web on loopback. */
@@ -77,7 +85,7 @@ export function readCliSession(path: string | undefined, nowSeconds = Math.floor
   if (!path) fail('AK_STAGING_SESSION_TOKEN_PATH is not set');
   let token: string;
   try {
-    assertPrivateFile(path, 'the session token file');
+    assertPrivatePath(path, 'the session token file');
     token = readFileSync(path, 'utf8').trim();
   } catch {
     return fail('cannot read the session token file');
