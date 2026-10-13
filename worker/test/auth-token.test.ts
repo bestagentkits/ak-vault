@@ -1,10 +1,19 @@
 /** Token (ES256 JWT) and proof-of-possession checks: wrong iss/aud/alg/kid, time claims, replay, theft. */
 import { b64encode, buildProof, randomBytes, utf8Encode } from '@ak-vault/protocol';
+import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { clearJwksCache } from '../src/auth/jwks.js';
 import { BASE, call } from './helpers/api-client.js';
 import { mintToken, signJwt, TEST_AUDIENCE, TEST_ISSUER } from './helpers/issuer.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
+
+declare global {
+  namespace Cloudflare {
+    interface Env {
+      TEST_DEPLOYED_AUDIENCES: string;
+    }
+  }
+}
 
 let fx: VaultFixture;
 const did = () => fx.owner.keys.record.device_id;
@@ -56,6 +65,20 @@ describe('token verification', () => {
     expect((await withToken(await signJwt({ alg: 'ES256', kid: 'unknown-kid' }, claims))).status).toBe(401);
     expect((await withToken(await signJwt({ alg: 'ES256' }, claims))).status).toBe(401);
     expect((await withToken(await signJwt({ alg: 'ES256', kid: 'test-issuer-key-1', jku: 'https://evil.example/jwks' }, claims))).status).toBe(401);
+  });
+
+  it('keeps production and staging audiences apart', async () => {
+    const { production, staging } = JSON.parse(env.TEST_DEPLOYED_AUDIENCES) as Record<'production' | 'staging', string>;
+    expect(production).toBe('https://vault.agentkit.best');
+    expect(staging).toBe('https://vault-staging.agentkit.best');
+    for (const [deployed, other] of [[production, staging], [staging, production]] as const) {
+      const as = (aud: string) => mintToken({ sub: sub(), did: did(), claims: { aud } });
+      const opts = { env: { VAULT_AUDIENCE: deployed } };
+      expect((await call(fx.owner, 'GET', membershipPath(), undefined, { ...opts, token: await as(deployed) })).status).toBe(200);
+      const refused = await call(fx.owner, 'GET', membershipPath(), undefined, { ...opts, token: await as(other) });
+      expect(refused.status).toBe(401);
+      expect(refused.json).toEqual({ error: { code: 'unauthorized', message: 'authentication failed' } });
+    }
   });
 
   it('rejects a tampered payload and a missing bearer', async () => {

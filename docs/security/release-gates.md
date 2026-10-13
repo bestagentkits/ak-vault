@@ -57,7 +57,7 @@ endpoints are not affected by the flag.
   are scoped to the deploy step; actions are pinned by commit SHA. Missing
   credentials fail the job rather than skipping it.
 - Production and staging use separate Cloudflare credentials and separate Worker
-  secrets. The Worker never receives ak-web's CLI HS256 signing key.
+  secrets, and distinct token audiences, so neither accepts the other's tokens. The Worker never receives ak-web's CLI HS256 signing key.
 - **Bootstrap exceptions (owner decision, 2026-10-13; revoke before sync GA or
   enabling `VAULT_SYNC_ENABLED` in production):** the repository owner allows an agent
   to approve the production deployment during the bootstrap phase, and staging and

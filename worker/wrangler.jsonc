@@ -52,7 +52,8 @@
       "vars": {
         "VAULT_SYNC_ENABLED": "true",
         "VAULT_ISSUER": "https://staging-test-issuer.ak-vault.invalid",
-        "VAULT_AUDIENCE": "https://vault.agentkit.best",
+        // Distinct from production so a token minted for one environment is refused by the other.
+        "VAULT_AUDIENCE": "https://vault-staging.agentkit.best",
         // Unused while VAULT_JWKS_JSON is set (inline keys take precedence).
         "VAULT_JWKS_URL": "",
         // Public key of a TEST-ONLY issuer (scripts/generate-staging-issuer-key.ts).

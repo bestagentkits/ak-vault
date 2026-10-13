@@ -36,7 +36,7 @@ import {
 } from '@ak-vault/protocol';
 
 const ISSUER = 'https://staging-test-issuer.ak-vault.invalid';
-const AUDIENCE = 'https://vault.agentkit.best';
+const AUDIENCE = 'https://vault-staging.agentkit.best';
 const base = new URL(process.argv[2] ?? 'https://vault-staging.agentkit.best').origin;
 const proofOrigin = new URL(process.argv[3] ?? base).origin;
 
