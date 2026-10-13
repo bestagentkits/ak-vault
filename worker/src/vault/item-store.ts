@@ -3,6 +3,9 @@
  * `applyRecord` model from the protocol library; this module only loads the item
  * state it needs and persists the outcome. There is no last-writer-wins path:
  * a base-revision mismatch is preserved as a conflict branch and answered 409.
+ * The append-only change log is bounded by `records_per_vault` and
+ * `record_bytes_per_vault` (403 `quota_exceeded`); replay detection is an
+ * indexed digest lookup, so per-write cost does not grow with item history.
  */
 import {
   applyRecord,
@@ -10,6 +13,8 @@ import {
   cjson,
   parseJson,
   parseRecord,
+  recordDigest,
+  utf8Encode,
   verifyRecord,
   type ConflictBranch,
   type ItemState,
@@ -20,6 +25,9 @@ import { ApiError, okResult, type ApiResult } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
 import type { JsonObject } from '@ak-vault/protocol';
 
+/** `meta` key holding `{records, bytes}` totals for the per-vault record caps. */
+export const RECORD_USAGE_KEY = 'record_usage';
+
 interface ItemRow {
   revision: number;
   tombstone: number;
@@ -28,10 +36,8 @@ interface ItemRow {
   head_log_seq: number;
 }
 
-function loadItemState(sql: SqlStorage, vaultId: string, itemId: string): { state: ItemState | undefined; row: ItemRow | undefined } {
+function loadItemState(sql: SqlStorage, vaultId: string, itemId: string): { state: ItemState; row: ItemRow | undefined } {
   const row = sql.exec<ItemRow & Record<string, number | string>>('SELECT revision, tombstone, tombstone_revision, head, head_log_seq FROM items WHERE item_id = ?', itemId).toArray()[0];
-  const seen = sql.exec<{ digest: string }>('SELECT digest FROM records WHERE item_id = ?', itemId).toArray().map((r) => r.digest);
-  if (!row && seen.length === 0) return { state: undefined, row: undefined };
   const conflicts: ConflictBranch[] = sql
     .exec<{ conflict_id: string; digest: string; record_json: string }>(
       `SELECT c.conflict_id, r.digest, r.record_json FROM conflicts c JOIN records r ON r.log_seq = c.log_seq
@@ -50,12 +56,35 @@ function loadItemState(sql: SqlStorage, vaultId: string, itemId: string): { stat
       tombstone_revision: row?.tombstone_revision ?? 0,
       head: row?.head ?? '',
       conflicts,
-      seen,
+      // Replays are detected by the indexed `isReplay` lookup instead of loading every digest.
+      seen: [],
     },
   };
 }
 
+/** Indexed replay check on `UNIQUE (item_id, digest)`. */
+function digestStored(sql: SqlStorage, itemId: string, digest: string): boolean {
+  return sql.exec('SELECT 1 FROM records WHERE item_id = ? AND digest = ?', itemId, digest).toArray().length > 0;
+}
+
+interface RecordUsage {
+  records: number;
+  bytes: number;
+}
+
+/** Running totals in `meta`, seeded once from the records table if absent. */
+function recordUsage(sql: SqlStorage): RecordUsage {
+  const row = sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', RECORD_USAGE_KEY).toArray()[0];
+  if (row) return JSON.parse(row.v) as RecordUsage;
+  const seed = sql.exec<{ n: number; b: number }>('SELECT COUNT(*) AS n, COALESCE(SUM(length(CAST(record_json AS BLOB))), 0) AS b FROM records').one();
+  return { records: seed.n, bytes: seed.b };
+}
+
 function insertRecord(sql: SqlStorage, record: SignedRecord, kind: 'applied' | 'conflict', revision: number | null, conflictId: string | null, digest: string): number {
+  const json = cjson(record as unknown as JsonObject);
+  const size = utf8Encode(json).length;
+  const usage = recordUsage(sql);
+  if (usage.records + 1 > LIMITS.records_per_vault || usage.bytes + size > LIMITS.record_bytes_per_vault) throw new ApiError('quota_exceeded', { status: 403 });
   const row = sql
     .exec<{ log_seq: number }>(
       'INSERT INTO records (item_id, kind, revision, conflict_id, digest, record_json) VALUES (?, ?, ?, ?, ?, ?) RETURNING log_seq',
@@ -64,9 +93,11 @@ function insertRecord(sql: SqlStorage, record: SignedRecord, kind: 'applied' | '
       revision,
       conflictId,
       digest,
-      cjson(record as unknown as JsonObject),
+      json,
     )
     .one();
+  const next: RecordUsage = { records: usage.records + 1, bytes: usage.bytes + size };
+  sql.exec('INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v', RECORD_USAGE_KEY, JSON.stringify(next));
   return row.log_seq;
 }
 
@@ -79,8 +110,8 @@ export function putRecord(sql: SqlStorage, state: MembershipState, did: string, 
   if (cjson(record.env as unknown as JsonObject).length > LIMITS.envelope_max_bytes) throw new ApiError('quota_exceeded');
 
   const { state: itemState, row } = loadItemState(sql, state.vault_id, itemId);
-  const { state: next, outcome } = applyRecord(itemState, record);
-  const digest = next.seen[next.seen.length - 1]!;
+  const { state: next, outcome } = applyRecord(itemState, record, { isReplay: (d) => digestStored(sql, itemId, d) });
+  const digest = recordDigest(record);
 
   if (outcome.status === 'conflict') {
     const open = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM conflicts WHERE resolved_revision IS NULL').one().n;

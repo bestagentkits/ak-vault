@@ -1,8 +1,12 @@
 /**
  * One SQLite-backed Durable Object per vault: the serialization point for every
- * mutation. `handle` runs rate limit -> authorization (membership, proof, scope,
- * role) -> idempotency -> one `transactionSync` per mutation. Errors leave as
- * stable codes with fixed messages.
+ * mutation. `handle` runs vault-exists check -> rate limit -> authorization
+ * (membership, proof, scope, role) -> idempotency -> one `transactionSync` per
+ * mutation. Errors leave as stable codes with fixed messages.
+ *
+ * No storage is written for a vault that does not exist: the schema is created
+ * lazily by the first genesis attempt, and every other op answers 404 before the
+ * rate counter or proof `jti` tables are touched. Only genesis can create state.
  */
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env.js';
@@ -23,16 +27,34 @@ import { VAULT_SCHEMA } from './vault-schema.js';
 export class VaultDurableObject extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private readonly membership: MembershipStore;
+  /** Whether the vault tables exist (created by the first genesis attempt). */
+  private schemaReady: boolean;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
-    this.sql.exec(VAULT_SCHEMA);
     this.membership = new MembershipStore(this.sql);
+    // Reading sqlite_master writes nothing; re-running the idempotent schema on an
+    // existing vault applies any newly added tables or indexes.
+    this.schemaReady = this.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").toArray().length > 0;
+    if (this.schemaReady) this.sql.exec(VAULT_SCHEMA);
+  }
+
+  /** True once a genesis has been stored; reads only, never creates storage. */
+  private vaultExists(): boolean {
+    return this.schemaReady && this.membership.state() !== null;
+  }
+
+  private ensureSchema(): void {
+    if (this.schemaReady) return;
+    this.sql.exec(VAULT_SCHEMA);
+    this.schemaReady = true;
   }
 
   async handle(req: VaultRequest): Promise<ApiResult> {
     try {
+      if (req.op === 'genesis') this.ensureSchema();
+      else if (!this.vaultExists()) throw new ApiError('not_found');
       enforceRateLimit(this.sql, req.claims.did, req.nowMs);
       if (isMutation(req.op)) validateIdempotencyKey(req.idempotencyKey);
       const auth = authorize(req, this.sql, this.membership);

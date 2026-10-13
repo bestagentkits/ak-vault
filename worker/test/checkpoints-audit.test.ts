@@ -50,10 +50,16 @@ describe('checkpoints', () => {
     expect((await fx.post(fx.owner, '/checkpoints', cp)).json.error.code).toBe('invalid_signature');
   });
 
-  it('a machine device may post its witness checkpoint', async () => {
-    const fx = await VaultFixture.create();
+  it('read-only devices (reader, machine) and read-scoped tokens cannot post checkpoints but can read them', async () => {
+    const fx = await VaultFixture.create('shared');
     const machine = await fx.addDevice({ kind: 'machine' });
-    expect((await fx.post(machine, '/checkpoints', checkpoint(fx, machine))).status).toBe(201);
+    const reader = await fx.addDevice({ account: `acct-${randomId()}`, role: 'reader' });
+    expect((await fx.post(machine, '/checkpoints', checkpoint(fx, machine))).status).toBe(403);
+    expect((await fx.post(reader, '/checkpoints', checkpoint(fx, reader))).status).toBe(403);
+    expect((await fx.post(fx.owner, '/checkpoints', checkpoint(fx, fx.owner), { scope: 'vault:read' })).status).toBe(403);
+    expect((await fx.post(fx.owner, '/checkpoints', checkpoint(fx, fx.owner))).status).toBe(201);
+    expect((await fx.get(machine, '/checkpoints')).json.checkpoints).toHaveLength(1);
+    expect((await fx.get(reader, '/checkpoints')).status).toBe(200);
   });
 });
 
@@ -99,18 +105,34 @@ describe('audit stream', () => {
     expect((await fx.post(fx.owner, '/audit', batch(a.head, seal(fx, a.head, 101).entries))).json.error.code).toBe('quota_exceeded');
   });
 
-  it('accepts audit checkpoints that match the chain, refuses forks and regressions, and lets machines append', async () => {
+  it('accepts audit checkpoints that match the chain and refuses forks and regressions', async () => {
     const fx = await VaultFixture.create();
-    const machine = await fx.addDevice({ kind: 'machine' });
+    const laptop = await fx.addDevice();
     const a = seal(fx, null, 2);
-    const sign = (seq: number, head: string, d: TestDevice = machine) =>
+    const sign = (seq: number, head: string, d: TestDevice = laptop) =>
       signAuditCheckpoint({ vault_id: fx.vaultId, seq, head, author: d.keys.record.device_id, ts: Date.now() }, d.keys.signSecret);
-    expect((await fx.post(machine, '/audit', { ...batch(null, a.entries), checkpoint: sign(1, a.head!.head) })).status).toBe(201);
-    const forked = await fx.post(machine, '/audit', { ...batch(a.head, []), checkpoint: sign(1, sha256b64(new Uint8Array(7))) });
+    expect((await fx.post(laptop, '/audit', { ...batch(null, a.entries), checkpoint: sign(1, a.head!.head) })).status).toBe(201);
+    const forked = await fx.post(laptop, '/audit', { ...batch(a.head, []), checkpoint: sign(1, sha256b64(new Uint8Array(7))) });
     expect(forked.json.error.code).toBe('rollback');
-    const behind = await fx.post(machine, '/audit', { ...batch(a.head, []), checkpoint: sign(0, auditEntryHash(a.entries[0]!)) });
+    const behind = await fx.post(laptop, '/audit', { ...batch(a.head, []), checkpoint: sign(0, auditEntryHash(a.entries[0]!)) });
     expect(behind.json.error.code).toBe('rollback');
     expect((await fx.get(fx.owner, '/audit')).json.checkpoints).toHaveLength(1);
     expect((await fx.post(fx.owner, '/audit', { ...batch(a.head, []), checkpoint: sign(1, a.head!.head) })).status).toBe(403);
+  });
+
+  it('read-only devices (reader, machine) and read-scoped tokens cannot append, but can read the stream', async () => {
+    const fx = await VaultFixture.create('shared');
+    const machine = await fx.addDevice({ kind: 'machine' });
+    const reader = await fx.addDevice({ account: `acct-${randomId()}`, role: 'reader' });
+    const a = seal(fx, null, 1);
+    for (const device of [machine, reader]) {
+      const res = await fx.post(device, '/audit', batch(null, a.entries));
+      expect(res.status).toBe(403);
+      expect(res.json.error.code).toBe('forbidden');
+    }
+    expect((await fx.post(fx.owner, '/audit', batch(null, a.entries), { scope: 'vault:read' })).status).toBe(403);
+    expect((await fx.post(fx.owner, '/audit', batch(null, a.entries))).status).toBe(201);
+    expect((await fx.get(reader, '/audit')).json.entries).toHaveLength(1);
+    expect((await fx.get(machine, '/audit')).status).toBe(200);
   });
 });

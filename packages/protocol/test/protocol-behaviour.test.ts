@@ -80,6 +80,15 @@ describe('records state model', () => {
     expect(verifyRecordSignature(r0, author.record.sign_pub)).toEqual(r0);
     expectCode(() => verifyRecordSignature(r0, createDeviceKeys({ account: 'b', role: 'owner', kind: 'human' }).record.sign_pub), 'invalid_signature');
   });
+
+  it('an isReplay callback detects replays without an in-memory seen list', () => {
+    const r0 = make(0);
+    const { state } = applyRecord(undefined, r0);
+    const stored = new Set(state.seen);
+    const withoutSeen = { ...state, seen: [] };
+    expectCode(() => applyRecord(withoutSeen, r0, { isReplay: (d) => stored.has(d) }), 'conflict');
+    expect(applyRecord(withoutSeen, make(1), { isReplay: (d) => stored.has(d) }).outcome).toEqual({ status: 'applied', revision: 2 });
+  });
 });
 
 describe('audit and proof edge cases', () => {

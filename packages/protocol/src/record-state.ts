@@ -46,6 +46,12 @@ export function emptyItemState(vaultId: string, itemId: string): ItemState {
 export interface ApplyRecordOptions {
   /** Conflict branch ID to assign on CAS mismatch (b64 16 bytes). Random when omitted. */
   conflictId?: string;
+  /**
+   * Extra replay check for stores that do not load `seen` into memory (e.g. an
+   * indexed lookup). Consulted in addition to `state.seen`; return true if the
+   * record digest was already applied or preserved for this item.
+   */
+  isReplay?: (digest: string) => boolean;
 }
 
 export function applyRecord(
@@ -56,7 +62,7 @@ export function applyRecord(
   const current = state ?? emptyItemState(record.vault_id, record.item_id);
   if (current.vault_id !== record.vault_id || current.item_id !== record.item_id) fail('bad_request', 'record does not belong to this item');
   const digest = recordDigest(record);
-  if (current.seen.includes(digest)) fail('conflict', 'replayed record');
+  if (current.seen.includes(digest) || opts.isReplay?.(digest)) fail('conflict', 'replayed record');
   if (record.base_revision < current.tombstone_revision) fail('tombstoned', 'item was deleted at a later revision');
 
   if (record.base_revision !== current.revision) {

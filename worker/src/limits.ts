@@ -9,6 +9,16 @@ export const LIMITS = {
   request_body_max_bytes: 256 * 1024,
   /** Max distinct items (live or tombstoned) per vault. */
   items_per_vault: 2000,
+  /**
+   * Max stored records (applied revisions plus preserved conflict branches) per
+   * vault. The change log is append-only, so this bounds history growth.
+   */
+  records_per_vault: 200_000,
+  /**
+   * Max total bytes of stored records per vault (`cjson(record)` sizes). Keeps a
+   * single writer far below the 10 GB Durable Object storage ceiling.
+   */
+  record_bytes_per_vault: 512 * 1024 * 1024,
   /** Max open (unresolved) preserved conflict branches per vault. */
   open_conflicts_per_vault: 256,
   /** `GET /changes` page size. */

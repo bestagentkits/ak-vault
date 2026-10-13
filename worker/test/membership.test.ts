@@ -1,8 +1,9 @@
 /** Genesis, owner-signed membership appends, injected recipients, removal and rekey. */
-import { b64encode, createDeviceKeys, randomBytes, randomId, signMembershipEvent, wrapToDevice, type JsonObject } from '@ak-vault/protocol';
+import { b64encode, createDeviceKeys, deviceIdFromSignPub, generateRecoveryKey, openRecoveryBundle, randomBytes, randomId, signMembershipEvent, wrapToDevice, type JsonObject } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';
 import { call, createDevice } from './helpers/api-client.js';
 import { mintToken } from './helpers/issuer.js';
+import { sealTestBundle } from './helpers/recovery-bundle.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 const item = () => randomId();
@@ -125,16 +126,30 @@ describe('membership appends', () => {
     expect(fx.state.rekey_required).toBe(false);
   });
 
-  it('a fresh device enrolls itself with a recovery-key-signed device_add', async () => {
+  it('a fresh device fetches the recovery bundle, opens it and enrolls itself with the recovered key', async () => {
     const fx = await VaultFixture.create();
+    const rk = generateRecoveryKey();
+    expect((await call(fx.owner, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, sealTestBundle(fx, 1, rk))).status).toBe(200);
+
+    // All devices lost: a new device of the owner account proves possession of the key it presents.
     const fresh = createDevice(fx.owner.account, 'owner');
-    const event = fx.buildEvent('device_add', { device: fresh.keys.record as unknown as JsonObject, sas: '' }, { id: fx.recoveryAuthorId(), secret: fx.recovery.secretKey });
-    const res = await fx.append(event, [fx.wrapFor(fresh)], fresh);
-    expect(res.status).toBe(201);
-    expect((await fx.get(fresh, '/wraps')).status).toBe(200);
+    const fetched = await fx.get(fresh, '/recovery', { headers: { 'AKV-Device-Key': fresh.keys.record.sign_pub } });
+    expect(fetched.status).toBe(200);
+    const opened = openRecoveryBundle({ bundle: fetched.json.bundle, vaultId: fx.vaultId, rk });
+    const recoveryId = deviceIdFromSignPub(opened.recovery_sign_pub);
+    expect(recoveryId).toBe(fx.state.recovery_author);
+
+    const event = fx.buildEvent('device_add', { device: fresh.keys.record as unknown as JsonObject, sas: '' }, { id: recoveryId, secret: opened.recovery_sign_sk });
+    const wrap = wrapToDevice({ vk: opened.vk['1']!, vaultId: fx.vaultId, keyEpoch: 1, recipient: fresh.keys.record });
+    expect((await fx.append(event, [wrap], fresh)).status).toBe(201);
+    const membership = await fx.get(fresh, '/membership');
+    expect(membership.status).toBe(200);
+    expect(membership.json.membership.seq).toBe(1);
+    expect((await fx.get(fresh, `/wraps?rcpt=${fresh.keys.record.device_id}`)).json.wraps).toHaveLength(1);
+
     // The same path cannot add a device for somebody else's account.
     const other = createDevice(`acct-${randomId()}`, 'owner');
-    const bad = fx.buildEvent('device_add', { device: createDevice(fx.owner.account, 'owner').keys.record as unknown as JsonObject, sas: '' }, { id: fx.recoveryAuthorId(), secret: fx.recovery.secretKey });
+    const bad = fx.buildEvent('device_add', { device: createDevice(fx.owner.account, 'owner').keys.record as unknown as JsonObject, sas: '' }, { id: recoveryId, secret: opened.recovery_sign_sk });
     expect((await fx.append(bad, undefined, other)).status).toBe(403);
   });
 

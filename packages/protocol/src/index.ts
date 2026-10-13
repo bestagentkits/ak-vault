@@ -36,7 +36,7 @@
  * Records (§5)
  * - `signRecord`, `parseRecord`, `verifyRecord(record, state): SignedRecord`, `verifyRecordSignature`,
  *   `authorizeRecordWrite(state, record): void`, `recordDigest`.
- * - `applyRecord(itemState | undefined, record, {conflictId?}): {state, outcome}` (pure CAS model),
+ * - `applyRecord(itemState | undefined, record, {conflictId?, isReplay?}): {state, outcome}` (pure CAS model),
  *   `emptyItemState`, `computeStateDigest(items)`.
  *
  * Checkpoints (§6) — `signCheckpoint`, `parseCheckpoint`, `verifyCheckpoint(cp, state)`,

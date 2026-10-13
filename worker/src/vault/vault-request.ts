@@ -36,6 +36,8 @@ export interface VaultRequest {
   token: string;
   proof: string;
   idempotencyKey: string | null;
+  /** `AKV-Device-Key` header: the caller's sign_pub, used only by a not-yet-enrolled device fetching the recovery bundle. */
+  deviceKey: string | null;
   body: Uint8Array;
   claims: VerifiedClaims;
   nowMs: number;

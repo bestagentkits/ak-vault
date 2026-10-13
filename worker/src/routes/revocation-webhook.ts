@@ -13,6 +13,7 @@
 import { b64decode, concatBytes, parseJson, utf8Decode, utf8Encode } from '@ak-vault/protocol';
 import type { Env } from '../env.js';
 import { ApiError, okResult, type ApiResult } from '../http/errors.js';
+import { readBodyCapped } from '../http/read-body-capped.js';
 import { REVOCATION_REGISTRY_NAME } from '../auth/revocation-check.js';
 import type { RevocationBatch } from '../revocation/revocation-registry.js';
 
@@ -80,10 +81,7 @@ export async function handleRevocationWebhook(request: Request, env: Env, nowMs 
   }
   if (signature.length !== 32) throw new ApiError('unauthorized');
 
-  const declared = Number(request.headers.get('Content-Length') ?? '0');
-  if (declared > MAX_BODY_BYTES) throw new ApiError('quota_exceeded');
-  const body = new Uint8Array(await request.arrayBuffer());
-  if (body.length > MAX_BODY_BYTES) throw new ApiError('quota_exceeded');
+  const body = await readBodyCapped(request, MAX_BODY_BYTES);
 
   const message = concatBytes(utf8Encode(`${tsHeader}\n`), body);
   let valid = false;

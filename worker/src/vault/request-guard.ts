@@ -1,8 +1,9 @@
 /**
  * Per-vault request checks that need vault state: rate limit, proof of
  * possession with single-use `jti`, membership of `sub`/`did`, token scope and
- * role. Order: rate limit -> membership -> proof -> scope -> role, all before
- * any item, wrap, audit or recovery data is read or written.
+ * role. Order (after the vault-exists check): rate limit -> membership -> proof
+ * -> scope -> role, all before any item, wrap, audit or recovery data is read
+ * or written.
  */
 import { isAkvError, verifyProof, type DeviceRecord, type MembershipState } from '@ak-vault/protocol';
 import type { Scope } from '../auth/jwt-verify.js';

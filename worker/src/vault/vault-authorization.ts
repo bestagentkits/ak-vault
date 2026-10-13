@@ -8,8 +8,15 @@
  *  - recovery enrollment: a fresh device posts a `device_add` for itself signed by
  *    the owner recovery key (spec §3.5). The event is chain-verified first, then
  *    the proof is checked against the key the owner-signed event adds.
+ * One header-dependent case:
+ *  - recovery fetch: a fresh device (not current, never removed) of the owner
+ *    account may `GET /recovery` to obtain the bundle that holds
+ *    `recovery_sign_sk`. It presents its `sign_pub` in `AKV-Device-Key`; the token
+ *    `did` must equal `kid(sign_pub)` and the proof must verify against that key.
+ *    Exposure: any holder of an owner-account token plus a key it generates can
+ *    fetch the bundle and attempt offline guessing of the bundle password.
  */
-import { parseMembershipEvent, type DeviceRecord, type JsonObject, type MembershipState } from '@ak-vault/protocol';
+import { b64decodeLength, deviceIdFromSignPub, parseMembershipEvent, type DeviceRecord, type JsonObject, type MembershipState } from '@ak-vault/protocol';
 import type { Scope } from '../auth/jwt-verify.js';
 import { ApiError } from '../http/errors.js';
 import { MembershipStore } from './membership-store.js';
@@ -19,12 +26,11 @@ import type { VaultOp, VaultRequest } from './vault-request.js';
 
 const READ: readonly Scope[] = ['vault:read'];
 const WRITE: readonly Scope[] = ['vault:write'];
-const EITHER: readonly Scope[] = ['vault:read', 'vault:write'];
 
 /**
- * Scope and role per op. Checkpoints and audit appends are witness/log operations,
- * not vault data writes, so read-only devices (readers, machines) may post them
- * with either scope.
+ * Scope and role per op. Spec §9.4: `reader` members and `machine` devices are
+ * read-only, so checkpoint and audit appends need `vault:write` and a writer;
+ * read-only devices still read both streams.
  */
 const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: readonly Scope[]; role: RoleRule }> = {
   'membership.get': { scope: READ, role: 'any_device' },
@@ -34,9 +40,9 @@ const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: r
   'item.put': { scope: WRITE, role: 'writer' },
   'changes.get': { scope: READ, role: 'any_device' },
   'checkpoints.get': { scope: READ, role: 'any_device' },
-  'checkpoints.post': { scope: EITHER, role: 'any_device' },
+  'checkpoints.post': { scope: WRITE, role: 'writer' },
   'audit.get': { scope: READ, role: 'any_device' },
-  'audit.post': { scope: EITHER, role: 'any_device' },
+  'audit.post': { scope: WRITE, role: 'writer' },
   'recovery.get': { scope: READ, role: 'human_owner' },
   'recovery.put': { scope: WRITE, role: 'human_owner' },
 };
@@ -44,7 +50,8 @@ const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: r
 export interface Authorized {
   /** Current state, or for genesis the state the genesis event creates. */
   state: MembershipState;
-  device: DeviceRecord;
+  /** The calling current device; null for a recovery fetch by a not-yet-enrolled device. */
+  device: DeviceRecord | null;
   /** Parsed body for mutations. */
   body: JsonObject | null;
   /** Verified next membership state (recovery enrollment only; computed during auth). */
@@ -88,10 +95,28 @@ function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: Memb
   return { state, device, body, next };
 }
 
+/** `GET /recovery` by a fresh owner-account device that proves possession of the key it presents. */
+function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: MembershipState): Authorized {
+  const did = req.claims.did;
+  if (req.claims.sub !== state.owner_account || state.removed_device_ids.includes(did)) throw new ApiError('forbidden');
+  let signPub: string;
+  try {
+    signPub = req.deviceKey ?? '';
+    b64decodeLength(signPub, 32);
+    if (deviceIdFromSignPub(signPub) !== did) throw new ApiError('unauthorized');
+  } catch {
+    throw new ApiError('unauthorized');
+  }
+  verifyRequestProof(sql, req, signPub);
+  requireScope(req.claims.scope, READ);
+  return { state, device: null, body: null };
+}
+
 export function authorize(req: VaultRequest, sql: SqlStorage, store: MembershipStore): Authorized {
   if (req.op === 'genesis') return authorizeGenesis(req, sql);
   if (req.op === 'membership.post') return authorizeMembershipPost(req, sql, store);
   const state = store.requireState();
+  if (req.op === 'recovery.get' && !state.devices.some((d) => d.device_id === req.claims.did)) return authorizeRecoveryFetch(req, sql, state);
   const device = memberDevice(state, req.claims.sub, req.claims.did);
   verifyRequestProof(sql, req, device.sign_pub);
   const policy = POLICY[req.op];

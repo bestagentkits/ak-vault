@@ -1,7 +1,8 @@
 /** Role, scope, tenant and owner-only enforcement (spec §4, §8, §11). */
-import { generateRecoveryKey, randomBytes, randomId, sealRecoveryBundle, sha256b64, signCheckpoint, type JsonObject } from '@ak-vault/protocol';
+import { randomBytes, randomId, sha256b64, type JsonObject } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';
 import { call, createDevice } from './helpers/api-client.js';
+import { sealTestBundle } from './helpers/recovery-bundle.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 const v = { name: 'DB_PASSWORD', value: 'synthetic' };
@@ -78,23 +79,7 @@ describe('scope and tenant isolation', () => {
 });
 
 describe('recovery bundle', () => {
-  function bundle(fx: VaultFixture, seq: number) {
-    const checkpoint = signCheckpoint(
-      { vault_id: fx.vaultId, membership_seq: fx.state.seq, membership_head: fx.state.head, log_seq: 0, state_digest: sha256b64(randomBytes(4)), key_epoch: fx.keyEpoch, ts: Date.now(), author: fx.owner.keys.record.device_id },
-      fx.owner.keys.signSecret,
-    );
-    return sealRecoveryBundle({
-      vaultId: fx.vaultId,
-      bundleSeq: seq,
-      vk: { '1': fx.vk.get(1)! },
-      ownerSignPub: fx.owner.keys.record.sign_pub,
-      recoverySignSk: fx.recovery.secretKey,
-      checkpoint,
-      password: 'synthetic test passphrase',
-      rk: generateRecoveryKey(),
-      params: { t: 2, m: 19_456, p: 1 },
-    });
-  }
+  const bundle = sealTestBundle;
   const put = (fx: VaultFixture, device: VaultFixture['owner'], body: unknown) => call(device, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, body);
 
   it('owner stores and fetches it; bundle_seq must increase', async () => {
