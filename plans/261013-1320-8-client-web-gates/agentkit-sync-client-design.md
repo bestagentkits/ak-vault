@@ -29,6 +29,16 @@ These amend the sections below; the engine phase (P5) must follow them.
   - A recovery unlock does not yet re-seal `keys.age` (agentkit#2321, recovery phase).
   - A purge needs vault IDs from sync state.
 - **Value written before index commit (pre-existing store behavior).** `Set` writes the backend value before committing the index, so a crash in between changes a value without a seq bump. P5 detection must not rely on seq alone for values written by a crashed `Set`; tracked as an agentkit issue linked from agentkit#2323.
+- **Sync state (P4).**
+  - `device_history` is keyed by `(device_id, added_seq)`, because a removed device ID may be re-added (spec §5).
+  - `PutItem` always records the server head. A kind change on a live, non-quarantined item stores the head and quarantines it with reason code `kind_changed`.
+  - The same revision with a different head is a rollback, and peer checkpoints go through `akv1.CheckRollback`.
+  - Pulled names containing control characters are not applied.
+  - The outbox body cap equals the Worker's request body limit.
+  - `pending_enroll.json` never holds private key material.
+- **Idempotency beyond 24 h (P5).** Before re-keying a membership, checkpoint, recovery or audit row older than the server idempotency window, compare against stored membership events, or the same event is appended twice.
+- **Conflict-branch positions (P5).** Store which record sits at each log position this device holds, so a different record at a held position raises the rollback alarm (spec §5).
+- **Transport (P3, agentkit#2329).** The `/v1/meta` issuer is pinned to the configured ak-web origin and must also equal the minted token's issuer. The engine (P5) checks that every `Meta.Limits` entry it relies on is present, and fails closed if one is missing.
 - **Guide (P10).** Note that `index.json` keeps up to 1000 deleted secret names, and give the fix-it step for a corrupt `index.seq`.
 
 ## Revision 2 (2026-10-13)
@@ -1275,8 +1285,8 @@ It is built only from akv1 functions plus an idempotency map. No quotas or revoc
 
 - **Setup:**
   - generate an ephemeral P-256 key;
-  - start `pnpm --dir $AKVAULT_DIR/worker exec wrangler dev --env staging --port <free> --var VAULT_ISSUER:https://e2e-issuer.invalid --var VAULT_JWKS_JSON:<public jwk>`;
-  - use a test `TokenSource` that mints ES256 tokens with aud `https://vault-staging.agentkit.best`;
+  - start `pnpm --dir $AKVAULT_DIR/worker exec wrangler dev --env staging --port <free> --var VAULT_ISSUER:<fake registry origin> --var VAULT_JWKS_JSON:<public jwk>`. The issuer must equal the fake registry's origin, because the client pins the `/v1/meta` issuer to the configured ak-web origin;
+  - use a test `TokenSource` with that registry origin that mints ES256 tokens with aud `https://vault-staging.agentkit.best`;
   - `ProofOrigin` is `http://vault-staging.agentkit.best` (`akv:worker/scripts/staging-smoke.ts:7-9`);
   - the fault proxy sits in front.
 - **Flows:** enable (including a kill after the genesis upload, then `--resume`), SAS add (codes and confirmation passed through the engine API, not the CLI), push and pull, conflicts and settle, tombstone, remove with fence, rekey and reseal, recover after a later `device_add`, rotate-recovery, rotate.
