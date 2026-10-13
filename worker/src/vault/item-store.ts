@@ -87,7 +87,8 @@ function insertRecord(sql: SqlStorage, record: SignedRecord, kind: 'applied' | '
   if (usage.records + 1 > LIMITS.records_per_vault || usage.bytes + size > LIMITS.record_bytes_per_vault) throw new ApiError('quota_exceeded', { status: 403 });
   const row = sql
     .exec<{ log_seq: number }>(
-      'INSERT INTO records (item_id, kind, revision, conflict_id, digest, record_json) VALUES (?, ?, ?, ?, ?, ?) RETURNING log_seq',
+      // Explicit MAX + 1 keeps log_seq contiguous; clients treat a gap as rollback and removal fences rely on it.
+      'INSERT INTO records (log_seq, item_id, kind, revision, conflict_id, digest, record_json) VALUES ((SELECT COALESCE(MAX(log_seq), 0) + 1 FROM records), ?, ?, ?, ?, ?, ?) RETURNING log_seq',
       record.item_id,
       kind,
       revision,

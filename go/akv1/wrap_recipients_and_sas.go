@@ -71,11 +71,17 @@ func ValidateWrapRecipients(state MembershipState, wraps []any, opts ValidateWra
 	return parsed, nil
 }
 
-// WrapsDigest returns b64 sha256(cjson(wraps sorted by rcpt byte order)), the
-// rekey body's wraps_digest for the new epoch's wrap list.
+// WrapsDigest returns b64 sha256(cjson(wraps sorted by rcpt byte order, then
+// key_epoch)), the wraps_digest of a rekey or device-adding event's wrap set. A
+// rekey set has one epoch, so it is sorted by rcpt alone.
 func WrapsDigest(wraps []X25519Wrap) (string, error) {
 	sorted := append([]X25519Wrap(nil), wraps...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Rcpt < sorted[j].Rcpt })
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Rcpt != sorted[j].Rcpt {
+			return sorted[i].Rcpt < sorted[j].Rcpt
+		}
+		return sorted[i].KeyEpoch < sorted[j].KeyEpoch
+	})
 	list := make([]any, len(sorted))
 	for i, w := range sorted {
 		list[i] = w.JSONValue()

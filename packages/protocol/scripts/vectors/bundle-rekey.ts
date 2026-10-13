@@ -16,7 +16,7 @@ import {
 import { b64decode, derivePasswordKek, deriveRecoveryKek } from '../../src/index.js';
 import { xc20pSeal } from '../../src/aead.js';
 import { epoch2Wraps, epoch3Wraps, sharedChain, wrapsFor } from './membership.js';
-import { alicePhone, b64, BASE_TS, flipByte, id, key32, negative, nonce, recoverySign, recoverySignPub, seed, stranger, VAULT_SHARED } from './fixtures.js';
+import { alicePhone, b64, BASE_TS, flipByte, id, key32, negative, nonce, recoverySign, recoverySignPub, recoverySignPub2, seed, stranger, VAULT_SHARED } from './fixtures.js';
 
 export function recoveryBundleVectors(): Record<string, unknown> {
   const state = verifyMembershipChain(sharedChain);
@@ -56,7 +56,7 @@ export function recoveryBundleVectors(): Record<string, unknown> {
   const badCpBundle = sealUnchecked(sealArgs, tamperedCp, 'badcp');
   const strangerCpBundle = sealUnchecked({ ...sealArgs }, strangerCp, 'strangercp');
 
-  type OpenOpts = { password?: string; rk?: string; vault_id?: string; known_bundle_seq?: number };
+  type OpenOpts = { password?: string; rk?: string; vault_id?: string; known_bundle_seq?: number; recovery_sign_pub?: string };
   const open = (b: unknown, o: OpenOpts) => () =>
     openRecoveryBundle({
       bundle: b,
@@ -64,6 +64,7 @@ export function recoveryBundleVectors(): Record<string, unknown> {
       ...(o.password !== undefined ? { password: o.password } : {}),
       ...(o.rk !== undefined ? { rk: b64decode(o.rk) } : {}),
       ...(o.known_bundle_seq !== undefined ? { knownBundleSeq: o.known_bundle_seq } : {}),
+      ...(o.recovery_sign_pub !== undefined ? { recoverySignPub: o.recovery_sign_pub } : {}),
     });
   const bad = (name: string, code: string, b: unknown, o: OpenOpts) => negative(name, code, { bundle: b, open: o }, open(b, o));
   const flipEnv = { ...bundle, env: { ...bundle.env, ct: flipByte(bundle.env.ct, 10) } };
@@ -71,7 +72,7 @@ export function recoveryBundleVectors(): Record<string, unknown> {
   return {
     version: 1,
     description:
-      'Recovery bundle (spec §3.4, §11). seal: inputs (vk per epoch, owner_sign_pub, recovery_sign_sk, checkpoint, password NFC, rk, argon params, injected bundle_key/salt/nonces) MUST produce `bundle` exactly; plaintext_cjson is the sealed plaintext. env = XC20P(bundle_key, nonce_env, plaintext_cjson, aad={ctx:"akv1/recovery-bundle",vault_id,bundle_seq}) with kid "bk"; pw = XC20P(Argon2id kek, nonce_pw, bundle_key, aad={ctx:"akv1/bundle-pw-wrap",vault_id,bundle_seq,t,m,p}); rk = XC20P(KEK_rk, nonce_rk, bundle_key, aad={ctx:"akv1/bundle-rk-wrap",vault_id,bundle_seq}). cases: opening `bundle` with `open` options MUST return `expected` (vk as b64 by epoch; needs_upgrade is true only for a password open under params weaker than t=3,m=65536,p=1). invalid: opening MUST fail with expect_error (rollback when bundle_seq < known_bundle_seq, checked before any KDF; checkpoint author must be kid(owner_sign_pub) and its akv1/checkpoint signature must verify against owner_sign_pub).',
+      'Recovery bundle (spec §3.4, §11). seal: inputs (vk per epoch, owner_sign_pub, recovery_sign_sk, checkpoint, password NFC, rk, argon params, injected bundle_key/salt/nonces) MUST produce `bundle` exactly; plaintext_cjson is the sealed plaintext. env = XC20P(bundle_key, nonce_env, plaintext_cjson, aad={ctx:"akv1/recovery-bundle",vault_id,bundle_seq}) with kid "bk"; pw = XC20P(Argon2id kek, nonce_pw, bundle_key, aad={ctx:"akv1/bundle-pw-wrap",vault_id,bundle_seq,t,m,p}); rk = XC20P(KEK_rk, nonce_rk, bundle_key, aad={ctx:"akv1/bundle-rk-wrap",vault_id,bundle_seq}). cases: opening `bundle` with `open` options MUST return `expected` (vk as b64 by epoch; needs_upgrade is true only for a password open under params weaker than t=3,m=65536,p=1). invalid: opening MUST fail with expect_error (rollback when bundle_seq < known_bundle_seq, checked before any KDF; checkpoint author must be kid(owner_sign_pub) and its akv1/checkpoint signature must verify against owner_sign_pub; when open.recovery_sign_pub (the chain\'s current recovery key) is given, the bundle recovery key must equal it, else forbidden: a bundle sealed before a recovery_rotate is stale).',
     seal: {
       vault_id: VAULT_SHARED,
       bundle_seq: 3,
@@ -93,6 +94,7 @@ export function recoveryBundleVectors(): Record<string, unknown> {
     cases: [
       { name: 'open_with_password', bundle, open: { password }, expected: summarize(open(bundle, { password })()) },
       { name: 'open_with_recovery_key', bundle, open: { rk: b64(rk) }, expected: summarize(open(bundle, { rk: b64(rk) })()) },
+      { name: 'open_matching_chain_recovery_key', bundle, open: { rk: b64(rk), recovery_sign_pub: recoverySignPub }, expected: summarize(open(bundle, { rk: b64(rk), recovery_sign_pub: recoverySignPub })()) },
       { name: 'open_with_equal_known_seq', bundle, open: { rk: b64(rk), known_bundle_seq: 3 }, expected: summarize(open(bundle, { rk: b64(rk), known_bundle_seq: 3 })()) },
     ],
     invalid: [
@@ -106,6 +108,7 @@ export function recoveryBundleVectors(): Record<string, unknown> {
       bad('checkpoint_not_by_owner_anchor', 'forbidden', strangerCpBundle, { rk: b64(rk) }),
       bad('weak_argon_params', 'bad_request', { ...bundle, pw: { ...bundle.pw, m: 8192 } }, { password }),
       bad('unsupported_version', 'unsupported_version', { ...bundle, v: 2 }, { rk: b64(rk) }),
+      bad('recovery_key_rotated_since_seal', 'forbidden', bundle, { rk: b64(rk), recovery_sign_pub: recoverySignPub2 }),
       bad('both_secrets_given', 'bad_request', bundle, { password, rk: b64(rk) }),
     ],
   };

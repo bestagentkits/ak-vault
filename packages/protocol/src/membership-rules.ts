@@ -11,6 +11,7 @@ import {
   MAX_ACCOUNT_LENGTH,
   parseDevice,
   type DeviceRecord,
+  type DeviceRemoval,
   type MembershipEvent,
   type MembershipState,
   type Role,
@@ -32,6 +33,9 @@ export class ReplayState {
   readonly members = new Map<string, Role>();
   readonly devices = new Map<string, DeviceRecord>();
   readonly removed = new Set<string>();
+  readonly removals: DeviceRemoval[] = [];
+  /** Every recovery author ID the chain has ever trusted (genesis and each recovery_rotate). */
+  readonly recoveryAuthors = new Set<string>();
 
   private ownerDeviceCount(): number {
     let n = 0;
@@ -48,7 +52,7 @@ export class ReplayState {
   /** Validate a device being added; a previously removed ID needs `allowReadd` (fresh device_add). */
   private admitDevice(device: DeviceRecord, allowReadd: boolean): void {
     if (this.devices.has(device.device_id)) fail('bad_request', 'device is already a member');
-    if (device.device_id === this.recoveryAuthor) fail('bad_request', 'device key collides with the recovery key');
+    if (this.recoveryAuthors.has(device.device_id)) fail('bad_request', 'device key collides with a recovery key');
     if (this.removed.has(device.device_id)) {
       if (!allowReadd) fail('forbidden', 'removed device reappears without a fresh device_add');
       this.removed.delete(device.device_id);
@@ -56,12 +60,20 @@ export class ReplayState {
     this.devices.set(device.device_id, device);
   }
 
+  /** Record a removal; the caller has already deleted the device from `devices`. */
+  private recordRemoval(device: DeviceRecord, seq: number, logFence: number): void {
+    this.removed.add(device.device_id);
+    this.removals.push({ device_id: device.device_id, sign_pub: device.sign_pub, removed_seq: seq, key_epoch: this.keyEpoch, log_fence: logFence });
+  }
+
   applyGenesis(body: JsonObject, author: string): DeviceRecord {
-    exactKeys(body, ['vault_kind', 'owner_account', 'recovery_sign_pub', 'devices'], 'genesis.body');
+    exactKeys(body, ['vault_kind', 'owner_account', 'recovery_sign_pub', 'devices', 'wraps_digest'], 'genesis.body');
+    asB64(body['wraps_digest'], 'genesis.body.wraps_digest', 32);
     this.vaultKind = asEnum(body['vault_kind'], VAULT_KINDS, 'genesis.body.vault_kind');
     this.ownerAccount = asString(body['owner_account'], 'genesis.body.owner_account', MAX_ACCOUNT_LENGTH, 1);
     this.recoverySignPub = asB64(body['recovery_sign_pub'], 'genesis.body.recovery_sign_pub', 32);
     this.recoveryAuthor = deviceIdFromSignPub(this.recoverySignPub);
+    this.recoveryAuthors.add(this.recoveryAuthor);
     const devices = asArray(body['devices'], 'genesis.body.devices', 64).map((d, i) => parseDevice(d, `genesis.body.devices[${i}]`));
     if (devices.length === 0) fail('bad_request', 'genesis needs at least one device');
     this.members.set(this.ownerAccount, 'owner');
@@ -78,7 +90,9 @@ export class ReplayState {
   /** Resolve the signing key of a non-genesis author, enforcing who may author `type`. */
   authorKey(event: MembershipEvent): string {
     if (event.author === this.recoveryAuthor) {
-      if (event.type !== 'device_add' && event.type !== 'device_remove') fail('forbidden', 'recovery key may only author device_add and device_remove');
+      // The recovery identity cannot read the change log, so it cannot sign an honest
+      // removal fence: it only enrolls a device, which then removes lost devices.
+      if (event.type !== 'device_add') fail('forbidden', 'recovery key may only author device_add');
       return this.recoverySignPub;
     }
     const device = this.devices.get(event.author);
@@ -94,7 +108,8 @@ export class ReplayState {
       case 'genesis':
         return fail('bad_request', 'genesis must be the first event only');
       case 'device_add': {
-        exactKeys(body, ['device', 'sas'], 'device_add.body');
+        exactKeys(body, ['device', 'sas', 'wraps_digest'], 'device_add.body');
+        asB64(body['wraps_digest'], 'device_add.body.wraps_digest', 32);
         const device = parseDevice(body['device'], 'device_add.body.device');
         if (byRecovery) {
           if (body['sas'] !== '') fail('bad_request', 'recovery-authored device_add must carry sas ""');
@@ -108,18 +123,21 @@ export class ReplayState {
         return this.admitDevice(device, true);
       }
       case 'device_remove': {
-        exactKeys(body, ['device_id', 'reason'], 'device_remove.body');
+        exactKeys(body, ['device_id', 'reason', 'log_fence'], 'device_remove.body');
         const id = asId(body['device_id'], 'device_remove.body.device_id');
         asEnum(body['reason'], REMOVE_REASONS, 'device_remove.body.reason');
-        if (!this.devices.has(id)) fail('bad_request', 'device is not a current member');
+        const logFence = asInt(body['log_fence'], 'device_remove.body.log_fence');
+        const removed = this.devices.get(id);
+        if (!removed) fail('bad_request', 'device is not a current member');
         this.devices.delete(id);
-        this.removed.add(id);
+        this.recordRemoval(removed, event.seq, logFence);
         if (this.ownerDeviceCount() === 0) fail('forbidden', 'cannot remove the last human owner device');
         this.rekeyRequired = true;
         return;
       }
       case 'member_add': {
-        exactKeys(body, ['account', 'role', 'devices'], 'member_add.body');
+        exactKeys(body, ['account', 'role', 'devices', 'wraps_digest'], 'member_add.body');
+        asB64(body['wraps_digest'], 'member_add.body.wraps_digest', 32);
         if (this.vaultKind !== 'shared') fail('forbidden', 'member_add is only allowed in shared vaults');
         const account = asString(body['account'], 'member_add.body.account', MAX_ACCOUNT_LENGTH, 1);
         const role = asEnum(body['role'], ROLES, 'member_add.body.role');
@@ -134,16 +152,16 @@ export class ReplayState {
         return;
       }
       case 'member_remove': {
-        exactKeys(body, ['account'], 'member_remove.body');
+        exactKeys(body, ['account', 'log_fence'], 'member_remove.body');
         if (this.vaultKind !== 'shared') fail('forbidden', 'member_remove is only allowed in shared vaults');
         const account = asString(body['account'], 'member_remove.body.account', MAX_ACCOUNT_LENGTH, 1);
+        const logFence = asInt(body['log_fence'], 'member_remove.body.log_fence');
         if (!this.members.has(account)) fail('bad_request', 'account is not a member');
         this.members.delete(account);
-        for (const [id, d] of this.devices) {
-          if (d.account === account) {
-            this.devices.delete(id);
-            this.removed.add(id);
-          }
+        const leaving = [...this.devices.values()].filter((d) => d.account === account).sort((a, b) => (a.device_id < b.device_id ? -1 : 1));
+        for (const d of leaving) {
+          this.devices.delete(d.device_id);
+          this.recordRemoval(d, event.seq, logFence);
         }
         if (this.ownerAccountCount() === 0 || this.ownerDeviceCount() === 0) fail('forbidden', 'cannot remove the last owner');
         this.rekeyRequired = true;
@@ -169,6 +187,17 @@ export class ReplayState {
         this.rekeyRequired = false;
         return;
       }
+      case 'recovery_rotate': {
+        exactKeys(body, ['recovery_sign_pub'], 'recovery_rotate.body');
+        const pub = asB64(body['recovery_sign_pub'], 'recovery_rotate.body.recovery_sign_pub', 32);
+        const author = deviceIdFromSignPub(pub);
+        if (this.recoveryAuthors.has(author)) fail('bad_request', 'recovery_rotate must move to a recovery key never used before');
+        if (this.devices.has(author) || this.removals.some((r) => r.device_id === author)) fail('bad_request', 'recovery key collides with a device key');
+        this.recoverySignPub = pub;
+        this.recoveryAuthor = author;
+        this.recoveryAuthors.add(author);
+        return;
+      }
     }
   }
 
@@ -191,6 +220,7 @@ export class ReplayState {
       members: byKey([...this.members].map(([account, role]) => ({ account, role })), (m) => m.account),
       devices: byKey([...this.devices.values()].map((d) => ({ ...d })), (d) => d.device_id),
       removed_device_ids: [...this.removed].sort(),
+      removals: this.removals.map((r) => ({ ...r })),
     };
   }
 }

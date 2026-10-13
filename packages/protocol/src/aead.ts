@@ -35,6 +35,14 @@ export function epochTag(keyEpoch: number): string {
   return `e${keyEpoch}`;
 }
 
+/** Inverse of {@link epochTag}: the key epoch named by an `e<key_epoch>` kid (`bad_request` otherwise). */
+export function parseEpochTag(kid: string): number {
+  const match = /^e([1-9][0-9]{0,15})$/.exec(kid);
+  const epoch = match ? Number(match[1]) : NaN;
+  if (!Number.isSafeInteger(epoch)) fail('bad_request', 'envelope kid is not an epoch tag');
+  return epoch;
+}
+
 function checkKey(key: Uint8Array): void {
   if (!(key instanceof Uint8Array) || key.length !== KEY_BYTES) fail('bad_request', 'AEAD key must be 32 bytes');
 }

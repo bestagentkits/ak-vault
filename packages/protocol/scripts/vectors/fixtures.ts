@@ -59,11 +59,15 @@ export const bobLaptop = device('bob-laptop', 'acct_bob', 'editor');
 export const bobCi = device('bob-ci', 'acct_bob', 'editor', 'machine');
 export const carolPhone = device('carol-phone', 'acct_carol', 'reader');
 export const aliceNewPhone = device('alice-new-phone', 'acct_alice', 'owner');
+export const aliceTablet = device('alice-tablet', 'acct_alice', 'owner');
 export const stranger = device('mallory', 'acct_mallory', 'owner');
 
 export const recoverySign = signKeyPairFromSeed(seed('recovery-sign/alice'));
 export const recoveryAuthor = deviceIdFromSignPub(recoverySign.publicKey);
 export const recoverySignPub = b64(recoverySign.publicKey);
+/** The owner recovery signing key after `recovery_rotate`. */
+export const recoverySign2 = signKeyPairFromSeed(seed('recovery-sign/alice/rotated'));
+export const recoverySignPub2 = b64(recoverySign2.publicKey);
 
 export interface ChainStep {
   type: MembershipEventType;
@@ -107,6 +111,7 @@ export function by(d: VectorDevice): Pick<ChainStep, 'signer' | 'author'> {
 }
 
 export const byRecovery: Pick<ChainStep, 'signer' | 'author'> = { signer: recoverySign.secretKey, author: recoveryAuthor };
+export const byRecovery2: Pick<ChainStep, 'signer' | 'author'> = { signer: recoverySign2.secretKey, author: deviceIdFromSignPub(recoverySign2.publicKey) };
 
 /** Run `fn` and return the AkvError code it throws (or throw if it does not). */
 export function expectCode(fn: () => unknown): string {

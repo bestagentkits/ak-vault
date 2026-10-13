@@ -20,6 +20,9 @@ type replayState struct {
 	members         map[string]string // account -> role
 	devices         map[string]DeviceRecord
 	removed         map[string]bool
+	removals        []DeviceRemoval
+	// recoveryAuthors holds every recovery author ID the chain has ever trusted.
+	recoveryAuthors map[string]bool
 }
 
 func newReplayState() *replayState {
@@ -27,6 +30,7 @@ func newReplayState() *replayState {
 		vaultKind: VaultPersonal, keyEpoch: 1,
 		needsRotate: map[string]bool{}, members: map[string]string{},
 		devices: map[string]DeviceRecord{}, removed: map[string]bool{},
+		recoveryAuthors: map[string]bool{},
 	}
 }
 
@@ -55,8 +59,8 @@ func (r *replayState) admitDevice(d DeviceRecord, allowReadd bool) error {
 	if _, ok := r.devices[d.DeviceID]; ok {
 		return badRequest("device is already a member")
 	}
-	if d.DeviceID == r.recoveryAuthor {
-		return badRequest("device key collides with the recovery key")
+	if r.recoveryAuthors[d.DeviceID] {
+		return badRequest("device key collides with a recovery key")
 	}
 	if r.removed[d.DeviceID] {
 		if !allowReadd {
@@ -66,6 +70,12 @@ func (r *replayState) admitDevice(d DeviceRecord, allowReadd bool) error {
 	}
 	r.devices[d.DeviceID] = d
 	return nil
+}
+
+// recordRemoval records a removal; the caller has already deleted the device from devices.
+func (r *replayState) recordRemoval(d DeviceRecord, seq, logFence int64) {
+	r.removed[d.DeviceID] = true
+	r.removals = append(r.removals, DeviceRemoval{DeviceID: d.DeviceID, SignPub: d.SignPub, RemovedSeq: seq, KeyEpoch: r.keyEpoch, LogFence: logFence})
 }
 
 func parseDeviceList(v any, what string) ([]DeviceRecord, error) {
@@ -86,7 +96,10 @@ func parseDeviceList(v any, what string) ([]DeviceRecord, error) {
 
 func (r *replayState) applyGenesis(body map[string]any, author string) (DeviceRecord, error) {
 	var err error
-	if err = exactKeys(body, []string{"vault_kind", "owner_account", "recovery_sign_pub", "devices"}, "genesis.body"); err != nil {
+	if err = exactKeys(body, []string{"vault_kind", "owner_account", "recovery_sign_pub", "devices", "wraps_digest"}, "genesis.body"); err != nil {
+		return DeviceRecord{}, err
+	}
+	if _, err = asB64(body["wraps_digest"], "genesis.body.wraps_digest", 32); err != nil {
 		return DeviceRecord{}, err
 	}
 	if r.vaultKind, err = asEnum(body["vault_kind"], vaultKinds, "genesis.body.vault_kind"); err != nil {
@@ -101,6 +114,7 @@ func (r *replayState) applyGenesis(body map[string]any, author string) (DeviceRe
 	if r.recoveryAuthor, err = DeviceIDFromSignPubB64(r.recoverySignPub); err != nil {
 		return DeviceRecord{}, err
 	}
+	r.recoveryAuthors[r.recoveryAuthor] = true
 	devices, err := parseDeviceList(body["devices"], "genesis.body.devices")
 	if err != nil {
 		return DeviceRecord{}, err
@@ -129,8 +143,10 @@ func (r *replayState) applyGenesis(body map[string]any, author string) (DeviceRe
 // who may author the event type.
 func (r *replayState) authorKey(e MembershipEvent) (string, error) {
 	if e.Author == r.recoveryAuthor {
-		if e.Type != EventDeviceAdd && e.Type != EventDeviceRemove {
-			return "", newErr(CodeForbidden, "recovery key may only author device_add and device_remove")
+		// The recovery identity cannot read the change log, so it cannot sign an
+		// honest removal fence: it only enrolls a device, which then removes lost ones.
+		if e.Type != EventDeviceAdd {
+			return "", newErr(CodeForbidden, "recovery key may only author device_add")
 		}
 		return r.recoverySignPub, nil
 	}
@@ -151,7 +167,7 @@ func (r *replayState) apply(e MembershipEvent) error {
 	case EventDeviceAdd:
 		return r.applyDeviceAdd(body, byRecovery)
 	case EventDeviceRemove:
-		if err := exactKeys(body, []string{"device_id", "reason"}, "device_remove.body"); err != nil {
+		if err := exactKeys(body, []string{"device_id", "reason", "log_fence"}, "device_remove.body"); err != nil {
 			return err
 		}
 		id, err := asID(body["device_id"], "device_remove.body.device_id")
@@ -161,11 +177,16 @@ func (r *replayState) apply(e MembershipEvent) error {
 		if _, err := asEnum(body["reason"], removeReasons, "device_remove.body.reason"); err != nil {
 			return err
 		}
-		if _, ok := r.devices[id]; !ok {
+		logFence, err := asInt(body["log_fence"], "device_remove.body.log_fence", 0, MaxSafeInteger)
+		if err != nil {
+			return err
+		}
+		removed, ok := r.devices[id]
+		if !ok {
 			return badRequest("device is not a current member")
 		}
 		delete(r.devices, id)
-		r.removed[id] = true
+		r.recordRemoval(removed, e.Seq, logFence)
 		if r.ownerDeviceCount() == 0 {
 			return newErr(CodeForbidden, "cannot remove the last human owner device")
 		}
@@ -174,7 +195,7 @@ func (r *replayState) apply(e MembershipEvent) error {
 	case EventMemberAdd:
 		return r.applyMemberAdd(body)
 	case EventMemberRemove:
-		if err := exactKeys(body, []string{"account"}, "member_remove.body"); err != nil {
+		if err := exactKeys(body, []string{"account", "log_fence"}, "member_remove.body"); err != nil {
 			return err
 		}
 		if r.vaultKind != VaultShared {
@@ -184,15 +205,24 @@ func (r *replayState) apply(e MembershipEvent) error {
 		if err != nil {
 			return err
 		}
+		logFence, err := asInt(body["log_fence"], "member_remove.body.log_fence", 0, MaxSafeInteger)
+		if err != nil {
+			return err
+		}
 		if _, ok := r.members[account]; !ok {
 			return badRequest("account is not a member")
 		}
 		delete(r.members, account)
-		for id, d := range r.devices {
+		leaving := make([]DeviceRecord, 0)
+		for _, d := range r.devices {
 			if d.Account == account {
-				delete(r.devices, id)
-				r.removed[id] = true
+				leaving = append(leaving, d)
 			}
+		}
+		sort.Slice(leaving, func(i, j int) bool { return utf16Less(leaving[i].DeviceID, leaving[j].DeviceID) })
+		for _, d := range leaving {
+			delete(r.devices, d.DeviceID)
+			r.recordRemoval(d, e.Seq, logFence)
 		}
 		if r.ownerAccountCount() == 0 || r.ownerDeviceCount() == 0 {
 			return newErr(CodeForbidden, "cannot remove the last owner")
@@ -227,13 +257,18 @@ func (r *replayState) apply(e MembershipEvent) error {
 		return nil
 	case EventRekey:
 		return r.applyRekey(e)
+	case EventRecoveryRotate:
+		return r.applyRecoveryRotate(body)
 	default: // genesis after seq 0
 		return badRequest("genesis must be the first event only")
 	}
 }
 
 func (r *replayState) applyDeviceAdd(body map[string]any, byRecovery bool) error {
-	if err := exactKeys(body, []string{"device", "sas"}, "device_add.body"); err != nil {
+	if err := exactKeys(body, []string{"device", "sas", "wraps_digest"}, "device_add.body"); err != nil {
+		return err
+	}
+	if _, err := asB64(body["wraps_digest"], "device_add.body.wraps_digest", 32); err != nil {
 		return err
 	}
 	d, err := parseDeviceAs(body["device"], "device_add.body.device")
@@ -261,7 +296,10 @@ func (r *replayState) applyDeviceAdd(body map[string]any, byRecovery bool) error
 }
 
 func (r *replayState) applyMemberAdd(body map[string]any) error {
-	if err := exactKeys(body, []string{"account", "role", "devices"}, "member_add.body"); err != nil {
+	if err := exactKeys(body, []string{"account", "role", "devices", "wraps_digest"}, "member_add.body"); err != nil {
+		return err
+	}
+	if _, err := asB64(body["wraps_digest"], "member_add.body.wraps_digest", 32); err != nil {
 		return err
 	}
 	if r.vaultKind != VaultShared {
@@ -324,6 +362,37 @@ func (r *replayState) applyRekey(e MembershipEvent) error {
 	return nil
 }
 
+// applyRecoveryRotate replaces the recovery key with one never trusted before
+// that does not collide with a current or former device key.
+func (r *replayState) applyRecoveryRotate(body map[string]any) error {
+	if err := exactKeys(body, []string{"recovery_sign_pub"}, "recovery_rotate.body"); err != nil {
+		return err
+	}
+	pub, err := asB64(body["recovery_sign_pub"], "recovery_rotate.body.recovery_sign_pub", KeyBytes)
+	if err != nil {
+		return err
+	}
+	author, err := DeviceIDFromSignPubB64(pub)
+	if err != nil {
+		return err
+	}
+	if r.recoveryAuthors[author] {
+		return badRequest("recovery_rotate must move to a recovery key never used before")
+	}
+	if _, ok := r.devices[author]; ok {
+		return badRequest("recovery key collides with a device key")
+	}
+	for _, rm := range r.removals {
+		if rm.DeviceID == author {
+			return badRequest("recovery key collides with a device key")
+		}
+	}
+	r.recoverySignPub = pub
+	r.recoveryAuthor = author
+	r.recoveryAuthors[author] = true
+	return nil
+}
+
 // utf16Less orders strings like JavaScript's default string comparison
 // (UTF-16 code units), which differs from byte order only for text mixing
 // supplementary-plane and U+E000..U+FFFF characters.
@@ -363,5 +432,6 @@ func (r *replayState) snapshot(vaultID string, seq int64, head string) Membershi
 		Seq: seq, Head: head, MembershipEpoch: seq, KeyEpoch: r.keyEpoch, RekeyRequired: r.rekeyRequired,
 		NeedsRotate: sortedKeys(r.needsRotate), WrapsDigest: r.wrapsDigest,
 		Members: members, Devices: devices, RemovedDeviceIDs: sortedKeys(r.removed),
+		Removals: append([]DeviceRemoval(nil), r.removals...),
 	}
 }

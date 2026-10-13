@@ -3,12 +3,15 @@
  * the wire structure with `parseRecoveryBundleWire` (it cannot open it), binds it
  * to this vault, bounds its size, and requires `bundle_seq` to increase on every
  * replacement: an equal seq is a lost-update `conflict`, a lower one `rollback`.
+ * A `recovery_rotate` membership append stores its resealed bundle through the
+ * same checks in the same transaction.
  */
 import { cjson, parseRecoveryBundleWire, type JsonObject } from '@ak-vault/protocol';
 import { ApiError, okResult, type ApiResult } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
 
-export function putRecovery(sql: SqlStorage, vaultId: string, body: unknown): ApiResult {
+/** Validate and store a replacement bundle; returns its bundle_seq. Caller holds the transaction. */
+export function storeRecoveryBundle(sql: SqlStorage, vaultId: string, body: unknown): number {
   const bundle = parseRecoveryBundleWire(body);
   if (bundle.vault_id !== vaultId) throw new ApiError('bad_request', { message: 'bundle belongs to another vault' });
   const json = cjson(bundle as unknown as JsonObject);
@@ -21,7 +24,11 @@ export function putRecovery(sql: SqlStorage, vaultId: string, body: unknown): Ap
     bundle.bundle_seq,
     json,
   );
-  return okResult({ bundle_seq: bundle.bundle_seq });
+  return bundle.bundle_seq;
+}
+
+export function putRecovery(sql: SqlStorage, vaultId: string, body: unknown): ApiResult {
+  return okResult({ bundle_seq: storeRecoveryBundle(sql, vaultId, body) });
 }
 
 export function getRecovery(sql: SqlStorage): ApiResult {

@@ -20,6 +20,8 @@ const (
 	EventMemberRemove = "member_remove"
 	EventRoleSet      = "role_set"
 	EventRekey        = "rekey"
+	// EventRecoveryRotate replaces the owner recovery signing key (owner devices only).
+	EventRecoveryRotate = "recovery_rotate"
 )
 
 var (
@@ -27,7 +29,7 @@ var (
 	deviceKinds       = []string{KindHuman, KindMachine}
 	vaultKinds        = []string{VaultPersonal, VaultShared, VaultCI}
 	removeReasons     = []string{"lost", "stolen", "retired", "compromised"}
-	membershipEvTypes = []string{EventGenesis, EventDeviceAdd, EventDeviceRemove, EventMemberAdd, EventMemberRemove, EventRoleSet, EventRekey}
+	membershipEvTypes = []string{EventGenesis, EventDeviceAdd, EventDeviceRemove, EventMemberAdd, EventMemberRemove, EventRoleSet, EventRekey, EventRecoveryRotate}
 )
 
 // MaxAccountLength bounds account identifiers (UTF-16 code units).
@@ -74,6 +76,21 @@ func (e MembershipEvent) JSONValue() any {
 	return m
 }
 
+// DeviceRemoval is one removal of a device (device_remove, or member_remove for
+// each of the account's devices).
+type DeviceRemoval struct {
+	DeviceID   string
+	SignPub    string // b64 Ed25519 key of the removed device (verifies its historical records)
+	RemovedSeq int64  // seq of the removing event
+	KeyEpoch   int64  // key epoch current at removal (the newest key the device could hold)
+	LogFence   int64  // signed log_fence of the removing event
+}
+
+// JSONValue returns the wire object.
+func (r DeviceRemoval) JSONValue() any {
+	return map[string]any{"device_id": r.DeviceID, "sign_pub": r.SignPub, "removed_seq": r.RemovedSeq, "key_epoch": r.KeyEpoch, "log_fence": r.LogFence}
+}
+
 // Member is an account and its role.
 type Member struct {
 	Account string
@@ -99,6 +116,7 @@ type MembershipState struct {
 	Members          []Member
 	Devices          []DeviceRecord
 	RemovedDeviceIDs []string
+	Removals         []DeviceRemoval // every removal in chain order; a re-added device keeps its rows
 }
 
 // JSONValue returns the state in the same JSON shape as the TypeScript reference.
@@ -111,6 +129,10 @@ func (s MembershipState) JSONValue() any {
 	for i, d := range s.Devices {
 		devices[i] = d.JSONValue()
 	}
+	removals := make([]any, len(s.Removals))
+	for i, r := range s.Removals {
+		removals[i] = r.JSONValue()
+	}
 	var wd any
 	if s.WrapsDigest != "" {
 		wd = s.WrapsDigest
@@ -121,6 +143,7 @@ func (s MembershipState) JSONValue() any {
 		"seq": s.Seq, "head": s.Head, "membership_epoch": s.MembershipEpoch, "key_epoch": s.KeyEpoch,
 		"rekey_required": s.RekeyRequired, "needs_rotate": stringsToAny(s.NeedsRotate), "wraps_digest": wd,
 		"members": members, "devices": devices, "removed_device_ids": stringsToAny(s.RemovedDeviceIDs),
+		"removals": removals,
 	}
 }
 

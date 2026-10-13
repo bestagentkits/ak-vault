@@ -45,6 +45,22 @@ func EpochTag(keyEpoch int64) (string, error) {
 	return "e" + strconv.FormatInt(keyEpoch, 10), nil
 }
 
+var epochTagPattern = regexp.MustCompile(`^e([1-9][0-9]{0,15})$`)
+
+// ParseEpochTag is the inverse of EpochTag: the key epoch named by an
+// "e<key_epoch>" kid (bad_request otherwise).
+func ParseEpochTag(kid string) (int64, error) {
+	m := epochTagPattern.FindStringSubmatch(kid)
+	if m == nil {
+		return 0, badRequest("envelope kid is not an epoch tag")
+	}
+	epoch, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil || epoch > MaxSafeInteger {
+		return 0, badRequest("envelope kid is not an epoch tag")
+	}
+	return epoch, nil
+}
+
 // randomBytes returns n bytes from crypto/rand. Since Go 1.24 crypto/rand.Read
 // never returns an error (it aborts the program if the OS source fails).
 func randomBytes(n int) []byte {

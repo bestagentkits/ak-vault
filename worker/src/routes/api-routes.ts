@@ -15,7 +15,7 @@ export interface MatchedRoute {
 
 const COLLECTIONS: Record<string, Partial<Record<string, VaultOp>>> = {
   membership: { GET: 'membership.get', POST: 'membership.post' },
-  wraps: { GET: 'wraps.get', POST: 'wraps.post' },
+  wraps: { GET: 'wraps.get' },
   changes: { GET: 'changes.get' },
   checkpoints: { GET: 'checkpoints.get', POST: 'checkpoints.post' },
   audit: { GET: 'audit.get', POST: 'audit.post' },

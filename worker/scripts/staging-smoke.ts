@@ -9,7 +9,8 @@
  * http://vault-staging.agentkit.best so AKV-Proof binds the URL the Worker sees.
  *
  * Creates a throwaway vault with synthetic keys and data, then checks: healthz,
- * meta, genesis (with the owner wrap), enrolling a second device with its wrap,
+ * meta, genesis (with the owner wrap), enrolling a second device with its wrap
+ * (checked against the signed digest),
  * a write, a CAS conflict that is preserved, and that a stale offline write
  * cannot resurrect a deleted item. Prints only step names and HTTP statuses —
  * never keys, tokens, proofs or response bodies. Exits non-zero on any failure.
@@ -27,8 +28,10 @@ import {
   signKeyPairFromSeed,
   signRecord,
   utf8Encode,
+  verifyDeviceWraps,
   verifyMembershipChain,
   wrapToDevice,
+  wrapsDigest,
   type DeviceKeys,
   type ItemPayload,
   type TombstonePayload,
@@ -130,19 +133,30 @@ const meta = await request(null, account, 'GET', '/v1/meta');
 expectStatus('meta', meta, 200);
 if (meta.json?.['sync_enabled'] !== true) fail('sync is disabled on the target');
 
+// Wraps are made first: each device-adding event signs the digest of its wrap set.
+const ownerWrap = wrapToDevice({ vk, vaultId, keyEpoch: 1, recipient: owner.record });
 const genesis = buildGenesisEvent(
-  { vault_id: vaultId, ts: Date.now(), author: owner.record.device_id, body: { vault_kind: 'personal', owner_account: account, recovery_sign_pub: b64encode(recovery.publicKey), devices: [owner.record as unknown as JsonObject] } },
+  {
+    vault_id: vaultId,
+    ts: Date.now(),
+    author: owner.record.device_id,
+    body: { vault_kind: 'personal', owner_account: account, recovery_sign_pub: b64encode(recovery.publicKey), devices: [owner.record as unknown as JsonObject], wraps_digest: wrapsDigest([ownerWrap]) },
+  },
   owner.signSecret,
 );
-const ownerWrap = wrapToDevice({ vk, vaultId, keyEpoch: 1, recipient: owner.record });
 expectStatus('genesis', await request(owner, account, 'PUT', v, { event: genesis, wraps: [ownerWrap] }), 201);
 
 const state = verifyMembershipChain([genesis]);
-const add = nextMembershipEvent(state, { type: 'device_add', ts: Date.now(), author: owner.record.device_id, body: { device: laptop.record as unknown as JsonObject, sas: b64encode(randomBytes(32)) } }, owner.signSecret);
 const laptopWrap = wrapToDevice({ vk, vaultId, keyEpoch: 1, recipient: laptop.record });
+const add = nextMembershipEvent(
+  state,
+  { type: 'device_add', ts: Date.now(), author: owner.record.device_id, body: { device: laptop.record as unknown as JsonObject, sas: b64encode(randomBytes(32)), wraps_digest: wrapsDigest([laptopWrap]) } },
+  owner.signSecret,
+);
 expectStatus('enroll device with wrap', await request(owner, account, 'POST', `${v}/membership`, { event: add, wraps: [laptopWrap] }), 201);
-const wraps = await request(laptop, account, 'GET', `${v}/wraps`);
-expectStatus('fetch wraps', wraps, 200);
+const wraps = await request(laptop, account, 'GET', `${v}/wraps?membership_seq=1`);
+expectStatus('fetch signed wrap set', wraps, 200);
+verifyDeviceWraps(add, (wraps.json?.['wraps'] ?? []) as unknown[]);
 
 const itemId = randomId();
 expectStatus('write', await request(owner, account, 'PUT', `${v}/items/${itemId}`, record(owner, itemId, 0, 'synthetic-1')), 200);

@@ -1,9 +1,13 @@
 /** checkpoints.json and audit.json */
 import {
   appendAuditEntry,
+  auditAad,
   checkRollback,
+  cjsonBytes,
   computeStateDigest,
+  deriveAuditKey,
   membershipEventHash,
+  sealEnvelope,
   signAuditCheckpoint,
   signCheckpoint,
   verifyAuditChain,
@@ -75,18 +79,21 @@ export function checkpointVectors(): Record<string, unknown> {
 }
 
 export function auditVectors(): Record<string, unknown> {
-  const key = key32('audit');
+  // Shared-vault keys of epochs 1 and 2; entries 0-1 are written at epoch 1, 2-3 after the rekey to 2.
+  const vaultKeys: Record<number, Uint8Array> = { 1: key32('vk/epoch1'), 2: key32('vk/epoch2') };
   const events: JsonObject[] = [
     { action: 'item_read', item_id: id('item/A'), device_id: alicePhone.record.device_id, ts: BASE_TS },
     { action: 'item_write', item_id: id('item/A'), device_id: bobLaptop.record.device_id, ts: BASE_TS + 1000 },
     { action: 'grant', item_id: id('item/B'), device_id: alicePhone.record.device_id, ts: BASE_TS + 2000, purpose: 'deploy' },
     { action: 'item_read', item_id: id('item/B'), device_id: bobLaptop.record.device_id, ts: BASE_TS + 3000 },
   ];
-  const chain = (evs: JsonObject[], label: string, nonceFor = (i: number) => nonce(`audit/${label}/${i}`)) => {
+  const EPOCHS = [1, 1, 2, 2, 2];
+  const chain = (evs: JsonObject[], label: string, epochs = EPOCHS, nonceFor = (i: number) => nonce(`audit/${label}/${i}`)) => {
     let head: AuditHead | null = null;
     const entries: Envelope[] = [];
     evs.forEach((event, i) => {
-      const r = appendAuditEntry({ key, vaultId: VAULT_SHARED, kid: 'e1', head, event, nonce: nonceFor(i) });
+      const keyEpoch = epochs[i]!;
+      const r = appendAuditEntry({ vk: vaultKeys[keyEpoch]!, vaultId: VAULT_SHARED, keyEpoch, head, event, nonce: nonceFor(i) });
       entries.push(r.entry);
       head = r.head;
     });
@@ -101,22 +108,37 @@ export function auditVectors(): Record<string, unknown> {
   const forged = chain([events[0]!, { ...events[1]!, action: 'nothing_happened' }, events[2]!, events[3]!], 'forged');
   const rewrittenTail = chain([...events.slice(0, 3), { ...events[3]!, action: 'item_list' }], 'tail');
   const extended = chain([...events, { action: 'item_read', item_id: id('item/C'), device_id: alicePhone.record.device_id, ts: BASE_TS + 4000 }], 'main');
-  const dup = chain(events.slice(0, 2), 'dup', () => nonce('audit/dup'));
+  const dup = chain(events.slice(0, 2), 'dup', EPOCHS, () => nonce('audit/dup'));
+  const decreasing = chain(events.slice(0, 3), 'decreasing', [1, 2, 1]);
+  // The vault key used directly as the audit key instead of the derived per-epoch key.
+  const rawKeyEntry = sealEnvelope(vaultKeys[1]!, cjsonBytes(events[0]!), auditAad(VAULT_SHARED, 0, '', 1), { kid: 'e1', nonce: nonce('audit/raw-key/0') });
   const e = main.entries;
-  const bad = (name: string, code: string, entries: Envelope[], useWitness = true) =>
-    negative(name, code, { entries, witnessed: useWitness ? witnessed : null }, () => verifyAuditChain(entries, useWitness ? { key, vaultId: VAULT_SHARED, witnessed } : { key, vaultId: VAULT_SHARED }));
-  const verifyOk = (entries: Envelope[]) => verifyAuditChain(entries, { key, vaultId: VAULT_SHARED, witnessed });
+  type Opts = { epochs: number[]; keyEpoch: number; witnessed: AuditHead | null };
+  const FULL: Opts = { epochs: [1, 2], keyEpoch: 2, witnessed };
+  const run = (entries: Envelope[], o: Opts) =>
+    verifyAuditChain(entries, { vaultKeys: (k) => (o.epochs.includes(k) ? vaultKeys[k] : undefined), vaultId: VAULT_SHARED, keyEpoch: o.keyEpoch, ...(o.witnessed ? { witnessed: o.witnessed } : {}) });
+  const caseOf = (name: string, entries: Envelope[], o: Opts) => {
+    const out = run(entries, o);
+    return { name, entries, vault_key_epochs: o.epochs, key_epoch: o.keyEpoch, witnessed: o.witnessed, events: out.events, head: out.head };
+  };
+  const bad = (name: string, code: string, entries: Envelope[], o: Partial<Opts> = {}) => {
+    const opts = { ...FULL, ...o };
+    return negative(name, code, { entries, vault_key_epochs: opts.epochs, key_epoch: opts.keyEpoch, witnessed: opts.witnessed }, () => run(entries, opts));
+  };
   return {
     version: 1,
     description:
-      'Encrypted audit chain (spec §7). Entry i is an xc20p envelope (kid "e1") of cjson(event) with aad {ctx:"akv1/audit",vault_id,seq:i,prev}, prev = b64 sha256(cjson(entry i-1)) or "" for i=0. checkpoint {v,vault_id,seq,head,author,ts,sig} is signed with akv1/audit-checkpoint by a device of membership_events. cases: verifying entries against the witnessed checkpoint MUST return `events` and `head`. invalid: MUST fail with expect_error (reorder/drop/substitution -> decrypt_failed, truncation or rewritten tail vs witnessed checkpoint -> rollback, nonce reuse -> bad_request).',
-    key: b64(key),
+      'Encrypted audit chain (spec §7). Entry i is an xc20p envelope with kid "e<k>" of cjson(event) under AuditKey[k] = HKDF-SHA256(ikm=VK[k], salt=b64decode(vault_id), info=utf8("akv1/audit-key\\n") || cjson({key_epoch:k}), L=32), aad {ctx:"akv1/audit",vault_id,seq:i,prev,key_epoch:k}, prev = b64 sha256(cjson(entry i-1)) or "" for i=0. vault_keys: VK by epoch; each case lists the epochs the verifier holds (vault_key_epochs) and the current membership key_epoch. Key epochs never decrease along the chain nor exceed key_epoch; an entry at an epoch the verifier holds no key for is opaque (events[i] = null) but still hash-chained. checkpoint {v,vault_id,seq,head,author,ts,sig} is signed with akv1/audit-checkpoint by a device of membership_events. cases MUST return `events` and `head`. invalid MUST fail with expect_error (reorder/drop/substitution or a non-derived key -> decrypt_failed, truncation or rewritten tail vs witnessed checkpoint -> rollback, nonce reuse, non-epoch kid, decreasing or future epoch -> bad_request).',
+    vault_keys: { '1': b64(vaultKeys[1]!), '2': b64(vaultKeys[2]!) },
+    audit_keys: { '1': b64(deriveAuditKey(vaultKeys[1]!, VAULT_SHARED, 1)), '2': b64(deriveAuditKey(vaultKeys[2]!, VAULT_SHARED, 2)) },
     vault_id: VAULT_SHARED,
     membership_events: membership,
     checkpoint: cp,
     cases: [
-      { name: 'chain_matches_checkpoint', entries: e, witnessed, events, head: verifyOk(e).head },
-      { name: 'chain_extended_after_checkpoint', entries: extended.entries, witnessed, events: verifyOk(extended.entries).events, head: verifyOk(extended.entries).head },
+      caseOf('chain_matches_checkpoint', e, FULL),
+      caseOf('chain_extended_after_checkpoint', extended.entries, FULL),
+      caseOf('older_epoch_opaque_without_its_key', e, { ...FULL, epochs: [2] }),
+      caseOf('every_entry_opaque_without_keys', e, { ...FULL, epochs: [] }),
     ],
     invalid: [
       bad('reordered', 'decrypt_failed', [e[0]!, e[2]!, e[1]!, e[3]!]),
@@ -124,7 +146,12 @@ export function auditVectors(): Record<string, unknown> {
       bad('dropped_tail', 'rollback', e.slice(0, 3)),
       bad('overwritten_middle', 'decrypt_failed', [forged.entries[0]!, forged.entries[1]!, e[2]!, e[3]!]),
       bad('overwritten_tail', 'rollback', rewrittenTail.entries),
-      bad('nonce_reuse', 'bad_request', dup.entries, false),
+      bad('nonce_reuse', 'bad_request', dup.entries, { witnessed: null }),
+      bad('epoch_relabeled', 'decrypt_failed', [e[0]!, e[1]!, { ...e[2]!, kid: 'e1' }, e[3]!]),
+      bad('kid_not_epoch_tag', 'bad_request', [{ ...e[0]!, kid: 'audit' }, ...e.slice(1)]),
+      bad('epoch_decreases', 'bad_request', decreasing.entries, { witnessed: null }),
+      bad('epoch_ahead_of_membership', 'bad_request', e, { keyEpoch: 1 }),
+      bad('vault_key_used_directly', 'decrypt_failed', [rawKeyEntry], { witnessed: null }),
     ],
     invalid_checkpoints: [
       negative('bad_signature', 'invalid_signature', { checkpoint: { ...cp, sig: flipByte(cp.sig, 2) } }, () => verifyAuditCheckpoint({ ...cp, sig: flipByte(cp.sig, 2) }, state)),

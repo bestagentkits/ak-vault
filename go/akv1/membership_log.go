@@ -69,7 +69,7 @@ func NextMembershipEvent(state MembershipState, typ string, ts int64, author str
 // Rejects (code): unknown v/type (unsupported_version); malformed fields,
 // non-sequential seq, wrong prev, membership_epoch != seq, key_epoch change
 // without rekey (bad_request); bad signature (invalid_signature); author not a
-// current human owner device or the recovery key for device_add/device_remove,
+// current human owner device (or the current recovery key, for device_add only),
 // removed device reappearing, demoting/removing the last owner, member ops in
 // non-shared vaults, untrusted anchor (forbidden); key_epoch decreasing, chain
 // behind or forked from the witnessed checkpoint (rollback).

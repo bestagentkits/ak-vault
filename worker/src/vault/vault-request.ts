@@ -10,7 +10,6 @@ export const VAULT_OPS = [
   'membership.get',
   'membership.post',
   'wraps.get',
-  'wraps.post',
   'item.get',
   'item.put',
   'changes.get',
@@ -36,7 +35,7 @@ export interface VaultRequest {
   token: string;
   proof: string;
   idempotencyKey: string | null;
-  /** `AKV-Device-Key` header: the caller's sign_pub, used only by a not-yet-enrolled device fetching the recovery bundle. */
+  /** `AKV-Device-Key` header: the caller's sign_pub, used only by a not-yet-enrolled device reading the recovery bundle or membership. */
   deviceKey: string | null;
   body: Uint8Array;
   claims: VerifiedClaims;

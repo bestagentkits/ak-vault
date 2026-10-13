@@ -1,7 +1,7 @@
 /** Reproduce membership, records, checkpoints, audit, policy and proof vectors. */
 import { describe, expect, it } from 'vitest';
 import {
-  applyRecord, authorizeRecordWrite, b64decode, buildProof, checkRollback, computeStateDigest, deviceIdFromSignPub, effectiveGrant,
+  applyRecord, authorizeRecordWrite, b64decode, buildProof, checkRollback, computeStateDigest, deriveAuditKey, deviceIdFromSignPub, effectiveGrant,
   openItem, sasCode, sasDigest, sasTranscript, signKeyPairFromSeed, b64encode, utf8Decode, validateWrapRecipients, verifyAuditChain,
   verifyAuditCheckpoint, verifyCheckpoint, verifyMembershipChain, verifyProof, verifyRecord, wrapsDigest,
   type ItemState, type VerifyChainOptions,
@@ -101,8 +101,17 @@ describe('checkpoints.json', () => {
 
 describe('audit.json', () => {
   const v = loadVector('audit.json');
-  const key = b64decode(v.key);
-  const opts = (w: Vec) => (w ? { key, vaultId: v.vault_id, witnessed: w } : { key, vaultId: v.vault_id });
+  const opts = (c: Vec) => ({
+    vaultKeys: (e: number) => (c.vault_key_epochs.includes(e) ? b64decode(v.vault_keys[String(e)]) : undefined),
+    vaultId: v.vault_id,
+    keyEpoch: c.key_epoch,
+    ...(c.witnessed ? { witnessed: c.witnessed } : {}),
+  });
+  it('audit keys derive from the vault key of their epoch', () => {
+    for (const e of Object.keys(v.vault_keys)) {
+      expect(b64encode(deriveAuditKey(b64decode(v.vault_keys[e]), v.vault_id, Number(e)))).toBe(v.audit_keys[e]);
+    }
+  });
   it('checkpoint verifies', () => {
     verifyAuditCheckpoint(v.checkpoint, verifyMembershipChain(v.membership_events));
   });
@@ -110,10 +119,10 @@ describe('audit.json', () => {
     expectCode(() => verifyAuditCheckpoint(c.checkpoint, verifyMembershipChain(v.membership_events)), c.expect_error);
   });
   it.each(named(v.cases))('%s', (_n, c: Vec) => {
-    expect(verifyAuditChain(c.entries, opts(c.witnessed))).toEqual({ events: c.events, head: c.head });
+    expect(verifyAuditChain(c.entries, opts(c))).toEqual({ events: c.events, head: c.head });
   });
   it.each(named(v.invalid))('rejects %s', (_n, c: Vec) => {
-    expectCode(() => verifyAuditChain(c.entries, opts(c.witnessed)), c.expect_error);
+    expectCode(() => verifyAuditChain(c.entries, opts(c)), c.expect_error);
   });
 });
 

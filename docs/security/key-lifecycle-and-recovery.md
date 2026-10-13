@@ -10,8 +10,9 @@ what each one does and does not protect. Client implementation lives in AgentKit
 
 1. The first device generates its Ed25519 signing key and X25519 key, a vault ID
    and `VK[1]`.
-2. It signs the `genesis` event naming itself owner, wraps `VK[1]` to itself, to the
-   password KEK and to a new recovery key, and uploads the recovery bundle.
+2. It wraps `VK[1]` to itself, to the password KEK and to a new recovery key, signs
+   the `genesis` event naming itself owner and committing to its own wrap
+   (`wraps_digest`), and uploads the recovery bundle.
 3. The genesis owner `sign_pub` becomes the **trust anchor**. A device that learns it
    only from the server is trusting on first use (TOFU); SAS enrollment or the
    recovery bundle removes that reliance.
@@ -24,20 +25,27 @@ recovery key, with no surviving device, makes the vault unrecoverable by design.
 1. The new device generates its keys and presents its public keys.
 2. An owner device and the new device each display a short authentication string
    (SAS) computed from the enrollment transcript; the user confirms they match.
-3. The owner device signs `device_add` (with the SAS transcript digest), wraps the
-   current vault key to the new device, and transfers its newest witnessed
+3. The owner device wraps the current vault key (and, where it holds them, older
+   retained epochs) to the new device, signs `device_add` with the SAS transcript
+   digest and the digest of that wrap set, and transfers its newest witnessed
    checkpoint over the SAS-verified channel.
-4. The new device pins the owner anchor and that checkpoint.
+4. The new device pins the owner anchor and that checkpoint, fetches the event's
+   wrap set and checks it against the signed digest before unwrapping, so the server
+   cannot substitute a key it knows.
 
-Web login alone never enrolls a device. The SAS transcript format is not yet
-defined in the spec (open item in [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md#open-items-before-approval)).
+Web login alone never enrolls a device. The SAS transcript is defined in
+[spec §3.5](../protocol/v1/spec.md#35-owner-recovery-signing-key-and-sas-enrollment).
 
 ## Device loss or theft
 
 1. Revoke the device's session and device ID in ak-web; the Worker refuses it on the
    next request through the live revocation check.
-2. From a remaining owner device, sign `device_remove`. The vault enters
-   `rekey_required`; writes are refused until rekey.
+2. From a remaining owner device, pull the change log, then sign `device_remove`
+   with its head as `log_fence` (on `409`, pull again and re-sign; step 1 stops the
+   device from keeping the fence stale), and post a checkpoint. The vault enters
+   `rekey_required`; writes are refused until rekey. Records by the removed device
+   above the fence are refused from then on
+   ([spec §5](../protocol/v1/spec.md#5-records-revisions-conflicts-and-tombstones)).
 3. Rekey (below), marking every item the lost device could decrypt `needs-rotate`.
 4. Rotate those credentials at their providers.
 
@@ -55,12 +63,14 @@ decrypt before removal is `needs-rotate`; rekey cannot recall it.
 1. An owner device generates `VK[e+1]` and wraps it to every remaining member
    device, the password KEK and the recovery KEK.
 2. It signs `rekey` with `new_key_epoch`, the digest of the new wrap list and the
-   `needs_rotate` item IDs.
+   `needs_rotate` item IDs, then appends an audit entry under the new epoch's audit
+   key and signs an audit checkpoint, so a removed device can no longer extend the
+   audit chain.
 3. New writes must use the new epoch. Items still encrypted under an older epoch stay
    readable by current members, who hold the older wraps, and move to the new epoch
-   when next written. A device enrolled after a rekey also needs older-epoch keys
-   for items not yet rewritten; the recovery bundle carries every epoch, but how
-   `device_add` delivers older epochs is not yet specified.
+   when next written. A device enrolled after a rekey receives older-epoch keys
+   only inside the signed wrap set of its `device_add`; items at an epoch it was
+   not given are rotated forward by a device that can read them.
 
 **Interrupted or cancelled rekey.** Until a valid `rekey` event is accepted, the
 vault stays in `rekey_required` and refuses writes; reads continue under the old
@@ -88,24 +98,32 @@ old value protects nothing.
 ## Recovery key
 
 The recovery key unlocks the same recovery bundle as the password. Rotating it
-creates a new recovery key, re-wraps, and replaces the bundle; the old key stops
-working only once the old bundle is replaced, so treat a leaked recovery key as a
+creates a new recovery key and a new recovery signing key: an owner device signs
+`recovery_rotate` naming the new signing key and sends it together with the bundle
+resealed under the new key and a higher `bundle_seq`; the server stores both
+atomically. From then on the membership chain refuses enrollment by the old
+signing key, so an old bundle opened with a leaked recovery key cannot add a
+device. It still yields the vault keys it held, so treat a leaked recovery key as a
 compromise (below).
 
 ## Lost home or all devices
 
 A fresh device with the password or recovery key:
 
-1. Fetches the recovery bundle. Outside membership, it presents its own signing key
-   in `AKV-Device-Key` and proves possession with `AKV-Proof`; the server releases
-   the bundle only to the vault's owner account and refuses a removed device ID
-   (spec §3.5).
-2. Decrypts it: vault keys, owner anchor, the owner **recovery signing key**, and the
-   newest owner-witnessed checkpoint.
-3. Signs a `device_add` for itself with the recovery signing key and enrolls; the
-   server verifies the event against `recovery_sign_pub` pinned at genesis.
-4. Removes the lost devices (`device_remove`, also allowed for the recovery key),
-   rekeys, and replaces the bundle with a new `bundle_seq`.
+1. Fetches the recovery bundle and the membership log. Outside membership, it
+   presents its own signing key in `AKV-Device-Key` and proves possession with
+   `AKV-Proof`; the server releases only those two reads, only to the vault's owner
+   account, and refuses a removed device ID (spec §3.5).
+2. Decrypts the bundle: vault keys, owner anchor, the owner **recovery signing
+   key**, and the newest owner-witnessed checkpoint. It verifies the membership
+   chain from that anchor and checks the bundle's recovery key is the chain's
+   current one.
+3. Wraps the vault keys it holds to itself, signs a `device_add` for itself with the
+   recovery signing key and the digest of that wrap set, and enrolls; the server
+   verifies the event against the current `recovery_sign_pub`.
+4. As a member, removes the lost devices (`device_remove`; the recovery key itself
+   may only author `device_add`), rekeys, and replaces the bundle with a new
+   `bundle_seq`.
 5. Pulls state and refuses anything older than, or forked from, the bundle's
    checkpoint.
 
