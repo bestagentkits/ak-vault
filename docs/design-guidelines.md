@@ -113,9 +113,10 @@ in both themes. The primary button reaches 11.9:1 in dark and 5.3:1 in light.
 ## Engineering constraints
 
 - Pure static HTML, one CSS file (`styles.css`) and one small vanilla JS file (`site.js`).
-  No frameworks, no build step, no external JS, fonts or analytics. Site responses carry
+  No frameworks, no build step, no external JS, fonts or analytics. HTML responses carry
   `Cache-Control: no-transform` (`worker/src/http/static-assets.ts`) so the `agentkit.best`
-  zone's automatic Web Analytics beacon is never injected.
+  zone's automatic Web Analytics beacon is never injected. The trade-off: Cloudflare does not
+  compress those pages at the edge; CSS, JS and Markdown stay compressible.
 - No inline executable scripts. JSON-LD data blocks are the only inline `<script>`, which keeps a strict
   `script-src 'self'` CSP possible.
 - `/v1/*`, `/healthz` and `/internal/*` belong to the Worker. Never put static files under those paths.
