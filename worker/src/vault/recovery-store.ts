@@ -35,12 +35,22 @@ export function storeRecoveryBundle(sql: SqlStorage, vaultId: string, body: unkn
   return bundle.bundle_seq;
 }
 
-/** Membership seq of the latest `recovery_rotate`, or 0 (genesis set the recovery key). */
+/** Meta key holding the membership seq of the latest `recovery_rotate`. */
+const RECOVERY_ROTATED_SEQ_KEY = 'recovery_rotated_seq';
+
+/** Record that the `recovery_rotate` at `seq` was appended. Caller holds the transaction. */
+export function recordRecoveryRotate(sql: SqlStorage, seq: number): void {
+  sql.exec('INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v', RECOVERY_ROTATED_SEQ_KEY, String(seq));
+}
+
+/** Membership seq of the latest `recovery_rotate`, or 0 when there was none (genesis set the recovery key). */
 function latestRecoveryRotateSeq(sql: SqlStorage): number {
-  const row = sql
-    .exec<{ seq: number | null }>("SELECT MAX(seq) AS seq FROM membership_events WHERE json_extract(event_json, '$.type') = 'recovery_rotate'")
-    .toArray()[0];
-  return row?.seq ?? 0;
+  const row = sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', RECOVERY_ROTATED_SEQ_KEY).toArray()[0];
+  if (!row) return 0;
+  const seq = Number(row.v);
+  // Fail closed on a corrupt value: refuse every PUT rather than accept a stale bundle.
+  if (!Number.isSafeInteger(seq) || seq < 0) throw new ApiError('internal');
+  return seq;
 }
 
 export function putRecovery(sql: SqlStorage, state: MembershipState, vaultId: string, body: JsonObject): ApiResult {

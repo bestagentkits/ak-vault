@@ -4,7 +4,7 @@ import { ApiError, okResult, type ApiResult } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
 import { currentLogSeq } from './changes-feed.js';
 import type { MembershipStore } from './membership-store.js';
-import { storeRecoveryBundle } from './recovery-store.js';
+import { recordRecoveryRotate, storeRecoveryBundle } from './recovery-store.js';
 import { queryInt, requireArray, requireKeys } from './request-body.js';
 import { listWraps, storeWrapSet, wrapSet } from './wrap-store.js';
 import type { VaultRequest } from './vault-request.js';
@@ -52,6 +52,17 @@ function checkLogFence(sql: SqlStorage, event: MembershipEvent): void {
   if (fence < head) throw new ApiError('conflict', { message: 'log_fence is behind the change log head' });
 }
 
+/**
+ * An owner-authored device-adding event may not grow the vault past
+ * `devices_per_vault`; a recovery enrollment may use one more device, which is
+ * still within `wraps_per_request`, so a rekey of every device fits one request.
+ */
+function checkDeviceCount(event: MembershipEvent, next: MembershipState, recoveryEnrollment: boolean): void {
+  if (event.type !== 'device_add' && event.type !== 'member_add') return;
+  const max = LIMITS.devices_per_vault + (recoveryEnrollment ? 1 : 0);
+  if (next.devices.length > max) throw new ApiError('quota_exceeded', { status: 403 });
+}
+
 /** `PUT /v1/vaults/:vid` with `{event: genesis, wraps: [...]}` (already verified by the guard). */
 export function handleGenesis(sql: SqlStorage, store: MembershipStore, body: JsonObject, genesis: MembershipState): ApiResult {
   if (store.state() !== null) throw new ApiError('conflict', { message: 'vault already exists' });
@@ -75,9 +86,14 @@ export function handleMembershipPost(sql: SqlStorage, store: MembershipStore, va
   if (rotating !== (body['bundle'] !== undefined)) throw new ApiError('bad_request', { message: 'recovery_rotate, and only it, carries the resealed bundle' });
   const wraps = verifyEventWraps(event, body['wraps'], next);
   checkLogFence(sql, event);
+  const before = store.requireState();
+  const recoveryEnrollment = event.type === 'device_add' && event.author === before.recovery_author;
+  checkDeviceCount(event, next, recoveryEnrollment);
+  const requiredRekey = event.type === 'rekey' && before.rekey_required;
   store.persist(event, next);
-  storeWrapSet(sql, next.seq, wraps);
+  storeWrapSet(sql, next.seq, wraps, requiredRekey || recoveryEnrollment);
   const bundleSeq = rotating ? storeRecoveryBundle(sql, vaultId, body['bundle']) : null;
+  if (rotating) recordRecoveryRotate(sql, next.seq);
   return okResult({ membership: membershipSummary(next), wraps_stored: wraps.length, ...(bundleSeq !== null ? { bundle_seq: bundleSeq } : {}) }, 201);
 }
 

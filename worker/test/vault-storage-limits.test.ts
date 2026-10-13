@@ -139,20 +139,94 @@ describe('record caps', () => {
 describe('signed wrap sets', () => {
   it('refuse a device-adding event once stored wraps would pass wraps_per_vault, and the chain does not advance', async () => {
     const fx = await VaultFixture.create();
-    await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) => {
-      const stored = state.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM wrap_sets').one().n;
-      // Synthetic filler rows on a sequence no event uses, just to reach the cap.
-      for (let i = stored; i < LIMITS.wraps_per_vault; i++) {
-        state.storage.sql.exec('INSERT INTO wrap_sets (membership_seq, rcpt, key_epoch, wrap_json) VALUES (?, ?, ?, ?)', 1_000_000, `filler-${i}`, 1, '{}');
-      }
-    });
+    await fillWrapSets(fx.vaultId);
     const { event, wraps } = fx.enrollEvent(fx.newDevice());
     const res = await fx.append(event, wraps);
     expect(res.status).toBe(403);
     expect(res.json.error.code).toBe('quota_exceeded');
     expect((await fx.get(fx.owner, '/membership')).json.membership.seq).toBe(0);
   });
+
+  it('a vault at wraps_per_vault can still remove a device and complete the required rekey, and recovery can still enroll', async () => {
+    const fx = await VaultFixture.create();
+    const lost = await fx.addDevice();
+    await fillWrapSets(fx.vaultId);
+
+    // Owner-authored growth is refused at the cap.
+    const add = fx.enrollEvent(fx.newDevice());
+    expect((await fx.append(add.event, add.wraps)).json.error.code).toBe('quota_exceeded');
+
+    // A removal followed by its required rekey always fits, however full the vault is.
+    expect((await fx.removeDevice(lost)).status).toBe(201);
+    expect(fx.state.rekey_required).toBe(true);
+    expect((await fx.rekey()).status).toBe(201);
+    expect(fx.state.rekey_required).toBe(false);
+
+    // A voluntary rekey is ordinary growth and is refused again.
+    const voluntary = await fx.rekey();
+    expect(voluntary.status).toBe(403);
+    expect(voluntary.json.error.code).toBe('quota_exceeded');
+
+    // The recovery identity can still enroll a fresh device of the account.
+    const fresh = fx.newDevice();
+    const enroll = fx.enrollEvent(fresh, [fx.keyEpoch], { id: fx.recoveryAuthorId(), secret: fx.recovery.secretKey });
+    expect((await fx.append(enroll.event, enroll.wraps, fresh)).status).toBe(201);
+  });
+
+  it('the last membership slot is kept for the rekey a removal requires', async () => {
+    const fx = await VaultFixture.create();
+    const lost = await fx.addDevice();
+    await withLimit('membership_events_per_vault', fx.state.seq + 3, async () => {
+      // Seq 2 is the last slot for ordinary events; seq 3 is kept for a required rekey.
+      expect((await fx.removeDevice(lost)).status).toBe(201);
+      const add = fx.enrollEvent(fx.newDevice());
+      expect((await fx.append(add.event, add.wraps)).json.error.code).toBe('quota_exceeded');
+      expect((await fx.rekey()).status).toBe(201);
+      expect(fx.state.rekey_required).toBe(false);
+      expect((await fx.rekey()).json.error.code).toBe('quota_exceeded');
+    });
+  });
+
+  it('devices_per_vault bounds owner-authored enrollment, keeping one place for recovery so a full rekey fits one request', async () => {
+    const fx = await VaultFixture.create();
+    await withLimit('devices_per_vault', fx.state.devices.length + 1, async () => {
+      await fx.addDevice();
+      const over = fx.enrollEvent(fx.newDevice());
+      expect((await fx.append(over.event, over.wraps)).json.error.code).toBe('quota_exceeded');
+      const fresh = fx.newDevice();
+      const enroll = fx.enrollEvent(fresh, [fx.keyEpoch], { id: fx.recoveryAuthorId(), secret: fx.recovery.secretKey });
+      expect((await fx.append(enroll.event, enroll.wraps, fresh)).status).toBe(201);
+      expect(fx.state.devices.length).toBe(LIMITS.devices_per_vault + 1);
+    });
+    expect(LIMITS.devices_per_vault + 1).toBeLessThanOrEqual(LIMITS.wraps_per_request);
+  });
 });
+
+/** Pad `wrap_sets` with synthetic rows on a sequence no event uses, up to exactly `wraps_per_vault`. */
+async function fillWrapSets(vaultId: string): Promise<void> {
+  await runInDurableObject(stubFor(vaultId), (_instance: unknown, state: DurableObjectState) => {
+    const stored = state.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM wrap_sets').one().n;
+    for (let i = stored; i < LIMITS.wraps_per_vault; i++) {
+      state.storage.sql.exec('INSERT INTO wrap_sets (membership_seq, rcpt, key_epoch, wrap_json) VALUES (?, ?, ?, ?)', 1_000_000, `filler-${i}`, 1, '{}');
+    }
+  });
+}
+
+/**
+ * Run `fn` with one limit lowered. The Durable Object shares this module
+ * instance under the test pool, so the boundary is reachable without thousands
+ * of signed events; the original value is always restored.
+ */
+async function withLimit(key: 'membership_events_per_vault' | 'devices_per_vault', value: number, fn: () => Promise<void>): Promise<void> {
+  const limits = LIMITS as { -readonly [K in keyof typeof LIMITS]: number };
+  const original = limits[key];
+  limits[key] = value;
+  try {
+    await fn();
+  } finally {
+    limits[key] = original;
+  }
+}
 
 describe('vaults created before the current protocol revision', () => {
   it('are refused on every request instead of half-working', async () => {

@@ -124,8 +124,11 @@ type VaultKeyLookup func(keyEpoch int64) ([]byte, bool)
 // membership state; minKeyEpoch (1..keyEpoch) is the lowest epoch whose key the
 // caller must hold (the epoch it joined at, or the oldest its recovery bundle
 // covers). The key of keyEpoch is required before any entry is read, and so is
-// the key of every entry epoch >= minKeyEpoch (bad_request otherwise), so the
-// chain's tail is never opaque. An entry at an older epoch without a key is
+// the key of every entry epoch >= minKeyEpoch (bad_request otherwise), so every
+// entry at or above minKeyEpoch is decrypted. That does not prove the chain
+// reaches such an epoch: a chain truncated before its first entry there is
+// all-opaque and passes unless witnessed bounds it, so callers must not present
+// an all-opaque result as verified. An entry at an older epoch without a key is
 // opaque: hash-chained and epoch-checked, Opaque set. Rejects: minKeyEpoch
 // outside 1..keyEpoch, a missing required key, a kid that is not an epoch tag,
 // an epoch lower than the previous entry's or above keyEpoch (bad_request); reordered,

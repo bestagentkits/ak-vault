@@ -92,7 +92,7 @@ directories themselves are the authority for exact file names.
 | I2 | Cross-tenant read | Malicious account | Scope ∩ membership; DO per vault | `worker/test/` cross-vault access |
 | I3 | Removed member reads new material | Malicious member | `device_remove`/`member_remove` → `rekey_required` → rekey; `needs_rotate`; new devices receive keys only through signed wrap sets | `worker/test/` writes refused while rekey required; vectors: removed recipient |
 | D1 | Server outage blocks local use | Server, network | `resolve` reads local backend only | agentkit#2298 regression (owned there) |
-| D2 | Abuse / quota exhaustion | Any client | Rate limits and quotas published by `/v1/meta` | `worker/test/` rate-limit and quota responses |
+| D2 | Abuse / quota exhaustion | Any client | Rate limits and quotas published by `/v1/meta`; membership quotas never block the rekey a removal requires, nor recovery enrollment | `worker/test/` rate-limit and quota responses; `vault-storage-limits.test.ts` boundary cases |
 | E1 | Reader or machine identity writes | Member, CI | Role and device kind enforced read-only | `worker/test/` reader write denied, machine write denied |
 | E2 | Synced policy or profile elevates a grant | Hostile profile, injected agent | Policy is a maximum; profile text is untrusted data ([spec §8](../protocol/v1/spec.md#8-portable-policy-restrictive-only)) | agentkit#2299 / #7 negative tests (owned client-side) |
 | E3 | Unsupported version accepted | Server, attacker | Closed identifier sets; fail closed | Vectors: unsupported version, unknown algorithm |
@@ -127,8 +127,10 @@ These are accepted and must be stated wherever the guarantees are described:
   later epoch is in the chain; the rekeying device MUST append one right away
   (spec §7), which closes the window. Entries at an epoch older than the reader's
   minimum epoch, whose key it lacks, are opaque: chained and epoch-checked, but
-  their content is unverified. A reader without the current epoch's key is refused,
-  never shown an all-opaque chain.
+  their content is unverified. A reader without the current epoch's key is refused.
+  A reader with it can still receive a chain the server truncated before the first
+  entry at its minimum epoch, which is entirely opaque and passes; only a witnessed
+  audit checkpoint bounds that, and clients must not present it as verified.
 - **The removal fence binds positions, not contents.** It refuses a removed
   author's records above the fence. Records it got accepted before its removal
   stay valid, including any written after it was compromised but before it was

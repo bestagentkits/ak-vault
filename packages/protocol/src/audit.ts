@@ -105,7 +105,10 @@ export type AuditChainEntry =
  * holds, selecting the audit key from the entry's `e<key_epoch>` kid. The
  * caller MUST hold the key of `keyEpoch` (checked before any entry is read)
  * and of every epoch in `minKeyEpoch..keyEpoch` an entry uses (bad_request
- * otherwise), so the current epoch, and thus the chain's tail, is never opaque. An entry at an older epoch the caller
+ * otherwise), so every entry at or above `minKeyEpoch` is decrypted. That does
+ * not prove the chain reaches such an epoch: a chain truncated before its first
+ * entry there is all-opaque and passes unless `witnessed` bounds it, so callers
+ * must not present an all-opaque result as verified. An entry at an older epoch the caller
  * holds no key for (a device enrolled after it, or a recovery bundle that
  * predates it) is opaque: hash-chained and epoch-checked, returned as
  * `{seq, key_epoch, opaque: true}`. Rejects (code): `minKeyEpoch` outside

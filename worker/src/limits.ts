@@ -26,8 +26,18 @@ export const LIMITS = {
   changes_page_max: 500,
   /** `GET /membership` page size. */
   membership_page_max: 1000,
-  /** Max membership events per vault (the chain is replayed on every append). */
+  /**
+   * Max membership events per vault (the chain is replayed on every append). The
+   * last slot is kept for a rekey that clears `rekey_required`, so a removal can
+   * never take the slot its own rekey needs.
+   */
   membership_events_per_vault: 10_000,
+  /**
+   * Max current devices after an owner-authored device_add or member_add. One
+   * more is kept for a recovery enrollment, so a rekey of every device always
+   * fits `wraps_per_request`.
+   */
+  devices_per_vault: 255,
   /** Max decoded bytes of the opaque recovery bundle. */
   recovery_blob_max_bytes: 16 * 1024,
   /** Max entries per audit append. */
@@ -38,7 +48,14 @@ export const LIMITS = {
   audit_page_max: 500,
   /** Max wraps in one upload. */
   wraps_per_request: 256,
-  /** Max stored wraps per vault, across every signed wrap set (sets are immutable and kept). */
+  /**
+   * Max stored wraps per vault, across every signed wrap set (sets are immutable
+   * and kept), for owner-authored device-adding events and voluntary rekeys. A
+   * rekey that clears `rekey_required` and a recovery-authored device_add are
+   * exempt, so the cap can never leave a vault stuck in `rekey_required` or lock
+   * out recovery; both are still bounded by membership_events_per_vault x
+   * wraps_per_request.
+   */
   wraps_per_vault: 20_000,
   /** Requests per device per vault per rate window. */
   rate_requests_per_window: 120,

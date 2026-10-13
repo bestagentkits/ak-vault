@@ -313,8 +313,13 @@ along the chain and never exceed the vault's current key epoch (`bad_request`); 
 server accepts new entries only at the current key epoch. A verifier MUST hold the
 key of the current epoch, and of every entry epoch at or above its minimum epoch (the
 epoch it joined at, or the oldest its recovery bundle covers); a missing required key
-is a refusal (`bad_request`), never an opaque result, so the chain's tail is always
-decrypted. An entry at an older epoch it holds no key for is opaque: still
+is a refusal (`bad_request`), never an opaque result, so every entry at an epoch at
+or above the minimum is decrypted. Holding the current key does not prove the chain
+has an entry at that epoch: a chain that ends before the first entry at the minimum
+epoch (truncated by the server, or read between a rekey and the rekeyer's audit
+append) can be entirely opaque and still pass. Only a witnessed audit checkpoint
+bounds that; a client MUST NOT present an all-opaque result as verified. An entry at
+an older epoch it holds no key for is opaque: still
 hash-chained and epoch-checked, returned as `{"seq","key_epoch","opaque":true}`, but
 its content is not verified. Entries carry no
 author signature, so any holder of `VK[e]` can write entries at epoch `e`; per-epoch
@@ -391,6 +396,15 @@ bytes (`record_bytes_per_vault`), conflict branches included; exceeding either
 returns `quota_exceeded`. A request for a vault that has no genesis returns
 `not_found` and writes nothing; a rejected genesis also writes nothing, because the
 server checks the event, author, scope and proof signature before creating storage.
+
+A membership quota never blocks the rekey a removal requires, nor recovery. Owner
+`device_add`/`member_add` may not grow the vault past `devices_per_vault`, and a
+recovery `device_add` may add one more, so a rekey of every device fits
+`wraps_per_request`. Owner-authored wrap uploads and voluntary rekeys are refused past
+`wraps_per_vault`; a `rekey` that clears `rekey_required` and a recovery `device_add`
+are exempt (still bounded by `membership_events_per_vault` x `wraps_per_request`).
+The last `membership_events_per_vault` slot is kept for a `rekey` that clears
+`rekey_required`.
 
 ## 11. Clarifications fixed by the reference implementation (normative)
 
@@ -529,4 +543,5 @@ under an earlier revision does not verify and is reset rather than migrated.
   contiguous change-log positions; recovery key restricted to `device_add`;
   `recovery_rotate` with an atomically resealed bundle; `PUT /recovery` carries the
   sealer's membership position; a domain-tagged `wraps_digest`; audit verification
-  requires the current epoch's key and marks opaque entries explicitly.
+  requires the current epoch's key and marks opaque entries explicitly; membership
+  quotas leave room for the rekey a removal requires and for recovery.
