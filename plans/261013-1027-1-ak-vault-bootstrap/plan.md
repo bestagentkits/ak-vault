@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: completed
 issues: [1, 2, 4, 5, 6, 7, 8]
 ---
 
@@ -38,9 +38,22 @@ Web decryption, server KMS, keyless OIDC, R2 (until measured), D1, paid gating, 
 | 3 | Docs, AGENTS.md, REVIEW.md | docs/, *.md root | done |
 | 4 | Worker + DO + tests | worker/src, worker/test | done |
 | 5 | Go implementation | go/ | done |
-| 6 | CI/CD + deploy + live verify | .github/, wrangler | in-progress |
+| 6 | CI/CD + deploy + live verify | .github/, wrangler | done |
 
 ## Assumptions
 - One Worker serves landing (static assets) and API (`/v1/*`, `/healthz`, `/internal/*`).
 - Revocation feed from ak-web arrives via HMAC-signed webhook (ak-web#568 implements sender).
 - #8 external review cannot be self-attested; it stays `blocked` until a human reviewer signs off.
+
+## Result (2026-10-13)
+- Merged: #12 (bootstrap), #15 and #16 (stop the zone's Web Analytics beacon injection on
+  HTML via `Cache-Control: no-transform`, HTML only so assets stay compressed).
+- Deploy runs green (gate, staging, production) for each merge; production approved by an
+  agent under the recorded bootstrap exception (`docs/security/release-gates.md`).
+- Live checks: `/healthz` 200 with `sync_enabled:false`, `/v1/meta` limits, `/v1/*` 503
+  `sync_disabled`, security headers on `/`, `/security/`, 404; landing page clean in a
+  browser (no console errors, no third-party script, no horizontal scroll at 375 px).
+- Issues: #2, #4, #5 `shipped`; #6, #7, #8 `blocked` (client work in agentkit#2298/2299,
+  external review and soak); follow-ups #9, #13, #14 (`ai-handle`).
+- Cross-repo: integration contract on ak-web#568, Go client notes on agentkit#2298, docs
+  guide section merged in agentkit-docs#296 (`dev`).

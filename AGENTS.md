@@ -104,6 +104,10 @@ Issues are the coordination surface. Labels: `in progress`, `blocked`, `in revie
 
 - Conventional commits, focused, no AI attribution, no internal plan or finding IDs.
 - Do not force-push `main`. Do not bypass hooks or weaken tests to get green.
+- `main` is protected by a repository ruleset: changes land through a pull request
+  whose CI checks (TypeScript, Go cross-verification, secret scan) are green; deletion
+  and non-fast-forward pushes are blocked. A green CI run on `main` triggers the
+  Deploy workflow (staging, then the gated production environment).
 - Delegated agents do not commit, push or merge unless explicitly assigned.
 
 ## Release gate
