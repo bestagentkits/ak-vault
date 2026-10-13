@@ -46,13 +46,13 @@ import {
   type TombstonePayload,
   type JsonObject,
 } from '@ak-vault/protocol';
-import { fail, parseAkWebOrigin, readCliSession, vaultTokenSource } from './staging-smoke-ak-web-token.js';
+import { DEFAULT_AK_WEB_ORIGIN, fail, parseSecureOrigin, readCliSession, vaultTokenSource } from './staging-smoke-ak-web-token.js';
 import { DEFAULT_STATE_PATH, loadDeviceSecrets, type DeviceSecrets } from './staging-smoke-device-state.js';
 
 const AUDIENCE = 'https://vault-staging.agentkit.best';
-const base = new URL(process.argv[2] ?? 'https://vault-staging.agentkit.best').origin;
+const base = parseSecureOrigin(process.argv[2] ?? 'https://vault-staging.agentkit.best', 'the Worker URL');
 const proofOrigin = new URL(process.argv[3] ?? base).origin;
-const akWebOrigin = parseAkWebOrigin(process.env['AK_STAGING_WEB_ORIGIN']);
+const akWebOrigin = parseSecureOrigin(process.env['AK_STAGING_WEB_ORIGIN'] || DEFAULT_AK_WEB_ORIGIN, 'AK_STAGING_WEB_ORIGIN');
 const session = readCliSession(process.env['AK_STAGING_SESSION_TOKEN_PATH']);
 const secrets = loadDeviceSecrets(process.env['AK_STAGING_SMOKE_STATE_PATH'] || DEFAULT_STATE_PATH, session.userId, ['owner', 'laptop']);
 const tokenFor = vaultTokenSource({ akWebOrigin, audience: AUDIENCE, session });
@@ -82,7 +82,7 @@ async function request(device: SmokeDevice | null, method: string, path: string,
   if (bytes.length > 0) headers['Content-Type'] = 'application/json';
   let res: Response;
   try {
-    res = await fetch(url, { method, headers, ...(method === 'GET' ? {} : { body: new Uint8Array(bytes) }), signal: AbortSignal.timeout(15_000) });
+    res = await fetch(url, { method, headers, ...(method === 'GET' ? {} : { body: new Uint8Array(bytes) }), redirect: 'error', signal: AbortSignal.timeout(15_000) });
   } catch {
     fail(`${method} ${path.replace(/[A-Za-z0-9_-]{22}/g, ':id')} network error`);
   }

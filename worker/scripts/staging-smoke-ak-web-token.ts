@@ -15,6 +15,8 @@
  * signature or response body.
  */
 import { lstatSync, readFileSync } from 'node:fs';
+import { dirname, relative, resolve, isAbsolute } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { b64decode, b64encode, deviceIdFromSignPub, signDetached, signKeyPairFromSeed, utf8Decode } from '@ak-vault/protocol';
 
 export const VAULT_TOKEN_REQUEST_CONTEXT = 'akv1/vault-token-request';
@@ -31,30 +33,38 @@ export function fail(message: string): never {
   process.exit(1);
 }
 
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+
+/** Secret files live outside the checkout so they can never be committed. */
+export function assertOutsideRepo(path: string, what: string): void {
+  const rel = relative(REPO_ROOT, resolve(path));
+  if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) fail(`${what} must be outside the repository`);
+}
+
 /**
- * Refuse a secret-bearing path that is a symlink or not ours (POSIX only). A file
- * must not be accessible to group or others; a directory holding one must not be
- * writable by them, or they could swap the file.
+ * Refuse a secret-bearing path that is a symlink, a special file or not ours
+ * (POSIX only). A file must not be accessible to group or others; a directory
+ * holding one must not be writable by them, or they could swap the file.
  */
 export function assertPrivatePath(path: string, what: string): void {
   if (process.platform === 'win32') return;
   const st = lstatSync(path);
-  if (st.isSymbolicLink() || st.uid !== process.getuid?.()) fail(`${what} must be owned by you and not a symlink`);
+  if (!(st.isFile() || st.isDirectory()) || st.uid !== process.getuid?.()) fail(`${what} must be a regular file or directory owned by you, not a symlink`);
   if (st.isDirectory() ? (st.mode & 0o022) !== 0 : (st.mode & 0o077) !== 0) {
     fail(`${what} must not be ${st.isDirectory() ? 'writable' : 'accessible'} by group or others`);
   }
 }
 
-/** HTTPS only; plain HTTP is allowed for a local ak-web on loopback. */
-export function parseAkWebOrigin(raw: string | undefined): string {
+/** Origin of a server that receives bearer tokens: HTTPS only, plain HTTP only on loopback. */
+export function parseSecureOrigin(raw: string, name: string): string {
   let url: URL;
   try {
-    url = new URL(raw ?? DEFAULT_AK_WEB_ORIGIN);
+    url = new URL(raw);
   } catch {
-    return fail('AK_STAGING_WEB_ORIGIN is not a URL');
+    return fail(`${name} is not a URL`);
   }
   const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) fail('AK_STAGING_WEB_ORIGIN must be https (http only on loopback)');
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) fail(`${name} must be https (http only on loopback)`);
   return url.origin;
 }
 
@@ -83,6 +93,7 @@ export interface CliSession {
  */
 export function readCliSession(path: string | undefined, nowSeconds = Math.floor(Date.now() / 1000)): CliSession {
   if (!path) fail('AK_STAGING_SESSION_TOKEN_PATH is not set');
+  assertOutsideRepo(path, 'the session token file');
   let token: string;
   try {
     assertPrivatePath(path, 'the session token file');

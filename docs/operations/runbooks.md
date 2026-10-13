@@ -73,8 +73,11 @@ names, HTTP statuses and stable error codes.
   repository and reused across runs, because ak-web binds a device key to one
   account and caps live device keys per account. Each run creates a new synthetic
   vault; the Worker has no per-account vault limit, and these vaults are abandoned.
-- Write the session token into a `0600` file without echoing it, and delete the
-  file after the run; the smoke refuses a file that group or others can read.
+- Write the session's access token (from an `ak login` email sign-in against ak-web
+  staging) into a `0600` file outside the repository without echoing it, and delete
+  the file after the run. On POSIX systems the smoke refuses secret files that are
+  symlinks, inside the repository, or accessible to group or others.
+- Do not run two smokes on the same state file at once.
 - `device_revoked` or `device_conflict` from ak-web means the stored keys can no
   longer mint (revoked, or bound to another account). Delete the state file to bind
   new keys, and revoke the old ones in the ak-web account if they are still live.
