@@ -131,15 +131,12 @@ ADR adds an **opt-in** layer next to v1; it does not reinterpret v1:
 
 ## Open items before approval
 
-- **Owner authority after losing every owner device.** The recovery bundle restores
-  the vault key and the owner *public* trust anchor, but the spec does not yet say
-  how a recovered device regains the ability to sign membership events (for
-  example a recovery-held owner signing key). See
-  [key lifecycle](../security/key-lifecycle-and-recovery.md#lost-home-or-all-devices).
-- **SAS transcript format.** `device_add.sas` is a digest of a transcript the spec
-  does not yet define.
 - **Restore reconciliation.** How clients re-converge after a deliberate server
-  restore is not specified.
+  restore is not specified beyond the operator-confirmed re-seed in spec §6.
+
+Resolved since the first draft: owner authority after losing every owner device
+(the recovery signing key in the bundle, spec §3.5) and the SAS transcript format
+(spec §3.5).
 
 ## External review milestone
 

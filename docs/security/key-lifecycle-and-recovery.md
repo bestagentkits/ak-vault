@@ -96,14 +96,22 @@ compromise (below).
 
 A fresh device with the password or recovery key:
 
-1. Fetches and decrypts the recovery bundle: vault keys, owner anchor, newest
-   owner-witnessed checkpoint.
-2. Pulls state and refuses anything older than, or forked from, that checkpoint.
+1. Fetches the recovery bundle. Outside membership, it presents its own signing key
+   in `AKV-Device-Key` and proves possession with `AKV-Proof`; the server releases
+   the bundle only to the vault's owner account and never to a removed device
+   (spec §3.5).
+2. Decrypts it: vault keys, owner anchor, the owner **recovery signing key**, and the
+   newest owner-witnessed checkpoint.
+3. Signs a `device_add` for itself with the recovery signing key and enrolls; the
+   server verifies the event against `recovery_sign_pub` pinned at genesis.
+4. Removes the lost devices (`device_remove`, also allowed for the recovery key),
+   rekeys, and replaces the bundle with a new `bundle_seq`.
+5. Pulls state and refuses anything older than, or forked from, the bundle's
+   checkpoint.
 
-Gap: the bundle carries the owner **public** anchor, not an owner signing key. If
-every owner device is lost, the recovered device can read but the spec does not yet
-define how it regains authority to sign membership events (for example to enroll
-itself or remove the lost devices). This must be resolved before ADR approval.
+Anyone holding an owner-account token can download the bundle ciphertext and try to
+guess the password offline; Argon2id parameters and the 256-bit recovery key bound
+that risk, so a weak password is the residual exposure.
 
 Local AgentKit state (grants, agent fingerprint trust) is device-local and is not
 restored by sync; the user re-grants on the new device.

@@ -47,6 +47,10 @@ an open spec question.
   latency, sizes. Item IDs appear only where the request path already carries them.
 - Client IPs are not written to application logs. If a rate limiter keys on them,
   they stay inside its counters.
+- Cloudflare platform invocation logs are disabled
+  (`observability.logs.invocation_logs: false` in `worker/wrangler.jsonc`) because
+  they record full request URLs and request metadata outside this contract. Only
+  the Worker's own operational log lines are kept.
 
 **Errors**
 

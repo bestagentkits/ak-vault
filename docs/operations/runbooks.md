@@ -48,7 +48,7 @@ route behavior is owned by the Worker source and its tests.
 Use when a deploy introduced a fault and the previous version is known good.
 
 ```sh
-pnpm --filter <worker package> exec wrangler deployments list --env production
+pnpm --filter <worker package> exec wrangler deployments list --env=""   # production is the top-level Wrangler config
 pnpm --filter <worker package> exec wrangler rollback <VERSION_ID> --name <production worker name> --message "<incident issue URL>"
 ```
 

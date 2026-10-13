@@ -33,12 +33,12 @@ Web decryption, server KMS, keyless OIDC, R2 (until measured), D1, paid gating, 
 ## Phases
 | # | Phase | Owner files | Status |
 |---|---|---|---|
-| 1 | Protocol TS lib + vectors | packages/protocol, protocol/v1 | pending |
-| 2 | Landing page + design | worker/public, docs/design-guidelines.md | pending |
-| 3 | Docs, AGENTS.md, REVIEW.md | docs/, *.md root | pending |
-| 4 | Worker + DO + tests | worker/src, worker/test | pending |
-| 5 | Go implementation | go/ | pending |
-| 6 | CI/CD + deploy + live verify | .github/, wrangler | pending |
+| 1 | Protocol TS lib + vectors | packages/protocol, protocol/v1 | done |
+| 2 | Landing page + design | worker/public, docs/design-guidelines.md | done |
+| 3 | Docs, AGENTS.md, REVIEW.md | docs/, *.md root | done |
+| 4 | Worker + DO + tests | worker/src, worker/test | done |
+| 5 | Go implementation | go/ | done |
+| 6 | CI/CD + deploy + live verify | .github/, wrangler | in-progress |
 
 ## Assumptions
 - One Worker serves landing (static assets) and API (`/v1/*`, `/healthz`, `/internal/*`).

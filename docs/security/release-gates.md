@@ -52,8 +52,17 @@ endpoints are not affected by the flag.
 
 - Production deploys run only through a GitHub Environment with a required human
   reviewer; an agent cannot approve its own deploy.
+- The deploy workflow runs only for `main`, only after CI passed on the same commit,
+  and both environments allow deployments from `main` only. Cloudflare credentials
+  are scoped to the deploy step; actions are pinned by commit SHA. Missing
+  credentials fail the job rather than skipping it.
 - Production and staging use separate Cloudflare credentials and separate Worker
   secrets. The Worker never receives ak-web's CLI HS256 signing key.
+- **Bootstrap exceptions (owner decision, 2026-10-13; revoke before sync GA or
+  enabling `VAULT_SYNC_ENABLED` in production):** the repository owner allows an agent
+  to approve the production deployment during the bootstrap phase, and staging and
+  production temporarily share one Cloudflare API token (stored separately in each
+  GitHub Environment). Worker secrets stay separate per environment.
 - GitHub secret scanning, push protection and private vulnerability reporting stay
   enabled on the repository (enabled 2026-10-13; re-check the security settings
   before GA rather than assuming), and no token, key or personal data is committed.

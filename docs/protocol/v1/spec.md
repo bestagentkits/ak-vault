@@ -120,6 +120,16 @@ bundle (`cjson` field `recovery_sign_sk`). If every owner device is lost, a fres
 unlocks the bundle with the password or recovery key and authors `device_add` for itself
 with the recovery key, so ownership is restored without trusting the server.
 
+**Bundle fetch by a device outside membership.** The server returns the opaque bundle
+(`GET /v1/vaults/{vid}/recovery`) to a current owner device, or to a fresh device when
+all of these hold: the token `sub` is the vault's `owner_account`; the token `did` is
+neither a current nor a removed device; the request carries
+`AKV-Device-Key: <b64 Ed25519 sign_pub>` with `kid(sign_pub) == did`; and `AKV-Proof`
+verifies against that key. Exposure: anyone holding an owner-account token can obtain
+the bundle ciphertext and attempt offline guessing, which the Argon2id parameters
+(§3.4) and the 256-bit recovery key bound. A removed (lost or stolen) device can never
+use this path.
+
 SAS transcript = `cjson({"ctx":"akv1/sas","vault_id","initiator":device_id,"joiner":device,
 "nonce_i":b64 16B,"nonce_j":b64 16B})`; both devices display
 `uint32be(sha256(transcript)[0:4]) mod 10^6` as six digits; `device_add.body.sas` is
@@ -225,16 +235,26 @@ are untrusted, author-attributed data and are never interpreted as instructions.
 1. `Authorization: Bearer <ES256 JWT>` from the configured issuer. Required claims:
    `iss` (exact), `aud` = `https://vault.agentkit.best` (exact), `sub`, `exp`, `nbf`,
    `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`. Header `alg`
-   MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s.
+   MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. If the JWKS
+   cannot be loaded the server fails closed (`503`) and backs off for 30 s before
+   fetching again; it never serves expired keys.
 2. `AKV-Proof: <b64(cjson(proof))>.<b64(sig)>`, proof =
    `{"htm","htu","ts","jti","ath","bh"}` (`ath`/`bh` = b64 sha256 of token / body),
    signed with context `akv1/proof` by the device whose `device_id == did`. Valid for
    ±60 s; `jti` single-use per device for 120 s.
 3. Live revocation: every request consults the revocation registry (revoked `sid`,
    revoked `did`, per-`sub` minimum `iat`). Registry errors fail closed (`503`).
+   The registry is fed by `POST /internal/v1/revocations` with headers
+   `AKV-Webhook-Timestamp: <unix s>` (±300 s) and
+   `AKV-Webhook-Signature: b64(HMAC-SHA256(secret, utf8(ts) || "\n" || body))`, body
+   `{"v":1,"event_id","revoke_sids":[…],"revoke_dids":[…],"min_iat":[{"sub","iat"}]}`.
+   `event_id` is single-use: a retry of an already-applied event answers `409
+   conflict`, which the sender MUST treat as delivered. Any `5xx` is retried.
 4. Authorization = token scope ∩ vault membership: `sub` must be a current member
    account and `did` a current device of that account. `reader` role and `machine`
-   devices are read-only. Scope never grants cross-vault access.
+   devices are read-only: they cannot write items, membership, wraps, checkpoints,
+   audit entries or the recovery bundle. Scope never grants cross-vault access. The
+   only request from a device outside membership is the recovery bundle fetch (§3.5).
 
 ## 10. Errors and limits
 
@@ -245,6 +265,10 @@ Errors are `{"error":{"code","message"}}` with stable codes: `unauthorized`,
 server-only `internal` (HTTP 500, fail closed, generic message; a retry may succeed).
 Messages never echo request bodies, item IDs beyond the path, tokens or names.
 Limits are published by `GET /v1/meta` and owned by `worker/src/limits.ts`.
+They include per-vault totals for stored records (`records_per_vault`) and record
+bytes (`record_bytes_per_vault`), conflict branches included; exceeding either
+returns `quota_exceeded`. A request for a vault that has no genesis returns
+`not_found` and writes nothing.
 
 ## 11. Clarifications fixed by the reference implementation (normative)
 
