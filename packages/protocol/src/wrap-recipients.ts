@@ -1,13 +1,14 @@
 /**
- * Recipient validation for device key wraps (spec §4 "injected recipient").
- * A wrap is acceptable only when its `rcpt` is a current member device of the
- * verified membership state; wraps for older retained epochs (1..key_epoch) are
- * accepted for current members so pre-rekey items stay readable.
+ * Device key wraps (spec §4, §11): recipient validation ("injected recipient")
+ * and the signed wrap sets. Every wrap a client may use belongs to the set of
+ * one owner-signed event whose body commits to it with `wraps_digest`: the
+ * event that added the device (genesis, device_add, member_add) or a rekey.
  */
 import { sha256b64 } from './base64url.js';
+import { concatBytes, utf8Encode } from './bytes.js';
 import { cjsonBytes } from './canonical-json.js';
 import { fail } from './errors.js';
-import { parseMembershipEvent, type MembershipState } from './membership-types.js';
+import { parseDevice, parseMembershipEvent, type DeviceRecord, type MembershipEvent, type MembershipState } from './membership-types.js';
 import { membershipEventHash } from './membership-log.js';
 import { parseX25519Wrap, type X25519Wrap } from './wrap-x25519.js';
 import { asArray, asInt } from './validate.js';
@@ -45,10 +46,64 @@ export function validateWrapRecipients(state: MembershipState, wraps: readonly u
   return parsed;
 }
 
-/** `wraps_digest` = b64 sha256(cjson(wraps sorted by rcpt byte order)) for a rekey's new-epoch wrap list. */
+/**
+ * `wraps_digest` = b64 sha256(utf8("akv1/wraps") || 0x0A || cjson(wraps sorted by
+ * rcpt byte order, then key_epoch)); the domain tag keeps the digest from
+ * colliding with any other cjson hash.
+ * A rekey set has one epoch, so it is sorted by rcpt alone.
+ */
 export function wrapsDigest(wraps: readonly X25519Wrap[]): string {
-  const sorted = [...wraps].sort((a, b) => (a.rcpt < b.rcpt ? -1 : a.rcpt > b.rcpt ? 1 : 0));
-  return sha256b64(cjsonBytes(sorted));
+  const sorted = [...wraps].sort((a, b) => (a.rcpt < b.rcpt ? -1 : a.rcpt > b.rcpt ? 1 : a.key_epoch - b.key_epoch));
+  return sha256b64(concatBytes(utf8Encode('akv1/wraps\n'), cjsonBytes(sorted)));
+}
+
+/** Devices an event adds: genesis and member_add `devices`, device_add `device`; [] for every other type. */
+export function addedDevices(event: MembershipEvent): DeviceRecord[] {
+  const what = `${event.type}.body`;
+  if (event.type === 'device_add') return [parseDevice(event.body['device'], `${what}.device`)];
+  if (event.type === 'genesis' || event.type === 'member_add') {
+    return asArray(event.body['devices'], `${what}.devices`, 64).map((d, i) => parseDevice(d, `${what}.devices[${i}]`));
+  }
+  return [];
+}
+
+/**
+ * Check the wraps delivered with a device-adding event (genesis, device_add,
+ * member_add) against its signed `wraps_digest` (spec §4, §11). The event must
+ * come from a verified chain (its signature is not re-checked here). A device
+ * MUST NOT use a vault key from a wrap that has not passed this check or
+ * {@link verifyRekeyWraps}.
+ *
+ * Order: the event adds devices (bad_request); wraps parse (bad_request /
+ * unsupported_version); every rcpt is a device the event adds (forbidden); key
+ * epochs lie in 1..event.key_epoch and (rcpt, key_epoch) pairs are unique
+ * (bad_request); completeness (bad_request): a recovery-authored device_add
+ * (`sas` "", which replay allows only for the recovery author) carries at least
+ * one wrap, because the recovery bundle may predate later rekeys; every other
+ * event carries a wrap at event.key_epoch for every added device. Older epochs
+ * are optional: content the joiner cannot read is rotated forward, never
+ * delivered by a later unsigned wrap. Finally
+ * wrapsDigest(wraps) === body.wraps_digest (bad_request). Input order does not matter.
+ */
+export function verifyDeviceWraps(event: unknown, wraps: readonly unknown[]): X25519Wrap[] {
+  const ev = parseMembershipEvent(event, 'membership event');
+  const devices = addedDevices(ev);
+  if (devices.length === 0) fail('bad_request', 'event does not add devices');
+  const added = new Set(devices.map((d) => d.device_id));
+  const parsed = asArray(wraps, 'wraps', 100_000).map((w, i) => parseX25519Wrap(w, `wraps[${i}]`));
+  const seen = new Set<string>();
+  for (const w of parsed) {
+    if (!added.has(w.rcpt)) fail('forbidden', 'wrap recipient is not a device added by the event');
+    if (w.key_epoch > ev.key_epoch) fail('bad_request', 'wrap key_epoch is ahead of the event');
+    const key = `${w.rcpt}/${w.key_epoch}`;
+    if (seen.has(key)) fail('bad_request', 'duplicate wrap for a recipient and epoch');
+    seen.add(key);
+  }
+  const byRecovery = ev.type === 'device_add' && ev.body['sas'] === '';
+  const complete = byRecovery ? parsed.length > 0 : [...added].every((id) => seen.has(`${id}/${ev.key_epoch}`));
+  if (!complete) fail('bad_request', 'wrap set is incomplete');
+  if (wrapsDigest(parsed) !== ev.body['wraps_digest']) fail('bad_request', 'wrap set does not match the signed wraps_digest');
+  return parsed;
 }
 
 export interface VerifyRekeyWrapsOptions {

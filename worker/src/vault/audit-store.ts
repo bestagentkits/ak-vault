@@ -1,14 +1,14 @@
 /**
  * Encrypted audit stream (spec §7), stored apart from the operational log. The
- * server cannot decrypt entries (the AAD binds seq and prev), so it enforces the
- * structure it can see: envelope shape, append-only continuity (`start_seq` and
+ * server cannot decrypt entries (the AAD binds seq, prev and key_epoch), so it
+ * enforces the structure it can see: envelope shape, kid = the current key epoch, append-only continuity (`start_seq` and
  * `prev` must equal the stored head, else 409 so the client re-seals), unique
  * nonces, and audit checkpoints that are signed by the posting device, match the
  * stored chain hash, and never move backwards (`rollback`).
  *
  * POST body: {"start_seq":n, "prev":"<hash of entry n-1 or ''>", "entries":[envelope], "checkpoint"?: audit checkpoint}
  */
-import { assertUniqueNonces, auditEntryHash, cjson, parseEnvelope, parseJson, parseAuditCheckpoint, verifyAuditCheckpoint, type JsonObject, type MembershipState } from '@ak-vault/protocol';
+import { assertUniqueNonces, auditEntryHash, cjson, epochTag, parseEnvelope, parseJson, parseAuditCheckpoint, verifyAuditCheckpoint, type JsonObject, type MembershipState } from '@ak-vault/protocol';
 import { ApiError, okResult, type ApiResult } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
 import { queryInt, requireArray, requireInt, requireKeys } from './request-body.js';
@@ -45,6 +45,9 @@ export function appendAudit(sql: SqlStorage, state: MembershipState, did: string
   const entries = requireArray(body['entries'], LIMITS.audit_batch_max).map((e, i) => parseEnvelope(e, `audit entry ${i}`));
   if (entries.length === 0 && body['checkpoint'] === undefined) throw new ApiError('bad_request');
   assertUniqueNonces(entries);
+  // Entries are sealed under the audit key of the current epoch; a lagging device re-pulls and re-seals.
+  const kid = epochTag(state.key_epoch);
+  for (const entry of entries) if (entry.kid !== kid) throw new ApiError('bad_request', { message: 'audit entry is not sealed for the current key epoch' });
   for (const entry of entries) if (cjson(entry as unknown as JsonObject).length > LIMITS.envelope_max_bytes) throw new ApiError('quota_exceeded');
 
   const head = auditHead(sql);

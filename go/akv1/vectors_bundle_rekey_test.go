@@ -50,6 +50,9 @@ func checkRecoveryBundle(t *testing.T, f *rec, n *counter) {
 		if o.has("known_bundle_seq") {
 			a.KnownBundleSeq = o.i64("known_bundle_seq")
 		}
+		if o.has("recovery_sign_pub") {
+			a.RecoverySignPub = o.str("recovery_sign_pub")
+		}
 		o.done()
 		return a
 	}

@@ -17,7 +17,7 @@ import { getChanges } from './changes-feed.js';
 import { listCheckpoints, postCheckpoint } from './checkpoint-store.js';
 import { lookupIdempotent, storeIdempotent, validateIdempotencyKey } from './idempotency.js';
 import { getItem, putRecord } from './item-store.js';
-import { handleGenesis, handleMembershipGet, handleMembershipPost, handleWrapsGet, handleWrapsPost } from './membership-handlers.js';
+import { handleGenesis, handleMembershipGet, handleMembershipPost, handleWrapsGet } from './membership-handlers.js';
 import { MembershipStore } from './membership-store.js';
 import { getRecovery, putRecovery } from './recovery-store.js';
 import { enforceRateLimit } from './request-guard.js';
@@ -106,9 +106,7 @@ export class VaultDurableObject extends DurableObject<Env> {
       case 'genesis':
         return handleGenesis(this.sql, this.membership, body, auth.state);
       case 'membership.post':
-        return handleMembershipPost(this.sql, this.membership, body, auth.next ?? this.membership.verifyAppend(body['event']));
-      case 'wraps.post':
-        return handleWrapsPost(this.sql, auth.state, body);
+        return handleMembershipPost(this.sql, this.membership, req.vaultId, body, auth.next ?? this.membership.verifyAppend(body['event']));
       case 'item.put':
         return putRecord(this.sql, auth.state, req.claims.did, req.itemId!, body);
       case 'checkpoints.post':
@@ -116,7 +114,7 @@ export class VaultDurableObject extends DurableObject<Env> {
       case 'audit.post':
         return appendAudit(this.sql, auth.state, req.claims.did, body);
       case 'recovery.put':
-        return putRecovery(this.sql, req.vaultId, body);
+        return putRecovery(this.sql, auth.state, req.vaultId, body);
       default:
         throw new ApiError('not_found');
     }

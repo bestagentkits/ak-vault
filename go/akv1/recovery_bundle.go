@@ -153,6 +153,11 @@ type OpenRecoveryBundleArgs struct {
 	Password       string
 	RK             []byte
 	KnownBundleSeq int64
+	// RecoverySignPub, when non-empty, is the verified chain's recovery_sign_pub;
+	// a bundle holding any other recovery key (sealed before a recovery_rotate)
+	// is forbidden. Recovering devices MUST set it before signing a recovery
+	// device_add.
+	RecoverySignPub string
 }
 
 // OpenedRecoveryBundle is the verified bundle content.
@@ -192,7 +197,8 @@ func (o OpenedRecoveryBundle) JSONValue() any {
 // (bad_request), unwrap BK (decrypt_failed), open env (decrypt_failed),
 // plaintext must be canonical and repeat the wire vault_id/bundle_seq
 // (bad_request), checkpoint author must be kid(owner_sign_pub) (forbidden)
-// with a valid signature (invalid_signature).
+// with a valid signature (invalid_signature), the bundle recovery key must
+// equal RecoverySignPub when set (forbidden).
 func OpenRecoveryBundle(a OpenRecoveryBundleArgs) (OpenedRecoveryBundle, error) {
 	w, err := ParseRecoveryBundle(a.Bundle)
 	if err != nil {
@@ -240,6 +246,9 @@ func OpenRecoveryBundle(a OpenRecoveryBundleArgs) (OpenedRecoveryBundle, error) 
 	pub, err := SignPublicKey(sk)
 	if err != nil {
 		return OpenedRecoveryBundle{}, err
+	}
+	if a.RecoverySignPub != "" && a.RecoverySignPub != B64Encode(pub) {
+		return OpenedRecoveryBundle{}, newErr(CodeForbidden, "recovery bundle holds a recovery key the membership chain no longer trusts")
 	}
 	vk := make(map[int64][]byte, len(pt.VK))
 	for k, val := range pt.VK {

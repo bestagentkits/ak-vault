@@ -63,6 +63,14 @@ The staging smoke is `pnpm --filter ak-vault-worker smoke:staging`, with
 `STAGING_ISSUER_PRIVATE_JWK_PATH` pointing at the test-only staging issuer key kept
 outside the repository; it uses a throwaway vault and prints only step results.
 
+**Protocol revisions without a version bump.** A revision listed under "Revisions" in
+the [spec](../protocol/v1/spec.md#revisions) changes wire bodies, so a vault created
+before it no longer verifies. The Worker refuses every request to it with
+`unsupported_version` ("vault predates the current protocol revision"), and its old
+`wraps` table is no longer read. Such vaults exist only on staging (production sync
+is disabled until the [release gates](../security/release-gates.md) are met) and hold
+synthetic data; abandon them and create fresh vaults rather than migrating.
+
 ## Durable Object backup and restore
 
 SQLite-backed Durable Objects support point-in-time recovery to any point in the

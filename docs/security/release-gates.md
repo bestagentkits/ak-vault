@@ -33,6 +33,10 @@ evidence does not count.
 - [ ] Cost measured on staging and compared with the
       [cost model](../operations/cost-model.md).
 - [ ] External review signed off (below).
+- [ ] The removal fence binds the change-log contents, not only a position
+      ([#21](https://github.com/bestagentkits/ak-vault/issues/21)): a device that
+      first reads the log after a removal can detect a record substituted at or
+      below the fence, with vectors in TypeScript and Go and a Worker test.
 
 ## Staging soak
 

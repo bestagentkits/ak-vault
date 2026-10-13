@@ -3,7 +3,7 @@ import { b64encode, createDeviceKeys, deviceIdFromSignPub, generateRecoveryKey, 
 import { describe, expect, it } from 'vitest';
 import { call, createDevice } from './helpers/api-client.js';
 import { mintToken } from './helpers/issuer.js';
-import { sealTestBundle } from './helpers/recovery-bundle.js';
+import { putTestBundle, sealTestBundle } from './helpers/recovery-bundle.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 const item = () => randomId();
@@ -90,11 +90,26 @@ describe('membership appends', () => {
     const fx = await VaultFixture.create();
     const intruder = createDeviceKeys({ account: fx.owner.account, role: 'owner', kind: 'human' });
     const wrap = wrapToDevice({ vk: fx.vk.get(1)!, vaultId: fx.vaultId, keyEpoch: 1, recipient: intruder.record });
-    const res = await fx.post(fx.owner, '/wraps', { wraps: [wrap] });
+    const { event, wraps } = fx.enrollEvent(fx.newDevice());
+    const res = await fx.append(event, [...wraps, wrap]);
     expect(res.status).toBe(403);
     expect(res.json.error.code).toBe('forbidden');
-    const viaEvent = await fx.append(fx.buildEvent('device_add', { device: createDevice(fx.owner.account).keys.record as unknown as JsonObject, sas: b64encode(randomBytes(32)) }), [wrap]);
-    expect(viaEvent.status).toBe(403);
+  });
+
+  it('refuses a device-adding event whose wraps do not match its signed wraps_digest', async () => {
+    const fx = await VaultFixture.create();
+    const device = fx.newDevice();
+    const { event, wraps } = fx.enrollEvent(device);
+    // A server-chosen key wrapped to the joiner: right recipient, wrong set.
+    const substituted = wrapToDevice({ vk: randomBytes(32), vaultId: fx.vaultId, keyEpoch: 1, recipient: device.keys.record });
+    for (const bad of [[substituted], [], undefined]) {
+      const res = await fx.append(event, bad);
+      expect(res.status).toBe(400);
+      expect(res.json.error.code).toBe('bad_request');
+    }
+    expect((await fx.append(event, wraps)).status).toBe(201);
+    const roleSet = fx.buildEvent('role_set', { account: fx.owner.account, role: 'owner' });
+    expect((await fx.append(roleSet, wraps)).status).toBe(400);
   });
 
   it('a removed device is denied and writes wait for rekey', async () => {
@@ -129,7 +144,7 @@ describe('membership appends', () => {
   it('a fresh device fetches the recovery bundle, opens it and enrolls itself with the recovered key', async () => {
     const fx = await VaultFixture.create();
     const rk = generateRecoveryKey();
-    expect((await call(fx.owner, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, sealTestBundle(fx, 1, rk))).status).toBe(200);
+    expect((await putTestBundle(fx, fx.owner, sealTestBundle(fx, 1, rk))).status).toBe(200);
 
     // All devices lost: a new device of the owner account proves possession of the key it presents.
     const fresh = createDevice(fx.owner.account, 'owner');
@@ -139,9 +154,8 @@ describe('membership appends', () => {
     const recoveryId = deviceIdFromSignPub(opened.recovery_sign_pub);
     expect(recoveryId).toBe(fx.state.recovery_author);
 
-    const event = fx.buildEvent('device_add', { device: fresh.keys.record as unknown as JsonObject, sas: '' }, { id: recoveryId, secret: opened.recovery_sign_sk });
-    const wrap = wrapToDevice({ vk: opened.vk['1']!, vaultId: fx.vaultId, keyEpoch: 1, recipient: fresh.keys.record });
-    expect((await fx.append(event, [wrap], fresh)).status).toBe(201);
+    const { event, wraps } = fx.enrollEvent(fresh, [1], { id: recoveryId, secret: opened.recovery_sign_sk });
+    expect((await fx.append(event, wraps, fresh)).status).toBe(201);
     const membership = await fx.get(fresh, '/membership');
     expect(membership.status).toBe(200);
     expect(membership.json.membership.seq).toBe(1);
@@ -149,8 +163,8 @@ describe('membership appends', () => {
 
     // The same path cannot add a device for somebody else's account.
     const other = createDevice(`acct-${randomId()}`, 'owner');
-    const bad = fx.buildEvent('device_add', { device: createDevice(fx.owner.account, 'owner').keys.record as unknown as JsonObject, sas: '' }, { id: recoveryId, secret: opened.recovery_sign_sk });
-    expect((await fx.append(bad, undefined, other)).status).toBe(403);
+    const bad = fx.enrollEvent(createDevice(fx.owner.account, 'owner'), [1], { id: recoveryId, secret: opened.recovery_sign_sk });
+    expect((await fx.append(bad.event, bad.wraps, other)).status).toBe(403);
   });
 
   it('pages membership events', async () => {

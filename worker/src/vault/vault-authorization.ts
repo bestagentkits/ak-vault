@@ -9,12 +9,15 @@
  *    the owner recovery key (spec §3.5). The event is chain-verified first, then
  *    the proof is checked against the key the owner-signed event adds.
  * One header-dependent case:
- *  - recovery fetch: a fresh device (not current, never removed) of the owner
+ *  - recovery identity: a fresh device (not current, never removed) of the owner
  *    account may `GET /recovery` to obtain the bundle that holds
- *    `recovery_sign_sk`. It presents its `sign_pub` in `AKV-Device-Key`; the token
- *    `did` must equal `kid(sign_pub)` and the proof must verify against that key.
- *    Exposure: any holder of an owner-account token plus a key it generates can
- *    fetch the bundle and attempt offline guessing of the bundle password.
+ *    `recovery_sign_sk`, and `GET /membership` to verify the chain it must append
+ *    to (spec §3.5, §9.4); nothing else. It presents its `sign_pub` in
+ *    `AKV-Device-Key`; the token `did` must equal `kid(sign_pub)` and the proof
+ *    must verify against that key. Exposure: any holder of an owner-account token
+ *    plus a key it generates can fetch the bundle and attempt offline guessing of
+ *    the bundle password, and can read membership metadata (accounts, roles,
+ *    device public keys).
  */
 import { b64decodeLength, deviceIdFromSignPub, parseMembershipEvent, type DeviceRecord, type JsonObject, type MembershipState } from '@ak-vault/protocol';
 import type { Scope } from '../auth/jwt-verify.js';
@@ -35,7 +38,6 @@ const WRITE: readonly Scope[] = ['vault:write'];
 const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: readonly Scope[]; role: RoleRule }> = {
   'membership.get': { scope: READ, role: 'any_device' },
   'wraps.get': { scope: READ, role: 'any_device' },
-  'wraps.post': { scope: WRITE, role: 'human_owner' },
   'item.get': { scope: READ, role: 'any_device' },
   'item.put': { scope: WRITE, role: 'writer' },
   'changes.get': { scope: READ, role: 'any_device' },
@@ -82,7 +84,7 @@ function authorizeGenesis(req: VaultRequest, sql: SqlStorage | null): Authorized
 function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: MembershipStore): Authorized {
   const state = store.requireState();
   const body = parseBodyObject(req.body);
-  requireKeys(body, ['event'], ['wraps']);
+  requireKeys(body, ['event'], ['wraps', 'bundle']);
   const known = state.devices.find((d) => d.device_id === req.claims.did);
   if (known) {
     const device = memberDevice(state, req.claims.sub, req.claims.did);
@@ -104,7 +106,11 @@ function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: Memb
   return { state, device, body, next };
 }
 
-/** `GET /recovery` by a fresh owner-account device that proves possession of the key it presents. */
+/**
+ * The recovery identity: `GET /recovery` or `GET /membership` (the only ops a
+ * not-yet-enrolled device may call) by a fresh owner-account device that proves
+ * possession of the key it presents.
+ */
 function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: MembershipState): Authorized {
   const did = req.claims.did;
   if (req.claims.sub !== state.owner_account || state.removed_device_ids.includes(did)) throw new ApiError('forbidden');
@@ -125,7 +131,10 @@ export function authorize(req: VaultRequest, sql: SqlStorage, store: MembershipS
   if (req.op === 'genesis') return authorizeGenesis(req, sql);
   if (req.op === 'membership.post') return authorizeMembershipPost(req, sql, store);
   const state = store.requireState();
-  if (req.op === 'recovery.get' && !state.devices.some((d) => d.device_id === req.claims.did)) return authorizeRecoveryFetch(req, sql, state);
+  // The bundle is only ever fetched this way; a membership read takes this path only
+  // when the caller presents its key, so other non-member reads stay `forbidden`.
+  const recoveryIdentity = req.op === 'recovery.get' || (req.op === 'membership.get' && req.deviceKey !== null);
+  if (recoveryIdentity && !state.devices.some((d) => d.device_id === req.claims.did)) return authorizeRecoveryFetch(req, sql, state);
   const device = memberDevice(state, req.claims.sub, req.claims.did);
   verifyRequestProof(sql, req, device.sign_pub);
   const policy = POLICY[req.op];

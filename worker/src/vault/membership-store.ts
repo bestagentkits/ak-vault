@@ -19,7 +19,14 @@ export class MembershipStore {
   state(): MembershipState | null {
     if (this.cached !== undefined) return this.cached;
     const row = this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', STATE_KEY).toArray()[0];
-    this.cached = row ? (JSON.parse(row.v) as MembershipState) : null;
+    const state = row ? (JSON.parse(row.v) as MembershipState) : null;
+    // A vault created before the signed-wrap-set / removal-fence revision has a
+    // state without `removals` and a chain that no longer verifies. Refuse every
+    // request to it instead of serving it half-working (see the runbook).
+    if (state !== null && !Array.isArray((state as { removals?: unknown }).removals)) {
+      throw new ApiError('unsupported_version', { message: 'vault predates the current protocol revision' });
+    }
+    this.cached = state;
     return this.cached;
   }
 
@@ -38,7 +45,11 @@ export class MembershipStore {
   /** Verify `event` as the next event of the stored chain; returns the resulting state without persisting. */
   verifyAppend(event: unknown): MembershipState {
     const current = this.requireState();
-    if (current.seq + 1 >= LIMITS.membership_events_per_vault) throw new ApiError('quota_exceeded', { status: 403 });
+    // The type is only trusted after chain verification below; claiming `rekey` here
+    // just selects the looser bound, and the event must still verify as a rekey.
+    const requiredRekey = current.rekey_required && (event as { type?: unknown } | null)?.type === 'rekey';
+    const lastSeq = LIMITS.membership_events_per_vault - (requiredRekey ? 1 : 2);
+    if (current.seq + 1 > lastSeq) throw new ApiError('quota_exceeded', { status: 403 });
     const events = this.sql.exec<{ event_json: string }>('SELECT event_json FROM membership_events ORDER BY seq').toArray().map((r) => parseJson(r.event_json));
     return verifyMembershipChain([...events, event], { vaultId: current.vault_id, trustedAnchor: current.trust_anchor });
   }

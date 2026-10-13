@@ -6,11 +6,12 @@
  * logged, and that an internal failure fails closed without echoing details.
  */
 import { env } from 'cloudflare:workers';
-import { appendAuditEntry, epochTag, generateRecoveryKey, randomBytes, randomId, sealRecoveryBundle, sha256b64, signCheckpoint, type JsonObject } from '@ak-vault/protocol';
+import { appendAuditEntry, deriveAuditKey, generateRecoveryKey, randomBytes, randomId, sealRecoveryBundle, sha256b64, signCheckpoint, type JsonObject } from '@ak-vault/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { Env } from '../src/env.js';
 import { call, fetchRaw, type CallResult } from './helpers/api-client.js';
 import { dumpDurableObject, encodings, findLeak } from './helpers/disclosure-scan.js';
+import { putTestBundle } from './helpers/recovery-bundle.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 const CANARY_NAME = `CANARY_NAME_${randomId()}`;
@@ -51,8 +52,7 @@ describe('disclosure scan', () => {
     responses.push(await fx.write(fx.owner, itemId, 1, null));
     responses.push(await fx.write(laptop, itemId, 1, { name: CANARY_NAME, value: CANARY_VALUE }));
 
-    const auditKey = randomBytes(32);
-    const audit = appendAuditEntry({ key: auditKey, vaultId: fx.vaultId, kid: epochTag(1), head: null, event: { op: 'item.reveal', name: CANARY_NAME, note: CANARY_AUDIT } });
+    const audit = appendAuditEntry({ vk: fx.vk.get(1)!, vaultId: fx.vaultId, keyEpoch: 1, head: null, event: { op: 'item.reveal', name: CANARY_NAME, note: CANARY_AUDIT } });
     responses.push(await fx.post(fx.owner, '/audit', { start_seq: 0, prev: '', entries: [audit.entry as unknown as JsonObject] }));
 
     const rk = generateRecoveryKey();
@@ -61,7 +61,7 @@ describe('disclosure scan', () => {
       fx.owner.keys.signSecret,
     );
     const bundle = sealRecoveryBundle({ vaultId: fx.vaultId, bundleSeq: 1, vk: { '1': fx.vk.get(1)! }, ownerSignPub: fx.owner.keys.record.sign_pub, recoverySignSk: fx.recovery.secretKey, checkpoint, password: CANARY_PASSWORD, rk, params: { t: 2, m: 19_456, p: 1 } });
-    responses.push(await call(fx.owner, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, bundle));
+    responses.push(await putTestBundle(fx, fx.owner, bundle));
     responses.push(await fx.get(laptop, '/changes'));
     // Error paths with secrets in the request must not echo them back.
     responses.push(await fx.post(fx.owner, '/audit', { start_seq: 0, prev: CANARY_VALUE, entries: [] }));
@@ -69,7 +69,7 @@ describe('disclosure scan', () => {
     responses.push(await call(null, 'GET', `/v1/vaults/${fx.vaultId}/changes`, undefined, { token: `${CANARY_VALUE}.x.y` }));
     expect(responses.map((r) => r.status)).toEqual([200, 409, 200, 409, 201, 200, 200, 400, 400, 401]);
 
-    const secrets: (string | Uint8Array)[] = [CANARY_NAME, CANARY_VALUE, CANARY_AUDIT, CANARY_PASSWORD, fx.vk.get(1)!, auditKey, rk, fx.recovery.secretKey, fx.owner.keys.signSecret];
+    const secrets: (string | Uint8Array)[] = [CANARY_NAME, CANARY_VALUE, CANARY_AUDIT, CANARY_PASSWORD, fx.vk.get(1)!, deriveAuditKey(fx.vk.get(1)!, fx.vaultId, 1), rk, fx.recovery.secretKey, fx.owner.keys.signSecret];
     const credentials = responses.flatMap((r) => [r.token, r.proof]).filter((x): x is string => typeof x === 'string');
     expect(credentials.length).toBeGreaterThan(10);
 

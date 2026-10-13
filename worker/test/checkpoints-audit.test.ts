@@ -2,8 +2,6 @@
 import {
   appendAuditEntry,
   auditEntryHash,
-  epochTag,
-  randomBytes,
   randomId,
   sha256b64,
   signAuditCheckpoint,
@@ -64,11 +62,10 @@ describe('checkpoints', () => {
 });
 
 describe('audit stream', () => {
-  const key = randomBytes(32);
-  function seal(fx: VaultFixture, head: AuditHead | null, n: number): { entries: Envelope[]; head: AuditHead | null } {
+  function seal(fx: VaultFixture, head: AuditHead | null, n: number, keyEpoch = fx.keyEpoch): { entries: Envelope[]; head: AuditHead | null } {
     const entries: Envelope[] = [];
     for (let i = 0; i < n; i++) {
-      const out = appendAuditEntry({ key, vaultId: fx.vaultId, kid: epochTag(1), head, event: { op: 'item.read', i } });
+      const out = appendAuditEntry({ vk: fx.vk.get(keyEpoch)!, vaultId: fx.vaultId, keyEpoch, head, event: { op: 'item.read', i } });
       entries.push(out.entry);
       head = out.head;
     }
@@ -87,7 +84,7 @@ describe('audit stream', () => {
     expect(p1.json.has_more).toBe(true);
     const p2 = await fx.get(fx.owner, `/audit?cursor=${p1.json.next_cursor}`);
     const all = [...p1.json.entries, ...p2.json.entries].map((e: { entry: unknown }) => e.entry);
-    const verified = verifyAuditChain(all, { key, vaultId: fx.vaultId });
+    const verified = verifyAuditChain(all, { vaultKeys: (e) => fx.vk.get(e), vaultId: fx.vaultId, keyEpoch: fx.keyEpoch });
     expect(verified.events).toHaveLength(5);
     expect(verified.head).toEqual(b.head);
   });
@@ -118,6 +115,26 @@ describe('audit stream', () => {
     expect(behind.json.error.code).toBe('rollback');
     expect((await fx.get(fx.owner, '/audit')).json.checkpoints).toHaveLength(1);
     expect((await fx.post(fx.owner, '/audit', { ...batch(a.head, []), checkpoint: sign(1, a.head!.head) })).status).toBe(403);
+  });
+
+  it('refuses entries not sealed for the current key epoch, and verifies a chain across a rekey', async () => {
+    const fx = await VaultFixture.create();
+    const laptop = await fx.addDevice();
+    const a = seal(fx, null, 2);
+    expect((await fx.post(fx.owner, '/audit', batch(null, a.entries))).status).toBe(201);
+    expect((await fx.removeDevice(laptop)).status).toBe(201);
+    expect((await fx.rekey()).status).toBe(201);
+    const stale = await fx.post(fx.owner, '/audit', batch(a.head, seal(fx, a.head, 1, 1).entries));
+    expect(stale.status).toBe(400);
+    expect(stale.json.error.code).toBe('bad_request');
+    const b = seal(fx, a.head, 2);
+    expect((await fx.post(fx.owner, '/audit', batch(a.head, b.entries))).status).toBe(201);
+    const all = (await fx.get(fx.owner, '/audit')).json.entries.map((e: { entry: unknown }) => e.entry);
+    expect(verifyAuditChain(all, { vaultKeys: (e) => fx.vk.get(e), vaultId: fx.vaultId, keyEpoch: 2 }).events).toHaveLength(4);
+    // A device holding only the new epoch still verifies the chain; older entries stay opaque.
+    expect(verifyAuditChain(all, { vaultKeys: (e) => (e === 2 ? fx.vk.get(2) : undefined), vaultId: fx.vaultId, keyEpoch: 2 }).events.filter((e) => e.opaque)).toHaveLength(2);
+    // Without the current epoch's key the chain is refused, never reported as all-opaque.
+    expect(() => verifyAuditChain(all, { vaultKeys: (e) => (e === 1 ? fx.vk.get(1) : undefined), vaultId: fx.vaultId, keyEpoch: 2 })).toThrow(/required audit epoch/);
   });
 
   it('read-only devices (reader, machine) and read-scoped tokens cannot append, but can read the stream', async () => {

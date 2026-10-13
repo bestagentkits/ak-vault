@@ -46,16 +46,20 @@
 //
 // Membership (§4): VerifyMembershipChain, BuildGenesisEvent,
 // NextMembershipEvent, MembershipEventHash, ValidateWrapRecipients,
-// WrapsDigest, VerifyRekeyWraps.
+// WrapsDigest, VerifyRekeyWraps, AddedDevices, VerifyDeviceWraps (signed
+// wrap sets of device-adding events); MembershipState.Removals lists each
+// removal (DeviceRemoval) with its signed log_fence.
 //
 // Records (§5): SignRecord, ParseRecord, VerifyRecord, AuthorizeRecordWrite,
 // RecordDigest, ApplyRecord (pure CAS / conflict / tombstone model),
-// ComputeStateDigest.
+// ComputeStateDigest, VerifyLoggedRecord (records read from the change log,
+// checked against each removal fence of their author).
 //
 // Checkpoints (§6): SignCheckpoint, VerifyCheckpoint, CheckRollback.
 //
-// Audit (§7): AppendAuditEntry, VerifyAuditChain, SignAuditCheckpoint,
-// VerifyAuditCheckpoint.
+// Audit (§7): DeriveAuditKey (per key epoch), AppendAuditEntry,
+// VerifyAuditChain, SignAuditCheckpoint, VerifyAuditCheckpoint; ParseEpochTag
+// reads the e<key_epoch> envelope kid.
 //
 // Policy (§8): ParsePolicy, EffectiveGrant.
 //

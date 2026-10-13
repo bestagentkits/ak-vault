@@ -2,7 +2,7 @@
 import { randomBytes, randomId, sha256b64, type JsonObject } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';
 import { call, createDevice } from './helpers/api-client.js';
-import { sealTestBundle } from './helpers/recovery-bundle.js';
+import { putTestBundle, sealTestBundle } from './helpers/recovery-bundle.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 const v = { name: 'DB_PASSWORD', value: 'synthetic' };
@@ -28,7 +28,8 @@ describe('read-only devices', () => {
     expect((await fx.get(machine, `/items/${id}`)).status).toBe(200);
     expect((await fx.write(machine, id, 1, v)).status).toBe(403);
     expect((await fx.write(machine, randomId(), 0, v)).status).toBe(403);
-    expect((await fx.post(machine, '/wraps', { wraps: [fx.wrapFor(fx.owner)] })).status).toBe(403);
+    const { event, wraps } = fx.enrollEvent(fx.newDevice());
+    expect((await fx.append(event, wraps, machine)).status).toBe(403);
     expect((await fx.get(machine, '/recovery')).status).toBe(403);
   });
 
@@ -70,17 +71,20 @@ describe('scope and tenant isolation', () => {
     expect((await fx.get(laptop, '/changes')).status).toBe(403);
   });
 
-  it('only human owners upload wraps; editors may not', async () => {
+  it('wraps are accepted only inside a signed event: there is no standalone wrap upload', async () => {
     const fx = await VaultFixture.create('shared');
     const editor = await fx.addDevice({ account: `acct-${randomId()}`, role: 'editor' });
-    expect((await fx.post(editor, '/wraps', { wraps: [fx.wrapFor(editor)] })).status).toBe(403);
+    for (const device of [fx.owner, editor]) {
+      const res = await fx.post(device, '/wraps', { wraps: [fx.wrapFor(editor)] });
+      expect(res.status).toBe(404);
+    }
     expect((await fx.write(editor, randomId(), 0, v)).status).toBe(200);
   });
 });
 
 describe('recovery bundle', () => {
   const bundle = sealTestBundle;
-  const put = (fx: VaultFixture, device: VaultFixture['owner'], body: unknown) => call(device, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, body);
+  const put = (fx: VaultFixture, device: VaultFixture['owner'], body: unknown) => putTestBundle(fx, device, body);
 
   it('owner stores and fetches it; bundle_seq must increase', async () => {
     const fx = await VaultFixture.create();

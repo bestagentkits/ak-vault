@@ -53,7 +53,10 @@ AgentKit (agentkit#2298/#2299). Decisions and rationale are in
 - No write is accepted unless its base revision matches (CAS); no write silently
   overwrites another.
 - A write below a tombstone never becomes live.
-- No recipient, device or member exists unless an owner-signed event added it.
+- No recipient, device or member exists unless an owner-signed event added it, and
+  no device uses a vault-key wrap that event's signed `wraps_digest` does not cover.
+- No record by a removed device is accepted at a change-log position above its
+  signed removal fence.
 - A client never accepts state older than, or forked from, a checkpoint it witnessed.
 - Unknown version, algorithm, event type, key epoch or signature fails closed.
 - A request is served only if token, proof, live revocation check and membership all
@@ -70,7 +73,10 @@ directories themselves are the authority for exact file names.
 | # | Threat | Actor | Mitigation | Test evidence |
 |---|---|---|---|---|
 | S1 | Forged record or membership event | Server | Ed25519 signatures with domain-separated contexts ([spec §2, §4, §5](../protocol/v1/spec.md#4-membership-log-owner-signed-hash-chained)) | Vectors: invalid signature, wrong context |
-| S2 | Injected recipient / added device | Server, member | Owner-signed hash-chained membership; wraps to non-members rejected | Vectors: injected recipient, non-owner author; `worker/test/` injected-recipient rejection |
+| S2 | Injected recipient / added device | Server, member | Owner-signed hash-chained membership; every wrap belongs to the set an owner-signed event commits to with `wraps_digest`; no separate wrap upload ([spec §3.3, §4](../protocol/v1/spec.md#33-device-key-wrap-x25519-xc20p)) | Vectors: injected recipient, non-owner author, `device-add-wraps.json`; `worker/test/` injected-recipient rejection, digest mismatch; `authorization.test.ts` "wraps are accepted only inside a signed event" (`POST /wraps` → 404) |
+| S6 | Key substitution for a joining device: the server swaps the vault key wrapped to a new device for one it knows, then reads what the device writes | Server | The joiner verifies the wrap set against the signed `wraps_digest` before unwrapping (`verifyDeviceWraps`); the full set is served per event to members, including wraps of devices removed since | Vectors: `device-add-wraps.json` injected key, dropped wrap, missing current epoch; `worker/test/signed-wrap-sets.test.ts` |
+| S7 | A removed device, colluding with the server, appends records after its removal | Server + removed device | Signed `log_fence` on every removal; contiguous change-log positions; `verifyLoggedRecord` refuses a record by a removed author above the fence; the Worker refuses records by non-current authors and stale or future fences. Positions at or below the fence: see limitations ([spec §5](../protocol/v1/spec.md#5-records-revisions-conflicts-and-tombstones)) | Vectors: `removal-fence.json`; `worker/test/removal-fence-and-recovery-rotation.test.ts` stale/ahead fence, relayed write by a removed author |
+| S8 | A leaked or superseded recovery key enrolls a device | Holder of an old recovery key or bundle | Owner-signed `recovery_rotate`; only the current recovery key may author, and only `device_add`; the resealed bundle lands atomically with the event; a bundle sealed before the latest rotation is refused; recovering devices check the bundle key against the chain ([spec §3.5](../protocol/v1/spec.md#35-owner-recovery-signing-key-and-sas-enrollment)) | Vectors: `membership.json` rotation cases, `recovery-bundle.json` rotated key; `worker/test/removal-fence-and-recovery-rotation.test.ts` rotation and stale-sealer refusal |
 | S3 | Token replay or theft without device key | Stolen token, network | Device-signed `AKV-Proof` bound to method, URL, token hash and body hash; single-use `jti` window | `worker/test/` replayed proof, missing proof, wrong `did` |
 | S4 | Audience/issuer/alg confusion | Network, attacker | Exact `iss`/`aud`, `alg` = ES256 only, `kid` must match JWKS; production and staging use distinct audiences | `worker/test/` wrong `aud`/`iss`/`alg`/`kid`, expired, `nbf` in future; `auth-token.test.ts` cross-environment refusal using the deployed audiences |
 | S5 | Revoked session/device keeps access | Stolen device/token | Live revocation registry per request; fail closed on registry error | `worker/test/` revoked `sid`, revoked `did`, minimum-`iat`, registry failure → 503 |
@@ -81,17 +87,17 @@ directories themselves are the authority for exact file names.
 | T5 | Rollback or fork of vault state | Server | Client-signed checkpoints; rollback/fork alarm | Vectors: rollback, fork; `worker/test/` stale membership |
 | T6 | Nonce reuse | Buggy client | Random 24-byte nonces from the platform CSPRNG; only vectors inject fixed nonces | Vectors: duplicate nonce |
 | T7 | Weak password parameters downgrade | Server | Argon2id minimums enforced by verifiers; re-wrap upgrade | Vectors: below-minimum parameters |
-| R1 | Undetected audit drop/reorder | Server | Hash-chained encrypted audit + audit checkpoints ([spec §7](../protocol/v1/spec.md#7-encrypted-audit-stream)) | Vectors: audit reorder/drop |
+| R1 | Undetected audit drop/reorder, or audit entries forged by a removed device | Server, removed device | Hash-chained encrypted audit + audit checkpoints; a per-epoch audit key derived from `VK[e]`, so a removed device cannot write entries at an epoch it never held; epochs never decrease along the chain; the Worker accepts only the current epoch; the rekeying device MUST append at the new epoch; verifiers require the current epoch's key ([spec §7](../protocol/v1/spec.md#7-encrypted-audit-stream)) | Vectors: `audit.json` reorder/drop/relabel across a rekey, refusal without the current key; `worker/test/checkpoints-audit.test.ts` |
 | I1 | Plaintext or name in logs, errors, dumps, metrics | Server operator, log reader | Names/values only inside ciphertext; stable error codes never echo bodies | `worker/test/` full DO dump and log scan for planted plaintext and names |
 | I2 | Cross-tenant read | Malicious account | Scope ∩ membership; DO per vault | `worker/test/` cross-vault access |
-| I3 | Removed member reads new material | Malicious member | `device_remove`/`member_remove` → `rekey_required` → rekey; `needs_rotate` | `worker/test/` writes refused while rekey required; vectors: removed recipient |
+| I3 | Removed member reads new material | Malicious member | `device_remove`/`member_remove` → `rekey_required` → rekey; `needs_rotate`; new devices receive keys only through signed wrap sets | `worker/test/` writes refused while rekey required; vectors: removed recipient |
 | D1 | Server outage blocks local use | Server, network | `resolve` reads local backend only | agentkit#2298 regression (owned there) |
-| D2 | Abuse / quota exhaustion | Any client | Rate limits and quotas published by `/v1/meta` | `worker/test/` rate-limit and quota responses |
+| D2 | Abuse / quota exhaustion | Any client | Rate limits and quotas published by `/v1/meta`; membership quotas never block the rekey a removal requires, nor recovery enrollment | `worker/test/` rate-limit and quota responses; `vault-storage-limits.test.ts` boundary cases |
 | E1 | Reader or machine identity writes | Member, CI | Role and device kind enforced read-only | `worker/test/` reader write denied, machine write denied |
 | E2 | Synced policy or profile elevates a grant | Hostile profile, injected agent | Policy is a maximum; profile text is untrusted data ([spec §8](../protocol/v1/spec.md#8-portable-policy-restrictive-only)) | agentkit#2299 / #7 negative tests (owned client-side) |
 | E3 | Unsupported version accepted | Server, attacker | Closed identifier sets; fail closed | Vectors: unsupported version, unknown algorithm |
 | C1 | Forked PR reaches secrets or deploys | Forked PR | No secrets to fork workflows; production Environment reviewer | Workflow config in `.github/`; red-team scenario in [release gates](./release-gates.md) |
-| I4 | Offline guessing of the recovery bundle | Holder of an owner-account token (stolen session) | Bundle is released only to the owner account with a device-key proof; removed device IDs refused; Argon2id minimums and a 256-bit recovery key; owner revokes sessions after a loss | `worker/test/recovery-fetch.test.ts` wrong account, removed device, key/did mismatch |
+| I4 | Offline guessing of the recovery bundle; recovery identity reading beyond its need | Holder of an owner-account token (stolen session) | Bundle and the read-only membership log are released only to the owner account with a device-key proof; every other route refuses the recovery identity; removed device IDs refused; Argon2id minimums and a 256-bit recovery key; owner revokes sessions after a loss | `worker/test/recovery-fetch.test.ts` wrong account, removed device, key/did mismatch; `worker/test/removal-fence-and-recovery-rotation.test.ts` route refusals |
 | C2 | Compromised CI runner reads beyond scope | CI runner | Dedicated CI vault, machine read-only identity, revocable | #6 tests (post-MVP) |
 
 ## Explicit limitations
@@ -115,6 +121,43 @@ These are accepted and must be stated wherever the guarantees are described:
   download the encrypted recovery bundle and guess the password offline. A weak
   password is the residual exposure; revoking the owner's sessions after a loss
   closes the path.
+- **Audit entries are not signed per author.** Any device that held `VK[e]` can
+  write audit entries at epoch `e`, including a device removed later. With a
+  colluding server it can keep doing so after the rekey until the first entry at a
+  later epoch is in the chain; the rekeying device MUST append one right away
+  (spec §7), which closes the window. Entries at an epoch older than the reader's
+  minimum epoch, whose key it lacks, are opaque: chained and epoch-checked, but
+  their content is unverified. A reader without the current epoch's key is refused.
+  A reader with it can still receive a chain the server truncated before the first
+  entry at its minimum epoch, which is entirely opaque and passes; only a witnessed
+  audit checkpoint bounds that, and clients must not present it as verified.
+- **The removal fence binds positions, not contents.** It refuses a removed
+  author's records above the fence. Records it got accepted before its removal
+  stay valid, including any written after it was compromised but before it was
+  removed. A client detects a substituted record at or below the fence only if it
+  had pulled the log up to the fence before the removal and kept a per-position
+  digest of each record. Every other device trusts the server for those
+  positions: a new or recovered device, and equally an existing device that was
+  offline or behind when the removal landed. A colluding server could place a
+  record the removed device signed after its removal there. Binding the log
+  contents in the removal ([#21](https://github.com/bestagentkits/ak-vault/issues/21))
+  is a [release gate](./release-gates.md).
+- **A live device can stall its own removal.** The fence must equal the current
+  log head, so a device that keeps writing keeps the fence stale. Revoke it first;
+  live revocation stops its requests.
+- **Records are not checked against role history.** `verifyLoggedRecord` accepts
+  records by any current device; read-only roles and machine devices are enforced
+  by the Worker only
+  ([#22](https://github.com/bestagentkits/ak-vault/issues/22)).
+- **Recovery bundle contents are not server-checked.** The server cannot open the
+  bundle. It refuses a `PUT /recovery` whose declared sealing position predates the
+  latest `recovery_rotate`, which stops an honest but stale owner device from
+  replacing a fresh bundle; it cannot stop an owner device that declares a current
+  position yet seals the wrong key. Recovering devices detect the mismatch
+  (`forbidden`) instead of trusting it.
+- **Wraps of older epochs are optional.** A device enrolled without a wrap for an
+  older epoch cannot read items still at that epoch; they are rotated forward by a
+  device that can, never delivered by an unsigned late wrap.
 - **Metadata.** Item counts, sizes, timing, revisions, membership and device
   public keys are visible to the server
   ([data classification](./data-classification.md)).

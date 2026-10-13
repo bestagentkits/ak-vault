@@ -6,15 +6,17 @@
 export const VAULT_SCHEMA = `
   CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS membership_events (seq INTEGER PRIMARY KEY, hash TEXT NOT NULL, event_json TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS wraps (
-    rcpt TEXT NOT NULL, key_epoch INTEGER NOT NULL, membership_seq INTEGER NOT NULL, wrap_json TEXT NOT NULL,
-    PRIMARY KEY (rcpt, key_epoch)
+  -- The wrap set uploaded with the owner-signed event at membership_seq, verified against its wraps_digest.
+  CREATE TABLE IF NOT EXISTS wrap_sets (
+    membership_seq INTEGER NOT NULL, rcpt TEXT NOT NULL, key_epoch INTEGER NOT NULL, wrap_json TEXT NOT NULL,
+    PRIMARY KEY (membership_seq, rcpt, key_epoch)
   );
   CREATE TABLE IF NOT EXISTS items (
     item_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, tombstone INTEGER NOT NULL,
     tombstone_revision INTEGER NOT NULL, head TEXT NOT NULL, head_log_seq INTEGER NOT NULL
   );
-  -- Every accepted record (applied or preserved as a conflict branch). log_seq is the change-log cursor.
+  -- Every accepted record (applied or preserved as a conflict branch). log_seq is the change-log cursor:
+  -- assigned as MAX + 1 inside the write transaction, so positions start at 1 and are contiguous.
   CREATE TABLE IF NOT EXISTS records (
     log_seq INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL, kind TEXT NOT NULL,
     revision INTEGER, conflict_id TEXT, digest TEXT NOT NULL, record_json TEXT NOT NULL,

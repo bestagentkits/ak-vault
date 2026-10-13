@@ -90,6 +90,16 @@ ct        = XC20P(wrap_key, n, VK[e], aad={"ctx":"akv1/wrap","vault_id","key_epo
 wire      = {"v":1,"alg":"x25519-xc20p","rcpt":device_id,"key_epoch":e,"epk":b64,"n":b64,"ct":b64}
 ```
 
+**Signed wrap sets.** Every device wrap belongs to the set of exactly one
+owner-signed membership event whose body commits to it with `wraps_digest`: the
+event that added the recipient (`genesis`, `device_add`, `member_add`) or a
+`rekey`. The set is uploaded in the same request as the event and stored as
+uploaded; there is no other way to deliver a wrap. A device MUST NOT unwrap a
+vault key from a wrap that has not passed `verifyDeviceWraps` or
+`verifyRekeyWraps` against the event from its verified chain (§11). The server
+cannot substitute a recipient's key, add a wrap or drop one without changing the
+digest the owner signed.
+
 ### 3.4 Password and recovery wraps
 
 ```
@@ -118,14 +128,35 @@ At genesis the owner generates an Ed25519 **recovery signing key**; its public k
 `genesis.body.recovery_sign_pub` and its private key is stored only inside the recovery
 bundle (`cjson` field `recovery_sign_sk`). If every owner device is lost, a fresh device
 unlocks the bundle with the password or recovery key and authors `device_add` for itself
-with the recovery key, so ownership is restored without trusting the server.
+with the recovery key, so ownership is restored without trusting the server. Before
+signing, the device MUST verify the membership chain from the pinned owner anchor and
+check that the bundle's recovery key is the chain's current `recovery_sign_pub`
+(`openRecoveryBundle` option `recoverySignPub`, `forbidden` on mismatch). The recovery
+key authors `device_add` only: it cannot read the change log, so it cannot sign an
+honest removal fence (§5). The enrolled device removes the lost devices itself and
+rekeys.
 
-**Bundle fetch by a device outside membership.** The server returns the opaque bundle
-(`GET /v1/vaults/{vid}/recovery`) to a current owner device, or to a fresh device when
-all of these hold: the token `sub` is the vault's `owner_account`; the token `did` is
+**Recovery-key rotation.** An owner device replaces the recovery signing key with a
+`recovery_rotate` event (§4) whose body names the new public key. The request carries
+the resealed bundle (`bundle_seq` incremented, `recovery_sign_sk` = the new key) and
+the server stores the event and the bundle in one transaction: a `recovery_rotate`
+without a bundle, or with a `bundle_seq` not above the stored one, is refused and the
+chain does not advance. From that event on, a `device_add` signed by any earlier
+recovery key is `forbidden`; a recovery key is never reused and never collides with a
+device key (`bad_request`). The server cannot open the bundle, so it cannot check that
+the bundle holds the key the event names; the recovering device does (above).
+
+**Reads by a device outside membership (recovery identity).** The server returns the
+opaque bundle (`GET /v1/vaults/{vid}/recovery`) to a current owner device, and the
+bundle or the signed membership log (`GET /v1/vaults/{vid}/membership`, read-only) to a
+fresh device when all of these hold: the token `sub` is the vault's `owner_account`; the token `did` is
 neither a current nor a removed device; the request carries
 `AKV-Device-Key: <b64 Ed25519 sign_pub>` with `kid(sign_pub) == did`; and `AKV-Proof`
-verifies against that key. Exposure: anyone holding an owner-account token can obtain
+verifies against that key. Every other route answers such a device `forbidden`;
+without the `AKV-Device-Key` header, a membership read by a non-member is `forbidden`
+as before. The membership log is metadata already visible to the server (§4,
+[data classification](../../security/data-classification.md)); reading it lets the
+fresh device verify the chain before it trusts the bundle. Exposure: anyone holding an owner-account token can obtain
 the bundle ciphertext and attempt offline guessing, which the Argon2id parameters
 (§3.4) and the 256-bit recovery key bound. The server refuses a removed device ID on
 this path, but a thief who still holds a live owner-account session can mint a token
@@ -150,19 +181,29 @@ Signing context `akv1/membership`. `seq` starts at 0 (genesis) and increments by
 
 | type | body | rules |
 |---|---|---|
-| `genesis` | `{"vault_kind":"personal"|"shared"|"ci","owner_account","recovery_sign_pub","devices":[device]}` | seq 0, key_epoch 1, author ∈ devices with role owner. The genesis author `sign_pub` is the pinned trust anchor (TOFU, or from the recovery bundle / SAS). `recovery_sign_pub` is the owner recovery signing key (§3.5). |
-| `device_add` | `{"device":device,"sas":"<b64 sha256 of SAS transcript>"}` | author is an owner device or the recovery signing key (§3.5). `sas` = `""` only when authored by the recovery key. |
-| `device_remove` | `{"device_id","reason":"lost"|"stolen"|"retired"|"compromised"}` | closed reason set; sets `rekey_required`. |
-| `member_add` | `{"account","role","devices":[device]}` | shared vaults only. |
-| `member_remove` | `{"account"}` | removes all its devices; sets `rekey_required`. |
+| `genesis` | `{"vault_kind":"personal"|"shared"|"ci","owner_account","recovery_sign_pub","devices":[device],"wraps_digest":b64}` | seq 0, key_epoch 1, author ∈ devices with role owner. The genesis author `sign_pub` is the pinned trust anchor (TOFU, or from the recovery bundle / SAS). `recovery_sign_pub` is the owner recovery signing key (§3.5). `wraps_digest` commits to the wrap set of the genesis devices (§3.3). |
+| `device_add` | `{"device":device,"sas":"<b64 sha256 of SAS transcript>","wraps_digest":b64}` | author is an owner device or the current recovery signing key (§3.5). `sas` = `""` only when authored by the recovery key. `wraps_digest` commits to the new device's wrap set. |
+| `device_remove` | `{"device_id","reason":"lost"|"stolen"|"retired"|"compromised","log_fence":n}` | closed reason set; `log_fence` is the removal fence (§5); sets `rekey_required`. |
+| `member_add` | `{"account","role","devices":[device],"wraps_digest":b64}` | shared vaults only; `wraps_digest` commits to the new devices' wrap set. |
+| `member_remove` | `{"account","log_fence":n}` | removes all its devices, each fenced at `log_fence` (§5); sets `rekey_required`. |
 | `role_set` | `{"account","role"}` | cannot demote the last owner. |
-| `rekey` | `{"new_key_epoch":e+1,"wraps_digest":b64,"needs_rotate":[item_id…]}` | clears `rekey_required`; `wraps_digest` = sha256 over cjson of the sorted wrap list for the new epoch. |
+| `rekey` | `{"new_key_epoch":e+1,"wraps_digest":b64,"needs_rotate":[item_id…]}` | clears `rekey_required`; `wraps_digest` (§11) commits to the wrap list for the new epoch. |
+| `recovery_rotate` | `{"recovery_sign_pub":b64}` | owner device only; replaces the recovery signing key (§3.5). The new key was never a recovery key of this chain and is not the key of a current or removed device (`bad_request`). |
 
 Only devices whose current role is `owner` may author events; additionally the
-recovery signing key (author = `kid(recovery_sign_pub)`) may author `device_add`
-(role `owner`) and `device_remove`. After a `device_add`, owners upload wraps of
-every retained key epoch to the new device (older epochs are accepted for current
-members only), so items written before a rekey stay readable. A verifier replays the
+current recovery signing key (author = `kid(recovery_sign_pub)`) may author
+`device_add` (role `owner`) and nothing else. A device whose ID equals any recovery
+key ID the chain has trusted is refused (`bad_request`).
+
+**Wrap sets of device-adding events.** The set carried by `genesis`, `device_add` or
+`member_add` (checked by `verifyDeviceWraps`, §11) holds only wraps to devices the
+event adds, at epochs `1..event.key_epoch`. An owner-authored event MUST include a
+wrap at the event's `key_epoch` for every added device and SHOULD include every
+retained older epoch, so items written before a rekey stay readable. A
+recovery-authored `device_add` carries whatever epochs the bundle holds (at least
+one), because the bundle may predate later rekeys. An epoch missing from the signed
+set is never delivered later; items the device cannot read are rotated forward by a
+device that can. A verifier replays the
 chain from genesis (or from a trusted checkpoint) and MUST reject: bad signature,
 wrong `prev`, non-sequential `seq`, author not an owner at that point, a removed
 device reappearing without a fresh `device_add`, `key_epoch` decreasing, or any wrap
@@ -187,9 +228,52 @@ if `base_revision` equals the item's current revision (0 for a new item) —
   and are **not** preserved as live branches — a stale offline device cannot resurrect a
   deleted secret. Re-creating requires `base_revision` = tombstone revision.
 - `key_epoch` MUST equal the vault's current key epoch; writes are refused while
-  `rekey_required` is set.
+  `rekey_required` is set. Only current member devices author accepted records: the
+  server refuses a record whose author is not a current device (`forbidden`), whoever
+  submits it.
 - Requests carry `Idempotency-Key`; a retried key with an identical body returns the
   original response; a different body under the same key is `422`.
+- **Change-log positions.** The server assigns every accepted record a position
+  `log_seq`, starting at 1 and contiguous (no gaps, no reuse). A client that sees a
+  gap, or a different record at a position it already holds, MUST raise the rollback
+  alarm (§6).
+
+**Removal fence.** A removed device keeps its signing key and the vault keys it held,
+so with a colluding server it could keep appending validly signed records. Every
+`device_remove` and `member_remove` therefore signs `log_fence`: the change-log head
+its author verified, gap-free, when it removed the device. The server MUST refuse a
+removal whose `log_fence` is behind the current head (`409 conflict`: pull and
+re-sign) or ahead of it (`bad_request`). Right after the removal lands, the remover
+MUST sign and post a checkpoint (§6, accepted while `rekey_required` is set) so other
+devices witness the log at the fence; the fence itself is the signed `log_fence`, so
+verification never depends on the server keeping that checkpoint.
+
+A device that is still live can write between the remover's pull and its removal and
+so keep the fence stale. The device MUST therefore be revoked first (§9, live
+revocation stops its requests); the remover then retries a `409` fence with backoff.
+
+**Scope of the fence.** The fence binds a position, not the log contents. It
+guarantees that no record by a removed author is accepted above the fence. The
+contents of positions at or below it are protected only for a client that had pulled
+the log up to the fence before the removal and kept a per-position digest of what it
+pulled (the rule above). Every other device trusts the server for those positions:
+a newly enrolled or recovered device, and equally an existing device that was offline
+or behind when the removal landed. A colluding server could place a record the
+removed device signed after its removal at such a position. Detecting that needs the
+per-position digests; binding the contents in the removal itself is a release gate
+([#21](https://github.com/bestagentkits/ak-vault/issues/21)).
+
+`verifyLoggedRecord(record, state, log_seq)` (vectors: `removal-fence.json`) checks a
+record read from the change log against the verified membership state, in order:
+the record parses; same vault; `log_seq ≥ 1` (`bad_request`); the author is a current
+device, or a removed device whose record `key_epoch` is not newer than the key epoch
+current at its last removal (`forbidden`); the signature verifies under that device's
+key (`invalid_signature`); and for every removal of the author whose key epoch is ≥
+the record's `key_epoch`, a `log_seq` above that removal's `log_fence` is
+`forbidden`. Because writes are refused between a removal and the next rekey, every
+legitimate later write, including one by a re-added device ID, uses a newer key epoch
+and is unaffected. The membership state lists each removal (`removals`: `device_id`,
+`sign_pub`, `removed_seq`, `key_epoch`, `log_fence`).
 
 ## 6. Checkpoints (anti-rollback)
 
@@ -216,8 +300,33 @@ bundle). Transparency/gossip is out of scope for v1.
 
 ## 7. Encrypted audit stream
 
-Each audit entry is an AEAD envelope (aad `{"ctx":"akv1/audit","vault_id","seq","prev"}`)
-chained by `prev = b64 sha256(previous entry wire cjson)`. Entries are appended in
+Each audit entry is an AEAD envelope under the audit key of one key epoch `e`:
+
+```
+AuditKey[e] = HKDF(ikm=VK[e], salt=b64decode(vault_id),
+                   info=utf8("akv1/audit-key\n") || cjson({"key_epoch":e}), L=32)
+```
+
+with `kid` = the epoch tag `e<e>` and aad `{"ctx":"akv1/audit","vault_id","seq","prev","key_epoch"}`,
+chained by `prev = b64 sha256(previous entry wire cjson)`. Key epochs never decrease
+along the chain and never exceed the vault's current key epoch (`bad_request`); the
+server accepts new entries only at the current key epoch. A verifier MUST hold the
+key of the current epoch, and of every entry epoch at or above its minimum epoch (the
+epoch it joined at, or the oldest its recovery bundle covers); a missing required key
+is a refusal (`bad_request`), never an opaque result, so every entry at an epoch at
+or above the minimum is decrypted. Holding the current key does not prove the chain
+has an entry at that epoch: a chain that ends before the first entry at the minimum
+epoch (truncated by the server, or read between a rekey and the rekeyer's audit
+append) can be entirely opaque and still pass. Only a witnessed audit checkpoint
+bounds that; a client MUST NOT present an all-opaque result as verified. An entry at
+an older epoch it holds no key for is opaque: still
+hash-chained and epoch-checked, returned as `{"seq","key_epoch","opaque":true}`, but
+its content is not verified. Entries carry no
+author signature, so any holder of `VK[e]` can write entries at epoch `e`; per-epoch
+keys stop a removed device from writing entries at a later epoch. A colluding server can
+still append epoch-`e` entries from a removed device until the first entry at a later
+epoch is in the chain, so the device that rekeys MUST append an audit entry at the
+new epoch, and sign an audit checkpoint over it, right after the rekey. Entries are appended in
 batches and covered by audit checkpoints (context `akv1/audit-checkpoint`,
 `{"vault_id","seq","head","author","ts"}`). Reordering, dropping or overwriting since a
 witnessed audit checkpoint is detected by chain replay. The server's operational log
@@ -257,8 +366,21 @@ are untrusted, author-attributed data and are never interpreted as instructions.
    account and `did` a current device of that account. `reader` role and `machine`
    devices are read-only: they cannot write items, membership, wraps, checkpoints,
    audit entries or the recovery bundle. Scope never grants cross-vault access. The
-   only requests from a device outside membership are the recovery bundle fetch and
-   the recovery-signed `device_add` that enrolls it (§3.5).
+   only requests from a device outside membership are the recovery bundle fetch, the
+   read-only membership fetch (§3.5) and the recovery-signed `device_add` that
+   enrolls it.
+5. Wrap routes. Wraps are uploaded only inside `PUT /v1/vaults/{vid}` (genesis) and
+   `POST /v1/vaults/{vid}/membership` (`{"event","wraps"?,"bundle"?}`); there is no
+   separate wrap upload. `GET /v1/vaults/{vid}/wraps?membership_seq=n` returns the
+   complete stored set of event `n` to any current member, including wraps of devices
+   removed since (`not_found` when the event carries none); it cannot be combined with
+   other filters. A client unwraps only after checking the set against
+   its event, and uses a wrap only if the `rcpt` device record in force at that event
+   has its current `kx_pub` (a re-added device ID may hold older sets sealed to an
+   earlier key). Without `membership_seq`, the listing returns wraps of current
+   devices, each with the `membership_seq` of its set. Wraps on an event type that
+   carries none, a set that does not match the signed digest, and a `bundle` on any
+   event but `recovery_rotate` are `bad_request`.
 
 ## 10. Errors and limits
 
@@ -274,6 +396,15 @@ bytes (`record_bytes_per_vault`), conflict branches included; exceeding either
 returns `quota_exceeded`. A request for a vault that has no genesis returns
 `not_found` and writes nothing; a rejected genesis also writes nothing, because the
 server checks the event, author, scope and proof signature before creating storage.
+
+A membership quota never blocks the rekey a removal requires, nor recovery. Owner
+`device_add`/`member_add` may not grow the vault past `devices_per_vault`, and a
+recovery `device_add` may add one more, so a rekey of every device fits
+`wraps_per_request`. Owner-authored wrap uploads and voluntary rekeys are refused past
+`wraps_per_vault`; a `rekey` that clears `rekey_required` and a recovery `device_add`
+are exempt (still bounded by `membership_events_per_vault` x `wraps_per_request`).
+The last `membership_events_per_vault` slot is kept for a `rekey` that clears
+`rekey_required`.
 
 ## 11. Clarifications fixed by the reference implementation (normative)
 
@@ -325,7 +456,9 @@ These resolve points the sections above leave open; the vectors in
   → `unsupported_version`.
 - **Heads and digests:** `membership_head` is the hash of the event at
   `membership_seq` (the same value the next event carries as `prev`). `wraps_digest`
-  sorts wraps by `rcpt` byte order. `state_digest` omits items at revision 0; the
+  is `b64 sha256(utf8("akv1/wraps") || 0x0A || cjson(wraps))` with the wraps sorted by
+  `rcpt` byte order, then by `key_epoch`; the domain tag keeps it distinct from every
+  other cjson hash. `state_digest` omits items at revision 0; the
   third element is `b64 sha256(record signing input)` of the record at that revision.
 - **Records:** checks run in order: record already seen for the item (replay) →
   `conflict`, not preserved; `base_revision` below the highest tombstone revision →
@@ -335,7 +468,14 @@ These resolve points the sections above leave open; the vectors in
   `rekey_required`; `key_epoch` ≠ current → `bad_request`.
 - **Audit:** the first entry has `seq` 0 and `prev` `""`. Audit checkpoints carry
   `"v":1` and a `sig`; `head` is the hash of entry `seq`. Reused nonces within a chain
-  are `bad_request`.
+  are `bad_request`. `verifyAuditChain(entries, {vaultKeys, vaultId, keyEpoch, minKeyEpoch?, witnessed?})`
+  takes a vault-key lookup by epoch, the verified state's key epoch and the lowest
+  epoch whose key the caller must hold (default: `keyEpoch`; Go takes it explicitly).
+  It returns one entry per chain entry: `{"seq","key_epoch","opaque":false,"event"}`
+  when decrypted, `{"seq","key_epoch","opaque":true}` otherwise (§7). `minKeyEpoch`
+  outside `1..keyEpoch`, a missing key for `keyEpoch` or for an entry epoch at or
+  above `minKeyEpoch`, and a `kid` that is not an epoch tag are `bad_request`; a substituted, reordered or relabelled decryptable entry is
+  `decrypt_failed` (vectors: `audit.json`).
 - **Transport proof:** `ts` is unix milliseconds, `jti` is b64 of 16 random bytes,
   `htm` is an uppercase method and `htu` is compared exactly. The proof blob MUST be
   canonical. Bad signature → `invalid_signature`; every other proof failure →
@@ -354,6 +494,15 @@ These resolve points the sections above leave open; the vectors in
     parameter bounds as §3.4 (no `key_epoch` field).
   - `rk = {"v":1,"alg":"rk-xc20p","n","ct"}`, `ct = XC20P(KEK_rk, n, BK, aad={"ctx":"akv1/bundle-rk-wrap","vault_id","bundle_seq"})`.
   - Wire: `{"v":1,"vault_id","bundle_seq","pw","rk","env"}`; unknown fields are `bad_request`.
+  - Every bundle an owner device uploads (`PUT /recovery` or with `recovery_rotate`)
+    MUST hold the chain's current recovery signing key; a device that has not
+    replayed the latest `recovery_rotate` MUST NOT reseal.
+  - `PUT /v1/vaults/{vid}/recovery` takes `{"bundle":<wire>,"membership_seq":n}`, where
+    `n` is the membership position the sealing device had verified. The server cannot
+    open the bundle, so it enforces freshness by position: `n` above the current
+    membership seq is `bad_request`; `n` below the seq of the latest `recovery_rotate`
+    is `409 conflict` (replay the chain and reseal with the current key). A bundle sent
+    with `recovery_rotate` is sealed at that event by definition.
   - Opening, in order: parse the wire (`unsupported_version` / `bad_request`, including
     Argon2id bounds); `vault_id` ≠ expected → `bad_request`; `bundle_seq` lower than the
     highest one the client knows → `rollback` (before any KDF work); unwrap BK with the
@@ -361,13 +510,38 @@ These resolve points the sections above leave open; the vectors in
     (`decrypt_failed`); the plaintext MUST be canonical and repeat the wire `vault_id`
     and `bundle_seq` (`bad_request`); `checkpoint.vault_id` MUST match (`bad_request`),
     `checkpoint.author` MUST equal `kid(owner_sign_pub)` (`forbidden`) and its
-    `akv1/checkpoint` signature MUST verify against `owner_sign_pub` (`invalid_signature`).
-    Sealers apply the same plaintext checks.
+    `akv1/checkpoint` signature MUST verify against `owner_sign_pub` (`invalid_signature`);
+    when the caller passes the chain's current `recovery_sign_pub`, the public key of
+    `recovery_sign_sk` MUST equal it (`forbidden`). Sealers apply the same plaintext
+    checks.
 - **Rekey wrap sets** (vectors: `rekey-wraps.json`). `verifyRekeyWraps(event, wraps, state?)`,
   where `event` comes from a verified chain. In order: `event.type` ≠ `rekey` →
   `bad_request`; each wrap parses (§3.3), has `key_epoch = body.new_key_epoch` and a unique
   `rcpt` (`bad_request`). If a membership state is supplied, it MUST be the state
   immediately after the event (`seq` and `head` equal, else `bad_request`), every `rcpt`
   MUST be a current device (`forbidden`) and every current device MUST have a wrap
-  (`bad_request`). Finally `b64 sha256(cjson(wraps sorted by rcpt))` MUST equal
+  (`bad_request`). Finally the `wraps_digest` of the wraps (§11, "Heads and digests") MUST equal
   `body.wraps_digest` (`bad_request`). Input order of the wraps does not matter.
+- **Device-adding wrap sets** (vectors: `device-add-wraps.json`). `verifyDeviceWraps(event, wraps)`,
+  where `event` comes from a verified chain. In order: the event adds devices
+  (`genesis`, `device_add`, `member_add`; else `bad_request`); each wrap parses (§3.3);
+  every `rcpt` is a device the event adds (`forbidden`); key epochs lie in
+  `1..event.key_epoch` and (`rcpt`, `key_epoch`) pairs are unique (`bad_request`);
+  completeness (`bad_request`): a recovery-authored `device_add` (`sas` `""`) carries at
+  least one wrap, every other event a wrap at `event.key_epoch` for every added device;
+  finally `wraps_digest(wraps)` MUST equal `body.wraps_digest` (`bad_request`). Input
+  order does not matter.
+
+## Revisions
+
+The protocol version stays `1`; these revisions change wire bodies, so data written
+under an earlier revision does not verify and is reset rather than migrated.
+
+- **2026-10 (issue #20):** signed wrap sets (`wraps_digest` on `genesis`, `device_add`,
+  `member_add`; full sets served per event; no separate wrap upload); recovery identity
+  may read membership; per-epoch audit keys; signed removal fence (`log_fence`) and
+  contiguous change-log positions; recovery key restricted to `device_add`;
+  `recovery_rotate` with an atomically resealed bundle; `PUT /recovery` carries the
+  sealer's membership position; a domain-tagged `wraps_digest`; audit verification
+  requires the current epoch's key and marks opaque entries explicitly; membership
+  quotas leave room for the rekey a removal requires and for recovery.

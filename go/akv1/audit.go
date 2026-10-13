@@ -31,9 +31,30 @@ func (c AuditCheckpoint) JSONValue() any {
 	return m
 }
 
-// AuditAAD returns {ctx:"akv1/audit", vault_id, seq, prev}.
-func AuditAAD(vaultID string, seq int64, prev string) map[string]any {
-	return map[string]any{"ctx": "akv1/audit", "vault_id": vaultID, "seq": seq, "prev": prev}
+// DeriveAuditKey computes the audit key of one key epoch,
+// HKDF(ikm=vk, salt=b64decode(vault_id), info=utf8("akv1/audit-key\n")||cjson({key_epoch}), L=32)
+// (the item-key salt convention).
+func DeriveAuditKey(vk []byte, vaultID string, keyEpoch int64) ([]byte, error) {
+	if len(vk) != KeyBytes {
+		return nil, badRequest("vault key must be 32 bytes")
+	}
+	if _, err := asInt(keyEpoch, "key_epoch", 1, MaxSafeInteger); err != nil {
+		return nil, err
+	}
+	if _, err := asID(vaultID, "vault_id"); err != nil {
+		return nil, err
+	}
+	salt, _ := B64Decode(vaultID)
+	info, err := CJSON(map[string]any{"key_epoch": keyEpoch})
+	if err != nil {
+		return nil, err
+	}
+	return hkdf32(vk, salt, concatBytes([]byte("akv1/audit-key\n"), info)), nil
+}
+
+// AuditAAD returns {ctx:"akv1/audit", vault_id, seq, prev, key_epoch}.
+func AuditAAD(vaultID string, seq int64, prev string, keyEpoch int64) map[string]any {
+	return map[string]any{"ctx": "akv1/audit", "vault_id": vaultID, "seq": seq, "prev": prev, "key_epoch": keyEpoch}
 }
 
 // AuditEntryHash returns b64 sha256(cjson(entry)).
@@ -46,20 +67,27 @@ func AuditEntryHash(entry Envelope) (string, error) {
 }
 
 // AppendAuditEntry encrypts event as the entry after head (nil for the first
-// entry, seq 0 and prev ""). nonce is nil in production (random).
-func AppendAuditEntry(key []byte, vaultID, kid string, head *AuditHead, event map[string]any, nonce []byte) (Envelope, AuditHead, error) {
+// entry, seq 0 and prev "") under the audit key derived from vk, the vault key
+// of keyEpoch (the vault's current epoch; the Worker refuses any other), with
+// kid "e<keyEpoch>". nonce is nil in production (random).
+func AppendAuditEntry(vk []byte, vaultID string, keyEpoch int64, head *AuditHead, event map[string]any, nonce []byte) (Envelope, AuditHead, error) {
 	seq, prev := int64(0), ""
 	if head != nil {
 		seq, prev = head.Seq+1, head.Head
 	}
-	if _, err := asID(vaultID, "vault_id"); err != nil {
+	key, err := DeriveAuditKey(vk, vaultID, keyEpoch)
+	if err != nil {
+		return Envelope{}, AuditHead{}, err
+	}
+	kid, err := EpochTag(keyEpoch)
+	if err != nil {
 		return Envelope{}, AuditHead{}, err
 	}
 	plaintext, err := CJSON(event)
 	if err != nil {
 		return Envelope{}, AuditHead{}, err
 	}
-	entry, err := SealEnvelope(key, plaintext, AuditAAD(vaultID, seq, prev), SealOptions{Kid: kid, Nonce: nonce})
+	entry, err := SealEnvelope(key, plaintext, AuditAAD(vaultID, seq, prev, keyEpoch), SealOptions{Kid: kid, Nonce: nonce})
 	if err != nil {
 		return Envelope{}, AuditHead{}, err
 	}
@@ -70,17 +98,44 @@ func AppendAuditEntry(key []byte, vaultID, kid string, head *AuditHead, event ma
 	return entry, AuditHead{Seq: seq, Head: h}, nil
 }
 
+// AuditChainEntry is one verified audit entry. Opaque entries (an epoch below
+// minKeyEpoch whose key the verifier lacks) carry no Event; every other entry
+// was decrypted and Event holds its plaintext object.
+type AuditChainEntry struct {
+	Seq      int64
+	KeyEpoch int64
+	Opaque   bool
+	Event    map[string]any
+}
+
 // AuditChain is the result of VerifyAuditChain. Head is nil for an empty chain.
 type AuditChain struct {
-	Events []map[string]any
+	Events []AuditChainEntry
 	Head   *AuditHead
 }
 
-// VerifyAuditChain replays and decrypts a whole untrusted audit chain.
-// Reordered, dropped or substituted entries fail AEAD (decrypt_failed); a
-// chain shorter than, or with a different entry at, the witnessed (already
-// signature-verified) checkpoint is rollback; reused nonces are bad_request.
-func VerifyAuditChain(entries []any, key []byte, vaultID string, witnessed *AuditHead) (AuditChain, error) {
+// VaultKeyLookup returns the vault key of a key epoch, or false when the caller
+// holds none.
+type VaultKeyLookup func(keyEpoch int64) ([]byte, bool)
+
+// VerifyAuditChain replays a whole untrusted audit chain, decrypting every
+// entry whose epoch key the caller holds (selected from the entry's
+// "e<key_epoch>" kid). keyEpoch is the current key epoch of the verified
+// membership state; minKeyEpoch (1..keyEpoch) is the lowest epoch whose key the
+// caller must hold (the epoch it joined at, or the oldest its recovery bundle
+// covers). The key of keyEpoch is required before any entry is read, and so is
+// the key of every entry epoch >= minKeyEpoch (bad_request otherwise), so every
+// entry at or above minKeyEpoch is decrypted. That does not prove the chain
+// reaches such an epoch: a chain truncated before its first entry there is
+// all-opaque and passes unless witnessed bounds it, so callers must not present
+// an all-opaque result as verified. An entry at an older epoch without a key is
+// opaque: hash-chained and epoch-checked, Opaque set. Rejects: minKeyEpoch
+// outside 1..keyEpoch, a missing required key, a kid that is not an epoch tag,
+// an epoch lower than the previous entry's or above keyEpoch (bad_request); reordered,
+// dropped or substituted decryptable entries (decrypt_failed); a chain shorter
+// than, or with a different entry at, the witnessed (already
+// signature-verified) checkpoint (rollback); reused nonces (bad_request).
+func VerifyAuditChain(entries []any, vaultKeys VaultKeyLookup, vaultID string, keyEpoch, minKeyEpoch int64, witnessed *AuditHead) (AuditChain, error) {
 	if len(entries) > 1_000_000 {
 		return AuditChain{}, badRequest("audit entries must be an array of at most 1000000 entries")
 	}
@@ -98,26 +153,76 @@ func VerifyAuditChain(entries []any, key []byte, vaultID string, witnessed *Audi
 	if _, err := asID(vaultID, "vault_id"); err != nil {
 		return AuditChain{}, err
 	}
-	events := make([]map[string]any, 0, len(parsed))
+	if _, err := asInt(keyEpoch, "key_epoch", 1, MaxSafeInteger); err != nil {
+		return AuditChain{}, err
+	}
+	if _, err := asInt(minKeyEpoch, "min_key_epoch", 1, MaxSafeInteger); err != nil {
+		return AuditChain{}, err
+	}
+	if minKeyEpoch > keyEpoch {
+		return AuditChain{}, badRequest("min_key_epoch is above key_epoch")
+	}
+	keys := map[int64][]byte{}
+	keyFor := func(epoch int64) ([]byte, error) {
+		if key, cached := keys[epoch]; cached {
+			return key, nil
+		}
+		var key []byte
+		vk, ok := vaultKeys(epoch)
+		if !ok && epoch >= minKeyEpoch {
+			return nil, badRequest("no vault key for a required audit epoch")
+		}
+		if ok {
+			var err error
+			if key, err = DeriveAuditKey(vk, vaultID, epoch); err != nil {
+				return nil, err
+			}
+		}
+		keys[epoch] = key
+		return key, nil
+	}
+	// The current epoch's key is always required, even before any entry uses it.
+	if _, err := keyFor(keyEpoch); err != nil {
+		return AuditChain{}, err
+	}
+	events := make([]AuditChainEntry, 0, len(parsed))
 	hashes := make([]string, 0, len(parsed))
+	lastEpoch := int64(0)
 	for seq, entry := range parsed {
+		epoch, err := ParseEpochTag(entry.Kid)
+		if err != nil {
+			return AuditChain{}, err
+		}
+		if epoch < lastEpoch {
+			return AuditChain{}, badRequest("audit key epoch decreased along the chain")
+		}
+		if epoch > keyEpoch {
+			return AuditChain{}, badRequest("audit key epoch is ahead of the membership state")
+		}
+		lastEpoch = epoch
+		key, err := keyFor(epoch)
+		if err != nil {
+			return AuditChain{}, err
+		}
 		prev := ""
 		if seq > 0 {
 			prev = hashes[seq-1]
 		}
-		plaintext, err := openParsedEnvelope(key, entry, AuditAAD(vaultID, int64(seq), prev))
-		if err != nil {
-			return AuditChain{}, err
+		result := AuditChainEntry{Seq: int64(seq), KeyEpoch: epoch, Opaque: key == nil}
+		if key != nil {
+			plaintext, err := openParsedEnvelope(key, entry, AuditAAD(vaultID, int64(seq), prev, epoch))
+			if err != nil {
+				return AuditChain{}, err
+			}
+			v, err := CJSONParse(plaintext)
+			if err != nil {
+				return AuditChain{}, err
+			}
+			if result.Event, err = asObject(v, "audit event"); err != nil {
+				return AuditChain{}, err
+			}
 		}
-		v, err := CJSONParse(plaintext)
-		if err != nil {
-			return AuditChain{}, err
-		}
-		event, err := asObject(v, "audit event")
-		if err != nil {
-			return AuditChain{}, err
-		}
-		events = append(events, event)
+		events = append(events, result)
 		h, err := AuditEntryHash(entry)
 		if err != nil {
 			return AuditChain{}, err

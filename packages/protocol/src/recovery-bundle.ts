@@ -97,6 +97,12 @@ export interface OpenRecoveryBundleArgs {
   rk?: Uint8Array;
   /** Highest bundle_seq this client has seen; a lower one is `rollback`. */
   knownBundleSeq?: number;
+  /**
+   * `recovery_sign_pub` of the verified membership chain. A bundle holding any
+   * other recovery key (sealed before a `recovery_rotate`) is `forbidden`.
+   * Recovering devices MUST pass it before signing a recovery device_add.
+   */
+  recoverySignPub?: string;
 }
 
 export interface OpenedRecoveryBundle {
@@ -116,7 +122,8 @@ export interface OpenedRecoveryBundle {
  * vault match (bad_request), bundle_seq < knownBundleSeq (rollback, before any KDF),
  * unwrap BK (decrypt_failed), open env (decrypt_failed), plaintext must be canonical
  * and repeat the wire vault_id/bundle_seq (bad_request), checkpoint author must be
- * kid(owner_sign_pub) (forbidden) with a valid signature (invalid_signature).
+ * kid(owner_sign_pub) (forbidden) with a valid signature (invalid_signature), the
+ * bundle recovery key must equal `recoverySignPub` when given (forbidden).
  */
 export function openRecoveryBundle(args: OpenRecoveryBundleArgs): OpenedRecoveryBundle {
   const wire = parseRecoveryBundleWire(args.bundle);
@@ -132,6 +139,8 @@ export function openRecoveryBundle(args: OpenRecoveryBundleArgs): OpenedRecovery
   if (plaintext.vault_id !== wire.vault_id || plaintext.bundle_seq !== seq) fail('bad_request', 'recovery bundle plaintext does not match its wire header');
   checkBundleCheckpoint(plaintext.checkpoint, wire.vault_id, plaintext.owner_sign_pub);
   const recoverySk = b64decode(plaintext.recovery_sign_sk);
+  const recoverySignPub = b64encode(signKeyPairFromSeed(recoverySk).publicKey);
+  if (args.recoverySignPub !== undefined && args.recoverySignPub !== recoverySignPub) fail('forbidden', 'recovery bundle holds a recovery key the membership chain no longer trusts');
   const vk: Record<string, Uint8Array> = {};
   for (const [epoch, key] of Object.entries(plaintext.vk)) vk[epoch] = b64decode(key);
   return {
@@ -139,7 +148,7 @@ export function openRecoveryBundle(args: OpenRecoveryBundleArgs): OpenedRecovery
     vk,
     owner_sign_pub: plaintext.owner_sign_pub,
     recovery_sign_sk: recoverySk,
-    recovery_sign_pub: b64encode(signKeyPairFromSeed(recoverySk).publicKey),
+    recovery_sign_pub: recoverySignPub,
     checkpoint: parseCheckpoint(plaintext.checkpoint),
     needsUpgrade: args.password !== undefined && argonNeedsUpgrade(wire.pw),
   };

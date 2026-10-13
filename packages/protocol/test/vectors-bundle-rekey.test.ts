@@ -1,7 +1,8 @@
 /** Reproduce recovery-bundle.json and rekey-wraps.json. */
 import { describe, expect, it } from 'vitest';
 import {
-  b64decode, b64encode, openEnvelope, openRecoveryBundle, sealRecoveryBundle, utf8Decode, verifyMembershipChain, verifyRekeyWraps,
+  b64decode, b64encode, openEnvelope, openRecoveryBundle, sealRecoveryBundle, unwrapFromDevice, utf8Decode, verifyDeviceWraps, verifyLoggedRecord,
+  verifyMembershipChain, verifyRekeyWraps,
 } from '../src/index.js';
 import { expectCode, loadVector, named, type Vec } from './helpers.js';
 
@@ -14,6 +15,7 @@ describe('recovery-bundle.json', () => {
     ...(o.password !== undefined ? { password: o.password } : {}),
     ...(o.rk !== undefined ? { rk: b64decode(o.rk) } : {}),
     ...(o.known_bundle_seq !== undefined ? { knownBundleSeq: o.known_bundle_seq } : {}),
+    ...(o.recovery_sign_pub !== undefined ? { recoverySignPub: o.recovery_sign_pub } : {}),
   });
   it('seal reproduces the bundle and plaintext', () => {
     const vk = Object.fromEntries(Object.entries(s.vk).map(([e, k]) => [e, b64decode(k as string)]));
@@ -56,5 +58,43 @@ describe('rekey-wraps.json', () => {
   });
   it.each(named(v.invalid))('rejects %s', (_n, c: Vec) => {
     expectCode(run(c), c.expect_error);
+  });
+});
+
+describe('device-add-wraps.json', () => {
+  const v = loadVector('device-add-wraps.json');
+  const m = loadVector('membership.json');
+  const kxSecret = (id: string) => b64decode(m.devices.find((d: Vec) => d.record.device_id === id).kx_secret);
+  it('shared and personal chains are the verified chains from membership.json', () => {
+    expect(v.chains.shared).toEqual(m.chains[0].events);
+    expect(v.chains.personal).toEqual(m.chains[1].events);
+    verifyMembershipChain(v.chains.personal_current_only);
+  });
+  it.each(named(v.cases))('%s', (_n, c: Vec) => {
+    const event = v.chains[c.chain][c.event_seq];
+    const wraps = verifyDeviceWraps(event, c.wraps);
+    expect(wraps).toHaveLength(c.wraps.length);
+    for (const w of wraps) {
+      const vk = unwrapFromDevice({ wrap: w, vaultId: event.vault_id, deviceId: w.rcpt, kxSecret: kxSecret(w.rcpt) });
+      expect(b64encode(vk)).toBe(v.vault_keys[c.chain][String(w.key_epoch)]);
+    }
+  });
+  it.each(named(v.invalid))('rejects %s', (_n, c: Vec) => {
+    expectCode(() => verifyDeviceWraps(v.chains[c.chain][c.event_seq], c.wraps), c.expect_error);
+  });
+});
+
+describe('removal-fence.json', () => {
+  const v = loadVector('removal-fence.json');
+  const states = { shared: verifyMembershipChain(v.chains.shared), personal: verifyMembershipChain(v.chains.personal) } as Record<string, ReturnType<typeof verifyMembershipChain>>;
+  it('removals carry the signed log_fence of the removing event', () => {
+    expect(states['shared']!.removals).toEqual(v.removals.shared);
+    expect(states['personal']!.removals).toEqual(v.removals.personal);
+  });
+  it.each(named(v.cases))('%s', (_n, c: Vec) => {
+    expect(verifyLoggedRecord(c.record, states[c.chain]!, c.log_seq)).toEqual(c.record);
+  });
+  it.each(named(v.invalid))('rejects %s', (_n, c: Vec) => {
+    expectCode(() => verifyLoggedRecord(c.record, states[c.chain]!, c.log_seq), c.expect_error);
   });
 });

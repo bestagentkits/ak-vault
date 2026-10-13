@@ -12,7 +12,7 @@ export const VAULT_KINDS = ['personal', 'shared', 'ci'] as const;
 export type VaultKind = (typeof VAULT_KINDS)[number];
 export const REMOVE_REASONS = ['lost', 'stolen', 'retired', 'compromised'] as const;
 export type RemoveReason = (typeof REMOVE_REASONS)[number];
-export const MEMBERSHIP_EVENT_TYPES = ['genesis', 'device_add', 'device_remove', 'member_add', 'member_remove', 'role_set', 'rekey'] as const;
+export const MEMBERSHIP_EVENT_TYPES = ['genesis', 'device_add', 'device_remove', 'member_add', 'member_remove', 'role_set', 'rekey', 'recovery_rotate'] as const;
 export type MembershipEventType = (typeof MEMBERSHIP_EVENT_TYPES)[number];
 
 export const MAX_ACCOUNT_LENGTH = 256;
@@ -42,6 +42,19 @@ export interface MembershipEvent {
 
 export type UnsignedMembershipEvent = Omit<MembershipEvent, 'sig'>;
 
+/** One removal of a device (`device_remove`, or `member_remove` for each of the account's devices). */
+export interface DeviceRemoval {
+  device_id: string;
+  /** b64 Ed25519 public key of the removed device (verifies its historical records). */
+  sign_pub: string;
+  /** `seq` of the removing event. */
+  removed_seq: number;
+  /** Key epoch current when the device was removed (the newest key it could hold). */
+  key_epoch: number;
+  /** Signed `log_fence` of the removing event: the change-log head its author verified. */
+  log_fence: number;
+}
+
 /**
  * Derived vault membership after replaying a verified chain. JSON-friendly
  * (arrays sorted by key) so it can be cached, compared and put in vectors.
@@ -52,7 +65,7 @@ export interface MembershipState {
   owner_account: string;
   /** b64 `sign_pub` of the genesis author: the pinned trust anchor. */
   trust_anchor: string;
-  /** b64 owner recovery signing public key (§3.5). */
+  /** b64 owner recovery signing public key (§3.5); the latest `recovery_rotate` replaces it. */
   recovery_sign_pub: string;
   /** `kid(recovery_sign_pub)`: the author ID used by recovery-signed events. */
   recovery_author: string;
@@ -69,6 +82,8 @@ export interface MembershipState {
   members: { account: string; role: Role }[];
   devices: DeviceRecord[];
   removed_device_ids: string[];
+  /** Every removal in chain order (sorted by `removed_seq`, then `device_id`); a re-added device keeps its rows. */
+  removals: DeviceRemoval[];
 }
 
 /** Options for {@link verifyMembershipChain}. */

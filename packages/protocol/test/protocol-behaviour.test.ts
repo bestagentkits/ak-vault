@@ -46,13 +46,13 @@ describe('membership builders', () => {
     const second = createDeviceKeys({ account: 'acct', role: 'owner', kind: 'human' });
     const recovery = createDeviceKeys({ account: 'x', role: 'owner', kind: 'human' });
     const genesis = buildGenesisEvent(
-      { vault_id: vaultId, ts: 1, author: owner.record.device_id, body: { vault_kind: 'personal', owner_account: 'acct', recovery_sign_pub: recovery.record.sign_pub, devices: [{ ...owner.record }] } },
+      { vault_id: vaultId, ts: 1, author: owner.record.device_id, body: { vault_kind: 'personal', owner_account: 'acct', recovery_sign_pub: recovery.record.sign_pub, devices: [{ ...owner.record }], wraps_digest: b64encode(randomBytes(32)) } },
       owner.signSecret,
     );
     let state = verifyMembershipChain([genesis]);
-    const add = nextMembershipEvent(state, { type: 'device_add', ts: 2, author: owner.record.device_id, body: { device: { ...second.record }, sas: b64encode(randomBytes(32)) } }, owner.signSecret);
+    const add = nextMembershipEvent(state, { type: 'device_add', ts: 2, author: owner.record.device_id, body: { device: { ...second.record }, sas: b64encode(randomBytes(32)), wraps_digest: b64encode(randomBytes(32)) } }, owner.signSecret);
     state = verifyMembershipChain([genesis, add]);
-    const rm = nextMembershipEvent(state, { type: 'device_remove', ts: 3, author: second.record.device_id, body: { device_id: owner.record.device_id, reason: 'retired' } }, second.signSecret);
+    const rm = nextMembershipEvent(state, { type: 'device_remove', ts: 3, author: second.record.device_id, body: { device_id: owner.record.device_id, reason: 'retired', log_fence: 0 } }, second.signSecret);
     const rekey = nextMembershipEvent(verifyMembershipChain([genesis, add, rm]), { type: 'rekey', ts: 4, author: second.record.device_id, body: { new_key_epoch: 2, wraps_digest: b64encode(randomBytes(32)), needs_rotate: [] } }, second.signSecret);
     const final = verifyMembershipChain([genesis, add, rm, rekey], { vaultId });
     expect(final).toMatchObject({ seq: 3, key_epoch: 2, rekey_required: false, removed_device_ids: [owner.record.device_id] });
@@ -93,9 +93,10 @@ describe('records state model', () => {
 
 describe('audit and proof edge cases', () => {
   it('empty audit chain', () => {
-    expect(verifyAuditChain([], { key: vk, vaultId })).toEqual({ events: [], head: null });
-    const { head } = appendAuditEntry({ key: vk, vaultId, kid: 'e1', head: null, event: { a: 1 } });
-    expectCode(() => verifyAuditChain([], { key: vk, vaultId, witnessed: head }), 'rollback');
+    const vaultKeys = (e: number) => (e === 1 ? vk : undefined);
+    expect(verifyAuditChain([], { vaultKeys, vaultId, keyEpoch: 1 })).toEqual({ events: [], head: null });
+    const { head } = appendAuditEntry({ vk, vaultId, keyEpoch: 1, head: null, event: { a: 1 } });
+    expectCode(() => verifyAuditChain([], { vaultKeys, vaultId, keyEpoch: 1, witnessed: head }), 'rollback');
   });
   it('proof round-trip with random jti and header size limit', () => {
     const dev = createDeviceKeys({ account: 'a', role: 'owner', kind: 'human' });

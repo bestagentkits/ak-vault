@@ -32,17 +32,21 @@
  * - `buildGenesisEvent`, `nextMembershipEvent`, `signMembershipEvent`, `membershipEventHash`, `findDevice`.
  * - `validateWrapRecipients(state, wraps, {keyEpoch?, requireAll?}): X25519Wrap[]`, `wrapsDigest(wraps)`.
  * - `verifyRekeyWraps(rekeyEvent, wraps, {state?}): X25519Wrap[]` checks a wrap set against the signed `wraps_digest`.
+ * - `verifyDeviceWraps(addEvent, wraps): X25519Wrap[]` checks the wraps delivered with genesis/device_add/member_add;
+ *   `addedDevices(event)`.
  *
  * Records (§5)
  * - `signRecord`, `parseRecord`, `verifyRecord(record, state): SignedRecord`, `verifyRecordSignature`,
  *   `authorizeRecordWrite(state, record): void`, `recordDigest`.
+ * - `verifyLoggedRecord(record, state, logSeq)` verifies change-log records, including those by removed
+ *   authors, against each removal's signed `log_fence`.
  * - `applyRecord(itemState | undefined, record, {conflictId?, isReplay?}): {state, outcome}` (pure CAS model),
  *   `emptyItemState`, `computeStateDigest(items)`.
  *
  * Checkpoints (§6) — `signCheckpoint`, `parseCheckpoint`, `verifyCheckpoint(cp, state)`,
  * `checkRollback(witnessed, incoming): void`.
  *
- * Audit (§7) — `appendAuditEntry`, `verifyAuditChain(entries, {key, vaultId, witnessed?})`,
+ * Audit (§7) — `deriveAuditKey`, `appendAuditEntry`, `verifyAuditChain(entries, {vaultKeys, vaultId, keyEpoch, witnessed?})`,
  * `auditEntryHash`, `signAuditCheckpoint`, `verifyAuditCheckpoint`.
  *
  * Policy (§8) — `parsePolicy`, `effectiveGrant(localGrant, policy, sensitivity): LocalGrant`.
@@ -77,6 +81,7 @@ export {
   assertUniqueNonces,
   epochTag,
   openEnvelope,
+  parseEpochTag,
   parseEnvelope,
   sealEnvelope,
   type Envelope,
@@ -131,6 +136,7 @@ export {
   parseMembershipEvent,
   type DeviceKind,
   type DeviceRecord,
+  type DeviceRemoval,
   type MembershipEvent,
   type MembershipEventType,
   type MembershipState,
@@ -141,7 +147,15 @@ export {
   type VerifyChainOptions,
 } from './membership-types.js';
 export { buildGenesisEvent, findDevice, membershipEventHash, nextMembershipEvent, signMembershipEvent, verifyMembershipChain } from './membership-log.js';
-export { validateWrapRecipients, verifyRekeyWraps, wrapsDigest, type ValidateWrapsOptions, type VerifyRekeyWrapsOptions } from './wrap-recipients.js';
+export {
+  addedDevices,
+  validateWrapRecipients,
+  verifyDeviceWraps,
+  verifyRekeyWraps,
+  wrapsDigest,
+  type ValidateWrapsOptions,
+  type VerifyRekeyWrapsOptions,
+} from './wrap-recipients.js';
 export {
   BUNDLE_ENVELOPE_KID,
   parseRecoveryBundlePlaintext,
@@ -154,11 +168,13 @@ export {
 export { openRecoveryBundle, sealRecoveryBundle, type OpenRecoveryBundleArgs, type OpenedRecoveryBundle, type SealRecoveryBundleArgs } from './recovery-bundle.js';
 export { authorizeRecordWrite, parseRecord, recordDigest, signRecord, verifyRecord, verifyRecordSignature, type SignedRecord, type UnsignedRecord } from './records.js';
 export { applyRecord, computeStateDigest, emptyItemState, type ApplyOutcome, type ApplyRecordOptions, type ConflictBranch, type ItemState } from './record-state.js';
+export { verifyLoggedRecord } from './removal-fence.js';
 export { checkRollback, parseCheckpoint, signCheckpoint, verifyCheckpoint, type Checkpoint, type CheckpointView, type UnsignedCheckpoint } from './checkpoints.js';
 export {
   appendAuditEntry,
   auditAad,
   auditEntryHash,
+  deriveAuditKey,
   parseAuditCheckpoint,
   signAuditCheckpoint,
   verifyAuditChain,
@@ -167,6 +183,7 @@ export {
   type AuditCheckpoint,
   type AuditHead,
   type VerifyAuditOptions,
+  type AuditChainEntry,
 } from './audit.js';
 export { effectiveGrant, parsePolicy, type LocalGrant, type PortablePolicy } from './policy.js';
 export { PROOF_JTI_TTL_MS, PROOF_MAX_SKEW_MS, buildProof, decodeProof, verifyProof, type BuildProofArgs, type TransportProof, type VerifyProofOptions } from './proof.js';

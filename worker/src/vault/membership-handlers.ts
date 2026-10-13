@@ -1,10 +1,12 @@
-/** Handlers for genesis, membership append/read and wrap upload/read. */
-import { parseMembershipEvent, verifyRekeyWraps, type JsonObject, type MembershipState } from '@ak-vault/protocol';
+/** Handlers for genesis, membership append/read and wrap-set reads. */
+import { parseMembershipEvent, verifyDeviceWraps, verifyRekeyWraps, type JsonObject, type MembershipEvent, type MembershipState, type X25519Wrap } from '@ak-vault/protocol';
 import { ApiError, okResult, type ApiResult } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
+import { currentLogSeq } from './changes-feed.js';
 import type { MembershipStore } from './membership-store.js';
+import { recordRecoveryRotate, storeRecoveryBundle } from './recovery-store.js';
 import { queryInt, requireArray, requireKeys } from './request-body.js';
-import { listWraps, storeWraps, validateWraps } from './wrap-store.js';
+import { listWraps, storeWrapSet, wrapSet } from './wrap-store.js';
 import type { VaultRequest } from './vault-request.js';
 
 function membershipSummary(state: MembershipState) {
@@ -17,33 +19,82 @@ function membershipSummary(state: MembershipState) {
   };
 }
 
-/** `PUT /v1/vaults/:vid` with `{event: genesis, wraps?: [...]}` (already verified by the guard). */
+/**
+ * The wrap set an event must carry. Device-adding events (genesis, device_add,
+ * member_add) and rekeys MUST carry the set their signed `wraps_digest` commits
+ * to; every other event carries none.
+ */
+function verifyEventWraps(event: MembershipEvent, raw: unknown, next: MembershipState): X25519Wrap[] {
+  switch (event.type) {
+    case 'rekey':
+      return verifyRekeyWraps(event, requireArray(raw ?? null, LIMITS.wraps_per_request), { state: next });
+    case 'genesis':
+    case 'device_add':
+    case 'member_add':
+      return verifyDeviceWraps(event, requireArray(raw ?? null, LIMITS.wraps_per_request));
+    default:
+      if (raw !== undefined) throw new ApiError('bad_request', { message: 'this event type carries no wraps' });
+      return [];
+  }
+}
+
+/**
+ * A removal's signed `log_fence` must be the change-log head at the moment the
+ * removal lands: then every record the removed device got accepted is at or below
+ * the fence, and nothing it writes later can be. A stale fence is `conflict` (pull
+ * the change log and re-sign); a fence ahead of the log is `bad_request`.
+ */
+function checkLogFence(sql: SqlStorage, event: MembershipEvent): void {
+  if (event.type !== 'device_remove' && event.type !== 'member_remove') return;
+  const fence = event.body['log_fence'] as number; // integer >= 0, checked by chain verification
+  const head = currentLogSeq(sql);
+  if (fence > head) throw new ApiError('bad_request', { message: 'log_fence is ahead of the change log' });
+  if (fence < head) throw new ApiError('conflict', { message: 'log_fence is behind the change log head' });
+}
+
+/**
+ * An owner-authored device-adding event may not grow the vault past
+ * `devices_per_vault`; a recovery enrollment may use one more device, which is
+ * still within `wraps_per_request`, so a rekey of every device fits one request.
+ */
+function checkDeviceCount(event: MembershipEvent, next: MembershipState, recoveryEnrollment: boolean): void {
+  if (event.type !== 'device_add' && event.type !== 'member_add') return;
+  const max = LIMITS.devices_per_vault + (recoveryEnrollment ? 1 : 0);
+  if (next.devices.length > max) throw new ApiError('quota_exceeded', { status: 403 });
+}
+
+/** `PUT /v1/vaults/:vid` with `{event: genesis, wraps: [...]}` (already verified by the guard). */
 export function handleGenesis(sql: SqlStorage, store: MembershipStore, body: JsonObject, genesis: MembershipState): ApiResult {
   if (store.state() !== null) throw new ApiError('conflict', { message: 'vault already exists' });
-  const wraps = body['wraps'] === undefined ? [] : validateWraps(genesis, body['wraps'], { keyEpoch: 1 });
-  store.persist(parseMembershipEvent(body['event']), genesis);
-  storeWraps(sql, wraps, genesis.seq);
+  const event = parseMembershipEvent(body['event']);
+  const wraps = verifyEventWraps(event, body['wraps'], genesis);
+  store.persist(event, genesis);
+  storeWrapSet(sql, genesis.seq, wraps);
   return okResult({ membership: membershipSummary(genesis), wraps_stored: wraps.length }, 201);
 }
 
 /**
- * `POST /membership` with `{event, wraps?}`. `next` is the verified chain state
- * including `event`. A rekey must carry the complete new-epoch wrap set whose
- * digest equals the event's `wraps_digest`, so the epoch change and its wraps
- * land atomically.
+ * `POST /membership` with `{event, wraps?, bundle?}`. `next` is the verified chain
+ * state including `event`. The event, its wrap set (checked against the signed
+ * digest) and, for `recovery_rotate`, the resealed recovery bundle land in one
+ * transaction, so the chain never trusts a recovery key the stored bundle lacks.
  */
-export function handleMembershipPost(sql: SqlStorage, store: MembershipStore, body: JsonObject, next: MembershipState): ApiResult {
-  requireKeys(body, ['event'], ['wraps']);
+export function handleMembershipPost(sql: SqlStorage, store: MembershipStore, vaultId: string, body: JsonObject, next: MembershipState): ApiResult {
+  requireKeys(body, ['event'], ['wraps', 'bundle']);
   const event = parseMembershipEvent(body['event']);
-  let wraps;
-  if (event.type === 'rekey') {
-    wraps = verifyRekeyWraps(event, requireArray(body['wraps'] ?? null, LIMITS.wraps_per_request), { state: next });
-  } else {
-    wraps = body['wraps'] === undefined ? [] : validateWraps(next, body['wraps']);
-  }
+  const rotating = event.type === 'recovery_rotate';
+  if (rotating !== (body['bundle'] !== undefined)) throw new ApiError('bad_request', { message: 'recovery_rotate, and only it, carries the resealed bundle' });
+  const wraps = verifyEventWraps(event, body['wraps'], next);
+  checkLogFence(sql, event);
+  const before = store.requireState();
+  const recoveryEnrollment = event.type === 'device_add' && event.author === before.recovery_author;
+  checkDeviceCount(event, next, recoveryEnrollment);
+  const requiredRekey = event.type === 'rekey' && before.rekey_required;
   store.persist(event, next);
-  storeWraps(sql, wraps, next.seq);
-  return okResult({ membership: membershipSummary(next), wraps_stored: wraps.length }, 201);
+  storeWrapSet(sql, next.seq, wraps, requiredRekey || recoveryEnrollment);
+  const bundleSeq = rotating ? storeRecoveryBundle(sql, vaultId, body['bundle']) : null;
+  if (rotating) recordRecoveryRotate(sql, next.seq);
+  return okResult({ membership: membershipSummary(next), wraps_stored: wraps.length, ...(bundleSeq !== null ? { bundle_seq: bundleSeq } : {}) }, 201);
 }
 
 /** `GET /membership?from=&limit=`: signed events for client-side replay plus the derived summary. */
@@ -55,16 +106,19 @@ export function handleMembershipGet(store: MembershipStore, req: VaultRequest): 
   return okResult({ events, has_more: from + events.length <= state.seq, membership: membershipSummary(state) });
 }
 
-/** `POST /wraps` with `{wraps: [...]}`: owner devices upload wraps for current member devices. */
-export function handleWrapsPost(sql: SqlStorage, state: MembershipState, body: JsonObject): ApiResult {
-  requireKeys(body, ['wraps']);
-  const wraps = validateWraps(state, body['wraps']);
-  if (wraps.length === 0) throw new ApiError('bad_request');
-  return okResult({ wraps_stored: storeWraps(sql, wraps, state.seq) });
-}
-
-/** `GET /wraps?key_epoch=&rcpt=`. */
+/**
+ * `GET /wraps?membership_seq=n`: the complete signed set of event n as uploaded
+ * (404 when that event carries none). Otherwise `GET /wraps?key_epoch=&rcpt=`:
+ * wraps of current devices, each with the `membership_seq` of its set.
+ */
 export function handleWrapsGet(sql: SqlStorage, state: MembershipState, req: VaultRequest): ApiResult {
+  if (req.query['membership_seq'] !== undefined) {
+    if (req.query['key_epoch'] !== undefined || req.query['rcpt'] !== undefined) throw new ApiError('bad_request');
+    const seq = queryInt(req.query, 'membership_seq', 0);
+    const wraps = seq <= state.seq ? wrapSet(sql, seq) : null;
+    if (!wraps) throw new ApiError('not_found');
+    return okResult({ membership_seq: seq, wraps });
+  }
   const filter: { keyEpoch?: number; rcpt?: string } = {};
   if (req.query['key_epoch'] !== undefined) filter.keyEpoch = queryInt(req.query, 'key_epoch', 0);
   if (req.query['rcpt'] !== undefined) filter.rcpt = req.query['rcpt'];

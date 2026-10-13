@@ -7,6 +7,8 @@ import { auditVectors, checkpointVectors } from './checkpoints-audit.js';
 import { policyVectors, proofVectors } from './policy-proof.js';
 import { recoveryBundleVectors, rekeyWrapsVectors } from './bundle-rekey.js';
 import { edgeCaseVectors } from './edge-cases.js';
+import { deviceAddWrapsVectors } from './device-add-wraps.js';
+import { removalFenceVectors } from './removal-fence.js';
 
 const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'canonical-json.json': canonicalJsonVectors,
@@ -24,6 +26,8 @@ const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'proof.json': proofVectors,
   'recovery-bundle.json': recoveryBundleVectors,
   'rekey-wraps.json': rekeyWrapsVectors,
+  'device-add-wraps.json': deviceAddWrapsVectors,
+  'removal-fence.json': removalFenceVectors,
   'edge-cases.json': edgeCaseVectors,
 };
 

@@ -43,6 +43,12 @@ func checkMembership(t *testing.T, f *rec, n *counter) {
 	eqStr(t, rv.path+" author", mustOK(DeviceIDFromSignPubB64(rv.str("sign_pub")))(t, rv.path), rv.str("author"))
 	rv.done()
 	n.add(1)
+	rr := f.obj("rotated_recovery")
+	pub2 := mustOK(SignPublicKey(rr.b64("sign_seed")))(t, rr.path)
+	eqStr(t, rr.path+" sign_pub", B64Encode(pub2), rr.str("sign_pub"))
+	eqStr(t, rr.path+" author", mustOK(DeviceIDFromSignPubB64(rr.str("sign_pub")))(t, rr.path), rr.str("author"))
+	rr.done()
+	n.add(1)
 
 	chains := map[string][]any{}
 	var firstChain []any
@@ -261,8 +267,22 @@ func auditHead(t *testing.T, c *rec, k string) *AuditHead {
 }
 
 func checkAudit(t *testing.T, f *rec, n *counter) {
-	key := f.b64("key")
+	vkRec := f.obj("vault_keys")
+	akRec := f.obj("audit_keys")
 	vaultID := f.str("vault_id")
+	vaultKeys := map[int64][]byte{}
+	for k := range vkRec.m {
+		e, err := strconv.ParseInt(k, 10, 64)
+		if err != nil {
+			t.Fatalf("%s: bad epoch key %q", vkRec.path, k)
+		}
+		vaultKeys[e] = vkRec.b64(k)
+		ak := mustOK(DeriveAuditKey(vaultKeys[e], vaultID, e))(t, akRec.path)
+		eqStr(t, akRec.path+"."+k, B64Encode(ak), akRec.str(k))
+		n.add(1)
+	}
+	vkRec.done()
+	akRec.done()
 	state := mustOK(VerifyMembershipChain(f.list("membership_events"), VerifyChainOptions{}))(t, f.path)
 	mustOK(VerifyAuditCheckpoint(f.raw("checkpoint"), state))(t, "checkpoint")
 	n.add(1)
@@ -272,11 +292,29 @@ func checkAudit(t *testing.T, f *rec, n *counter) {
 		c.done()
 		n.add(1)
 	}
+	run := func(c *rec) (AuditChain, error) {
+		held := map[int64]bool{}
+		for _, e := range c.list("vault_key_epochs") {
+			held[e.(int64)] = true
+		}
+		lookup := func(e int64) ([]byte, bool) {
+			if !held[e] {
+				return nil, false
+			}
+			k, ok := vaultKeys[e]
+			return k, ok
+		}
+		return VerifyAuditChain(c.list("entries"), lookup, vaultID, c.i64("key_epoch"), c.i64("min_key_epoch"), auditHead(t, c, "witnessed"))
+	}
 	for _, c := range f.recs("cases") {
-		chain := mustOK(VerifyAuditChain(c.list("entries"), key, vaultID, auditHead(t, c, "witnessed")))(t, c.path)
+		chain := mustOK(run(c))(t, c.path)
 		events := make([]any, len(chain.Events))
 		for i, e := range chain.Events {
-			events[i] = e
+			entry := map[string]any{"seq": e.Seq, "key_epoch": e.KeyEpoch, "opaque": e.Opaque}
+			if !e.Opaque {
+				entry["event"] = e.Event
+			}
+			events[i] = entry
 		}
 		var head any
 		if chain.Head != nil {
@@ -288,7 +326,7 @@ func checkAudit(t *testing.T, f *rec, n *counter) {
 		n.add(1)
 	}
 	for _, c := range f.recs("invalid") {
-		_, err := VerifyAuditChain(c.list("entries"), key, vaultID, auditHead(t, c, "witnessed"))
+		_, err := run(c)
 		expectCode(t, c, err)
 		c.done()
 		n.add(1)
