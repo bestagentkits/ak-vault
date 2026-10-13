@@ -51,14 +51,12 @@
       },
       "vars": {
         "VAULT_SYNC_ENABLED": "true",
-        "VAULT_ISSUER": "https://staging-test-issuer.ak-vault.invalid",
+        // ak-web staging, which mints vault tokens at /api/agentkit/vault/token.
+        "VAULT_ISSUER": "https://staging.agentkit.best",
         // Distinct from production so a token minted for one environment is refused by the other.
         "VAULT_AUDIENCE": "https://vault-staging.agentkit.best",
-        // Unused while VAULT_JWKS_JSON is set (inline keys take precedence).
-        "VAULT_JWKS_URL": "",
-        // Public key of a TEST-ONLY issuer (scripts/generate-staging-issuer-key.ts).
-        // Its private key never enters this repository or production.
-        "VAULT_JWKS_JSON": "{\"keys\":[{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"6ZmE_4q28SYzuJ0bVCPcG8gUeaFp8HxFueJWwVPL0aI\",\"y\":\"H3Zid6kLixkOtZeYRuM84CVG8SKn9z4Khiy_H6fEwR8\",\"kid\":\"staging-test-TG0JQ3_uZfhnCf3y\",\"alg\":\"ES256\",\"use\":\"sig\"}]}"
+        // ak-web staging's JWKS; its keys are separate from production's.
+        "VAULT_JWKS_URL": "https://staging.agentkit.best/.well-known/jwks.json"
       }
     }
   }

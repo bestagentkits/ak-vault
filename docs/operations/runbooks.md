@@ -59,9 +59,26 @@ migration ([Cloudflare rollbacks](https://developers.cloudflare.com/workers/conf
 Rollback changes code only; Durable Object data is untouched, so a rollback past a
 storage schema change can fail at runtime. Prefer a forward fix when the schema
 moved. Confirm with `wrangler deployments status` and the staging/production smoke.
-The staging smoke is `pnpm --filter ak-vault-worker smoke:staging`, with
-`STAGING_ISSUER_PRIVATE_JWK_PATH` pointing at the test-only staging issuer key kept
-outside the repository; it uses a throwaway vault and prints only step results.
+
+**Staging smoke.** The `smoke:staging` script in `worker/package.json` runs the sync
+flow against staging with real vault tokens. It does not sign in itself: it reads a
+file holding a fresh ak CLI session token from an email sign-in against ak-web
+staging, and asks ak-web staging to mint each device's token, the same path a client
+uses. Inputs (session token file, optional ak-web origin and device state path) are
+documented in the header of `worker/scripts/staging-smoke.ts`. It prints only step
+names, HTTP statuses and stable error codes.
+
+- Use a dedicated staging test account; the vault account is that session's account.
+- The smoke's two device keys are kept in a local `0600` state file outside the
+  repository and reused across runs, because ak-web binds a device key to one
+  account and caps live device keys per account. Each run creates a new synthetic
+  vault; the Worker has no per-account vault limit, and these vaults are abandoned.
+- `device_revoked` or `device_conflict` from ak-web means the stored keys can no
+  longer mint (revoked, or bound to another account). Delete the state file to bind
+  new keys, and revoke the old ones in the ak-web account if they are still live.
+- A failure right after minting that the target does not trust ak-web's issuer
+  means the Worker's issuer or JWKS settings (Wrangler config) do not match ak-web's
+  staging deployment.
 
 **Protocol revisions without a version bump.** A revision listed under "Revisions" in
 the [spec](../protocol/v1/spec.md#revisions) changes wire bodies, so a vault created

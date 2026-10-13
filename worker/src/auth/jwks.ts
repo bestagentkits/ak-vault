@@ -1,6 +1,6 @@
 /**
- * Issuer public keys (JWKS). Source: `VAULT_JWKS_JSON` (inline, staging/tests) or
- * `VAULT_JWKS_URL` (production, fetched and cached for 5 minutes). Only P-256
+ * Issuer public keys (JWKS). Source: `VAULT_JWKS_JSON` (inline, tests) or
+ * `VAULT_JWKS_URL` (deployed environments, fetched and cached for 5 minutes). Only P-256
  * signing keys with a `kid` are imported; anything else is ignored. Every load
  * failure is fail-closed: the caller gets an error and the request is refused.
  * A failed load is remembered for 30 s (negative cache) so an issuer outage does
