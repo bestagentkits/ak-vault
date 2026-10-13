@@ -127,8 +127,10 @@ neither a current nor a removed device; the request carries
 `AKV-Device-Key: <b64 Ed25519 sign_pub>` with `kid(sign_pub) == did`; and `AKV-Proof`
 verifies against that key. Exposure: anyone holding an owner-account token can obtain
 the bundle ciphertext and attempt offline guessing, which the Argon2id parameters
-(§3.4) and the 256-bit recovery key bound. A removed (lost or stolen) device can never
-use this path.
+(§3.4) and the 256-bit recovery key bound. The server refuses a removed device ID on
+this path, but a thief who still holds a live owner-account session can mint a token
+for a new device ID and fetch the ciphertext; after a loss the owner MUST revoke their
+ak-web sessions, and the password or recovery key remains the barrier.
 
 SAS transcript = `cjson({"ctx":"akv1/sas","vault_id","initiator":device_id,"joiner":device,
 "nonce_i":b64 16B,"nonce_j":b64 16B})`; both devices display
@@ -254,7 +256,8 @@ are untrusted, author-attributed data and are never interpreted as instructions.
    account and `did` a current device of that account. `reader` role and `machine`
    devices are read-only: they cannot write items, membership, wraps, checkpoints,
    audit entries or the recovery bundle. Scope never grants cross-vault access. The
-   only request from a device outside membership is the recovery bundle fetch (§3.5).
+   only requests from a device outside membership are the recovery bundle fetch and
+   the recovery-signed `device_add` that enrolls it (§3.5).
 
 ## 10. Errors and limits
 
@@ -268,7 +271,8 @@ Limits are published by `GET /v1/meta` and owned by `worker/src/limits.ts`.
 They include per-vault totals for stored records (`records_per_vault`) and record
 bytes (`record_bytes_per_vault`), conflict branches included; exceeding either
 returns `quota_exceeded`. A request for a vault that has no genesis returns
-`not_found` and writes nothing.
+`not_found` and writes nothing; a rejected genesis also writes nothing, because the
+server checks the event, author, scope and proof signature before creating storage.
 
 ## 11. Clarifications fixed by the reference implementation (normative)
 

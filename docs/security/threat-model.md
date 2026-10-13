@@ -91,6 +91,7 @@ directories themselves are the authority for exact file names.
 | E2 | Synced policy or profile elevates a grant | Hostile profile, injected agent | Policy is a maximum; profile text is untrusted data ([spec §8](../protocol/v1/spec.md#8-portable-policy-restrictive-only)) | agentkit#2299 / #7 negative tests (owned client-side) |
 | E3 | Unsupported version accepted | Server, attacker | Closed identifier sets; fail closed | Vectors: unsupported version, unknown algorithm |
 | C1 | Forked PR reaches secrets or deploys | Forked PR | No secrets to fork workflows; production Environment reviewer | Workflow config in `.github/`; red-team scenario in [release gates](./release-gates.md) |
+| I4 | Offline guessing of the recovery bundle | Holder of an owner-account token (stolen session) | Bundle is released only to the owner account with a device-key proof; removed device IDs refused; Argon2id minimums and a 256-bit recovery key; owner revokes sessions after a loss | `worker/test/recovery-fetch.test.ts` wrong account, removed device, key/did mismatch |
 | C2 | Compromised CI runner reads beyond scope | CI runner | Dedicated CI vault, machine read-only identity, revocable | #6 tests (post-MVP) |
 
 ## Explicit limitations
@@ -110,6 +111,10 @@ These are accepted and must be stated wherever the guarantees are described:
   from there the v1 limits (post-inject exposure, transcripts, memory) apply.
 - **Compromised local client.** Malware running as the user, or a modified `ak`,
   sees plaintext and keys. The protocol does not defend the endpoint.
+- **Recovery bundle ciphertext.** Anyone holding a live owner-account session can
+  download the encrypted recovery bundle and guess the password offline. A weak
+  password is the residual exposure; revoking the owner's sessions after a loss
+  closes the path.
 - **Metadata.** Item counts, sizes, timing, revisions, membership and device
   public keys are visible to the server
   ([data classification](./data-classification.md)).

@@ -98,7 +98,7 @@ A fresh device with the password or recovery key:
 
 1. Fetches the recovery bundle. Outside membership, it presents its own signing key
    in `AKV-Device-Key` and proves possession with `AKV-Proof`; the server releases
-   the bundle only to the vault's owner account and never to a removed device
+   the bundle only to the vault's owner account and refuses a removed device ID
    (spec §3.5).
 2. Decrypts it: vault keys, owner anchor, the owner **recovery signing key**, and the
    newest owner-witnessed checkpoint.
@@ -111,7 +111,9 @@ A fresh device with the password or recovery key:
 
 Anyone holding an owner-account token can download the bundle ciphertext and try to
 guess the password offline; Argon2id parameters and the 256-bit recovery key bound
-that risk, so a weak password is the residual exposure.
+that risk, so a weak password is the residual exposure. Refusing a removed device ID
+does not stop a thief who still holds a live owner session from minting a token for
+a new device ID, so after any loss the owner revokes all ak-web sessions first.
 
 Local AgentKit state (grants, agent fingerprint trust) is device-local and is not
 restored by sync; the user re-grants on the new device.
