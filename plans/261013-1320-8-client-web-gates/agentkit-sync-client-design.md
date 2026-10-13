@@ -13,6 +13,24 @@ related: [ak-vault#1, ak-vault#8, ak-vault#20, ak-web#568, agentkit#2299, agentk
 
 # ak secrets sync: local-first E2EE sync client (agentkit#2298)
 
+## Revision 3 notes (2026-10-13, from P1 and P2 implementation)
+
+These amend the sections below; the engine phase (P5) must follow them.
+
+- **Expected seq (P1, agentkit#2323).** Expected seq `0` means "absent" only. Entries written by an older binary carry a distinct "seq-less" expectation, so always pass `IndexSnapshotEntry.ExpectEntrySeq()`, never the raw `Seq`. The current binary stamps seq-less entries on its next write, so take a fresh snapshot between batches. `index.seq` is written before `index.json`. A missing or corrupt `index.seq` self-heals from the index maximum and assigns a new generation, which the engine treats as a rewrite.
+- **Restore detection (P5).** An entry seq lower than the one recorded in the sync snapshot signals a restore, even when the generation is unchanged.
+- **Replay order (P5).** Replay `apply_pending` before local change detection. Otherwise a crash between the batch and the `local_map` update is pushed back as a false conflict.
+- **Precondition failure with an unchanged value (P5, §5.4).** Re-apply rather than drop the row, or the remote value is never applied.
+- **Keystore (P2, agentkit#2322).**
+  - The akv1 pin is `v0.2.0` directly, which folds P4b into P2.
+  - The file layout uses lists rather than maps, and the keychain backend adds an `/epochs` index.
+  - The keychain save writes the index first, then the entry.
+  - The passphrase cache must already hold a passphrase the vault has accepted before any keystore call.
+  - A recovery unlock does not yet re-seal `keys.age` (agentkit#2321, recovery phase).
+  - A purge needs vault IDs from sync state.
+- **Value written before index commit (pre-existing store behavior).** `Set` writes the backend value before committing the index, so a crash in between changes a value without a seq bump. P5 detection must not rely on seq alone for values written by a crashed `Set`; tracked as an agentkit issue linked from agentkit#2323.
+- **Guide (P10).** Note that `index.json` keeps up to 1000 deleted secret names, and give the fix-it step for a corrupt `index.seq`.
+
 ## Revision 2 (2026-10-13)
 
 Revised after an independent design review
