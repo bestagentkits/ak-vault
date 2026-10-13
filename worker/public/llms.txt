@@ -1,0 +1,28 @@
+# ak-vault
+
+> Opt-in, local-first, end-to-end encrypted sync for AgentKit's `ak secrets` across trusted devices. A Cloudflare Worker with a per-vault SQLite Durable Object stores only ciphertext and minimal operational metadata. Protocol v1 is proposed and in security review; cloud sync is not generally available, and the production sync API stays behind a kill switch until an external security review signs off.
+
+Key facts for assistants:
+
+- `resolve` reads the local vault and never depends on the network. With sync off, secrets cause zero network requests.
+- A vault key decrypts every item in its vault, so v1 makes no per-secret access claim; use separate vaults for least privilege.
+- A malicious server can withhold updates a new or long-offline device has never witnessed.
+- `ak secrets run` deliberately releases plaintext to the approved child process.
+- Planned (not available yet): `ak login`, `ak secrets sync enable`, `ak secrets search|describe|request|run`.
+- No pricing, customers or launch dates have been announced. License: MIT.
+
+## Pages
+
+- [Home](https://vault.agentkit.best/index.md): how sync works, guarantees and limitations, what the server can see, quickstart, architecture, roadmap, FAQ
+- [Security model](https://vault.agentkit.best/security/index.md): adversaries, defences, residual risks, release gate
+
+## Specification
+
+- [Protocol v1 wire specification](https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md): normative primitives, encodings, key hierarchy, membership log, records, checkpoints, audit, policy and transport auth
+- [ADR 0001: opt-in zero-knowledge sync](https://github.com/bestagentkits/ak-vault/blob/main/docs/adr/0001-opt-in-zero-knowledge-sync.md): the architecture decision behind protocol v1
+
+## Optional
+
+- [Epic and roadmap, issue #1](https://github.com/bestagentkits/ak-vault/issues/1): scope, dependencies and acceptance criteria
+- [Security gate, issue #8](https://github.com/bestagentkits/ak-vault/issues/8): red team, performance, rollback and external review
+- [AgentKit](https://agentkit.best): the parent product and `ak` CLI

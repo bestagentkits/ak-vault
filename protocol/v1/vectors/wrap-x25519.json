@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "description": "Device key wrap x25519-xc20p (spec §3.3). case: shared = X25519(ephemeral_secret, recipient.kx_pub); wrap_key = HKDF-SHA256(shared, salt=epk||kx_pub, info=\"akv1/wrap/x25519\", 32); ct = XC20P(wrap_key, nonce, vk, aad={ctx:\"akv1/wrap\",vault_id,key_epoch,recipient}). Wrapping MUST produce `wrap`; unwrapping with the recipient kx_secret MUST return `vk`. invalid: unwrap MUST fail with expect_error (all-zero shared secret from a low-order epk is bad_request).",
+  "cases": [
+    {
+      "name": "wrap_to_device",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "recipient": {
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "kx_pub": "LqtEeFnOdQnH87ofhDVV9PNJHIEajekVqv-SDVZR9Sc",
+        "kx_secret": "CEzC5f49VcgdSLWkGxVFSJnlr4hGwiynyOCmLFNkKeg"
+      },
+      "ephemeral_secret": "qoH0yOu2MQHQQuaK9bVp5IeTBfY1fU0jSdyonTt73Vg",
+      "epk": "Mkh28zjGdLH3BzqLkHjzT_EGyFnbfFJ_scd-el1Q5jg",
+      "shared": "HmvAWNtVrp5praZ8DMvh2VB0SC41LsXkHhuWf5psxTE",
+      "wrap_key": "DESvk8zwovTzf5TvzI-xnOLlrcwGcfOJ5luYJwmOwDE",
+      "nonce": "HDAPLA_JKg_qJPVF5P5EqCqLdpPWtKzr",
+      "wrap": {
+        "v": 1,
+        "alg": "x25519-xc20p",
+        "rcpt": "HuCy7tB5ixWPisxMZQdTTA",
+        "key_epoch": 1,
+        "epk": "Mkh28zjGdLH3BzqLkHjzT_EGyFnbfFJ_scd-el1Q5jg",
+        "n": "HDAPLA_JKg_qJPVF5P5EqCqLdpPWtKzr",
+        "ct": "2P5yha7KExC3bvcWo-utzam2gM0S68xh9DxjYI-ZLBW7hwPBUYliTTm6mwUR9JTe"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "wrong_recipient_key",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+      "kx_secret": "4Ozvxw67ovpLT4QTPzy0lv1XjwtBa1f54S7ziMRw5xU",
+      "wrap": {
+        "v": 1,
+        "alg": "x25519-xc20p",
+        "rcpt": "HuCy7tB5ixWPisxMZQdTTA",
+        "key_epoch": 1,
+        "epk": "Mkh28zjGdLH3BzqLkHjzT_EGyFnbfFJ_scd-el1Q5jg",
+        "n": "HDAPLA_JKg_qJPVF5P5EqCqLdpPWtKzr",
+        "ct": "2P5yha7KExC3bvcWo-utzam2gM0S68xh9DxjYI-ZLBW7hwPBUYliTTm6mwUR9JTe"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "rcpt_not_self",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
+      "kx_secret": "CEzC5f49VcgdSLWkGxVFSJnlr4hGwiynyOCmLFNkKeg",
+      "wrap": {
+        "v": 1,
+        "alg": "x25519-xc20p",
+        "rcpt": "HuCy7tB5ixWPisxMZQdTTA",
+        "key_epoch": 1,
+        "epk": "Mkh28zjGdLH3BzqLkHjzT_EGyFnbfFJ_scd-el1Q5jg",
+        "n": "HDAPLA_JKg_qJPVF5P5EqCqLdpPWtKzr",
+        "ct": "2P5yha7KExC3bvcWo-utzam2gM0S68xh9DxjYI-ZLBW7hwPBUYliTTm6mwUR9JTe"
+      },
+      "expect_error": "forbidden"
+    },
+    {
+      "name": "key_epoch_changed",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+      "kx_secret": "CEzC5f49VcgdSLWkGxVFSJnlr4hGwiynyOCmLFNkKeg",
+      "wrap": {
+        "v": 1,
+        "alg": "x25519-xc20p",
+        "rcpt": "HuCy7tB5ixWPisxMZQdTTA",
+        "key_epoch": 2,
+        "epk": "Mkh28zjGdLH3BzqLkHjzT_EGyFnbfFJ_scd-el1Q5jg",
+        "n": "HDAPLA_JKg_qJPVF5P5EqCqLdpPWtKzr",
+        "ct": "2P5yha7KExC3bvcWo-utzam2gM0S68xh9DxjYI-ZLBW7hwPBUYliTTm6mwUR9JTe"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "wrong_vault",
+      "vault_id": "Iqk3mzEK-GUWuYN7wXxavA",
+      "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+      "kx_secret": "CEzC5f49VcgdSLWkGxVFSJnlr4hGwiynyOCmLFNkKeg",
+      "wrap": {
+        "v": 1,
+        "alg": "x25519-xc20p",
+        "rcpt": "HuCy7tB5ixWPisxMZQdTTA",
+        "key_epoch": 1,
+        "epk": "Mkh28zjGdLH3BzqLkHjzT_EGyFnbfFJ_scd-el1Q5jg",
+        "n": "HDAPLA_JKg_qJPVF5P5EqCqLdpPWtKzr",
+        "ct": "2P5yha7KExC3bvcWo-utzam2gM0S68xh9DxjYI-ZLBW7hwPBUYliTTm6mwUR9JTe"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "all_zero_epk",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+      "kx_secret": "CEzC5f49VcgdSLWkGxVFSJnlr4hGwiynyOCmLFNkKeg",
+      "wrap": {
+        "v": 1,
+        "alg": "x25519-xc20p",
+        "rcpt": "HuCy7tB5ixWPisxMZQdTTA",
+        "key_epoch": 1,
+        "epk": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "n": "HDAPLA_JKg_qJPVF5P5EqCqLdpPWtKzr",
+        "ct": "2P5yha7KExC3bvcWo-utzam2gM0S68xh9DxjYI-ZLBW7hwPBUYliTTm6mwUR9JTe"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "low_order_epk",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+      "kx_secret": "CEzC5f49VcgdSLWkGxVFSJnlr4hGwiynyOCmLFNkKeg",
+      "wrap": {
+        "v": 1,
+        "alg": "x25519-xc20p",
+        "rcpt": "HuCy7tB5ixWPisxMZQdTTA",
+        "key_epoch": 1,
+        "epk": "4Ot6fDtBuK4WVuP68Z_EatoJjeucMrH9hmIFFl9JuAA",
+        "n": "HDAPLA_JKg_qJPVF5P5EqCqLdpPWtKzr",
+        "ct": "2P5yha7KExC3bvcWo-utzam2gM0S68xh9DxjYI-ZLBW7hwPBUYliTTm6mwUR9JTe"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "unsupported_version",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+      "kx_secret": "CEzC5f49VcgdSLWkGxVFSJnlr4hGwiynyOCmLFNkKeg",
+      "wrap": {
+        "v": 2,
+        "alg": "x25519-xc20p",
+        "rcpt": "HuCy7tB5ixWPisxMZQdTTA",
+        "key_epoch": 1,
+        "epk": "Mkh28zjGdLH3BzqLkHjzT_EGyFnbfFJ_scd-el1Q5jg",
+        "n": "HDAPLA_JKg_qJPVF5P5EqCqLdpPWtKzr",
+        "ct": "2P5yha7KExC3bvcWo-utzam2gM0S68xh9DxjYI-ZLBW7hwPBUYliTTm6mwUR9JTe"
+      },
+      "expect_error": "unsupported_version"
+    }
+  ]
+}

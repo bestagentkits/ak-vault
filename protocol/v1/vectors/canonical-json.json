@@ -1,0 +1,190 @@
+{
+  "version": 1,
+  "description": "Canonical JSON (spec §2). cases: parse `input` with a strict parser (restricted grammar, any key order/whitespace) and serialize; result MUST equal `output`, and `output` MUST be accepted by the canonical-only parser. invalid[mode=parse]: the strict parser MUST reject `input`. invalid[mode=canonical]: input is valid JSON but not canonical; a canonical-only parser MUST reject it.",
+  "cases": [
+    {
+      "name": "key_order",
+      "input": "{\"b\":1,\"a\":2,\"c\":{\"z\":true,\"y\":null}}",
+      "output": "{\"a\":2,\"b\":1,\"c\":{\"y\":null,\"z\":true}}"
+    },
+    {
+      "name": "whitespace",
+      "input": " {\n \"list\" : [ 1 , 2 ,3 ] ,\t\"s\":\"x\" } ",
+      "output": "{\"list\":[1,2,3],\"s\":\"x\"}"
+    },
+    {
+      "name": "empty_containers",
+      "input": "{\"a\":{},\"b\":[]}",
+      "output": "{\"a\":{},\"b\":[]}"
+    },
+    {
+      "name": "integer_bounds",
+      "input": "[0,9007199254740991]",
+      "output": "[0,9007199254740991]"
+    },
+    {
+      "name": "short_escapes",
+      "input": "\"q\\\"b\\\\s\\/n\\nr\\rt\\tb\\bf\\f\"",
+      "output": "\"q\\\"b\\\\s/n\\nr\\rt\\tb\\bf\\f\""
+    },
+    {
+      "name": "control_chars_lower_hex",
+      "input": "\"\\u0000\\u001F\\u000b\\u007f\"",
+      "output": "\"\\u0000\\u001f\\u000b\""
+    },
+    {
+      "name": "raw_unicode_not_escaped",
+      "input": "\"<>&\\u2028\\u2029\\u00e9 é\"",
+      "output": "\"<>&  é é\""
+    },
+    {
+      "name": "surrogate_pair",
+      "input": "\"\\ud83d\\ude00 😀\"",
+      "output": "\"😀 😀\""
+    },
+    {
+      "name": "integer_like_keys_sorted_by_bytes",
+      "input": "{\"1\":0,\"0a\":1,\"10\":2,\"9\":3}",
+      "output": "{\"0a\":1,\"1\":0,\"10\":2,\"9\":3}"
+    },
+    {
+      "name": "nested_sort_byte_order",
+      "input": "{\"a_b\":1,\"a\":2,\"a0\":3,\"_\":4,\"9\":5}",
+      "output": "{\"9\":5,\"_\":4,\"a\":2,\"a0\":3,\"a_b\":1}"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "float",
+      "mode": "parse",
+      "input": "1.5",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "float_zero_fraction",
+      "mode": "parse",
+      "input": "1.0",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "exponent",
+      "mode": "parse",
+      "input": "1e3",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "negative",
+      "mode": "parse",
+      "input": "-1",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "too_large",
+      "mode": "parse",
+      "input": "9007199254740992",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "leading_zero",
+      "mode": "parse",
+      "input": "01",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "lone_high_surrogate",
+      "mode": "parse",
+      "input": "\"\\ud800\"",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "lone_low_surrogate",
+      "mode": "parse",
+      "input": "\"\\udc00x\"",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "duplicate_key",
+      "mode": "parse",
+      "input": "{\"a\":1,\"a\":2}",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "uppercase_key",
+      "mode": "parse",
+      "input": "{\"A\":1}",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "dash_key",
+      "mode": "parse",
+      "input": "{\"a-b\":1}",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "empty_key",
+      "mode": "parse",
+      "input": "{\"\":1}",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "trailing_comma",
+      "mode": "parse",
+      "input": "[1,]",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "trailing_data",
+      "mode": "parse",
+      "input": "{} {}",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "nan",
+      "mode": "parse",
+      "input": "NaN",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "raw_control_char",
+      "mode": "parse",
+      "input": "\"a\tb\"",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "whitespace",
+      "mode": "canonical",
+      "input": "{\"a\": 1}",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "unsorted_keys",
+      "mode": "canonical",
+      "input": "{\"b\":1,\"a\":2}",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "needless_unicode_escape",
+      "mode": "canonical",
+      "input": "\"\\u0041\"",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "uppercase_hex_escape",
+      "mode": "canonical",
+      "input": "\"\\u001F\"",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "escaped_solidus",
+      "mode": "canonical",
+      "input": "\"\\/\"",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "escaped_non_ascii",
+      "mode": "canonical",
+      "input": "\"\\u00e9\"",
+      "expect_error": "bad_request"
+    }
+  ]
+}

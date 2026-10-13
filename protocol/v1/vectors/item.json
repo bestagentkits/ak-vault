@@ -1,0 +1,200 @@
+{
+  "version": 1,
+  "description": "Item encryption (spec §3, §3.2). item_key = HKDF-SHA256(ikm=vk, salt=b64decode(vault_id), info=utf8(\"akv1/item-key\\n\")||cjson({item_id,key_epoch}), 32). Envelope kid is the epoch tag \"e<key_epoch>\", aad = cjson of the item AAD object (aad_cjson). cases: sealing `payload` (plaintext = cjson(payload)) with `nonce` MUST produce `env`; opening MUST return `payload`. invalid: opening `env` under the given context MUST fail with expect_error.",
+  "cases": [
+    {
+      "name": "live_item",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "author": "HuCy7tB5ixWPisxMZQdTTA",
+      "item_id": "7FgswvJ31EsVRXXdSPAq2w",
+      "base_revision": 0,
+      "tombstone": false,
+      "item_key": "PXlXavOxvkSzkjeUVH3HmoNygaiD8RbAKm7blYxZt1c",
+      "aad_cjson": "{\"author\":\"HuCy7tB5ixWPisxMZQdTTA\",\"base_revision\":0,\"ctx\":\"akv1/item\",\"item_id\":\"7FgswvJ31EsVRXXdSPAq2w\",\"key_epoch\":1,\"tombstone\":false,\"vault_id\":\"0iAObB5k16qc2AvUJ7MGPQ\"}",
+      "payload": {
+        "name": "GITHUB_TOKEN",
+        "value": "ghp_example_not_a_real_token",
+        "meta": {
+          "tags": [
+            "ci",
+            "github"
+          ],
+          "description": "Deploy token"
+        },
+        "sensitivity": "normal"
+      },
+      "plaintext": "{\"meta\":{\"description\":\"Deploy token\",\"tags\":[\"ci\",\"github\"]},\"name\":\"GITHUB_TOKEN\",\"sensitivity\":\"normal\",\"value\":\"ghp_example_not_a_real_token\"}",
+      "nonce": "wjcvwUmBLEy-l2fyoyx0Ubj8MmVqnzeJ",
+      "env": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "wjcvwUmBLEy-l2fyoyx0Ubj8MmVqnzeJ",
+        "ct": "IfNlKIrwsF2hlnQ-3R2dhFwTX40bEP6-J0vFQrMBHS7iGiAoZFMlAEcnXLOLZFvRYtKGr4WYqXn2dTD3JSLn-zOhCK-fz01jNwtTvQKJwIn5QkgbonoU2a2f_so80HmFNlimdAPl3FO2_9rXl8wXr7aKh0AxOcmevNswvedimhJI8v8e9NrqgqDnz8ueKEaaFkEy99SVnhdDf0NUGbzRwE1x"
+      }
+    },
+    {
+      "name": "high_sensitivity_unicode",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "author": "HuCy7tB5ixWPisxMZQdTTA",
+      "item_id": "dY__FNGMAl633kI0rpcZcw",
+      "base_revision": 4,
+      "tombstone": false,
+      "item_key": "q7i5P7opQpZWVLO9gSpmh_6j3zNcrR781I7WC4LkKoQ",
+      "aad_cjson": "{\"author\":\"HuCy7tB5ixWPisxMZQdTTA\",\"base_revision\":4,\"ctx\":\"akv1/item\",\"item_id\":\"dY__FNGMAl633kI0rpcZcw\",\"key_epoch\":1,\"tombstone\":false,\"vault_id\":\"0iAObB5k16qc2AvUJ7MGPQ\"}",
+      "payload": {
+        "name": "DB_PASSWORD",
+        "value": "pässwörd\n\"quoted\"",
+        "meta": {},
+        "sensitivity": "high"
+      },
+      "plaintext": "{\"meta\":{},\"name\":\"DB_PASSWORD\",\"sensitivity\":\"high\",\"value\":\"pässwörd\\n\\\"quoted\\\"\"}",
+      "nonce": "o2K2yy1Tq4ZQJWVN3v5zuMRIdQoRo6jw",
+      "env": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "o2K2yy1Tq4ZQJWVN3v5zuMRIdQoRo6jw",
+        "ct": "DVtugXUtz5BMn0HwSYDECCdIv43OsfPcC7WBudg35iLh9jBGnx1r1rjnavFBBP3OqDR6TD6XVXz4FXv5GWPBp6GunVzeeosC-6D81mKg9ySxHLM-OxnhuUgHM_BGzWEsKM7goe-q"
+      }
+    },
+    {
+      "name": "tombstone",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "author": "HuCy7tB5ixWPisxMZQdTTA",
+      "item_id": "7FgswvJ31EsVRXXdSPAq2w",
+      "base_revision": 1,
+      "tombstone": true,
+      "item_key": "PXlXavOxvkSzkjeUVH3HmoNygaiD8RbAKm7blYxZt1c",
+      "aad_cjson": "{\"author\":\"HuCy7tB5ixWPisxMZQdTTA\",\"base_revision\":1,\"ctx\":\"akv1/item\",\"item_id\":\"7FgswvJ31EsVRXXdSPAq2w\",\"key_epoch\":1,\"tombstone\":true,\"vault_id\":\"0iAObB5k16qc2AvUJ7MGPQ\"}",
+      "payload": {
+        "deleted": true
+      },
+      "plaintext": "{\"deleted\":true}",
+      "nonce": "3lIF-JJFpH4YLataquIxMD3UwAQHWRfP",
+      "env": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "3lIF-JJFpH4YLataquIxMD3UwAQHWRfP",
+        "ct": "r11pSPylIbkVzNN5lOqks892oRXnSMYrMzGt1eTbrxg"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "moved_to_other_item",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "author": "HuCy7tB5ixWPisxMZQdTTA",
+      "item_id": "qI1sfon0kWxjkcbAyHBtJA",
+      "base_revision": 0,
+      "tombstone": false,
+      "env": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "wjcvwUmBLEy-l2fyoyx0Ubj8MmVqnzeJ",
+        "ct": "IfNlKIrwsF2hlnQ-3R2dhFwTX40bEP6-J0vFQrMBHS7iGiAoZFMlAEcnXLOLZFvRYtKGr4WYqXn2dTD3JSLn-zOhCK-fz01jNwtTvQKJwIn5QkgbonoU2a2f_so80HmFNlimdAPl3FO2_9rXl8wXr7aKh0AxOcmevNswvedimhJI8v8e9NrqgqDnz8ueKEaaFkEy99SVnhdDf0NUGbzRwE1x"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "base_revision_changed",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "author": "HuCy7tB5ixWPisxMZQdTTA",
+      "item_id": "7FgswvJ31EsVRXXdSPAq2w",
+      "base_revision": 1,
+      "tombstone": false,
+      "env": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "wjcvwUmBLEy-l2fyoyx0Ubj8MmVqnzeJ",
+        "ct": "IfNlKIrwsF2hlnQ-3R2dhFwTX40bEP6-J0vFQrMBHS7iGiAoZFMlAEcnXLOLZFvRYtKGr4WYqXn2dTD3JSLn-zOhCK-fz01jNwtTvQKJwIn5QkgbonoU2a2f_so80HmFNlimdAPl3FO2_9rXl8wXr7aKh0AxOcmevNswvedimhJI8v8e9NrqgqDnz8ueKEaaFkEy99SVnhdDf0NUGbzRwE1x"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "tombstone_flag_flipped",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "author": "HuCy7tB5ixWPisxMZQdTTA",
+      "item_id": "7FgswvJ31EsVRXXdSPAq2w",
+      "base_revision": 0,
+      "tombstone": true,
+      "env": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "wjcvwUmBLEy-l2fyoyx0Ubj8MmVqnzeJ",
+        "ct": "IfNlKIrwsF2hlnQ-3R2dhFwTX40bEP6-J0vFQrMBHS7iGiAoZFMlAEcnXLOLZFvRYtKGr4WYqXn2dTD3JSLn-zOhCK-fz01jNwtTvQKJwIn5QkgbonoU2a2f_so80HmFNlimdAPl3FO2_9rXl8wXr7aKh0AxOcmevNswvedimhJI8v8e9NrqgqDnz8ueKEaaFkEy99SVnhdDf0NUGbzRwE1x"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "author_changed",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "author": "VnU8BMAC7zPBg_J4WIZmkA",
+      "item_id": "7FgswvJ31EsVRXXdSPAq2w",
+      "base_revision": 0,
+      "tombstone": false,
+      "env": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "wjcvwUmBLEy-l2fyoyx0Ubj8MmVqnzeJ",
+        "ct": "IfNlKIrwsF2hlnQ-3R2dhFwTX40bEP6-J0vFQrMBHS7iGiAoZFMlAEcnXLOLZFvRYtKGr4WYqXn2dTD3JSLn-zOhCK-fz01jNwtTvQKJwIn5QkgbonoU2a2f_so80HmFNlimdAPl3FO2_9rXl8wXr7aKh0AxOcmevNswvedimhJI8v8e9NrqgqDnz8ueKEaaFkEy99SVnhdDf0NUGbzRwE1x"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "kid_not_epoch_tag",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "author": "HuCy7tB5ixWPisxMZQdTTA",
+      "item_id": "7FgswvJ31EsVRXXdSPAq2w",
+      "base_revision": 0,
+      "tombstone": false,
+      "env": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e2",
+        "n": "wjcvwUmBLEy-l2fyoyx0Ubj8MmVqnzeJ",
+        "ct": "IfNlKIrwsF2hlnQ-3R2dhFwTX40bEP6-J0vFQrMBHS7iGiAoZFMlAEcnXLOLZFvRYtKGr4WYqXn2dTD3JSLn-zOhCK-fz01jNwtTvQKJwIn5QkgbonoU2a2f_so80HmFNlimdAPl3FO2_9rXl8wXr7aKh0AxOcmevNswvedimhJI8v8e9NrqgqDnz8ueKEaaFkEy99SVnhdDf0NUGbzRwE1x"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "tampered_ct",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 1,
+      "author": "HuCy7tB5ixWPisxMZQdTTA",
+      "item_id": "7FgswvJ31EsVRXXdSPAq2w",
+      "base_revision": 0,
+      "tombstone": false,
+      "env": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "wjcvwUmBLEy-l2fyoyx0Ubj8MmVqnzeJ",
+        "ct": "IfNlKYrwsF2hlnQ-3R2dhFwTX40bEP6-J0vFQrMBHS7iGiAoZFMlAEcnXLOLZFvRYtKGr4WYqXn2dTD3JSLn-zOhCK-fz01jNwtTvQKJwIn5QkgbonoU2a2f_so80HmFNlimdAPl3FO2_9rXl8wXr7aKh0AxOcmevNswvedimhJI8v8e9NrqgqDnz8ueKEaaFkEy99SVnhdDf0NUGbzRwE1x"
+      },
+      "expect_error": "decrypt_failed"
+    }
+  ]
+}

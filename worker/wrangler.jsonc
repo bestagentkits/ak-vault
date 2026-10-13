@@ -1,0 +1,63 @@
+// ak-vault Worker configuration. Top level = production; `env.staging` = staging.
+// Secrets are never stored here: set REVOCATION_WEBHOOK_SECRET (and, during a
+// rotation overlap, REVOCATION_WEBHOOK_SECRET_PREVIOUS) with `wrangler secret put`.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "ak-vault",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  // Platform invocation logs record full URLs (raw vault/item IDs) and request
+  // metadata, bypassing the operational logger contract, so only our own
+  // redacted console logs are kept.
+  "observability": { "enabled": true, "head_sampling_rate": 1, "logs": { "invocation_logs": false } },
+  // The Worker runs first for every request so static pages get security headers too.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+    "run_worker_first": true
+  },
+  "routes": [{ "pattern": "vault.agentkit.best", "custom_domain": true }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "VAULT", "class_name": "VaultDurableObject" },
+      { "name": "REVOCATIONS", "class_name": "RevocationRegistry" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["VaultDurableObject", "RevocationRegistry"] }],
+  "vars": {
+    // Kill switch: production sync stays off until docs/security/release-gates.md is met.
+    "VAULT_SYNC_ENABLED": "false",
+    "VAULT_ISSUER": "https://agentkit.best",
+    "VAULT_AUDIENCE": "https://vault.agentkit.best",
+    // Placeholder until ak-web#568 publishes the vault JWKS; unreachable keys fail closed.
+    "VAULT_JWKS_URL": "https://agentkit.best/.well-known/vault-jwks.json"
+  },
+  "env": {
+    "staging": {
+      "name": "ak-vault-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [{ "pattern": "vault-staging.agentkit.best", "custom_domain": true }],
+      "durable_objects": {
+        "bindings": [
+          { "name": "VAULT", "class_name": "VaultDurableObject" },
+          { "name": "REVOCATIONS", "class_name": "RevocationRegistry" }
+        ]
+      },
+      "vars": {
+        "VAULT_SYNC_ENABLED": "true",
+        "VAULT_ISSUER": "https://staging-test-issuer.ak-vault.invalid",
+        "VAULT_AUDIENCE": "https://vault.agentkit.best",
+        // Unused while VAULT_JWKS_JSON is set (inline keys take precedence).
+        "VAULT_JWKS_URL": "",
+        // Public key of a TEST-ONLY issuer (scripts/generate-staging-issuer-key.ts).
+        // Its private key never enters this repository or production.
+        "VAULT_JWKS_JSON": "{\"keys\":[{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"6ZmE_4q28SYzuJ0bVCPcG8gUeaFp8HxFueJWwVPL0aI\",\"y\":\"H3Zid6kLixkOtZeYRuM84CVG8SKn9z4Khiy_H6fEwR8\",\"kid\":\"staging-test-TG0JQ3_uZfhnCf3y\",\"alg\":\"ES256\",\"use\":\"sig\"}]}"
+      }
+    }
+  }
+}

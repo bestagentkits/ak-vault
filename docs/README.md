@@ -1,0 +1,29 @@
+# ak-vault documentation
+
+Start with the root [README](../README.md) and [AGENTS.md](../AGENTS.md). Use this
+page to find the owner of a question.
+
+| Question | Owner |
+|---|---|
+| Why opt-in zero-knowledge sync, and what was rejected? | [ADR 0001](./adr/0001-opt-in-zero-knowledge-sync.md) |
+| Exact wire format, primitives, encodings, errors | [Protocol v1 spec](./protocol/v1/spec.md) (normative) |
+| Who can attack what, and which test proves the defense? | [Threat model](./security/threat-model.md) |
+| What the server can see; logging and retention rules | [Data classification](./security/data-classification.md) |
+| Devices, rekey, recovery, compromise response | [Key lifecycle and recovery](./security/key-lifecycle-and-recovery.md) |
+| What must be true before GA | [Release gates](./security/release-gates.md) |
+| Incidents, kill switch, rollback, restore, key rotation | [Runbooks](./operations/runbooks.md) |
+| What it costs on Cloudflare | [Cost model](./operations/cost-model.md) |
+| Landing page visual design | [Design guidelines](./design-guidelines.md) |
+| How to review a change | [REVIEW.md](../REVIEW.md) |
+
+Executable owners:
+
+- Deterministic vectors: `protocol/v1/vectors/`
+- TypeScript reference implementation: `packages/protocol/`
+- Go implementation: `go/`
+- Worker, Durable Object, limits and tests: `worker/src/`, `worker/test/`
+- Landing page: `worker/public/`
+- CI/CD: `.github/workflows/`
+
+Work in progress and audit reports live under `plans/`; they are records, not
+current authority.

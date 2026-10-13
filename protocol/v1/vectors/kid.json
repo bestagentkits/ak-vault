@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "description": "Key IDs and signing input (spec §2). ed25519[]: seed -> public_key (RFC 8032) and kid = device_id. x25519[]: secret -> public_key (RFC 7748) and kid. signing[]: signing_input = utf8(context)||0x0A||cjson(object minus top-level \"sig\") as a UTF-8 string; sig = Ed25519(seed, signing_input). invalid[]: verifying `object` under `context` with `public_key` MUST fail with expect_error.",
+  "ed25519": [
+    {
+      "seed": "KFo6rHP68V5O7T0VtRgMaSFw_IGsQvRQy4aiZGxaivg",
+      "public_key": "KUmNwjHUCHrg0yQeZbScWI7fKHujDmJKCcP7Mqiqnvs",
+      "kid": "VFmaN0A04KgG_45OJOD6VA"
+    },
+    {
+      "seed": "sUd1HohG1QCjhcBa3W-jv9_B3nMNFM8cvyISqs_PQkA",
+      "public_key": "ylu_b3wU5rX8fx6CIjg1N9QR310joHnsHLgy2G8pp7U",
+      "kid": "9M0DGKbaY9tJgROMwJvQmw"
+    },
+    {
+      "seed": "qOuUSUHsugdVJfa6polMA2vTsNjNDLHFHQhM6Te1A28",
+      "public_key": "XwsuXllz-eqgt4tM91UxBpGB-rUIGLJSv1CMTGNbHMs",
+      "kid": "vhrK0GnC2MHE1vMdw2MTrw"
+    }
+  ],
+  "x25519": [
+    {
+      "secret": "fzgT_WvMq8uezmqM4v_VlgBtcBGJ1QCDxT77KwNnCUI",
+      "public_key": "pIPUXRKgwEsCMmbTBCIliMgd1w6qnLyBjgiGlwogPiQ",
+      "kid": "yEjYDsIVEyNl9NkrjKUAqg"
+    },
+    {
+      "secret": "BdCpgpLaVOnyZ-gDNiSIDvgm_GDL3kmTJYsDUX9QMqI",
+      "public_key": "vkkUGXnz73LvmIoS7W1BCRTB2n_23lFQQ-ffKGzouFk",
+      "kid": "963D6kFEYsLlz14WNueMLw"
+    }
+  ],
+  "signing": [
+    {
+      "context": "akv1/record",
+      "object": {
+        "z": "last",
+        "a": [
+          1,
+          2
+        ],
+        "sig": "ignored-by-signing-input",
+        "m": {
+          "b": true,
+          "a": null
+        }
+      },
+      "seed": "KFo6rHP68V5O7T0VtRgMaSFw_IGsQvRQy4aiZGxaivg",
+      "public_key": "KUmNwjHUCHrg0yQeZbScWI7fKHujDmJKCcP7Mqiqnvs",
+      "signing_input": "akv1/record\n{\"a\":[1,2],\"m\":{\"a\":null,\"b\":true},\"z\":\"last\"}",
+      "sig": "XD2sCzpuJtfsL_cuJapB0MFIfpoUAVqRtKvVwMiChMnuLq3POnGe6HuMeVq3_tgkc9UFnzePFa2BDtOpHDVnBw"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "wrong_context",
+      "context": "akv1/checkpoint",
+      "object": {
+        "z": "last",
+        "a": [
+          1,
+          2
+        ],
+        "sig": "XD2sCzpuJtfsL_cuJapB0MFIfpoUAVqRtKvVwMiChMnuLq3POnGe6HuMeVq3_tgkc9UFnzePFa2BDtOpHDVnBw",
+        "m": {
+          "b": true,
+          "a": null
+        }
+      },
+      "public_key": "KUmNwjHUCHrg0yQeZbScWI7fKHujDmJKCcP7Mqiqnvs",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "tampered_object",
+      "context": "akv1/record",
+      "object": {
+        "z": "changed",
+        "a": [
+          1,
+          2
+        ],
+        "sig": "XD2sCzpuJtfsL_cuJapB0MFIfpoUAVqRtKvVwMiChMnuLq3POnGe6HuMeVq3_tgkc9UFnzePFa2BDtOpHDVnBw",
+        "m": {
+          "b": true,
+          "a": null
+        }
+      },
+      "public_key": "KUmNwjHUCHrg0yQeZbScWI7fKHujDmJKCcP7Mqiqnvs",
+      "expect_error": "invalid_signature"
+    }
+  ]
+}
