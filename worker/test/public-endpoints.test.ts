@@ -71,10 +71,18 @@ describe('landing site', () => {
     expect(res.headers.get('Permissions-Policy')).toBeTruthy();
   });
 
-  it('marks site responses no-transform so the proxy cannot inject scripts', async () => {
-    for (const path of ['/', '/security/', '/index.md', '/site.js', '/does-not-exist']) {
+  it('marks HTML pages no-transform so the proxy cannot inject scripts, keeping other cache directives', async () => {
+    for (const path of ['/', '/security/', '/does-not-exist']) {
       const directives = ((await fetchRaw(path)).headers.get('Cache-Control') ?? '').split(',').map((d) => d.trim());
       expect(directives, path).toContain('no-transform');
+      expect(directives.filter((d) => d === 'no-transform'), path).toHaveLength(1);
+      expect(directives.length, path).toBeGreaterThan(1);
+    }
+  });
+
+  it('leaves non-HTML assets transformable so the edge can compress them', async () => {
+    for (const path of ['/styles.css', '/site.js', '/index.md', '/llms.txt']) {
+      expect((await fetchRaw(path)).headers.get('Cache-Control') ?? '', path).not.toContain('no-transform');
     }
   });
 
