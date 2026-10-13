@@ -105,6 +105,7 @@ describe('audit.json', () => {
     vaultKeys: (e: number) => (c.vault_key_epochs.includes(e) ? b64decode(v.vault_keys[String(e)]) : undefined),
     vaultId: v.vault_id,
     keyEpoch: c.key_epoch,
+    minKeyEpoch: c.min_key_epoch,
     ...(c.witnessed ? { witnessed: c.witnessed } : {}),
   });
   it('audit keys derive from the vault key of their epoch', () => {

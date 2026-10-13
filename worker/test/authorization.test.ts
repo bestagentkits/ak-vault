@@ -2,7 +2,7 @@
 import { randomBytes, randomId, sha256b64, type JsonObject } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';
 import { call, createDevice } from './helpers/api-client.js';
-import { sealTestBundle } from './helpers/recovery-bundle.js';
+import { putTestBundle, sealTestBundle } from './helpers/recovery-bundle.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 const v = { name: 'DB_PASSWORD', value: 'synthetic' };
@@ -84,7 +84,7 @@ describe('scope and tenant isolation', () => {
 
 describe('recovery bundle', () => {
   const bundle = sealTestBundle;
-  const put = (fx: VaultFixture, device: VaultFixture['owner'], body: unknown) => call(device, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, body);
+  const put = (fx: VaultFixture, device: VaultFixture['owner'], body: unknown) => putTestBundle(fx, device, body);
 
   it('owner stores and fetches it; bundle_seq must increase', async () => {
     const fx = await VaultFixture.create();

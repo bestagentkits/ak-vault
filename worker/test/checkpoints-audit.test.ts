@@ -132,7 +132,9 @@ describe('audit stream', () => {
     const all = (await fx.get(fx.owner, '/audit')).json.entries.map((e: { entry: unknown }) => e.entry);
     expect(verifyAuditChain(all, { vaultKeys: (e) => fx.vk.get(e), vaultId: fx.vaultId, keyEpoch: 2 }).events).toHaveLength(4);
     // A device holding only the new epoch still verifies the chain; older entries stay opaque.
-    expect(verifyAuditChain(all, { vaultKeys: (e) => (e === 2 ? fx.vk.get(2) : undefined), vaultId: fx.vaultId, keyEpoch: 2 }).events.filter((e) => e === null)).toHaveLength(2);
+    expect(verifyAuditChain(all, { vaultKeys: (e) => (e === 2 ? fx.vk.get(2) : undefined), vaultId: fx.vaultId, keyEpoch: 2 }).events.filter((e) => e.opaque)).toHaveLength(2);
+    // Without the current epoch's key the chain is refused, never reported as all-opaque.
+    expect(() => verifyAuditChain(all, { vaultKeys: (e) => (e === 1 ? fx.vk.get(1) : undefined), vaultId: fx.vaultId, keyEpoch: 2 })).toThrow(/required audit epoch/);
   });
 
   it('read-only devices (reader, machine) and read-scoped tokens cannot append, but can read the stream', async () => {

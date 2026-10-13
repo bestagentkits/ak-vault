@@ -20,7 +20,7 @@ import {
 } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';
 import { call, createDevice, type TestDevice } from './helpers/api-client.js';
-import { sealTestBundle } from './helpers/recovery-bundle.js';
+import { putTestBundle, sealTestBundle } from './helpers/recovery-bundle.js';
 import { signerOf, VaultFixture } from './helpers/vault-fixture.js';
 
 const v = { name: 'API_KEY', value: 'synthetic-value' };
@@ -64,7 +64,7 @@ describe('removal fence', () => {
 describe('recovery identity', () => {
   it('may read the bundle and membership, nothing else', async () => {
     const fx = await VaultFixture.create();
-    expect((await call(fx.owner, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, sealTestBundle(fx, 1))).status).toBe(200);
+    expect((await putTestBundle(fx, fx.owner, sealTestBundle(fx, 1))).status).toBe(200);
     const fresh = createDevice(fx.owner.account, 'owner');
     expect((await fx.get(fresh, '/membership', keyHeader(fresh))).status).toBe(200);
     expect((await fx.get(fresh, '/recovery', keyHeader(fresh))).status).toBe(200);
@@ -80,7 +80,7 @@ describe('recovery identity', () => {
       await fx.post(fresh, '/checkpoints', cp, keyHeader(fresh)),
       await fx.post(fresh, '/audit', { start_seq: 0, prev: '', entries: [] }, keyHeader(fresh)),
       await call(fresh, 'PUT', `/v1/vaults/${fx.vaultId}/items/${randomId()}`, fx.record(fresh, randomId(), 0, v), keyHeader(fresh)),
-      await call(fresh, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, sealTestBundle(fx, 2), keyHeader(fresh)),
+      await putTestBundle(fx, fresh, sealTestBundle(fx, 2), fx.state.seq, keyHeader(fresh)),
       await fx.append(fx.buildEvent('role_set', { account: fx.owner.account, role: 'owner' }, signerOf(fresh)), undefined, fresh, keyHeader(fresh)),
     ];
     expect(refused.map((r) => r.status)).toEqual(refused.map(() => 403));
@@ -89,7 +89,7 @@ describe('recovery identity', () => {
   it('recovers a vault that gained a device after the bundle was sealed', async () => {
     const fx = await VaultFixture.create();
     const rk = generateRecoveryKey();
-    expect((await call(fx.owner, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, sealTestBundle(fx, 1, rk))).status).toBe(200);
+    expect((await putTestBundle(fx, fx.owner, sealTestBundle(fx, 1, rk))).status).toBe(200);
     const laptop = await fx.addDevice();
     expect((await fx.write(laptop, randomId(), 0, v)).status).toBe(200);
 
@@ -119,7 +119,7 @@ describe('recovery identity', () => {
 describe('recovery_rotate', () => {
   it('lands only with a resealed bundle, and only the new key enrolls afterwards', async () => {
     const fx = await VaultFixture.create();
-    expect((await call(fx.owner, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, sealTestBundle(fx, 1))).status).toBe(200);
+    expect((await putTestBundle(fx, fx.owner, sealTestBundle(fx, 1))).status).toBe(200);
     const rotated = signKeyPairFromSeed(randomBytes(32));
     const event = fx.buildEvent('recovery_rotate', { recovery_sign_pub: b64encode(rotated.publicKey) });
     expect((await fx.append(event)).status).toBe(400);
@@ -139,6 +139,24 @@ describe('recovery_rotate', () => {
     expect((await fx.append(old.event, old.wraps, fresh)).status).toBe(403);
     const viaNew = fx.enrollEvent(fresh, [1], { id: deviceIdFromSignPub(rotated.publicKey), secret: rotated.secretKey });
     expect((await fx.append(viaNew.event, viaNew.wraps, fresh)).status).toBe(201);
+  });
+
+  it('refuses a bundle sealed before the latest recovery_rotate, so a stale owner device cannot break recovery', async () => {
+    const fx = await VaultFixture.create();
+    expect((await putTestBundle(fx, fx.owner, sealTestBundle(fx, 1))).status).toBe(200);
+    const rotated = signKeyPairFromSeed(randomBytes(32));
+    const rotate = fx.buildEvent('recovery_rotate', { recovery_sign_pub: b64encode(rotated.publicKey) });
+    expect((await fx.append(rotate, undefined, fx.owner, {}, { bundle: sealTestBundle(fx, 2, undefined, rotated.secretKey) as never })).status).toBe(201);
+    await fx.addDevice(); // seq 2
+    // A device that has not replayed seq 1 still reseals with the old recovery key.
+    const stale = await putTestBundle(fx, fx.owner, sealTestBundle(fx, 3), 0);
+    expect(stale.status).toBe(409);
+    expect(stale.json.error.code).toBe('conflict');
+    expect((await putTestBundle(fx, fx.owner, sealTestBundle(fx, 3, undefined, rotated.secretKey), 3)).json.error.code).toBe('bad_request');
+    const missing = await call(fx.owner, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, { bundle: sealTestBundle(fx, 3, undefined, rotated.secretKey) });
+    expect(missing.json.error.code).toBe('bad_request');
+    expect((await fx.get(fx.owner, '/recovery')).json.bundle.bundle_seq).toBe(2);
+    expect((await putTestBundle(fx, fx.owner, sealTestBundle(fx, 3, undefined, rotated.secretKey), 1)).status).toBe(200);
   });
 
   it('a non-owner device cannot rotate the recovery key', async () => {

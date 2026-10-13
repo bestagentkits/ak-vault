@@ -64,8 +64,8 @@ decrypt before removal is `needs-rotate`; rekey cannot recall it.
    device, the password KEK and the recovery KEK.
 2. It signs `rekey` with `new_key_epoch`, the digest of the new wrap list and the
    `needs_rotate` item IDs, then appends an audit entry under the new epoch's audit
-   key and signs an audit checkpoint, so a removed device can no longer extend the
-   audit chain.
+   key and signs an audit checkpoint (required by spec §7), so a removed device can
+   no longer extend the audit chain.
 3. New writes must use the new epoch. Items still encrypted under an older epoch stay
    readable by current members, who hold the older wraps, and move to the new epoch
    when next written. A device enrolled after a rekey receives older-epoch keys
@@ -101,7 +101,9 @@ The recovery key unlocks the same recovery bundle as the password. Rotating it
 creates a new recovery key and a new recovery signing key: an owner device signs
 `recovery_rotate` naming the new signing key and sends it together with the bundle
 resealed under the new key and a higher `bundle_seq`; the server stores both
-atomically. From then on the membership chain refuses enrollment by the old
+atomically. Every later `PUT /recovery` names the membership position its sealer
+had verified, and the server refuses one sealed before the latest rotation, so an
+owner device that missed the rotation cannot replace the bundle with a stale key. From then on the membership chain refuses enrollment by the old
 signing key, so an old bundle opened with a leaked recovery key cannot add a
 device. It still yields the vault keys it held, so treat a leaked recovery key as a
 compromise (below).

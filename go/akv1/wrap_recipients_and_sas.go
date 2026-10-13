@@ -71,8 +71,8 @@ func ValidateWrapRecipients(state MembershipState, wraps []any, opts ValidateWra
 	return parsed, nil
 }
 
-// WrapsDigest returns b64 sha256(cjson(wraps sorted by rcpt byte order, then
-// key_epoch)), the wraps_digest of a rekey or device-adding event's wrap set. A
+// WrapsDigest returns b64 sha256(utf8("akv1/wraps") || 0x0A || cjson(wraps
+// sorted by rcpt byte order, then key_epoch)), the wraps_digest of a rekey or device-adding event's wrap set. A
 // rekey set has one epoch, so it is sorted by rcpt alone.
 func WrapsDigest(wraps []X25519Wrap) (string, error) {
 	sorted := append([]X25519Wrap(nil), wraps...)
@@ -90,7 +90,7 @@ func WrapsDigest(wraps []X25519Wrap) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return SHA256B64(b), nil
+	return SHA256B64(concatBytes([]byte("akv1/wraps\n"), b)), nil
 }
 
 // SASInput is the SAS enrollment input (spec §3.5).

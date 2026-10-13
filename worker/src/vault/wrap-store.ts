@@ -7,9 +7,14 @@
  * substitute a key. A set is immutable because its event is.
  */
 import { cjson, type MembershipState, type X25519Wrap } from '@ak-vault/protocol';
+import { ApiError } from '../http/errors.js';
+import { LIMITS } from '../limits.js';
 
-/** Store the verified wrap set of the event at `membershipSeq`. */
+/** Store the verified wrap set of the event at `membershipSeq`; `quota_exceeded` past `wraps_per_vault`. */
 export function storeWrapSet(sql: SqlStorage, membershipSeq: number, wraps: readonly X25519Wrap[]): number {
+  if (wraps.length === 0) return 0;
+  const stored = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM wrap_sets').one().n;
+  if (stored + wraps.length > LIMITS.wraps_per_vault) throw new ApiError('quota_exceeded', { status: 403 });
   for (const wrap of wraps) {
     sql.exec('INSERT INTO wrap_sets (membership_seq, rcpt, key_epoch, wrap_json) VALUES (?, ?, ?, ?)', membershipSeq, wrap.rcpt, wrap.key_epoch, cjson(wrap));
   }

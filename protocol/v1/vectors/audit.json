@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Encrypted audit chain (spec §7). Entry i is an xc20p envelope with kid \"e<k>\" of cjson(event) under AuditKey[k] = HKDF-SHA256(ikm=VK[k], salt=b64decode(vault_id), info=utf8(\"akv1/audit-key\\n\") || cjson({key_epoch:k}), L=32), aad {ctx:\"akv1/audit\",vault_id,seq:i,prev,key_epoch:k}, prev = b64 sha256(cjson(entry i-1)) or \"\" for i=0. vault_keys: VK by epoch; each case lists the epochs the verifier holds (vault_key_epochs) and the current membership key_epoch. Key epochs never decrease along the chain nor exceed key_epoch; an entry at an epoch the verifier holds no key for is opaque (events[i] = null) but still hash-chained. checkpoint {v,vault_id,seq,head,author,ts,sig} is signed with akv1/audit-checkpoint by a device of membership_events. cases MUST return `events` and `head`. invalid MUST fail with expect_error (reorder/drop/substitution or a non-derived key -> decrypt_failed, truncation or rewritten tail vs witnessed checkpoint -> rollback, nonce reuse, non-epoch kid, decreasing or future epoch -> bad_request).",
+  "description": "Encrypted audit chain (spec §7). Entry i is an xc20p envelope with kid \"e<k>\" of cjson(event) under AuditKey[k] = HKDF-SHA256(ikm=VK[k], salt=b64decode(vault_id), info=utf8(\"akv1/audit-key\\n\") || cjson({key_epoch:k}), L=32), aad {ctx:\"akv1/audit\",vault_id,seq:i,prev,key_epoch:k}, prev = b64 sha256(cjson(entry i-1)) or \"\" for i=0. vault_keys: VK by epoch; each case lists the epochs the verifier holds (vault_key_epochs), the current membership key_epoch and min_key_epoch. The verifier MUST hold the key of key_epoch, and of every entry epoch >= min_key_epoch (else bad_request); min_key_epoch must lie in 1..key_epoch. Key epochs never decrease along the chain nor exceed key_epoch; an entry at an older epoch the verifier holds no key for is opaque ({seq,key_epoch,opaque:true}) but still hash-chained; a decrypted entry is {seq,key_epoch,opaque:false,event}. checkpoint {v,vault_id,seq,head,author,ts,sig} is signed with akv1/audit-checkpoint by a device of membership_events. cases MUST return `events` and `head`. invalid MUST fail with expect_error (reorder/drop/substitution or a non-derived key -> decrypt_failed, truncation or rewritten tail vs witnessed checkpoint -> rollback, nonce reuse, non-epoch kid, decreasing or future epoch -> bad_request).",
   "vault_keys": {
     "1": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
     "2": "TDWG7GxVRqkmFq-xOidfIBXaueFf9tPZQPdUg3xpcrE"
@@ -43,16 +43,16 @@
             "kind": "human"
           }
         ],
-        "wraps_digest": "ihjtTyFFBXW9cP1-MeJv7sdKyR-gpLR5PB7374OW9G4"
+        "wraps_digest": "HcJN8DXKB6OH9LI_c9GtykUaegtP5WOJYTs99am8IgM"
       },
-      "sig": "1qjNvpNay-wFN2ysvrCGgUa-amF-19MOFj0_LYXJ-xUAmUqCpusU_BPpfuju1ZoKgCZP_gNHX4-uaANdTIHDBQ"
+      "sig": "E0kZLnHTcl9VBKFBmuTH_LUDJFg_6sPSl3uLJxF_TZrX2_CaV1jQNLv6I_bs8ZG9aJRs9C7GlbsMRLWfgyxNBg"
     },
     {
       "v": 1,
       "type": "member_add",
       "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
       "seq": 1,
-      "prev": "qPxvcAQhZsVqhl4wGM6renTtCN3RolEMzaR04_cl6iw",
+      "prev": "wUdV3e_ipp1TGh7owkpzswXqBIxmBQmrDB0ZAQgGkN4",
       "membership_epoch": 1,
       "key_epoch": 1,
       "ts": 1767225660000,
@@ -70,16 +70,16 @@
             "kind": "human"
           }
         ],
-        "wraps_digest": "YOqqyTVVLMTTnRmg6XSp1w8vjQfsYT_3vGrP0fGNolk"
+        "wraps_digest": "KsSvazWBE34zP9HVh05kQ2Z2Z_cat4nS_FlQQAFtSPU"
       },
-      "sig": "swiWxi40j5U156WwqKiioy0M9fPGQtoVzSjmUZuWLCxWmMWoOhL18TdohOS7hdNw5UDjcwmcQIoR6bphUknfDQ"
+      "sig": "47hSHpkuFGmrrcOR0dhWWcZJ7G02nKlnt_HRUm2gd_yU7rdPIWIlY737BpjPbYmoGMQLD5GUYf6WcXcdIBPrDQ"
     },
     {
       "v": 1,
       "type": "member_add",
       "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
       "seq": 2,
-      "prev": "aPRxXJe_pHYT4pgpIVYDfdVi2qXJGMbb-jgqmNgiCgE",
+      "prev": "5fk4TZ32LusZfQl-xD6mFJkiSdahkuVCd-6vpurmK6U",
       "membership_epoch": 2,
       "key_epoch": 1,
       "ts": 1767225720000,
@@ -97,16 +97,16 @@
             "kind": "human"
           }
         ],
-        "wraps_digest": "5uSyDHE3PpAJJxWeVRjAPF0rEvN5YAj5yH5iD2NSB48"
+        "wraps_digest": "U8GjaPQXn0e1_fGvgL9dBycuIRlMX5OeDzMcCq53Qms"
       },
-      "sig": "eK3QftswnajqPPtph3kAGtwkXkTMhqHKpFYe3B_8uEu4ckrHX9BxcZzqy5AlCSkm28ESr32TYm8rp_RrlMlgDw"
+      "sig": "SaJzZ_c5XsoQ4za5xRNseA62OiEDttGZw5eolFmOM67fimSSFklHrVD9VTabQfzNPzAmD5NuAfDEIRAmXn9rBQ"
     },
     {
       "v": 1,
       "type": "device_add",
       "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
       "seq": 3,
-      "prev": "bKu9PS8uhXkVqkL6cGiBNH5hyKuMnF8NSWuSaTBIajY",
+      "prev": "X5F0W4cNIA9sPFnyPZVt0T_1ExJfah8cTNI4wsluPI0",
       "membership_epoch": 3,
       "key_epoch": 1,
       "ts": 1767225780000,
@@ -121,9 +121,9 @@
           "kind": "machine"
         },
         "sas": "W77TKucqNn1402Dup8g-41sYi4pVCBr361tCD9qNZLY",
-        "wraps_digest": "2R5u617zpJ6kpKn5w3M1czPOnxvxL0-vYwitiYnS1Kg"
+        "wraps_digest": "mmOP47ub4V2tYcbhoVr_lcYhMJcUREucOhaBygipXaw"
       },
-      "sig": "rrU_ahUP-nznFBSGsoBNMo4TndZEwMPXkBSSbYI6Wyx8pmmoZtRU5o_ZscbJeXKgK6Fu3212fymtZncsMMXjBA"
+      "sig": "POMVzjodShf90L8n7UZSXC901y7iZbD3MzHlwrPBPIfV9fO-tzM0oe5UbaaFYXj-rmjx8ZzvHDV4xtddeTdVBg"
     }
   ],
   "checkpoint": {
@@ -173,35 +173,56 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": {
         "seq": 3,
         "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
       },
       "events": [
         {
-          "action": "item_read",
-          "device_id": "HuCy7tB5ixWPisxMZQdTTA",
-          "item_id": "PeSTOpl5fn7Hl-N6kG0RQg",
-          "ts": 1767225600000
+          "seq": 0,
+          "key_epoch": 1,
+          "opaque": false,
+          "event": {
+            "action": "item_read",
+            "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+            "item_id": "PeSTOpl5fn7Hl-N6kG0RQg",
+            "ts": 1767225600000
+          }
         },
         {
-          "action": "item_write",
-          "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
-          "item_id": "PeSTOpl5fn7Hl-N6kG0RQg",
-          "ts": 1767225601000
+          "seq": 1,
+          "key_epoch": 1,
+          "opaque": false,
+          "event": {
+            "action": "item_write",
+            "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
+            "item_id": "PeSTOpl5fn7Hl-N6kG0RQg",
+            "ts": 1767225601000
+          }
         },
         {
-          "action": "grant",
-          "device_id": "HuCy7tB5ixWPisxMZQdTTA",
-          "item_id": "VwR6msilknfuD7MxslM76w",
-          "purpose": "deploy",
-          "ts": 1767225602000
+          "seq": 2,
+          "key_epoch": 2,
+          "opaque": false,
+          "event": {
+            "action": "grant",
+            "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+            "item_id": "VwR6msilknfuD7MxslM76w",
+            "purpose": "deploy",
+            "ts": 1767225602000
+          }
         },
         {
-          "action": "item_read",
-          "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
-          "item_id": "VwR6msilknfuD7MxslM76w",
-          "ts": 1767225603000
+          "seq": 3,
+          "key_epoch": 2,
+          "opaque": false,
+          "event": {
+            "action": "item_read",
+            "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
+            "item_id": "VwR6msilknfuD7MxslM76w",
+            "ts": 1767225603000
+          }
         }
       ],
       "head": {
@@ -253,41 +274,67 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": {
         "seq": 3,
         "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
       },
       "events": [
         {
-          "action": "item_read",
-          "device_id": "HuCy7tB5ixWPisxMZQdTTA",
-          "item_id": "PeSTOpl5fn7Hl-N6kG0RQg",
-          "ts": 1767225600000
+          "seq": 0,
+          "key_epoch": 1,
+          "opaque": false,
+          "event": {
+            "action": "item_read",
+            "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+            "item_id": "PeSTOpl5fn7Hl-N6kG0RQg",
+            "ts": 1767225600000
+          }
         },
         {
-          "action": "item_write",
-          "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
-          "item_id": "PeSTOpl5fn7Hl-N6kG0RQg",
-          "ts": 1767225601000
+          "seq": 1,
+          "key_epoch": 1,
+          "opaque": false,
+          "event": {
+            "action": "item_write",
+            "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
+            "item_id": "PeSTOpl5fn7Hl-N6kG0RQg",
+            "ts": 1767225601000
+          }
         },
         {
-          "action": "grant",
-          "device_id": "HuCy7tB5ixWPisxMZQdTTA",
-          "item_id": "VwR6msilknfuD7MxslM76w",
-          "purpose": "deploy",
-          "ts": 1767225602000
+          "seq": 2,
+          "key_epoch": 2,
+          "opaque": false,
+          "event": {
+            "action": "grant",
+            "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+            "item_id": "VwR6msilknfuD7MxslM76w",
+            "purpose": "deploy",
+            "ts": 1767225602000
+          }
         },
         {
-          "action": "item_read",
-          "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
-          "item_id": "VwR6msilknfuD7MxslM76w",
-          "ts": 1767225603000
+          "seq": 3,
+          "key_epoch": 2,
+          "opaque": false,
+          "event": {
+            "action": "item_read",
+            "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
+            "item_id": "VwR6msilknfuD7MxslM76w",
+            "ts": 1767225603000
+          }
         },
         {
-          "action": "item_read",
-          "device_id": "HuCy7tB5ixWPisxMZQdTTA",
-          "item_id": "BO79HXfh5gW_zKt1aR7NSg",
-          "ts": 1767225604000
+          "seq": 4,
+          "key_epoch": 2,
+          "opaque": false,
+          "event": {
+            "action": "item_read",
+            "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+            "item_id": "BO79HXfh5gW_zKt1aR7NSg",
+            "ts": 1767225604000
+          }
         }
       ],
       "head": {
@@ -296,7 +343,7 @@
       }
     },
     {
-      "name": "older_epoch_opaque_without_its_key",
+      "name": "older_epoch_opaque_below_min_key_epoch",
       "entries": [
         {
           "v": 1,
@@ -331,25 +378,44 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 2,
       "witnessed": {
         "seq": 3,
         "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
       },
       "events": [
-        null,
-        null,
         {
-          "action": "grant",
-          "device_id": "HuCy7tB5ixWPisxMZQdTTA",
-          "item_id": "VwR6msilknfuD7MxslM76w",
-          "purpose": "deploy",
-          "ts": 1767225602000
+          "seq": 0,
+          "key_epoch": 1,
+          "opaque": true
         },
         {
-          "action": "item_read",
-          "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
-          "item_id": "VwR6msilknfuD7MxslM76w",
-          "ts": 1767225603000
+          "seq": 1,
+          "key_epoch": 1,
+          "opaque": true
+        },
+        {
+          "seq": 2,
+          "key_epoch": 2,
+          "opaque": false,
+          "event": {
+            "action": "grant",
+            "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+            "item_id": "VwR6msilknfuD7MxslM76w",
+            "purpose": "deploy",
+            "ts": 1767225602000
+          }
+        },
+        {
+          "seq": 3,
+          "key_epoch": 2,
+          "opaque": false,
+          "event": {
+            "action": "item_read",
+            "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
+            "item_id": "VwR6msilknfuD7MxslM76w",
+            "ts": 1767225603000
+          }
         }
       ],
       "head": {
@@ -358,53 +424,17 @@
       }
     },
     {
-      "name": "every_entry_opaque_without_keys",
-      "entries": [
-        {
-          "v": 1,
-          "alg": "xc20p",
-          "kid": "e1",
-          "n": "c3KFoylVTrn0yrHRCRB_43hErEKRq6q5",
-          "ct": "P1ey5PlhqoFNO5HTpOfvrn5hspnoV4XwRubDXwZKs9VONQabIlXaXMV-4Z6GHb728txQ5zUAE-ZWypSQiPGwHtMeHvAd2mBQCKsS9aXH1cPjLr3UDKHXfHBwTWH9ECF53Z3NiGEfrrrtte0ALmTiMnOFiP4VxdBUNGSi2Km7fhf9"
-        },
-        {
-          "v": 1,
-          "alg": "xc20p",
-          "kid": "e1",
-          "n": "keKLHQ_56zP8ezGkn2bwAkABxQFsSnkj",
-          "ct": "_YnQ97OxuNUoEooaVPpgplL_6IZ2_OjfbKWT2IIL9sYPEIO90DZ9NX4xhSuWhl8CtdS0sDiIAfsXCNCAQjCjK8FwhtIpRcbiEH9Nfse5rhCV2yEo2dWp7T93iOOz0LR6jsgeoO5J8Z6WuPysxEX7G-JpzSySfMVNpx-4fzB4iTxC_g"
-        },
-        {
-          "v": 1,
-          "alg": "xc20p",
-          "kid": "e2",
-          "n": "0x6JP-3y9CyKcwJIeiwul85dSVIp4Iw3",
-          "ct": "QAIyeWOXAJr9vBup43fuMZM97gd77oAmFANI0pVHe2Hqh5GsmYG9mKItUf7Za9ymHjDOLmrjARyHYZZCUEoBrhLHkwDDEgM9qQ67A6biCav3X_KqB9YmT4qq_lcI1SL8dWz0bgJKFxqxDS3qQ2Vis_TBcFKTRJUeIokOocPBGBIs-fpm_fdv_uLQNTQY6uXa"
-        },
-        {
-          "v": 1,
-          "alg": "xc20p",
-          "kid": "e2",
-          "n": "zTQZ_7iJDBm_wZiFXXloYsf0usB3UJMh",
-          "ct": "C18rYCBgotJCui4hankpC5cd2mJBDD2fuFVpltZcc0EHziQjDtDMlk33VzkoOeWSImSIXb8pAhbIP4NMw6UyWuMIFy8yhfvwkmJzDC10pCL7R0UbKGgDp57MqMOVwRfX28J7dW6qZD3OH_IeKc99xu45gtTsboT2bES0QiiiChM7"
-        }
+      "name": "empty_chain",
+      "entries": [],
+      "vault_key_epochs": [
+        1,
+        2
       ],
-      "vault_key_epochs": [],
       "key_epoch": 2,
-      "witnessed": {
-        "seq": 3,
-        "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
-      },
-      "events": [
-        null,
-        null,
-        null,
-        null
-      ],
-      "head": {
-        "seq": 3,
-        "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
-      }
+      "min_key_epoch": 1,
+      "witnessed": null,
+      "events": [],
+      "head": null
     }
   ],
   "invalid": [
@@ -445,6 +475,7 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": {
         "seq": 3,
         "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
@@ -481,6 +512,7 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": {
         "seq": 3,
         "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
@@ -517,6 +549,7 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": {
         "seq": 3,
         "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
@@ -560,6 +593,7 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": {
         "seq": 3,
         "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
@@ -603,6 +637,7 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": {
         "seq": 3,
         "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
@@ -632,6 +667,7 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": null,
       "expect_error": "bad_request"
     },
@@ -672,6 +708,7 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": {
         "seq": 3,
         "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
@@ -715,6 +752,7 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": {
         "seq": 3,
         "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
@@ -751,6 +789,7 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": null,
       "expect_error": "bad_request"
     },
@@ -791,6 +830,7 @@
         2
       ],
       "key_epoch": 1,
+      "min_key_epoch": 1,
       "witnessed": {
         "seq": 3,
         "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
@@ -813,8 +853,206 @@
         2
       ],
       "key_epoch": 2,
+      "min_key_epoch": 1,
       "witnessed": null,
       "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "every_entry_opaque_without_keys",
+      "entries": [
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "c3KFoylVTrn0yrHRCRB_43hErEKRq6q5",
+          "ct": "P1ey5PlhqoFNO5HTpOfvrn5hspnoV4XwRubDXwZKs9VONQabIlXaXMV-4Z6GHb728txQ5zUAE-ZWypSQiPGwHtMeHvAd2mBQCKsS9aXH1cPjLr3UDKHXfHBwTWH9ECF53Z3NiGEfrrrtte0ALmTiMnOFiP4VxdBUNGSi2Km7fhf9"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "keKLHQ_56zP8ezGkn2bwAkABxQFsSnkj",
+          "ct": "_YnQ97OxuNUoEooaVPpgplL_6IZ2_OjfbKWT2IIL9sYPEIO90DZ9NX4xhSuWhl8CtdS0sDiIAfsXCNCAQjCjK8FwhtIpRcbiEH9Nfse5rhCV2yEo2dWp7T93iOOz0LR6jsgeoO5J8Z6WuPysxEX7G-JpzSySfMVNpx-4fzB4iTxC_g"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e2",
+          "n": "0x6JP-3y9CyKcwJIeiwul85dSVIp4Iw3",
+          "ct": "QAIyeWOXAJr9vBup43fuMZM97gd77oAmFANI0pVHe2Hqh5GsmYG9mKItUf7Za9ymHjDOLmrjARyHYZZCUEoBrhLHkwDDEgM9qQ67A6biCav3X_KqB9YmT4qq_lcI1SL8dWz0bgJKFxqxDS3qQ2Vis_TBcFKTRJUeIokOocPBGBIs-fpm_fdv_uLQNTQY6uXa"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e2",
+          "n": "zTQZ_7iJDBm_wZiFXXloYsf0usB3UJMh",
+          "ct": "C18rYCBgotJCui4hankpC5cd2mJBDD2fuFVpltZcc0EHziQjDtDMlk33VzkoOeWSImSIXb8pAhbIP4NMw6UyWuMIFy8yhfvwkmJzDC10pCL7R0UbKGgDp57MqMOVwRfX28J7dW6qZD3OH_IeKc99xu45gtTsboT2bES0QiiiChM7"
+        }
+      ],
+      "vault_key_epochs": [],
+      "key_epoch": 2,
+      "min_key_epoch": 2,
+      "witnessed": {
+        "seq": 3,
+        "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "tail_opaque_without_current_key",
+      "entries": [
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "c3KFoylVTrn0yrHRCRB_43hErEKRq6q5",
+          "ct": "P1ey5PlhqoFNO5HTpOfvrn5hspnoV4XwRubDXwZKs9VONQabIlXaXMV-4Z6GHb728txQ5zUAE-ZWypSQiPGwHtMeHvAd2mBQCKsS9aXH1cPjLr3UDKHXfHBwTWH9ECF53Z3NiGEfrrrtte0ALmTiMnOFiP4VxdBUNGSi2Km7fhf9"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "keKLHQ_56zP8ezGkn2bwAkABxQFsSnkj",
+          "ct": "_YnQ97OxuNUoEooaVPpgplL_6IZ2_OjfbKWT2IIL9sYPEIO90DZ9NX4xhSuWhl8CtdS0sDiIAfsXCNCAQjCjK8FwhtIpRcbiEH9Nfse5rhCV2yEo2dWp7T93iOOz0LR6jsgeoO5J8Z6WuPysxEX7G-JpzSySfMVNpx-4fzB4iTxC_g"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e2",
+          "n": "0x6JP-3y9CyKcwJIeiwul85dSVIp4Iw3",
+          "ct": "QAIyeWOXAJr9vBup43fuMZM97gd77oAmFANI0pVHe2Hqh5GsmYG9mKItUf7Za9ymHjDOLmrjARyHYZZCUEoBrhLHkwDDEgM9qQ67A6biCav3X_KqB9YmT4qq_lcI1SL8dWz0bgJKFxqxDS3qQ2Vis_TBcFKTRJUeIokOocPBGBIs-fpm_fdv_uLQNTQY6uXa"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e2",
+          "n": "zTQZ_7iJDBm_wZiFXXloYsf0usB3UJMh",
+          "ct": "C18rYCBgotJCui4hankpC5cd2mJBDD2fuFVpltZcc0EHziQjDtDMlk33VzkoOeWSImSIXb8pAhbIP4NMw6UyWuMIFy8yhfvwkmJzDC10pCL7R0UbKGgDp57MqMOVwRfX28J7dW6qZD3OH_IeKc99xu45gtTsboT2bES0QiiiChM7"
+        }
+      ],
+      "vault_key_epochs": [
+        1
+      ],
+      "key_epoch": 2,
+      "min_key_epoch": 1,
+      "witnessed": {
+        "seq": 3,
+        "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "all_opaque_without_current_key",
+      "entries": [
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "c3KFoylVTrn0yrHRCRB_43hErEKRq6q5",
+          "ct": "P1ey5PlhqoFNO5HTpOfvrn5hspnoV4XwRubDXwZKs9VONQabIlXaXMV-4Z6GHb728txQ5zUAE-ZWypSQiPGwHtMeHvAd2mBQCKsS9aXH1cPjLr3UDKHXfHBwTWH9ECF53Z3NiGEfrrrtte0ALmTiMnOFiP4VxdBUNGSi2Km7fhf9"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "keKLHQ_56zP8ezGkn2bwAkABxQFsSnkj",
+          "ct": "_YnQ97OxuNUoEooaVPpgplL_6IZ2_OjfbKWT2IIL9sYPEIO90DZ9NX4xhSuWhl8CtdS0sDiIAfsXCNCAQjCjK8FwhtIpRcbiEH9Nfse5rhCV2yEo2dWp7T93iOOz0LR6jsgeoO5J8Z6WuPysxEX7G-JpzSySfMVNpx-4fzB4iTxC_g"
+        }
+      ],
+      "vault_key_epochs": [
+        1
+      ],
+      "key_epoch": 2,
+      "min_key_epoch": 1,
+      "witnessed": null,
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "older_key_missing_at_or_above_min",
+      "entries": [
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "c3KFoylVTrn0yrHRCRB_43hErEKRq6q5",
+          "ct": "P1ey5PlhqoFNO5HTpOfvrn5hspnoV4XwRubDXwZKs9VONQabIlXaXMV-4Z6GHb728txQ5zUAE-ZWypSQiPGwHtMeHvAd2mBQCKsS9aXH1cPjLr3UDKHXfHBwTWH9ECF53Z3NiGEfrrrtte0ALmTiMnOFiP4VxdBUNGSi2Km7fhf9"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "keKLHQ_56zP8ezGkn2bwAkABxQFsSnkj",
+          "ct": "_YnQ97OxuNUoEooaVPpgplL_6IZ2_OjfbKWT2IIL9sYPEIO90DZ9NX4xhSuWhl8CtdS0sDiIAfsXCNCAQjCjK8FwhtIpRcbiEH9Nfse5rhCV2yEo2dWp7T93iOOz0LR6jsgeoO5J8Z6WuPysxEX7G-JpzSySfMVNpx-4fzB4iTxC_g"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e2",
+          "n": "0x6JP-3y9CyKcwJIeiwul85dSVIp4Iw3",
+          "ct": "QAIyeWOXAJr9vBup43fuMZM97gd77oAmFANI0pVHe2Hqh5GsmYG9mKItUf7Za9ymHjDOLmrjARyHYZZCUEoBrhLHkwDDEgM9qQ67A6biCav3X_KqB9YmT4qq_lcI1SL8dWz0bgJKFxqxDS3qQ2Vis_TBcFKTRJUeIokOocPBGBIs-fpm_fdv_uLQNTQY6uXa"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e2",
+          "n": "zTQZ_7iJDBm_wZiFXXloYsf0usB3UJMh",
+          "ct": "C18rYCBgotJCui4hankpC5cd2mJBDD2fuFVpltZcc0EHziQjDtDMlk33VzkoOeWSImSIXb8pAhbIP4NMw6UyWuMIFy8yhfvwkmJzDC10pCL7R0UbKGgDp57MqMOVwRfX28J7dW6qZD3OH_IeKc99xu45gtTsboT2bES0QiiiChM7"
+        }
+      ],
+      "vault_key_epochs": [
+        2
+      ],
+      "key_epoch": 2,
+      "min_key_epoch": 1,
+      "witnessed": {
+        "seq": 3,
+        "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "min_key_epoch_above_key_epoch",
+      "entries": [
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "c3KFoylVTrn0yrHRCRB_43hErEKRq6q5",
+          "ct": "P1ey5PlhqoFNO5HTpOfvrn5hspnoV4XwRubDXwZKs9VONQabIlXaXMV-4Z6GHb728txQ5zUAE-ZWypSQiPGwHtMeHvAd2mBQCKsS9aXH1cPjLr3UDKHXfHBwTWH9ECF53Z3NiGEfrrrtte0ALmTiMnOFiP4VxdBUNGSi2Km7fhf9"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e1",
+          "n": "keKLHQ_56zP8ezGkn2bwAkABxQFsSnkj",
+          "ct": "_YnQ97OxuNUoEooaVPpgplL_6IZ2_OjfbKWT2IIL9sYPEIO90DZ9NX4xhSuWhl8CtdS0sDiIAfsXCNCAQjCjK8FwhtIpRcbiEH9Nfse5rhCV2yEo2dWp7T93iOOz0LR6jsgeoO5J8Z6WuPysxEX7G-JpzSySfMVNpx-4fzB4iTxC_g"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e2",
+          "n": "0x6JP-3y9CyKcwJIeiwul85dSVIp4Iw3",
+          "ct": "QAIyeWOXAJr9vBup43fuMZM97gd77oAmFANI0pVHe2Hqh5GsmYG9mKItUf7Za9ymHjDOLmrjARyHYZZCUEoBrhLHkwDDEgM9qQ67A6biCav3X_KqB9YmT4qq_lcI1SL8dWz0bgJKFxqxDS3qQ2Vis_TBcFKTRJUeIokOocPBGBIs-fpm_fdv_uLQNTQY6uXa"
+        },
+        {
+          "v": 1,
+          "alg": "xc20p",
+          "kid": "e2",
+          "n": "zTQZ_7iJDBm_wZiFXXloYsf0usB3UJMh",
+          "ct": "C18rYCBgotJCui4hankpC5cd2mJBDD2fuFVpltZcc0EHziQjDtDMlk33VzkoOeWSImSIXb8pAhbIP4NMw6UyWuMIFy8yhfvwkmJzDC10pCL7R0UbKGgDp57MqMOVwRfX28J7dW6qZD3OH_IeKc99xu45gtTsboT2bES0QiiiChM7"
+        }
+      ],
+      "vault_key_epochs": [
+        1,
+        2
+      ],
+      "key_epoch": 2,
+      "min_key_epoch": 3,
+      "witnessed": {
+        "seq": 3,
+        "head": "jCZUQytKtM3wCM9oqltSm_jKpy0Zg3oHEo0TUlqBGGc"
+      },
+      "expect_error": "bad_request"
     }
   ],
   "invalid_checkpoints": [

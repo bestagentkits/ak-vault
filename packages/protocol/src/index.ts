@@ -183,6 +183,7 @@ export {
   type AuditCheckpoint,
   type AuditHead,
   type VerifyAuditOptions,
+  type AuditChainEntry,
 } from './audit.js';
 export { effectiveGrant, parsePolicy, type LocalGrant, type PortablePolicy } from './policy.js';
 export { PROOF_JTI_TTL_MS, PROOF_MAX_SKEW_MS, buildProof, decodeProof, verifyProof, type BuildProofArgs, type TransportProof, type VerifyProofOptions } from './proof.js';

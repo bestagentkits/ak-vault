@@ -166,7 +166,7 @@ export function rekeyWrapsVectors(): Record<string, unknown> {
   return {
     version: 1,
     description:
-      'Rekey wrap sets (spec §4, §11). events: the verified shared membership chain (same as membership.json chains[0]). verifyRekeyWraps(events[event_seq], wraps, state) where state = verifyMembershipChain(events[0..state_seq]) or absent when state_seq is null. Checks in order: event is a rekey; wraps parse; each wrap key_epoch == body.new_key_epoch and rcpt unique; with state: state.seq == event.seq and state.head == hash(event), recipients are current devices (forbidden), every current device has a wrap; finally b64 sha256(cjson(wraps sorted by rcpt)) == body.wraps_digest. Wrap input order does not matter. cases MUST pass; invalid MUST fail with expect_error.',
+      'Rekey wrap sets (spec §4, §11). events: the verified shared membership chain (same as membership.json chains[0]). verifyRekeyWraps(events[event_seq], wraps, state) where state = verifyMembershipChain(events[0..state_seq]) or absent when state_seq is null. Checks in order: event is a rekey; wraps parse; each wrap key_epoch == body.new_key_epoch and rcpt unique; with state: state.seq == event.seq and state.head == hash(event), recipients are current devices (forbidden), every current device has a wrap; finally b64 sha256(utf8("akv1/wraps\\n") || cjson(wraps sorted by rcpt)) == body.wraps_digest. Wrap input order does not matter. cases MUST pass; invalid MUST fail with expect_error.',
     events: chain,
     cases: [
       ok('epoch2_with_state', 6, epoch2Wraps, 6),

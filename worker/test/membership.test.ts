@@ -3,7 +3,7 @@ import { b64encode, createDeviceKeys, deviceIdFromSignPub, generateRecoveryKey, 
 import { describe, expect, it } from 'vitest';
 import { call, createDevice } from './helpers/api-client.js';
 import { mintToken } from './helpers/issuer.js';
-import { sealTestBundle } from './helpers/recovery-bundle.js';
+import { putTestBundle, sealTestBundle } from './helpers/recovery-bundle.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 const item = () => randomId();
@@ -144,7 +144,7 @@ describe('membership appends', () => {
   it('a fresh device fetches the recovery bundle, opens it and enrolls itself with the recovered key', async () => {
     const fx = await VaultFixture.create();
     const rk = generateRecoveryKey();
-    expect((await call(fx.owner, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, sealTestBundle(fx, 1, rk))).status).toBe(200);
+    expect((await putTestBundle(fx, fx.owner, sealTestBundle(fx, 1, rk))).status).toBe(200);
 
     // All devices lost: a new device of the owner account proves possession of the key it presents.
     const fresh = createDevice(fx.owner.account, 'owner');

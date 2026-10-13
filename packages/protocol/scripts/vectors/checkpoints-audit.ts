@@ -113,22 +113,30 @@ export function auditVectors(): Record<string, unknown> {
   // The vault key used directly as the audit key instead of the derived per-epoch key.
   const rawKeyEntry = sealEnvelope(vaultKeys[1]!, cjsonBytes(events[0]!), auditAad(VAULT_SHARED, 0, '', 1), { kid: 'e1', nonce: nonce('audit/raw-key/0') });
   const e = main.entries;
-  type Opts = { epochs: number[]; keyEpoch: number; witnessed: AuditHead | null };
-  const FULL: Opts = { epochs: [1, 2], keyEpoch: 2, witnessed };
+  type Opts = { epochs: number[]; keyEpoch: number; minKeyEpoch: number; witnessed: AuditHead | null };
+  const FULL: Opts = { epochs: [1, 2], keyEpoch: 2, minKeyEpoch: 1, witnessed };
+  const JOINED_AT_2: Opts = { ...FULL, epochs: [2], minKeyEpoch: 2 };
   const run = (entries: Envelope[], o: Opts) =>
-    verifyAuditChain(entries, { vaultKeys: (k) => (o.epochs.includes(k) ? vaultKeys[k] : undefined), vaultId: VAULT_SHARED, keyEpoch: o.keyEpoch, ...(o.witnessed ? { witnessed: o.witnessed } : {}) });
+    verifyAuditChain(entries, {
+      vaultKeys: (k) => (o.epochs.includes(k) ? vaultKeys[k] : undefined),
+      vaultId: VAULT_SHARED,
+      keyEpoch: o.keyEpoch,
+      minKeyEpoch: o.minKeyEpoch,
+      ...(o.witnessed ? { witnessed: o.witnessed } : {}),
+    });
+  const fields = (entries: Envelope[], o: Opts) => ({ entries, vault_key_epochs: o.epochs, key_epoch: o.keyEpoch, min_key_epoch: o.minKeyEpoch, witnessed: o.witnessed });
   const caseOf = (name: string, entries: Envelope[], o: Opts) => {
     const out = run(entries, o);
-    return { name, entries, vault_key_epochs: o.epochs, key_epoch: o.keyEpoch, witnessed: o.witnessed, events: out.events, head: out.head };
+    return { name, ...fields(entries, o), events: out.events, head: out.head };
   };
   const bad = (name: string, code: string, entries: Envelope[], o: Partial<Opts> = {}) => {
     const opts = { ...FULL, ...o };
-    return negative(name, code, { entries, vault_key_epochs: opts.epochs, key_epoch: opts.keyEpoch, witnessed: opts.witnessed }, () => run(entries, opts));
+    return negative(name, code, fields(entries, opts), () => run(entries, opts));
   };
   return {
     version: 1,
     description:
-      'Encrypted audit chain (spec §7). Entry i is an xc20p envelope with kid "e<k>" of cjson(event) under AuditKey[k] = HKDF-SHA256(ikm=VK[k], salt=b64decode(vault_id), info=utf8("akv1/audit-key\\n") || cjson({key_epoch:k}), L=32), aad {ctx:"akv1/audit",vault_id,seq:i,prev,key_epoch:k}, prev = b64 sha256(cjson(entry i-1)) or "" for i=0. vault_keys: VK by epoch; each case lists the epochs the verifier holds (vault_key_epochs) and the current membership key_epoch. Key epochs never decrease along the chain nor exceed key_epoch; an entry at an epoch the verifier holds no key for is opaque (events[i] = null) but still hash-chained. checkpoint {v,vault_id,seq,head,author,ts,sig} is signed with akv1/audit-checkpoint by a device of membership_events. cases MUST return `events` and `head`. invalid MUST fail with expect_error (reorder/drop/substitution or a non-derived key -> decrypt_failed, truncation or rewritten tail vs witnessed checkpoint -> rollback, nonce reuse, non-epoch kid, decreasing or future epoch -> bad_request).',
+      'Encrypted audit chain (spec §7). Entry i is an xc20p envelope with kid "e<k>" of cjson(event) under AuditKey[k] = HKDF-SHA256(ikm=VK[k], salt=b64decode(vault_id), info=utf8("akv1/audit-key\\n") || cjson({key_epoch:k}), L=32), aad {ctx:"akv1/audit",vault_id,seq:i,prev,key_epoch:k}, prev = b64 sha256(cjson(entry i-1)) or "" for i=0. vault_keys: VK by epoch; each case lists the epochs the verifier holds (vault_key_epochs), the current membership key_epoch and min_key_epoch. The verifier MUST hold the key of key_epoch, and of every entry epoch >= min_key_epoch (else bad_request); min_key_epoch must lie in 1..key_epoch. Key epochs never decrease along the chain nor exceed key_epoch; an entry at an older epoch the verifier holds no key for is opaque ({seq,key_epoch,opaque:true}) but still hash-chained; a decrypted entry is {seq,key_epoch,opaque:false,event}. checkpoint {v,vault_id,seq,head,author,ts,sig} is signed with akv1/audit-checkpoint by a device of membership_events. cases MUST return `events` and `head`. invalid MUST fail with expect_error (reorder/drop/substitution or a non-derived key -> decrypt_failed, truncation or rewritten tail vs witnessed checkpoint -> rollback, nonce reuse, non-epoch kid, decreasing or future epoch -> bad_request).',
     vault_keys: { '1': b64(vaultKeys[1]!), '2': b64(vaultKeys[2]!) },
     audit_keys: { '1': b64(deriveAuditKey(vaultKeys[1]!, VAULT_SHARED, 1)), '2': b64(deriveAuditKey(vaultKeys[2]!, VAULT_SHARED, 2)) },
     vault_id: VAULT_SHARED,
@@ -137,8 +145,8 @@ export function auditVectors(): Record<string, unknown> {
     cases: [
       caseOf('chain_matches_checkpoint', e, FULL),
       caseOf('chain_extended_after_checkpoint', extended.entries, FULL),
-      caseOf('older_epoch_opaque_without_its_key', e, { ...FULL, epochs: [2] }),
-      caseOf('every_entry_opaque_without_keys', e, { ...FULL, epochs: [] }),
+      caseOf('older_epoch_opaque_below_min_key_epoch', e, JOINED_AT_2),
+      caseOf('empty_chain', [], { ...FULL, witnessed: null }),
     ],
     invalid: [
       bad('reordered', 'decrypt_failed', [e[0]!, e[2]!, e[1]!, e[3]!]),
@@ -152,6 +160,11 @@ export function auditVectors(): Record<string, unknown> {
       bad('epoch_decreases', 'bad_request', decreasing.entries, { witnessed: null }),
       bad('epoch_ahead_of_membership', 'bad_request', e, { keyEpoch: 1 }),
       bad('vault_key_used_directly', 'decrypt_failed', [rawKeyEntry], { witnessed: null }),
+      bad('every_entry_opaque_without_keys', 'bad_request', e, { epochs: [], minKeyEpoch: 2 }),
+      bad('tail_opaque_without_current_key', 'bad_request', e, { epochs: [1] }),
+      bad('all_opaque_without_current_key', 'bad_request', e.slice(0, 2), { epochs: [1], witnessed: null }),
+      bad('older_key_missing_at_or_above_min', 'bad_request', e, { epochs: [2], minKeyEpoch: 1 }),
+      bad('min_key_epoch_above_key_epoch', 'bad_request', e, { minKeyEpoch: 3 }),
     ],
     invalid_checkpoints: [
       negative('bad_signature', 'invalid_signature', { checkpoint: { ...cp, sig: flipByte(cp.sig, 2) } }, () => verifyAuditCheckpoint({ ...cp, sig: flipByte(cp.sig, 2) }, state)),

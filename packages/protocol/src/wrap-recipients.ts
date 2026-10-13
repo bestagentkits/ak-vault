@@ -5,6 +5,7 @@
  * event that added the device (genesis, device_add, member_add) or a rekey.
  */
 import { sha256b64 } from './base64url.js';
+import { concatBytes, utf8Encode } from './bytes.js';
 import { cjsonBytes } from './canonical-json.js';
 import { fail } from './errors.js';
 import { parseDevice, parseMembershipEvent, type DeviceRecord, type MembershipEvent, type MembershipState } from './membership-types.js';
@@ -46,12 +47,14 @@ export function validateWrapRecipients(state: MembershipState, wraps: readonly u
 }
 
 /**
- * `wraps_digest` = b64 sha256(cjson(wraps sorted by rcpt byte order, then key_epoch)).
+ * `wraps_digest` = b64 sha256(utf8("akv1/wraps") || 0x0A || cjson(wraps sorted by
+ * rcpt byte order, then key_epoch)); the domain tag keeps the digest from
+ * colliding with any other cjson hash.
  * A rekey set has one epoch, so it is sorted by rcpt alone.
  */
 export function wrapsDigest(wraps: readonly X25519Wrap[]): string {
   const sorted = [...wraps].sort((a, b) => (a.rcpt < b.rcpt ? -1 : a.rcpt > b.rcpt ? 1 : a.key_epoch - b.key_epoch));
-  return sha256b64(cjsonBytes(sorted));
+  return sha256b64(concatBytes(utf8Encode('akv1/wraps\n'), cjsonBytes(sorted)));
 }
 
 /** Devices an event adds: genesis and member_add `devices`, device_add `device`; [] for every other type. */

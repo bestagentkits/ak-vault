@@ -7,14 +7,14 @@ import { randomBytes, randomId } from '@ak-vault/protocol';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { call, createDevice, type CallOptions, type TestDevice } from './helpers/api-client.js';
 import { mintToken } from './helpers/issuer.js';
-import { sealTestBundle } from './helpers/recovery-bundle.js';
+import { putTestBundle, sealTestBundle } from './helpers/recovery-bundle.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 let fx: VaultFixture;
 
 beforeAll(async () => {
   fx = await VaultFixture.create('shared');
-  const put = await call(fx.owner, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, sealTestBundle(fx, 1));
+  const put = await putTestBundle(fx, fx.owner, sealTestBundle(fx, 1));
   if (put.status !== 200) throw new Error(`bundle upload failed: ${put.status}`);
 });
 

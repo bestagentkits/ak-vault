@@ -135,3 +135,38 @@ describe('record caps', () => {
     expect((await fx.get(fx.owner, `/items/${id}`)).json.revision).toBe(2);
   });
 });
+
+describe('signed wrap sets', () => {
+  it('refuse a device-adding event once stored wraps would pass wraps_per_vault, and the chain does not advance', async () => {
+    const fx = await VaultFixture.create();
+    await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) => {
+      const stored = state.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM wrap_sets').one().n;
+      // Synthetic filler rows on a sequence no event uses, just to reach the cap.
+      for (let i = stored; i < LIMITS.wraps_per_vault; i++) {
+        state.storage.sql.exec('INSERT INTO wrap_sets (membership_seq, rcpt, key_epoch, wrap_json) VALUES (?, ?, ?, ?)', 1_000_000, `filler-${i}`, 1, '{}');
+      }
+    });
+    const { event, wraps } = fx.enrollEvent(fx.newDevice());
+    const res = await fx.append(event, wraps);
+    expect(res.status).toBe(403);
+    expect(res.json.error.code).toBe('quota_exceeded');
+    expect((await fx.get(fx.owner, '/membership')).json.membership.seq).toBe(0);
+  });
+});
+
+describe('vaults created before the current protocol revision', () => {
+  it('are refused on every request instead of half-working', async () => {
+    const fx = await VaultFixture.create();
+    await runInDurableObject(stubFor(fx.vaultId), (instance: VaultDurableObject, state: DurableObjectState) => {
+      const sql = state.storage.sql;
+      const current = JSON.parse(sql.exec<{ v: string }>("SELECT v FROM meta WHERE k = 'membership_state'").one().v) as Record<string, unknown>;
+      delete current['removals'];
+      sql.exec("UPDATE meta SET v = ? WHERE k = 'membership_state'", JSON.stringify(current));
+      (instance as unknown as { membership: { invalidate(): void } }).membership.invalidate();
+    });
+    for (const res of [await fx.get(fx.owner, '/membership'), await fx.write(fx.owner, randomId(), 0, { name: 'n', value: 'v' })]) {
+      expect(res.status).toBe(400);
+      expect(res.json.error.code).toBe('unsupported_version');
+    }
+  });
+});

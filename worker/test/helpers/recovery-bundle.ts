@@ -1,5 +1,6 @@
 /** Seals a real recovery bundle for a fixture vault (owner-signed checkpoint, current vault keys). */
 import { generateRecoveryKey, randomBytes, sealRecoveryBundle, sha256b64, signCheckpoint, type RecoveryBundleWire } from '@ak-vault/protocol';
+import { call, type CallOptions, type TestDevice } from './api-client.js';
 import type { VaultFixture } from './vault-fixture.js';
 
 export function sealTestBundle(fx: VaultFixture, seq: number, rk: Uint8Array = generateRecoveryKey(), recoverySignSk: Uint8Array = fx.recovery.secretKey): RecoveryBundleWire {
@@ -20,4 +21,9 @@ export function sealTestBundle(fx: VaultFixture, seq: number, rk: Uint8Array = g
     rk,
     params: { t: 2, m: 19_456, p: 1 },
   });
+}
+
+/** `PUT /recovery` body: the bundle plus the membership position its sealer had verified (default: the fixture head). */
+export function putTestBundle(fx: VaultFixture, device: TestDevice, bundle: unknown, membershipSeq: number = fx.state.seq, opts?: CallOptions) {
+  return call(device, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, { bundle, membership_seq: membershipSeq } as never, opts);
 }

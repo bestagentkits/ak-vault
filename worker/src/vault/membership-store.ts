@@ -19,7 +19,14 @@ export class MembershipStore {
   state(): MembershipState | null {
     if (this.cached !== undefined) return this.cached;
     const row = this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', STATE_KEY).toArray()[0];
-    this.cached = row ? (JSON.parse(row.v) as MembershipState) : null;
+    const state = row ? (JSON.parse(row.v) as MembershipState) : null;
+    // A vault created before the signed-wrap-set / removal-fence revision has a
+    // state without `removals` and a chain that no longer verifies. Refuse every
+    // request to it instead of serving it half-working (see the runbook).
+    if (state !== null && !Array.isArray((state as { removals?: unknown }).removals)) {
+      throw new ApiError('unsupported_version', { message: 'vault predates the current protocol revision' });
+    }
+    this.cached = state;
     return this.cached;
   }
 

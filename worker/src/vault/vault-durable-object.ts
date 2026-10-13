@@ -114,7 +114,7 @@ export class VaultDurableObject extends DurableObject<Env> {
       case 'audit.post':
         return appendAudit(this.sql, auth.state, req.claims.did, body);
       case 'recovery.put':
-        return putRecovery(this.sql, req.vaultId, body);
+        return putRecovery(this.sql, auth.state, req.vaultId, body);
       default:
         throw new ApiError('not_found');
     }

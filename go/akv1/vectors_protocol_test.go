@@ -304,17 +304,17 @@ func checkAudit(t *testing.T, f *rec, n *counter) {
 			k, ok := vaultKeys[e]
 			return k, ok
 		}
-		return VerifyAuditChain(c.list("entries"), lookup, vaultID, c.i64("key_epoch"), auditHead(t, c, "witnessed"))
+		return VerifyAuditChain(c.list("entries"), lookup, vaultID, c.i64("key_epoch"), c.i64("min_key_epoch"), auditHead(t, c, "witnessed"))
 	}
 	for _, c := range f.recs("cases") {
 		chain := mustOK(run(c))(t, c.path)
 		events := make([]any, len(chain.Events))
 		for i, e := range chain.Events {
-			if e == nil {
-				events[i] = nil
-			} else {
-				events[i] = e
+			entry := map[string]any{"seq": e.Seq, "key_epoch": e.KeyEpoch, "opaque": e.Opaque}
+			if !e.Opaque {
+				entry["event"] = e.Event
 			}
+			events[i] = entry
 		}
 		var head any
 		if chain.Head != nil {

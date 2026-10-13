@@ -85,28 +85,55 @@ export interface VerifyAuditOptions {
   vaultId: string;
   /** Current key epoch of the verified membership state; no entry may name a later one. */
   keyEpoch: number;
+  /**
+   * Lowest epoch whose key the caller MUST hold (default `keyEpoch`): the epoch it
+   * joined at, or the oldest epoch its recovery bundle covers. A missing key for
+   * any epoch in `minKeyEpoch..keyEpoch` is a refusal, never an opaque entry.
+   */
+  minKeyEpoch?: number;
   /** Witnessed audit checkpoint (already signature-verified). */
   witnessed?: AuditHead;
 }
 
+/** One verified chain entry: decrypted, or opaque (an epoch below `minKeyEpoch` whose key the caller lacks). */
+export type AuditChainEntry =
+  | { seq: number; key_epoch: number; opaque: false; event: JsonObject }
+  | { seq: number; key_epoch: number; opaque: true };
+
 /**
  * Replay the whole chain and decrypt every entry whose epoch key the caller
- * holds, selecting the audit key from the entry's `e<key_epoch>` kid. An entry
- * at an epoch the caller holds no vault key for (a device enrolled after it, or
- * from a recovery bundle that predates it) is opaque: hash-chained and
- * epoch-checked, returned as `null`. Rejects (code): a kid that is not an epoch
- * tag, a key epoch lower than the previous entry's or above `keyEpoch`
- * (bad_request); reordered, dropped or substituted decryptable entries
+ * holds, selecting the audit key from the entry's `e<key_epoch>` kid. The
+ * caller MUST hold the key of `keyEpoch` (checked before any entry is read)
+ * and of every epoch in `minKeyEpoch..keyEpoch` an entry uses (bad_request
+ * otherwise), so the current epoch, and thus the chain's tail, is never opaque. An entry at an older epoch the caller
+ * holds no key for (a device enrolled after it, or a recovery bundle that
+ * predates it) is opaque: hash-chained and epoch-checked, returned as
+ * `{seq, key_epoch, opaque: true}`. Rejects (code): `minKeyEpoch` outside
+ * 1..keyEpoch, a kid that is not an epoch tag, a key epoch lower than the
+ * previous entry's or above `keyEpoch` (bad_request); reordered, dropped or substituted decryptable entries
  * (decrypt_failed); a chain shorter than, or with a different entry at, the
  * witnessed checkpoint (rollback); reused nonces (bad_request).
  */
-export function verifyAuditChain(entries: readonly unknown[], opts: VerifyAuditOptions): { events: (JsonObject | null)[]; head: AuditHead | null } {
+export function verifyAuditChain(entries: readonly unknown[], opts: VerifyAuditOptions): { events: AuditChainEntry[]; head: AuditHead | null } {
   const parsed = asArray(entries, 'audit entries', 1_000_000).map((e, i) => parseEnvelope(e, `audit entry ${i}`));
   assertUniqueNonces(parsed);
   const vaultId = asId(opts.vaultId, 'vault_id');
   const maxEpoch = asInt(opts.keyEpoch, 'key_epoch', 1);
+  const minEpoch = asInt(opts.minKeyEpoch ?? maxEpoch, 'min_key_epoch', 1);
+  if (minEpoch > maxEpoch) fail('bad_request', 'min_key_epoch is above key_epoch');
   const keys = new Map<number, Uint8Array | null>();
-  const events: (JsonObject | null)[] = [];
+  const keyFor = (epoch: number): Uint8Array | null => {
+    let key = keys.get(epoch);
+    if (key === undefined) {
+      const vk = opts.vaultKeys(epoch);
+      if (!vk && epoch >= minEpoch) fail('bad_request', 'no vault key for a required audit epoch');
+      key = vk ? deriveAuditKey(vk, vaultId, epoch) : null;
+      keys.set(epoch, key);
+    }
+    return key;
+  };
+  keyFor(maxEpoch); // the current epoch's key is always required, even before any entry uses it
+  const events: AuditChainEntry[] = [];
   const hashes: string[] = [];
   let lastEpoch = 0;
   parsed.forEach((entry, seq) => {
@@ -114,18 +141,13 @@ export function verifyAuditChain(entries: readonly unknown[], opts: VerifyAuditO
     if (epoch < lastEpoch) fail('bad_request', 'audit key epoch decreased along the chain');
     if (epoch > maxEpoch) fail('bad_request', 'audit key epoch is ahead of the membership state');
     lastEpoch = epoch;
-    let key = keys.get(epoch);
-    if (key === undefined) {
-      const vk = opts.vaultKeys(epoch);
-      key = vk ? deriveAuditKey(vk, vaultId, epoch) : null;
-      keys.set(epoch, key);
-    }
+    const key = keyFor(epoch);
     const prev = seq === 0 ? '' : hashes[seq - 1]!;
     if (key) {
       const plaintext = openEnvelope(key, entry, auditAad(vaultId, seq, prev, epoch));
-      events.push(asObject(cjsonParse(plaintext), 'audit event') as JsonObject);
+      events.push({ seq, key_epoch: epoch, opaque: false, event: asObject(cjsonParse(plaintext), 'audit event') as JsonObject });
     } else {
-      events.push(null);
+      events.push({ seq, key_epoch: epoch, opaque: true });
     }
     hashes.push(auditEntryHash(entry));
   });

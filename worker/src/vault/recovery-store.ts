@@ -5,10 +5,18 @@
  * replacement: an equal seq is a lost-update `conflict`, a lower one `rollback`.
  * A `recovery_rotate` membership append stores its resealed bundle through the
  * same checks in the same transaction.
+ *
+ * `PUT /recovery` is `{"bundle", "membership_seq"}`: the membership position the
+ * sealing device had verified. The server cannot open the bundle, so it cannot
+ * see which recovery key it holds; it refuses a bundle sealed at a position
+ * before the latest `recovery_rotate` (`conflict`: replay the chain, reseal with
+ * the current recovery key), so a stale owner device cannot silently replace a
+ * fresh bundle with one the chain no longer trusts.
  */
-import { cjson, parseRecoveryBundleWire, type JsonObject } from '@ak-vault/protocol';
+import { cjson, parseRecoveryBundleWire, type JsonObject, type MembershipState } from '@ak-vault/protocol';
 import { ApiError, okResult, type ApiResult } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
+import { requireInt, requireKeys } from './request-body.js';
 
 /** Validate and store a replacement bundle; returns its bundle_seq. Caller holds the transaction. */
 export function storeRecoveryBundle(sql: SqlStorage, vaultId: string, body: unknown): number {
@@ -27,8 +35,20 @@ export function storeRecoveryBundle(sql: SqlStorage, vaultId: string, body: unkn
   return bundle.bundle_seq;
 }
 
-export function putRecovery(sql: SqlStorage, vaultId: string, body: unknown): ApiResult {
-  return okResult({ bundle_seq: storeRecoveryBundle(sql, vaultId, body) });
+/** Membership seq of the latest `recovery_rotate`, or 0 (genesis set the recovery key). */
+function latestRecoveryRotateSeq(sql: SqlStorage): number {
+  const row = sql
+    .exec<{ seq: number | null }>("SELECT MAX(seq) AS seq FROM membership_events WHERE json_extract(event_json, '$.type') = 'recovery_rotate'")
+    .toArray()[0];
+  return row?.seq ?? 0;
+}
+
+export function putRecovery(sql: SqlStorage, state: MembershipState, vaultId: string, body: JsonObject): ApiResult {
+  requireKeys(body, ['bundle', 'membership_seq']);
+  const sealedAt = requireInt(body['membership_seq']);
+  if (sealedAt > state.seq) throw new ApiError('bad_request', { message: 'membership_seq is ahead of the membership log' });
+  if (sealedAt < latestRecoveryRotateSeq(sql)) throw new ApiError('conflict', { message: 'bundle was sealed before the latest recovery_rotate' });
+  return okResult({ bundle_seq: storeRecoveryBundle(sql, vaultId, body['bundle']) });
 }
 
 export function getRecovery(sql: SqlStorage): ApiResult {

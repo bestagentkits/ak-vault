@@ -38,6 +38,8 @@ export const LIMITS = {
   audit_page_max: 500,
   /** Max wraps in one upload. */
   wraps_per_request: 256,
+  /** Max stored wraps per vault, across every signed wrap set (sets are immutable and kept). */
+  wraps_per_vault: 20_000,
   /** Requests per device per vault per rate window. */
   rate_requests_per_window: 120,
   rate_window_seconds: 60,
