@@ -1,0 +1,14 @@
+# Deterministic, test-only key material lives in the cross-language vectors and
+# the generators/tests that produce them. It never protects real data.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Published test vectors and their generators"
+paths = [
+  '''^protocol/v1/vectors/.*\.json$''',
+  '''^packages/protocol/scripts/.*''',
+  '''^packages/protocol/test/.*''',
+  '''^worker/test/.*''',
+  '''^go/akv1/.*_test\.go$''',
+]
