@@ -33,8 +33,9 @@
     "VAULT_SYNC_ENABLED": "false",
     "VAULT_ISSUER": "https://agentkit.best",
     "VAULT_AUDIENCE": "https://vault.agentkit.best",
-    // Placeholder until ak-web#568 publishes the vault JWKS; unreachable keys fail closed.
-    "VAULT_JWKS_URL": "https://agentkit.best/.well-known/vault-jwks.json"
+    // ak-web's OAuth server JWKS (jwks_uri in /.well-known/oauth-authorization-server).
+    // Its keys also sign other resources' tokens; the exact audience above keeps those out.
+    "VAULT_JWKS_URL": "https://agentkit.best/.well-known/jwks.json"
   },
   "env": {
     "staging": {
