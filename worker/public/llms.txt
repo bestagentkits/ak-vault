@@ -8,13 +8,17 @@ Key facts for assistants:
 - A vault key decrypts every item in its vault, so v1 makes no per-secret access claim; use separate vaults for least privilege.
 - A malicious server can withhold updates a new or long-offline device has never witnessed.
 - `ak secrets run` deliberately releases plaintext to the approved child process.
-- Planned (not available yet): `ak login`, `ak secrets sync enable`, `ak secrets search|describe|request|run`.
+- Available today in the AgentKit CLI: the local `ak secrets` vault (`set`, `get`, `list`, `rotate`, `import-env`, `grant`, `approve`, `revoke`, `audit`) and `${secret:NAME}` references. `ak login` exists for the AgentKit account; using it for vault sync is planned.
+- Planned (not available yet): `ak secrets sync enable`, six-digit SAS device enrollment, `ak secrets search|describe|request|run`.
 - No pricing, customers or launch dates have been announced. License: MIT.
 
 ## Pages
 
-- [Home](https://vault.agentkit.best/index.md): how sync works, guarantees and limitations, what the server can see, quickstart, architecture, roadmap, FAQ
-- [Security model](https://vault.agentkit.best/security/index.md): adversaries, defences, residual risks, release gate
+- [Home](https://vault.agentkit.best/index.md): the problem, how sync works, what the server can see, guarantees with their limitations, quick start, status, top questions
+- [How it works](https://vault.agentkit.best/how-it-works/index.md): key hierarchy, six-digit SAS enrollment, conflicts without last-writer-wins, tombstones and rollback checkpoints, architecture, data classification
+- [Security model](https://vault.agentkit.best/security/index.md): threat map, adversaries, defences, residual risks, release gate
+- [Guide](https://vault.agentkit.best/guide/index.md): step by step from a .env file to the local vault (available), then sync, agent commands and lost-device steps (planned, marked)
+- [FAQ](https://vault.agentkit.best/faq/index.md): status, privacy, everyday use, teams and agents, recovery, the project
 
 ## Specification
 

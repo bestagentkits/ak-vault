@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How ak-vault works: keys, enrollment, conflicts | ak-vault</title>
+  <meta name="description" content="How ak-vault protocol v1 keeps secrets sealed between devices: the key hierarchy, SAS device enrollment, conflicts without last-writer-wins, tombstones, rollback checkpoints and what the server sees.">
+  <link rel="canonical" href="https://vault.agentkit.best/how-it-works/">
+  <link rel="alternate" type="text/markdown" href="https://vault.agentkit.best/how-it-works/index.md" title="Markdown version">
+  <meta name="theme-color" content="#07090c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f5f3ec" media="(prefers-color-scheme: light)">
+  <meta name="robots" content="index, follow">
+
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="ak-vault by AgentKit">
+  <meta property="og:url" content="https://vault.agentkit.best/how-it-works/">
+  <meta property="og:title" content="How ak-vault works: keys, enrollment and conflicts">
+  <meta property="og:description" content="Protocol v1, explained with diagrams: vault keys, six-digit device enrollment, no last-writer-wins, rollback detection.">
+  <meta property="og:image" content="https://vault.agentkit.best/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, in security review.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="How ak-vault works: keys, enrollment and conflicts">
+  <meta name="twitter:description" content="Protocol v1, explained with diagrams: vault keys, six-digit device enrollment, no last-writer-wins, rollback detection.">
+  <meta name="twitter:image" content="https://vault.agentkit.best/og.png">
+
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preload" href="/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/site.js"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "@id": "https://vault.agentkit.best/how-it-works/#article",
+      "headline": "How ak-vault works: keys, enrollment and conflicts",
+      "url": "https://vault.agentkit.best/how-it-works/",
+      "inLanguage": "en",
+      "about": {
+        "@id": "https://vault.agentkit.best/#software"
+      },
+      "isPartOf": {
+        "@id": "https://vault.agentkit.best/#website"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "AgentKit",
+        "url": "https://agentkit.best"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "ak-vault",
+          "item": "https://vault.agentkit.best/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "How it works",
+          "item": "https://vault.agentkit.best/how-it-works/"
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div id="live-region" class="visually-hidden" aria-live="polite"></div>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/" aria-label="ak-vault home">
+        <svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="4.5" y="4.5" width="23" height="23" rx="5"/><circle cx="16" cy="16" r="6.25"/><path d="M16 9.75v3M16 19.25v3M9.75 16h3M19.25 16h3" stroke-linecap="round"/><circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>
+        <span>ak-vault</span><small>by AgentKit</small>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <ul class="nav-links">
+          <li><a href="/how-it-works/" aria-current="page">How it works</a></li>
+          <li><a href="/security/">Security</a></li>
+          <li><a href="/guide/">Guide</a></li>
+          <li><a href="/faq/">FAQ</a></li>
+          <li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li>
+        </ul>
+        <details class="nav-menu">
+          <summary>Menu</summary>
+          <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="/how-it-works/" aria-current="page">How it works</a></li>
+            <li><a href="/security/">Security model</a></li>
+            <li><a href="/guide/">Guide</a></li>
+            <li><a href="/faq/">FAQ</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li>
+          </ul>
+        </details>
+        <button class="icon-btn theme-toggle" type="button" aria-label="Toggle color theme">
+          <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+          <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-hero" aria-labelledby="page-title">
+      <div class="container">
+        <span class="badge badge-review reveal"><span class="dot" aria-hidden="true"></span>Protocol v1 · in security review</span>
+        <h1 id="page-title" class="reveal">How a secret stays <em>sealed</em> from one device to the next.</h1>
+        <p class="lede reveal">A walkthrough of protocol v1 as proposed: the keys, how a new device joins, how conflicting edits are kept, and how devices notice a server that lies about history. Where this page simplifies, the <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md">normative spec</a> wins.</p>
+        <nav class="toc reveal" aria-label="On this page">
+          <a href="#keys">Keys</a><a href="#enrollment">Enrollment</a><a href="#conflicts">Conflicts</a><a href="#history">Deletes and rollback</a><a href="#architecture">Architecture</a><a href="#data">What the server sees</a>
+        </nav>
+      </div>
+    </section>
+
+    <section class="section" id="keys" aria-labelledby="keys-title">
+      <div class="container split">
+        <div class="chapter reveal">
+          <span class="chapter-mark"><b>01</b>Keys</span>
+          <h2 id="keys-title">Three ways to open a vault. The server holds none of them.</h2>
+          <p>Each vault has one random vault key, and every item gets its own key derived from it. The server stores the vault key only in wrapped form, locked to things only you hold.</p>
+          <ul class="point-list">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span><strong>Each enrolled device.</strong> The vault key is wrapped to the device's X25519 key, so only that device can unwrap its copy.</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span><strong>Your master password.</strong> Stretched with Argon2id, so a stolen wrapped copy has to be guessed offline.</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span><strong>Your recovery key.</strong> 32 random bytes shown in groups of characters, for when every device is gone.</span></li>
+            <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>One key opens the whole vault.</strong> Any member device can decrypt every item. Separate vaults are the only access boundary.</span></li>
+          </ul>
+        </div>
+        <figure class="diagram reveal" aria-labelledby="keys-cap">
+          <span class="badge diagram-tag">key hierarchy · simplified</span>
+          <div class="keys">
+            <div class="keys-openers">
+              <div class="key-node"><b>Device keys</b><span>X25519 wrap, one per device</span></div>
+              <div class="key-node"><b>Master password</b><span>Argon2id key-encryption key</span></div>
+              <div class="key-node"><b>Recovery key</b><span>32 random bytes, HKDF</span></div>
+            </div>
+            <span class="keys-arrow">unwraps</span>
+            <div class="key-node is-vk"><b>Vault key</b><span>32 random bytes per key epoch</span></div>
+            <span class="keys-arrow">HKDF per item</span>
+            <div class="keys-items">
+              <div class="key-node"><b>Item key</b><span>q7N2…</span></div>
+              <div class="key-node"><b>Item key</b><span>9xKd…</span></div>
+              <div class="key-node"><b>Item key</b><span>Lp0e…</span></div>
+            </div>
+            <div class="server-strip"><b>On the server</b>Wrapped copies of the vault key and the item ciphertext. Never a device private key, your password or your recovery key.</div>
+          </div>
+          <figcaption id="keys-cap">Simplified from spec §3. When a device or member is removed, the vault moves to a new key epoch wrapped only to the devices that remain.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section" id="enrollment" aria-labelledby="enroll-title">
+      <div class="container split is-flip">
+        <figure class="diagram reveal" aria-labelledby="sas-cap">
+          <span class="badge diagram-tag">device enrollment · illustrative code</span>
+          <div class="sas">
+            <div class="device">
+              <span class="dev-name">Your laptop · owner</span>
+              <span class="dev-prompt">Approve the new device?</span>
+              <span class="sas-code" role="img" aria-label="Code 418 207"><span>4</span><span>1</span><span>8</span><span>2</span><span>0</span><span>7</span></span>
+            </div>
+            <span class="sas-eq" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span>
+            <div class="device">
+              <span class="dev-name">New desktop · joining</span>
+              <span class="dev-prompt">Compare with your laptop</span>
+              <span class="sas-code" role="img" aria-label="Code 418 207"><span>4</span><span>1</span><span>8</span><span>2</span><span>0</span><span>7</span></span>
+            </div>
+          </div>
+          <figcaption id="sas-cap">Both devices derive the same six digits from one transcript: the vault, both device IDs and a random nonce from each side. A server that swapped a key in transit would make the codes differ. Spec §3.5.</figcaption>
+        </figure>
+        <div class="chapter reveal">
+          <span class="chapter-mark"><b>02</b>Enrollment</span>
+          <h2 id="enroll-title">A new device joins only after you compare six digits.</h2>
+          <p>The server relays enrollment messages, so it could try to slip in a key of its own. A short authentication string (SAS) stops that.</p>
+          <ol class="steps">
+            <li><div class="step-head"><h3>The new device creates its keys</h3></div><div class="step-body"><p>It generates its own signing and key-exchange keys. The private halves never leave it.</p></div></li>
+            <li><div class="step-head"><h3>Both screens show a code</h3></div><div class="step-body"><p>Each device hashes the same transcript and shows six digits.</p></div></li>
+            <li><div class="step-head"><h3>You compare, then approve</h3></div><div class="step-body"><p>If the codes match, the owner device signs a <code>device_add</code> event that commits to the enrollment transcript and to the vault key wrapped for the new device. If they differ, enrollment aborts.</p></div></li>
+            <li><div class="step-head"><h3>The new device verifies first</h3></div><div class="step-body"><p>It checks the signed member list and wrap set against the owner's signature before it unwraps anything.</p></div></li>
+          </ol>
+          <div class="callout is-info" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><p>The protocol defines this flow; the enrollment experience in <code>ak</code> is <strong>planned</strong>. If every device is lost, a fresh device can enroll itself with your password or recovery key through the encrypted recovery bundle.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="conflicts" aria-labelledby="conflict-title">
+      <div class="container">
+        <div class="chapter reveal">
+          <span class="chapter-mark"><b>03</b>Conflicts</span>
+          <h2 id="conflict-title">Two edits, one secret. Neither one is lost.</h2>
+          <p>Many sync tools keep whichever write lands last. ak-vault never does. Every write names the revision it started from, and the server accepts it only if that is still the current revision.</p>
+        </div>
+        <figure class="diagram reveal" aria-labelledby="conflict-cap">
+          <span class="badge diagram-tag">compare-and-swap · no last-writer-wins</span>
+          <div class="lanes">
+            <div class="lanes-head" aria-hidden="true"><span>Laptop</span><span>Worker</span><span>Desktop</span></div>
+            <ol>
+              <li class="lane-row">
+                <div class="event"><span class="who">Laptop</span>Has <b>revision 7</b></div>
+                <div class="event is-blank" aria-hidden="true"></div>
+                <div class="event"><span class="who">Desktop · offline</span>Has <b>revision 7</b></div>
+              </li>
+              <li class="lane-row">
+                <div class="event"><span class="who">Laptop</span>Writes a new value, <code>base_revision: 7</code></div>
+                <div class="event is-ok"><span class="who">Worker</span><b>Accepted · revision 8</b><span class="sub">7 was still current</span></div>
+                <div class="event is-blank" aria-hidden="true"></div>
+              </li>
+              <li class="lane-row">
+                <div class="event is-blank" aria-hidden="true"></div>
+                <div class="event at-desktop"><span class="who">Desktop · back online</span>Writes its edit, <code>base_revision: 7</code></div>
+                <div class="event is-conflict at-worker"><span class="who">Worker</span><b>409 conflict</b><span class="sub">Kept as a branch, not dropped</span></div>
+              </li>
+              <li class="lane-row">
+                <div class="event"><span class="who">Laptop or desktop</span>You choose a value; the record lists the branch in <code>resolves</code></div>
+                <div class="event is-ok"><span class="who">Worker</span><b>Accepted · revision 9</b><span class="sub">Branch resolved</span></div>
+                <div class="event is-blank" aria-hidden="true"></div>
+              </li>
+            </ol>
+          </div>
+          <figcaption id="conflict-cap">With last-writer-wins, one of these edits would have silently replaced the other. Here both survive until you decide. Retries are safe too: a repeated request with the same idempotency key returns the original answer. Spec §5.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section" id="history" aria-labelledby="history-title">
+      <div class="container">
+        <div class="chapter reveal">
+          <span class="chapter-mark"><b>04</b>Deletes and rollback</span>
+          <h2 id="history-title">Deleted stays deleted. Old state stays old.</h2>
+          <p>A server, or a device that slept for a month, should not be able to bring back history you moved past.</p>
+        </div>
+        <div class="mini-grid">
+          <figure class="diagram reveal" aria-labelledby="tomb-cap">
+            <h3>Tombstones</h3>
+            <div class="ratchet" aria-hidden="true"><span class="cp">rev 11</span><span class="cp is-witnessed">rev 12 · deleted</span><span class="cp is-offered">write on rev 9</span></div>
+            <figcaption id="tomb-cap">A delete is a signed record too, kept for the life of the vault. A stale device that writes on top of an older revision gets <code>409 tombstoned</code>, and its write is not kept as a branch.</figcaption>
+          </figure>
+          <figure class="diagram reveal" aria-labelledby="cp-cap">
+            <h3>Checkpoints</h3>
+            <div class="ratchet" aria-hidden="true"><span class="cp">log 39</span><span class="cp">log 40</span><span class="cp is-witnessed">log 41 · witnessed</span><span class="cp is-offered">server offers log 38</span></div>
+            <figcaption id="cp-cap">After each verified pull a device signs a checkpoint and keeps the newest one. If the server later serves older or forked history, the device raises a rollback alarm instead of accepting it. Spec §6.</figcaption>
+          </figure>
+        </div>
+        <div class="callout mt-5" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><p><strong>Limitation: withheld updates.</strong> A malicious server can still hide updates from a device that has never seen them, such as a new or long-offline device. Detecting that needs a second channel, like another device's checkpoint or the recovery bundle. Transparency logs are out of scope for v1.</p></div>
+      </div>
+    </section>
+
+    <section class="section" id="architecture" aria-labelledby="arch-title">
+      <div class="container">
+        <div class="chapter reveal">
+          <span class="chapter-mark"><b>05</b>Architecture</span>
+          <h2 id="arch-title">Small server, strong clients.</h2>
+          <p>All encryption, decryption and signing of vault data happens in clients, using audited libraries. The server verifies tokens and request signatures, orders writes and stores ciphertext. There is no custom cryptography anywhere.</p>
+        </div>
+        <figure class="diagram reveal" aria-labelledby="arch-cap">
+          <div class="arch">
+            <div class="arch-node"><span class="repo">agentkit · CLI and Desktop</span><h3>Clients</h3><ul><li>Device signing and exchange keys</li><li>Encrypt, sign, verify, decrypt</li><li>Local vault stays authoritative</li></ul></div>
+            <div class="arch-link" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h16M16 5l4 4-4 4M20 15H4M8 11l-4 4 4 4"/></svg></div>
+            <div class="arch-node is-here"><span class="repo">ak-vault · this project</span><h3>Cloudflare Worker</h3><ul><li>Token, device proof and revocation checks</li><li>Versioned protocol and test vectors</li><li>Production sync switched off until review</li></ul></div>
+            <div class="arch-link" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h16M16 5l4 4-4 4M20 15H4M8 11l-4 4 4 4"/></svg></div>
+            <div class="arch-node is-here"><span class="repo">ak-vault · storage</span><h3>Durable Object per vault</h3><ul><li>SQLite-backed, one per vault</li><li>Revisions, conflicts, tombstones</li><li>Ciphertext and minimal metadata</li></ul></div>
+          </div>
+          <div class="arch-node arch-side"><span class="repo">ak-web · accounts</span><h3>Sign-in and dashboard</h3><ul><li>Issues device-bound ES256 tokens and feeds revocations to the Worker</li><li>The browser never decrypts vault data</li></ul></div>
+          <figcaption id="arch-cap">The Worker never receives the key ak-web uses to sign CLI sessions. Every request carries a token plus a signature from the device's own key, bound to that exact request.</figcaption>
+        </figure>
+        <dl class="primitives mt-5" aria-label="Cryptographic primitives">
+          <div><dt>Encryption</dt><dd>XChaCha20-Poly1305</dd></div>
+          <div><dt>Signatures</dt><dd>Ed25519</dd></div>
+          <div><dt>Key agreement</dt><dd>X25519</dd></div>
+          <div><dt>Key derivation</dt><dd>HKDF-SHA256</dd></div>
+          <div><dt>Password KDF</dt><dd>Argon2id</dd></div>
+          <div><dt>Server tokens</dt><dd>ES256 JWT</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="section" id="data" aria-labelledby="data-title">
+      <div class="container">
+        <div class="chapter reveal">
+          <span class="chapter-mark"><b>06</b>What the server sees</span>
+          <h2 id="data-title">A short, explicit list of what leaves your device.</h2>
+          <p>The Worker and its per-vault storage hold ciphertext and the metadata needed to order, authorize and rate-limit writes. The <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/data-classification.md">data classification</a> owns the full list.</p>
+        </div>
+        <div class="table-wrap reveal">
+          <table class="data-table">
+            <caption>Data classification for a synced vault (protocol v1, proposed)</caption>
+            <thead>
+              <tr><th scope="col">Data</th><th scope="col">Server access</th><th scope="col">Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">Secret values</th><td data-label="Server access"><span class="vis vis-enc">encrypted</span></td><td data-label="Notes">Inside the AEAD ciphertext; never in logs, errors or telemetry.</td></tr>
+              <tr><th scope="row">Secret names, descriptions, tags, profiles, sensitivity</th><td data-label="Server access"><span class="vis vis-enc">encrypted</span></td><td data-label="Notes">Item IDs are random, never derived from names.</td></tr>
+              <tr><th scope="row">Portable policy and audit entries</th><td data-label="Server access"><span class="vis vis-enc">encrypted</span></td><td data-label="Notes">Audit is a hash-chained, encrypted stream.</td></tr>
+              <tr><th scope="row">Vault key and recovery bundle</th><td data-label="Server access"><span class="vis vis-enc">wrapped</span></td><td data-label="Notes">The vault key is wrapped to member devices, your password-derived key and your recovery key; the recovery bundle only to the last two.</td></tr>
+              <tr><th scope="row">Vault and item IDs, revisions, tombstone flags, key epochs</th><td data-label="Server access"><span class="vis vis-meta">visible</span></td><td data-label="Notes">Needed for compare-and-swap ordering, conflicts and refusing stale writes.</td></tr>
+              <tr><th scope="row">Ciphertext sizes and timestamps</th><td data-label="Server access"><span class="vis vis-meta">visible</span></td><td data-label="Notes">Reveals roughly how many items change and when; sizes hint at value length.</td></tr>
+              <tr><th scope="row">Devices, public keys, roles, accounts</th><td data-label="Server access"><span class="vis vis-meta">visible</span></td><td data-label="Notes">The signed membership log is readable so the server can authorize requests.</td></tr>
+              <tr><th scope="row">Token claims and rate-limit counters</th><td data-label="Server access"><span class="vis vis-meta">visible</span></td><td data-label="Notes">Authentication, authorization, revocation and abuse protection.</td></tr>
+              <tr><th scope="row">Request metadata</th><td data-label="Server access"><span class="vis vis-meta">visible</span></td><td data-label="Notes">As with any HTTPS service, the edge sees IP address and request timing.</td></tr>
+              <tr><th scope="row">Master password, recovery key, device private keys</th><td data-label="Server access"><span class="vis vis-never">never sent</span></td><td data-label="Notes">They never leave your devices.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="next-title">
+      <div class="container">
+        <h2 id="next-title" class="visually-hidden">Keep reading</h2>
+        <div class="next-grid">
+          <a class="next-card" href="/security/"><h3>Security model</h3><p>Each adversary, its defence in protocol v1 and the risk that stays with you.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+          <a class="next-card" href="/guide/"><h3>Guide</h3><p>Step by step: the local vault today, and what sync will add.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+          <a class="next-card" href="/faq/"><h3>FAQ</h3><p>Straight answers on status, privacy, agents, teams and recovery.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+          <a class="next-card" href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md"><h3>Protocol v1 spec</h3><p>The normative wire specification, on GitHub.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+        </div>
+      </div>
+    </section>
+    <section class="section section-tight" aria-label="Page actions for AI assistants">
+      <div class="container">
+        <div class="agent-strip">
+          <p>Reading this with an AI assistant? Grab the Markdown version, or open it straight in your assistant.</p>
+          <div class="agent-actions">
+            <button class="btn btn-ghost" type="button" data-copy-markdown="/how-it-works/index.md"><span data-label>Copy page as Markdown</span></button>
+            <a class="btn btn-ghost" href="https://chatgpt.com/?q=Read%20https%3A%2F%2Fvault.agentkit.best%2Fhow-it-works%2Findex.md%20and%20explain%20how%20ak-vault%20sync%20works." rel="noopener" target="_blank">Open in ChatGPT<span class="visually-hidden"> (opens in a new tab)</span></a>
+            <a class="btn btn-ghost" href="https://claude.ai/new?q=Read%20https%3A%2F%2Fvault.agentkit.best%2Fhow-it-works%2Findex.md%20and%20explain%20how%20ak-vault%20sync%20works." rel="noopener" target="_blank">Open in Claude<span class="visually-hidden"> (opens in a new tab)</span></a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="brand" href="/" aria-label="ak-vault home">
+            <svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="4.5" y="4.5" width="23" height="23" rx="5"/><circle cx="16" cy="16" r="6.25"/><path d="M16 9.75v3M16 19.25v3M9.75 16h3M19.25 16h3" stroke-linecap="round"/><circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>
+            <span>ak-vault</span>
+          </a>
+          <p class="small footer-tagline">Opt-in, local-first, end-to-end encrypted sync for <code>ak secrets</code>. Part of the AgentKit family.</p>
+        </div>
+        <div>
+          <h2>Learn</h2>
+          <ul>
+            <li><a href="/how-it-works/" aria-current="page">How it works</a></li>
+            <li><a href="/security/">Security model</a></li>
+            <li><a href="/guide/">Guide</a></li>
+            <li><a href="/faq/">FAQ</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Project</h2>
+          <ul>
+            <li><a href="https://github.com/bestagentkits/ak-vault">GitHub repository</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md">Protocol v1 spec</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault/issues/1">Epic and roadmap</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault/security">Report a vulnerability</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>AgentKit</h2>
+          <ul>
+            <li><a href="https://agentkit.best">agentkit.best</a></li>
+            <li><a href="/llms.txt">llms.txt</a></li>
+            <li><a href="/how-it-works/index.md">This page as Markdown</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/LICENSE">MIT license</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-base">
+        <span>ak-vault · MIT licensed · protocol v1 proposed</span>
+        <span>This site loads no third-party scripts, fonts or trackers.</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
