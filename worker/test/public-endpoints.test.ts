@@ -72,7 +72,7 @@ describe('landing site', () => {
   });
 
   it('marks HTML pages no-transform so the proxy cannot inject scripts, keeping other cache directives', async () => {
-    for (const path of ['/', '/security/', '/does-not-exist']) {
+    for (const path of ['/', '/how-it-works/', '/security/', '/guide/', '/faq/', '/does-not-exist']) {
       const directives = ((await fetchRaw(path)).headers.get('Cache-Control') ?? '').split(',').map((d) => d.trim());
       expect(directives, path).toContain('no-transform');
       expect(directives.filter((d) => d === 'no-transform'), path).toHaveLength(1);
@@ -87,7 +87,7 @@ describe('landing site', () => {
   });
 
   it('serves Markdown twins as UTF-8 text/markdown', async () => {
-    for (const path of ['/index.md', '/security/index.md']) {
+    for (const path of ['/index.md', '/how-it-works/index.md', '/security/index.md', '/guide/index.md', '/faq/index.md']) {
       const res = await fetchRaw(path);
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('text/markdown; charset=utf-8');

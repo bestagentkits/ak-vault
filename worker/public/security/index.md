@@ -1,67 +1,114 @@
 ---
 title: "ak-vault security model: guarantees and limitations"
 url: https://vault.agentkit.best/security/
-status: "Protocol v1 proposed, in security review."
+status: "Protocol v1 proposed, in security review. Not approved for production credentials."
 ---
 
 # Security model, in plain language
 
-Who ak-vault defends against, how protocol v1 does it, and what remains your risk. This page summarizes the normative [protocol v1 specification](https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md); where they differ, the spec wins.
+Who ak-vault defends against, how protocol v1 does it, and what remains your risk. This page summarizes the normative [protocol v1 specification](https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md) and [threat model](https://github.com/bestagentkits/ak-vault/blob/main/docs/security/threat-model.md); where they differ, they win.
 
-## Scope and status
+## 1. Scope and status
 
-The assets are your secret values and everything that describes them: names, descriptions, tags, profiles, portable policy and the audit trail. All are encrypted on your devices before upload. The server keeps ciphertext, wrapped vault keys and the operational metadata it needs to order and authorize writes.
+The assets are your secret values and everything that describes them: names, descriptions, tags, profiles, portable policy and the audit trail. All of them are encrypted on your devices before upload. The server keeps ciphertext, wrapped vault keys and the operational metadata it needs to order and authorize writes.
 
-> **Status:** protocol v1 is *Proposed*. It is not approved for production credentials until the security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) records an external review sign-off. Until then the production sync API stays behind a kill switch.
+> **Status:** protocol v1 is *proposed*. It is not approved for production credentials until the security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) records an external review sign-off. Until then the production sync API stays switched off.
 
-Out of scope by design: decryption in a web browser, server-held vault keys or KMS, and automatic revocation of plaintext that has already been disclosed.
+Out of scope by design: decryption in a web browser, server-held vault keys or KMS, and taking back plaintext that has already been disclosed.
 
-## Adversaries
+## 2. Threat map
 
-| Threat | Defence in protocol v1 | Residual risk |
-|---|---|---|
-| Malicious or compromised server | Client-side AEAD; signed records; owner-signed, hash-chained membership; signed checkpoints that refuse rollback or forks; injected key recipients rejected | Can withhold updates a new or long-offline device never witnessed; sees operational metadata |
-| Network attacker | TLS plus a per-request device signature bound to method, URL, token and body hash, valid ±60 s with single-use IDs | Request timing and sizes are observable |
-| Stolen or revoked device | Device-bound ES256 tokens; revocation checked on every request, fails closed; device removal requires a rekey before new writes | Values already decrypted on that device stay exposed; rotate them |
-| Removed member of a shared vault | New key epoch wrapped only to remaining members; affected items marked to rotate | Previously exposed values cannot be clawed back |
-| Stale or conflicting devices | Revision CAS with preserved conflict branches, idempotent writes, tombstones | Conflicts need an explicit decision |
-| Hostile shared metadata (prompt injection) | Descriptions, URLs and profiles are untrusted data, never instructions; policy only narrows local grants; high sensitivity always needs fresh approval | An agent you grant a secret to receives its plaintext |
+Plaintext exists only inside your devices. Everything that crosses the network or rests on the server is ciphertext, signatures or the listed metadata.
 
-## Design guarantees
+- **Your devices (plaintext lives here):** stolen or lost device; removed member; stale or conflicting devices; hostile shared metadata.
+- **Network:** network attacker; stolen token without the device key.
+- **Worker and storage (ciphertext only):** malicious or compromised server.
 
-- **No custom cryptography:** XChaCha20-Poly1305, Ed25519, X25519, HKDF-SHA256, Argon2id via audited libraries; unknown algorithm IDs fail closed (§1).
-- **Cross-language test vectors:** Go and TypeScript must reproduce every vector byte for byte, including rejection cases.
-- **Local-first:** `resolve` never depends on the network; sync-off causes zero network requests.
-- **Recovery without trusting the server:** the recovery bundle carries the owner's signing key and newest witnessed checkpoint (§3.4).
-- **Encrypted, chained audit:** reordering, dropping or overwriting since a witnessed checkpoint is detected (§7).
-- **Least-privilege authorization:** token scope intersected with vault membership; readers and machine identities are read-only; no cross-vault access (§9).
+The device boundary matters most: a compromised local client sees everything, and the protocol does not defend it.
 
-## Known limitations
+## 3. Threats we design against
 
-- **Vault-wide key:** a vault key decrypts every item in that vault; no per-secret access claim. Use separate vaults (§3).
-- **Freeze attack:** updates never witnessed by a device can be withheld; detection needs a second channel. Transparency logs and gossip are out of scope for v1 (§6).
-- **Plaintext to child process:** `ak secrets run` releases the value to the approved process by design.
-- **Visible metadata:** random IDs, revisions, sizes, timestamps, device public keys, roles and request metadata.
-- **Key loss is final:** lose every enrolled device, the master password and the recovery key, and nobody can decrypt the vault.
-- **TOFU at genesis:** the owner's key is pinned on first use unless it arrives via the recovery bundle or a SAS-verified pairing (§4).
+### 1. Malicious or compromised server
 
-## Release gate
+- **Defence in protocol v1:** Client-side encryption for everything sensitive; signed records; an owner-signed, hash-chained member list; signed checkpoints that refuse rollback or forks; injected key recipients rejected.
+- **Residual risk:** It can withhold updates a new or long-offline device has never witnessed, and it sees operational metadata.
 
-- The protocol ADR is approved and the cross-language vectors pass.
-- Malicious server, member and device scenarios are exercised in staging.
-- A full dump of the Worker and its storage, logs, telemetry and API errors contains no plaintext secret values or names.
-- Concurrent updates keep conflicting ciphertexts, tombstones hold, and signed rollback is detected after a witnessed checkpoint.
-- Revoked devices and sessions are denied; removed members lose access to new keys and ciphertext.
-- No unexpected outbound calls with sync disabled.
-- An independent security review signs off. This cannot be self-attested.
+### 2. Network attacker
 
-## Sources
+- **Defence in protocol v1:** TLS, plus a per-request device signature bound to method, URL, token and body hash, accepted only within a ±60-second window and only once.
+- **Residual risk:** Request timing and sizes are observable.
+
+### 3. Stolen token without the device key
+
+- **Defence in protocol v1:** A token alone is not enough: every request also needs a fresh signature from the device's private key, and replayed proofs are refused.
+- **Residual risk:** A thief who also holds the device key is the stolen-device case below.
+
+### 4. Stolen or lost device
+
+- **Defence in protocol v1:** Device-bound tokens; revoked sessions and devices are checked on every request and fail closed. Removing a device requires a rekey before new writes.
+- **Residual risk:** Values already decrypted on that device stay exposed. Rotate them.
+
+### 5. Removed member of a shared vault
+
+- **Defence in protocol v1:** Removal moves the vault to a new key epoch wrapped only to the remaining members, and affected items are marked to rotate.
+- **Residual risk:** Values they already saw cannot be clawed back.
+
+### 6. Stale or conflicting devices
+
+- **Defence in protocol v1:** Revision compare-and-swap with preserved conflict branches, idempotent writes and tombstones. An offline device cannot resurrect a deleted secret.
+- **Residual risk:** Conflicts need an explicit decision from you.
+
+### 7. Hostile shared metadata (prompt injection)
+
+- **Defence in protocol v1:** Descriptions, URLs and profiles are untrusted, author-attributed data and never instructions. Portable policy can only narrow local grants. High-sensitivity secrets always need fresh approval.
+- **Residual risk:** An agent you grant a secret to receives its plaintext.
+
+## 4. Guarantees and limitations
+
+These are design properties of protocol v1 as proposed, not reviewed results.
+
+### Design guarantees
+
+- **No custom cryptography.** XChaCha20-Poly1305, Ed25519, X25519, HKDF-SHA256 and Argon2id from audited libraries. Unknown algorithm IDs fail closed. (spec §1)
+- **Cross-language test vectors.** Go and TypeScript must reproduce every vector byte for byte, including the rejection cases.
+- **Local-first.** `resolve` never depends on the network; with sync off, secrets make zero network requests.
+- **Recovery without trusting the server.** The recovery bundle carries the owner's public trust anchor, the recovery signing key and the newest witnessed checkpoint, so a fresh device does not take the server's word. (spec §3.4)
+- **Encrypted, chained audit.** Reordering, dropping or overwriting audit entries since a witnessed checkpoint is detected. (spec §7)
+- **Least-privilege authorization.** Token scope intersected with vault membership; readers and machine identities are read-only at the Worker; no cross-vault access. (spec §9)
+
+### Known limitations
+
+- **Vault-wide key.** A vault key decrypts every item in that vault. v1 makes no per-secret access claim; use separate vaults. (spec §3)
+- **Freeze attack.** Updates a device never witnessed can be withheld. Detection needs a second channel; transparency logs and gossip are out of scope for v1. (spec §6)
+- **Plaintext to the child process.** `ak secrets run` (planned) releases the value to the approved process by design.
+- **No claw-back.** Removing a device or member protects only new material. Anything already decrypted stays exposed; affected items are marked to rotate.
+- **Visible metadata.** Random IDs, revisions, sizes, timestamps, device public keys, roles and request metadata.
+- **Compromised local client.** Malware running as you, or a modified `ak`, sees plaintext and keys. The protocol does not defend the endpoint.
+- **Key loss is final.** Lose every enrolled device, the master password and the recovery key, and nobody can decrypt the vault.
+- **Audit entries are not signed per author.** Any device that held a key epoch can write audit entries at that epoch, including one removed later, until the rekeying device appends at the new epoch. (spec §7)
+- **Roles are enforced by the Worker.** Clients do not yet check records against role history, so read-only roles and machine identities rely on the Worker ([#22](https://github.com/bestagentkits/ak-vault/issues/22)).
+- **Removal fence binds positions.** It refuses a removed device's records above the fence, not substituted records below it; binding the contents is a release gate ([#21](https://github.com/bestagentkits/ak-vault/issues/21)). A device that keeps writing can stall its own removal, so revoke it first.
+- **Recovery bundle can be guessed offline.** Anyone with a live owner-account session can download the encrypted bundle and guess a weak password offline. Revoke your sessions after a loss. (spec §3.4)
+- **Trust on first use at genesis.** The owner's key is pinned on first use unless it arrives through the recovery bundle or a SAS-verified pairing. (spec §4)
+
+## 5. Release gate
+
+A box counts only when its evidence is linked on [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) for the exact commit being released. The full list lives in the [release gates](https://github.com/bestagentkits/ak-vault/blob/main/docs/security/release-gates.md).
+
+- [ ] ADR 0001 approved by the owner, with its open items resolved.
+- [ ] Go and TypeScript reproduce every test vector byte for byte, including every rejection vector.
+- [ ] The Worker integration suite is green: conflicts, tombstones, idempotency, cross-tenant denial, replayed proofs, revoked devices and stale membership.
+- [ ] Disclosure scan: storage dumps, logs, traces, metrics and error responses from a seeded run contain no planted plaintext values or names.
+- [ ] A revoked session or device is refused on its next request, even with an unexpired token.
+- [ ] With sync off, ak makes zero HTTP requests and `resolve` works with the Worker unreachable.
+- [ ] Red-team scenarios executed, a staging soak with two or more devices, and backup, restore and rollback rehearsed.
+- [ ] The removal fence binds the change-log contents, not only a position.
+- [ ] An independent reviewer with cryptographic expertise signs off. This cannot be self-attested.
+
+## 6. Sources and disclosure
 
 - [Protocol v1 normative wire specification](https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md)
 - [ADR 0001: opt-in zero-knowledge sync](https://github.com/bestagentkits/ak-vault/blob/main/docs/adr/0001-opt-in-zero-knowledge-sync.md)
-- [All project documentation](https://github.com/bestagentkits/ak-vault/tree/main/docs)
-- [Issue #2: protocol, threat model, cryptography and recovery](https://github.com/bestagentkits/ak-vault/issues/2)
+- [Threat model](https://github.com/bestagentkits/ak-vault/blob/main/docs/security/threat-model.md) and [data classification](https://github.com/bestagentkits/ak-vault/blob/main/docs/security/data-classification.md)
 
-## Report a vulnerability
-
-Report suspected vulnerabilities privately through [GitHub security advisories for ak-vault](https://github.com/bestagentkits/ak-vault/security), not a public issue.
+Report suspected vulnerabilities through [GitHub security advisories for ak-vault](https://github.com/bestagentkits/ak-vault/security), not a public issue.

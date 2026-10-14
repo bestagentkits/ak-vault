@@ -19,10 +19,10 @@
   <meta property="og:image" content="https://vault.agentkit.best/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="ak-vault: local-first, end-to-end encrypted sync for ak secrets. Protocol v1, in security review.">
+  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, in security review.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ak-vault security model: guarantees and limitations">
-  <meta name="twitter:description" content="Threat model summary for ak-vault protocol v1.">
+  <meta name="twitter:description" content="Threat model summary for ak-vault protocol v1: malicious server, stolen devices, removed members, rollback and more.">
   <meta name="twitter:image" content="https://vault.agentkit.best/og.png">
 
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -31,30 +31,47 @@
   <link rel="preload" href="/fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/styles.css">
   <script src="/site.js"></script>
-
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "TechArticle",
-        "@id": "https://vault.agentkit.best/security/#article",
-        "headline": "ak-vault security model: guarantees and limitations",
-        "url": "https://vault.agentkit.best/security/",
-        "inLanguage": "en",
-        "about": { "@id": "https://vault.agentkit.best/#software" },
-        "isPartOf": { "@id": "https://vault.agentkit.best/#website" },
-        "publisher": { "@type": "Organization", "name": "AgentKit", "url": "https://agentkit.best" }
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "@id": "https://vault.agentkit.best/security/#article",
+      "headline": "ak-vault security model: guarantees and limitations",
+      "url": "https://vault.agentkit.best/security/",
+      "inLanguage": "en",
+      "about": {
+        "@id": "https://vault.agentkit.best/#software"
       },
-      {
-        "@type": "BreadcrumbList",
-        "itemListElement": [
-          { "@type": "ListItem", "position": 1, "name": "ak-vault", "item": "https://vault.agentkit.best/" },
-          { "@type": "ListItem", "position": 2, "name": "Security", "item": "https://vault.agentkit.best/security/" }
-        ]
+      "isPartOf": {
+        "@id": "https://vault.agentkit.best/#website"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "AgentKit",
+        "url": "https://agentkit.best"
       }
-    ]
-  }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "ak-vault",
+          "item": "https://vault.agentkit.best/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Security",
+          "item": "https://vault.agentkit.best/security/"
+        }
+      ]
+    }
+  ]
+}
   </script>
 </head>
 <body>
@@ -69,23 +86,20 @@
       </a>
       <nav class="nav" aria-label="Primary">
         <ul class="nav-links">
-          <li><a href="/#how">How it works</a></li>
-          <li><a href="/#guarantees">Guarantees</a></li>
-          <li><a href="/#server-view">Server view</a></li>
-          <li><a href="/#quickstart">Quickstart</a></li>
-          <li><a href="/#roadmap">Roadmap</a></li>
+          <li><a href="/how-it-works/">How it works</a></li>
           <li><a href="/security/" aria-current="page">Security</a></li>
+          <li><a href="/guide/">Guide</a></li>
+          <li><a href="/faq/">FAQ</a></li>
           <li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li>
         </ul>
         <details class="nav-menu">
           <summary>Menu</summary>
           <ul>
             <li><a href="/">Home</a></li>
-            <li><a href="#adversaries">Adversaries</a></li>
-            <li><a href="#guarantees">Guarantees</a></li>
-            <li><a href="#limitations">Limitations</a></li>
-            <li><a href="#gate">Release gate</a></li>
-            <li><a href="#report">Report a vulnerability</a></li>
+            <li><a href="/how-it-works/">How it works</a></li>
+            <li><a href="/security/" aria-current="page">Security model</a></li>
+            <li><a href="/guide/">Guide</a></li>
+            <li><a href="/faq/">FAQ</a></li>
             <li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li>
           </ul>
         </details>
@@ -100,72 +114,109 @@
   <main id="main">
     <section class="page-hero" aria-labelledby="page-title">
       <div class="container">
-        <span class="badge badge-review"><span class="dot" aria-hidden="true"></span>Protocol v1 · in security review</span>
-        <h1 id="page-title">Security model, in plain language.</h1>
-        <p class="lede">Who ak-vault defends against, how protocol v1 does it, and what remains your risk. This page summarizes the normative <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md">protocol v1 specification</a>; where they differ, the spec wins.</p>
-        <nav class="toc" aria-label="On this page">
-          <a href="#scope">Scope</a><a href="#adversaries">Adversaries</a><a href="#guarantees">Guarantees</a><a href="#limitations">Limitations</a><a href="#gate">Release gate</a><a href="#sources">Sources</a><a href="#report">Report</a>
+        <span class="badge badge-review reveal"><span class="dot" aria-hidden="true"></span>Protocol v1 · in security review</span>
+        <h1 id="page-title" class="reveal">Security model, in <em>plain language</em>.</h1>
+        <p class="lede reveal">Who ak-vault defends against, how protocol v1 does it, and what remains your risk. This page summarizes the normative <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md">protocol v1 specification</a> and <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/threat-model.md">threat model</a>; where they differ, they win.</p>
+        <nav class="toc reveal" aria-label="On this page">
+          <a href="#scope">Scope</a><a href="#map">Threat map</a><a href="#adversaries">Adversaries</a><a href="#guarantees">Guarantees</a><a href="#limitations">Limitations</a><a href="#gate">Release gate</a><a href="#report">Report</a>
         </nav>
       </div>
     </section>
 
     <section class="section" id="scope" aria-labelledby="scope-title">
-      <div class="container prose">
-        <span class="eyebrow">Scope and status</span>
+      <div class="container prose reveal">
+        <span class="chapter-mark"><b>01</b>Scope and status</span>
         <h2 id="scope-title">What is being protected</h2>
         <p>The assets are your secret values and everything that describes them: names, descriptions, tags, profiles, portable policy and the audit trail. All of them are encrypted on your devices before upload. The server keeps ciphertext, wrapped vault keys and the operational metadata it needs to order and authorize writes.</p>
-        <p class="callout"><strong>Status:</strong> protocol v1 is <em>Proposed</em>. It is not approved for production credentials until the security gate in <a href="https://github.com/bestagentkits/ak-vault/issues/8">issue #8</a> records an external review sign-off. Until then the production sync API stays behind a kill switch.</p>
-        <p>Out of scope by design: decryption in a web browser, server-held vault keys or KMS, and automatic revocation of plaintext that has already been disclosed.</p>
+        <div class="callout" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><p><strong>Status:</strong> protocol v1 is <em>proposed</em>. It is not approved for production credentials until the security gate in <a href="https://github.com/bestagentkits/ak-vault/issues/8">issue #8</a> records an external review sign-off. Until then the production sync API stays switched off.</p></div>
+        <p>Out of scope by design: decryption in a web browser, server-held vault keys or KMS, and taking back plaintext that has already been disclosed.</p>
+      </div>
+    </section>
+
+    <section class="section" id="map" aria-labelledby="map-title">
+      <div class="container">
+        <div class="chapter reveal">
+          <span class="chapter-mark"><b>02</b>Threat map</span>
+          <h2 id="map-title">Where each attacker sits, and what stops them.</h2>
+          <p>Plaintext exists only inside your devices. Everything that crosses the network or rests on the server is ciphertext, signatures or the listed metadata. Select a marker to jump to its defence.</p>
+        </div>
+        <figure class="diagram reveal" aria-labelledby="map-cap">
+          <div class="tmap">
+            <div class="zone is-device">
+              <span class="zone-tag">Your devices · plaintext lives here</span>
+              <p>Device keys, the local vault and the processes you grant a secret to.</p>
+              <ul class="pins"><li><a class="pin" href="#t-device"><span class="n">4</span>Stolen or lost device</a></li><li><a class="pin" href="#t-member"><span class="n">5</span>Removed member of a shared vault</a></li><li><a class="pin" href="#t-stale"><span class="n">6</span>Stale or conflicting devices</a></li><li><a class="pin" href="#t-inject"><span class="n">7</span>Hostile shared metadata (prompt injection)</a></li></ul>
+            </div>
+            <div class="zone is-net">
+              <span class="zone-tag">Network</span>
+              <p>TLS plus a signature from the device on every request.</p>
+              <ul class="pins"><li><a class="pin" href="#t-network"><span class="n">2</span>Network attacker</a></li><li><a class="pin" href="#t-token"><span class="n">3</span>Stolen token without the device key</a></li></ul>
+            </div>
+            <div class="zone is-server">
+              <span class="zone-tag">Worker and storage · ciphertext only</span>
+              <p>Orders, authorizes and stores. Holds no key that decrypts.</p>
+              <ul class="pins"><li><a class="pin" href="#t-server"><span class="n">1</span>Malicious or compromised server</a></li></ul>
+            </div>
+          </div>
+          <figcaption id="map-cap">Trust boundaries from the <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/threat-model.md">threat model</a>. The device boundary is the one that matters most: a compromised local client sees everything, and the protocol does not defend it.</figcaption>
+        </figure>
       </div>
     </section>
 
     <section class="section" id="adversaries" aria-labelledby="adv-title">
       <div class="container">
-        <div class="section-head">
-          <span class="eyebrow">Adversaries</span>
+        <div class="chapter reveal">
+          <span class="chapter-mark"><b>03</b>Adversaries</span>
           <h2 id="adv-title">Threats we design against</h2>
-          <p>Each card lists the defence in protocol v1 and the residual risk that stays with you.</p>
+          <p>Each card pairs the defence in protocol v1 with the risk that stays with you.</p>
         </div>
         <div class="threats">
-          <article class="threat">
-            <h3>Malicious or compromised server</h3>
+          <article class="threat reveal" id="t-server" aria-labelledby="t-server-h">
+            <header><span class="n" aria-hidden="true">1</span><h3 id="t-server-h">Malicious or compromised server</h3></header>
             <dl>
-              <div><dt>Defence</dt><dd>Client-side AEAD for all sensitive data; signed records; owner-signed, hash-chained membership; signed checkpoints that refuse rollback or forks; injected key recipients rejected.</dd></div>
+              <div><dt>Defence in protocol v1</dt><dd>Client-side encryption for everything sensitive; signed records; an owner-signed, hash-chained member list; signed checkpoints that refuse rollback or forks; injected key recipients rejected.</dd></div>
               <div><dt>Residual risk</dt><dd class="residual">It can withhold updates a new or long-offline device has never witnessed, and it sees operational metadata.</dd></div>
             </dl>
           </article>
-          <article class="threat">
-            <h3>Network attacker</h3>
+          <article class="threat reveal" id="t-network" aria-labelledby="t-network-h">
+            <header><span class="n" aria-hidden="true">2</span><h3 id="t-network-h">Network attacker</h3></header>
             <dl>
-              <div><dt>Defence</dt><dd>TLS, plus a per-request device signature bound to method, URL, token and body hash, valid for 60 seconds with single-use IDs.</dd></div>
+              <div><dt>Defence in protocol v1</dt><dd>TLS, plus a per-request device signature bound to method, URL, token and body hash, accepted only within a ±60-second window and only once.</dd></div>
               <div><dt>Residual risk</dt><dd class="residual">Request timing and sizes are observable.</dd></div>
             </dl>
           </article>
-          <article class="threat">
-            <h3>Stolen or revoked device</h3>
+          <article class="threat reveal" id="t-token" aria-labelledby="t-token-h">
+            <header><span class="n" aria-hidden="true">3</span><h3 id="t-token-h">Stolen token without the device key</h3></header>
             <dl>
-              <div><dt>Defence</dt><dd>Device-bound ES256 tokens; revoked sessions and devices are checked on every request and fail closed. Removing a device requires a rekey before new writes.</dd></div>
+              <div><dt>Defence in protocol v1</dt><dd>A token alone is not enough: every request also needs a fresh signature from the device's private key, and replayed proofs are refused.</dd></div>
+              <div><dt>Residual risk</dt><dd class="residual">A thief who also holds the device key is the stolen-device case below.</dd></div>
+            </dl>
+          </article>
+          <article class="threat reveal" id="t-device" aria-labelledby="t-device-h">
+            <header><span class="n" aria-hidden="true">4</span><h3 id="t-device-h">Stolen or lost device</h3></header>
+            <dl>
+              <div><dt>Defence in protocol v1</dt><dd>Device-bound tokens; revoked sessions and devices are checked on every request and fail closed. Removing a device requires a rekey before new writes.</dd></div>
               <div><dt>Residual risk</dt><dd class="residual">Values already decrypted on that device stay exposed. Rotate them.</dd></div>
             </dl>
           </article>
-          <article class="threat">
-            <h3>Removed member of a shared vault</h3>
+          <article class="threat reveal" id="t-member" aria-labelledby="t-member-h">
+            <header><span class="n" aria-hidden="true">5</span><h3 id="t-member-h">Removed member of a shared vault</h3></header>
             <dl>
-              <div><dt>Defence</dt><dd>Removal triggers a new key epoch wrapped only to remaining members, and affected items are marked to rotate.</dd></div>
-              <div><dt>Residual risk</dt><dd class="residual">Previously exposed values cannot be clawed back.</dd></div>
+              <div><dt>Defence in protocol v1</dt><dd>Removal moves the vault to a new key epoch wrapped only to the remaining members, and affected items are marked to rotate.</dd></div>
+              <div><dt>Residual risk</dt><dd class="residual">Values they already saw cannot be clawed back.</dd></div>
             </dl>
           </article>
-          <article class="threat">
-            <h3>Stale or conflicting devices</h3>
+          <article class="threat reveal" id="t-stale" aria-labelledby="t-stale-h">
+            <header><span class="n" aria-hidden="true">6</span><h3 id="t-stale-h">Stale or conflicting devices</h3></header>
             <dl>
-              <div><dt>Defence</dt><dd>Revision compare-and-swap with preserved conflict branches, idempotent writes and tombstones. An offline device cannot resurrect a deleted secret.</dd></div>
+              <div><dt>Defence in protocol v1</dt><dd>Revision compare-and-swap with preserved conflict branches, idempotent writes and tombstones. An offline device cannot resurrect a deleted secret.</dd></div>
               <div><dt>Residual risk</dt><dd class="residual">Conflicts need an explicit decision from you.</dd></div>
             </dl>
           </article>
-          <article class="threat">
-            <h3>Hostile shared metadata (prompt injection)</h3>
+          <article class="threat reveal" id="t-inject" aria-labelledby="t-inject-h">
+            <header><span class="n" aria-hidden="true">7</span><h3 id="t-inject-h">Hostile shared metadata (prompt injection)</h3></header>
             <dl>
-              <div><dt>Defence</dt><dd>Descriptions, URLs and profiles are untrusted, author-attributed data and are never read as instructions. Portable policy can only narrow local grants. High-sensitivity secrets always need fresh approval.</dd></div>
+              <div><dt>Defence in protocol v1</dt><dd>Descriptions, URLs and profiles are untrusted, author-attributed data and never instructions. Portable policy can only narrow local grants. High-sensitivity secrets always need fresh approval.</dd></div>
               <div><dt>Residual risk</dt><dd class="residual">An agent you grant a secret to receives its plaintext.</dd></div>
             </dl>
           </article>
@@ -175,76 +226,93 @@
 
     <section class="section" id="guarantees" aria-labelledby="sg-title">
       <div class="container">
-        <div class="ledger">
-          <article class="ledger-col is-guarantee" aria-labelledby="sg-title">
-            <header>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-              <h2 id="sg-title" class="h2-compact">Design guarantees</h2>
-            </header>
-            <ul>
-              <li><strong>No custom cryptography</strong><span>XChaCha20-Poly1305, Ed25519, X25519, HKDF-SHA256, Argon2id via audited libraries. Unknown algorithm IDs fail closed. <span class="ref">§1</span></span></li>
-              <li><strong>Cross-language test vectors</strong><span>Go and TypeScript must reproduce every vector byte for byte, including rejection cases.</span></li>
-              <li><strong>Local-first</strong><span><code>resolve</code> never depends on the network; sync-off causes zero network requests.</span></li>
-              <li><strong>Recovery without trusting the server</strong><span>The recovery bundle carries the owner's signing key and newest witnessed checkpoint, so a fresh device does not take the server's word. <span class="ref">§3.4</span></span></li>
-              <li><strong>Encrypted, chained audit</strong><span>Reordering, dropping or overwriting audit entries since a witnessed checkpoint is detected. <span class="ref">§7</span></span></li>
-              <li><strong>Least-privilege authorization</strong><span>Token scope intersected with vault membership; readers and machine identities are read-only; no cross-vault access. <span class="ref">§9</span></span></li>
+        <div class="chapter reveal">
+          <span class="chapter-mark"><b>04</b>Guarantees and limitations</span>
+          <h2 id="sg-title">Design properties, side by side with what they cannot do.</h2>
+          <p>These are design properties of protocol v1 as proposed, not reviewed results.</p>
+        </div>
+        <div class="mini-grid">
+          <div class="panel reveal">
+            <div class="panel-title"><h3>Design guarantees</h3><span class="badge badge-ok">as proposed</span></div>
+            <ul class="point-list">
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span><strong>No custom cryptography.</strong> XChaCha20-Poly1305, Ed25519, X25519, HKDF-SHA256 and Argon2id from audited libraries. Unknown algorithm IDs fail closed. <span class="ref">spec §1</span></span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span><strong>Cross-language test vectors.</strong> Go and TypeScript must reproduce every vector byte for byte, including the rejection cases.</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span><strong>Local-first.</strong> <code>resolve</code> never depends on the network; with sync off, secrets make zero network requests.</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span><strong>Recovery without trusting the server.</strong> The recovery bundle carries the owner's public trust anchor, the recovery signing key and the newest witnessed checkpoint, so a fresh device does not take the server's word. <span class="ref">spec §3.4</span></span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span><strong>Encrypted, chained audit.</strong> Reordering, dropping or overwriting audit entries since a witnessed checkpoint is detected. <span class="ref">spec §7</span></span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span><strong>Least-privilege authorization.</strong> Token scope intersected with vault membership; readers and machine identities are read-only at the Worker; no cross-vault access. <span class="ref">spec §9</span></span></li>
             </ul>
-          </article>
-          <article class="ledger-col is-limit" id="limitations" aria-labelledby="sl-title">
-            <header>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-              <h2 id="sl-title" class="h2-compact">Known limitations</h2>
-            </header>
-            <ul>
-              <li><strong>Vault-wide key</strong><span>A vault key decrypts every item in that vault. v1 makes no per-secret access claim; use separate vaults for least privilege. <span class="ref">§3</span></span></li>
-              <li><strong>Freeze attack</strong><span>Updates never witnessed by a device can be withheld. Detection needs a second channel; transparency logs and gossip are out of scope for v1. <span class="ref">§6</span></span></li>
-              <li><strong>Plaintext to child process</strong><span><code>ak secrets run</code> releases the value to the approved process by design.</span></li>
-              <li><strong>Visible metadata</strong><span>Random IDs, revisions, sizes, timestamps, device public keys, roles and request metadata.</span></li>
-              <li><strong>Key loss is final</strong><span>Lose every enrolled device, the master password and the recovery key, and the vault cannot be decrypted by anyone.</span></li>
-              <li><strong>TOFU at genesis</strong><span>The owner's key is pinned on first use unless it arrives via the recovery bundle or a SAS-verified pairing. <span class="ref">§4</span></span></li>
+          </div>
+          <div class="panel reveal" id="limitations">
+            <div class="panel-title"><h3>Known limitations</h3><span class="badge badge-review">stays your risk</span></div>
+            <ul class="point-list">
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>Vault-wide key.</strong> A vault key decrypts every item in that vault. v1 makes no per-secret access claim; use separate vaults. <span class="ref">spec §3</span></span></li>
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>Freeze attack.</strong> Updates a device never witnessed can be withheld. Detection needs a second channel; transparency logs and gossip are out of scope for v1. <span class="ref">spec §6</span></span></li>
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>Plaintext to the child process.</strong> <code>ak secrets run</code> (planned) releases the value to the approved process by design.</span></li>
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>No claw-back.</strong> Removing a device or member protects only new material. Anything already decrypted stays exposed; affected items are marked to rotate.</span></li>
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>Visible metadata.</strong> Random IDs, revisions, sizes, timestamps, device public keys, roles and request metadata.</span></li>
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>Compromised local client.</strong> Malware running as you, or a modified <code>ak</code>, sees plaintext and keys. The protocol does not defend the endpoint.</span></li>
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>Key loss is final.</strong> Lose every enrolled device, the master password and the recovery key, and nobody can decrypt the vault.</span></li>
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>Audit entries are not signed per author.</strong> Any device that held a key epoch can write audit entries at that epoch, including one removed later, until the rekeying device appends at the new epoch. <span class="ref">spec §7</span></span></li>
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>Roles are enforced by the Worker.</strong> Clients do not yet check records against role history, so read-only roles and machine identities rely on the Worker (<a href="https://github.com/bestagentkits/ak-vault/issues/22">#22</a>).</span></li>
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>Removal fence binds positions.</strong> It refuses a removed device's records above the fence, not substituted records below it; binding the contents is a release gate (<a href="https://github.com/bestagentkits/ak-vault/issues/21">#21</a>). A device that keeps writing can stall its own removal, so revoke it first.</span></li>
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>Recovery bundle can be guessed offline.</strong> Anyone with a live owner-account session can download the encrypted bundle and guess a weak password offline. Revoke your sessions after a loss. <span class="ref">spec §3.4</span></span></li>
+              <li class="is-limit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span><strong>Trust on first use at genesis.</strong> The owner's key is pinned on first use unless it arrives through the recovery bundle or a SAS-verified pairing. <span class="ref">spec §4</span></span></li>
             </ul>
-          </article>
+          </div>
         </div>
       </div>
     </section>
 
     <section class="section" id="gate" aria-labelledby="gate-title">
-      <div class="container prose">
-        <span class="eyebrow">Release gate</span>
-        <h2 id="gate-title">What must be true before general availability</h2>
-        <ul>
-          <li>The protocol ADR is approved and the cross-language vectors pass.</li>
-          <li>Malicious server, member and device scenarios are exercised in staging.</li>
-          <li>A full dump of the Worker and its storage, logs, telemetry and API errors contains no plaintext secret values or names.</li>
-          <li>Concurrent updates keep conflicting ciphertexts, tombstones hold, and signed rollback is detected after a witnessed checkpoint.</li>
-          <li>Revoked devices and sessions are denied; removed members lose access to new keys and ciphertext.</li>
-          <li>No unexpected outbound calls with sync disabled.</li>
-          <li>An independent security review signs off. This cannot be self-attested.</li>
-        </ul>
-        <p>The full list lives in <a href="https://github.com/bestagentkits/ak-vault/issues/1">the epic</a> and <a href="https://github.com/bestagentkits/ak-vault/issues/8">issue #8</a>.</p>
-      </div>
-    </section>
-
-    <section class="section" id="sources" aria-labelledby="src-title">
-      <div class="container prose">
-        <span class="eyebrow">Sources</span>
-        <h2 id="src-title">Read the primary documents</h2>
-        <ul>
-          <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md">Protocol v1 normative wire specification</a></li>
-          <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/adr/0001-opt-in-zero-knowledge-sync.md">ADR 0001: opt-in zero-knowledge sync</a></li>
-          <li><a href="https://github.com/bestagentkits/ak-vault/tree/main/docs">All project documentation</a></li>
-          <li><a href="https://github.com/bestagentkits/ak-vault/issues/2">Issue #2: protocol, threat model, cryptography and recovery</a></li>
+      <div class="container">
+        <div class="chapter reveal">
+          <span class="chapter-mark"><b>05</b>Release gate</span>
+          <h2 id="gate-title">What must be true before general availability</h2>
+          <p>A box counts only when its evidence is linked on <a href="https://github.com/bestagentkits/ak-vault/issues/8">issue #8</a> for the exact commit being released. The full list lives in the <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/release-gates.md">release gates</a>.</p>
+        </div>
+        <ul class="gate reveal">
+          <li>ADR 0001 approved by the owner, with its open items resolved.</li>
+          <li>Go and TypeScript reproduce every test vector byte for byte, including every rejection vector.</li>
+          <li>The Worker integration suite is green: conflicts, tombstones, idempotency, cross-tenant denial, replayed proofs, revoked devices and stale membership.</li>
+          <li>Disclosure scan: storage dumps, logs, traces, metrics and error responses from a seeded run contain no planted plaintext values or names.</li>
+          <li>A revoked session or device is refused on its next request, even with an unexpired token.</li>
+          <li>With sync off, ak makes zero HTTP requests and <code>resolve</code> works with the Worker unreachable.</li>
+          <li>Red-team scenarios executed, a staging soak with two or more devices, and backup, restore and rollback rehearsed.</li>
+          <li>The removal fence binds the change-log contents, not only a position.</li>
+          <li>An independent reviewer with cryptographic expertise signs off. This cannot be self-attested.</li>
         </ul>
       </div>
     </section>
 
     <section class="section" id="report" aria-labelledby="report-title">
-      <div class="container prose">
-        <span class="eyebrow">Disclosure</span>
-        <h2 id="report-title">Found a problem?</h2>
-        <p>Please report suspected vulnerabilities privately through <a href="https://github.com/bestagentkits/ak-vault/security">GitHub security advisories for ak-vault</a> rather than a public issue.</p>
-        <div class="agent-strip mt-5">
-          <p>Reviewing with an AI assistant? Use the Markdown version of this page.</p>
+      <div class="container prose reveal">
+        <span class="chapter-mark"><b>06</b>Sources and disclosure</span>
+        <h2 id="report-title">Read the primary documents. Report problems privately.</h2>
+        <ul>
+          <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md">Protocol v1 normative wire specification</a></li>
+          <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/adr/0001-opt-in-zero-knowledge-sync.md">ADR 0001: opt-in zero-knowledge sync</a></li>
+          <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/threat-model.md">Threat model</a> and <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/data-classification.md">data classification</a></li>
+        </ul>
+        <p>Please report suspected vulnerabilities through <a href="https://github.com/bestagentkits/ak-vault/security">GitHub security advisories for ak-vault</a>, not a public issue.</p>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="next-title">
+      <div class="container">
+        <h2 id="next-title" class="visually-hidden">Keep reading</h2>
+        <div class="next-grid">
+          <a class="next-card" href="/how-it-works/"><h3>How it works</h3><p>Keys, six-digit enrollment, conflicts and rollback, with diagrams.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+          <a class="next-card" href="/guide/"><h3>Guide</h3><p>Step by step: the local vault today, and what sync will add.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+          <a class="next-card" href="/faq/"><h3>FAQ</h3><p>Straight answers on status, privacy, agents, teams and recovery.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+          <a class="next-card" href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md"><h3>Protocol v1 spec</h3><p>The normative wire specification, on GitHub.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+        </div>
+      </div>
+    </section>
+    <section class="section section-tight" aria-label="Page actions for AI assistants">
+      <div class="container">
+        <div class="agent-strip">
+          <p>Reading this with an AI assistant? Grab the Markdown version, or open it straight in your assistant.</p>
           <div class="agent-actions">
             <button class="btn btn-ghost" type="button" data-copy-markdown="/security/index.md"><span data-label>Copy page as Markdown</span></button>
             <a class="btn btn-ghost" href="https://chatgpt.com/?q=Read%20https%3A%2F%2Fvault.agentkit.best%2Fsecurity%2Findex.md%20and%20summarize%20the%20ak-vault%20threat%20model." rel="noopener" target="_blank">Open in ChatGPT<span class="visually-hidden"> (opens in a new tab)</span></a>
@@ -266,18 +334,20 @@
           <p class="small footer-tagline">Opt-in, local-first, end-to-end encrypted sync for <code>ak secrets</code>. Part of the AgentKit family.</p>
         </div>
         <div>
-          <h2>Project</h2>
+          <h2>Learn</h2>
           <ul>
-            <li><a href="https://github.com/bestagentkits/ak-vault">GitHub repository</a></li>
-            <li><a href="https://github.com/bestagentkits/ak-vault/issues/1">Epic and roadmap</a></li>
-            <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/LICENSE">MIT license</a></li>
+            <li><a href="/how-it-works/">How it works</a></li>
+            <li><a href="/security/" aria-current="page">Security model</a></li>
+            <li><a href="/guide/">Guide</a></li>
+            <li><a href="/faq/">FAQ</a></li>
           </ul>
         </div>
         <div>
-          <h2>Security</h2>
+          <h2>Project</h2>
           <ul>
-            <li><a href="/security/" aria-current="page">Security model</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault">GitHub repository</a></li>
             <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md">Protocol v1 spec</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault/issues/1">Epic and roadmap</a></li>
             <li><a href="https://github.com/bestagentkits/ak-vault/security">Report a vulnerability</a></li>
           </ul>
         </div>
@@ -287,12 +357,13 @@
             <li><a href="https://agentkit.best">agentkit.best</a></li>
             <li><a href="/llms.txt">llms.txt</a></li>
             <li><a href="/security/index.md">This page as Markdown</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/LICENSE">MIT license</a></li>
           </ul>
         </div>
       </div>
       <div class="footer-base">
         <span>ak-vault · MIT licensed · protocol v1 proposed</span>
-        <span>This page loads no third-party scripts, fonts or trackers.</span>
+        <span>This site loads no third-party scripts, fonts or trackers.</span>
       </div>
     </div>
   </footer>

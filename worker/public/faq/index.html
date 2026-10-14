@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FAQ: sync status, privacy, agents and recovery | ak-vault</title>
+  <meta name="description" content="Answers about ak-vault: whether sync is available, what the server can see, conflicts, agents, teams, lost devices and recovery. Sync is not generally available.">
+  <link rel="canonical" href="https://vault.agentkit.best/faq/">
+  <link rel="alternate" type="text/markdown" href="https://vault.agentkit.best/faq/index.md" title="Markdown version">
+  <meta name="theme-color" content="#07090c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f5f3ec" media="(prefers-color-scheme: light)">
+  <meta name="robots" content="index, follow">
+
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="ak-vault by AgentKit">
+  <meta property="og:url" content="https://vault.agentkit.best/faq/">
+  <meta property="og:title" content="ak-vault FAQ">
+  <meta property="og:description" content="Straight answers on status, privacy, agents, teams and recovery for ak-vault end-to-end encrypted secrets sync.">
+  <meta property="og:image" content="https://vault.agentkit.best/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, in security review.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ak-vault FAQ">
+  <meta name="twitter:description" content="Straight answers on status, privacy, agents, teams and recovery for ak-vault end-to-end encrypted secrets sync.">
+  <meta name="twitter:image" content="https://vault.agentkit.best/og.png">
+
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preload" href="/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/site.js"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "FAQPage",
+      "@id": "https://vault.agentkit.best/faq/#faq",
+      "url": "https://vault.agentkit.best/faq/",
+      "inLanguage": "en",
+      "isPartOf": {
+        "@id": "https://vault.agentkit.best/#website"
+      },
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Can I use cloud sync today?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Protocol v1 is proposed and in security review, and the production sync API stays switched off until an independent review signs off on issue #8. The local ak secrets vault works today."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What works right now?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The local vault in the AgentKit CLI: importing a .env file, setting, rotating and inspecting secrets, ${secret:NAME} references, agent grants and approvals, and the access audit. See Part 1 of the guide."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is there a date for general availability?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No date is promised. Sync ships when every item in the release gates is met at the release commit, including the external review. Progress is tracked on the epic."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is the server code open?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. The Worker, the TypeScript and Go protocol implementations and the cross-language test vectors are in the public repository under the MIT license."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can AgentKit read my secrets?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the data classification. Treat this as a design claim until the review completes."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What can the server see?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Random vault and item IDs, revisions, tombstone flags, key epochs, ciphertext sizes, timestamps, device public keys, roles, token claims and request metadata such as IP address and timing. Secret names, descriptions and values are encrypted."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What if the server is malicious or hacked?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It cannot decrypt, and signed records, an owner-signed member list and checkpoints let devices detect tampering, rollback and forks. It can still withhold updates a device has never seen (a freeze attack) and observe metadata. See the threat card."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which cryptography does it use?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "XChaCha20-Poly1305, Ed25519, X25519, HKDF-SHA256 and Argon2id from audited libraries, plus ES256 tokens for transport. There is no custom cryptography, and an unknown algorithm is refused."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does turning sync off stop all network traffic?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "That is a release gate: with sync off, ak secrets must make zero network requests, and resolve must work with the Worker unreachable."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What happens if the server is down?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Running agents are not affected. resolve reads the local vault and never waits on the network. Changes made offline sync on the next successful connection."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What if two devices edit the same secret?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Neither edit is silently lost. Writes are compare-and-swap on a revision; the second writer gets a conflict and its version is kept as a branch until you choose. There is no last-writer-wins. See the diagram."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can a deleted secret come back?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Not by accident. A delete is a signed tombstone, and a stale write based on a revision older than the delete gets 409 tombstoned, so an offline device cannot resurrect it. You can still re-create the secret deliberately."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How fast does a change reach my other devices?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The design target is about a minute on a healthy connection. It is a target, not a measured result."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I give a teammate access to just one secret?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Not within one vault. A vault key decrypts every item in the vault, so v1 makes no per-secret access claim. Put the secrets you want to share in a separate shared vault."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Do agents see the values?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "An agent sees a value only when you grant or approve it, and then it receives plaintext. Planned search and describe let agents find secrets by description without seeing values."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can a shared description trick my agent?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It can try. ak treats descriptions, URLs and profiles as untrusted, author-attributed data, never instructions, but an agent that reads a description (for example through the planned describe) can still be influenced by it. Portable policy can only narrow local grants and high-sensitivity secrets always need fresh approval, which bounds what a misled agent can obtain."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What happens when I remove a member?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The vault moves to a new key epoch wrapped only to the remaining members, and affected items are marked to rotate. Values the member already saw cannot be taken back."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What if I lose my laptop?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Revoke the device. Revocation is checked on every request, so a revoked device or session is refused. Anything it already decrypted cannot be clawed back, so rotate sensitive credentials at the provider."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What if I lose every device?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A fresh device can recover with your master password or your recovery key through the encrypted recovery bundle. If you lose all devices, the password and the recovery key, nobody can decrypt the vault, including AgentKit."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I add a new device safely?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Both devices show the same six-digit code derived from the enrollment transcript. Approve only if the codes match; a mismatch aborts. See enrollment."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I report a vulnerability?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Privately, through GitHub security advisories. Please do not open a public issue."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Where is the specification?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The normative protocol v1 spec, the threat model and ADR 0001 are on GitHub."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How is this related to AgentKit?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "ak-vault is the sync service for ak secrets, the secrets vault in the AgentKit CLI. It uses your AgentKit account to sign in."
+          }
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "ak-vault",
+          "item": "https://vault.agentkit.best/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "FAQ",
+          "item": "https://vault.agentkit.best/faq/"
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div id="live-region" class="visually-hidden" aria-live="polite"></div>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/" aria-label="ak-vault home">
+        <svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="4.5" y="4.5" width="23" height="23" rx="5"/><circle cx="16" cy="16" r="6.25"/><path d="M16 9.75v3M16 19.25v3M9.75 16h3M19.25 16h3" stroke-linecap="round"/><circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>
+        <span>ak-vault</span><small>by AgentKit</small>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <ul class="nav-links">
+          <li><a href="/how-it-works/">How it works</a></li>
+          <li><a href="/security/">Security</a></li>
+          <li><a href="/guide/">Guide</a></li>
+          <li><a href="/faq/" aria-current="page">FAQ</a></li>
+          <li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li>
+        </ul>
+        <details class="nav-menu">
+          <summary>Menu</summary>
+          <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="/how-it-works/">How it works</a></li>
+            <li><a href="/security/">Security model</a></li>
+            <li><a href="/guide/">Guide</a></li>
+            <li><a href="/faq/" aria-current="page">FAQ</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li>
+          </ul>
+        </details>
+        <button class="icon-btn theme-toggle" type="button" aria-label="Toggle color theme">
+          <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+          <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-hero" aria-labelledby="page-title">
+      <div class="container">
+        <span class="badge badge-review reveal"><span class="dot" aria-hidden="true"></span>Sync not generally available</span>
+        <h1 id="page-title" class="reveal">Questions worth asking a <em>secrets product</em>.</h1>
+        <p class="lede reveal">Straight answers about status, privacy, everyday use, teams, agents and recovery. Guarantees here are design properties of protocol v1 as proposed, and each comes with its limitation.</p>
+        <nav class="toc reveal" aria-label="Question groups"><a href="#status">Status and availability</a><a href="#privacy">Security and privacy</a><a href="#everyday">Everyday use</a><a href="#teams">Teams and agents</a><a href="#recovery">Devices and recovery</a><a href="#project">The project</a></nav>
+      </div>
+    </section>
+
+    <section class="section" aria-label="Frequently asked questions">
+      <div class="container">
+        <div class="faq-group reveal" id="status">
+          <h2>Status and availability</h2>
+          <div class="faq">
+            <details><summary>Can I use cloud sync today?</summary><div><p>No. Protocol v1 is proposed and in security review, and the production sync API stays switched off until an independent review signs off on <a href="https://github.com/bestagentkits/ak-vault/issues/8">issue #8</a>. The local <code>ak secrets</code> vault works today.</p></div></details>
+            <details><summary>What works right now?</summary><div><p>The local vault in the AgentKit CLI: importing a <code>.env</code> file, setting, rotating and inspecting secrets, <code>${secret:NAME}</code> references, agent grants and approvals, and the access audit. See <a href="/guide/#local">Part 1 of the guide</a>.</p></div></details>
+            <details><summary>Is there a date for general availability?</summary><div><p>No date is promised. Sync ships when every item in the <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/release-gates.md">release gates</a> is met at the release commit, including the external review. Progress is tracked on <a href="https://github.com/bestagentkits/ak-vault/issues/1">the epic</a>.</p></div></details>
+            <details><summary>Is the server code open?</summary><div><p>Yes. The Worker, the TypeScript and Go protocol implementations and the cross-language test vectors are in the <a href="https://github.com/bestagentkits/ak-vault">public repository</a> under the MIT license.</p></div></details>
+          </div>
+        </div>
+        <div class="faq-group reveal" id="privacy">
+          <h2>Security and privacy</h2>
+          <div class="faq">
+            <details><summary>Can AgentKit read my secrets?</summary><div><p>The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the <a href="/how-it-works/#data">data classification</a>. Treat this as a design claim until the review completes.</p></div></details>
+            <details><summary>What can the server see?</summary><div><p>Random vault and item IDs, revisions, tombstone flags, key epochs, ciphertext sizes, timestamps, device public keys, roles, token claims and request metadata such as IP address and timing. Secret names, descriptions and values are encrypted.</p></div></details>
+            <details><summary>What if the server is malicious or hacked?</summary><div><p>It cannot decrypt, and signed records, an owner-signed member list and checkpoints let devices detect tampering, rollback and forks. It can still withhold updates a device has never seen (a freeze attack) and observe metadata. <a href="/security/#t-server">See the threat card</a>.</p></div></details>
+            <details><summary>Which cryptography does it use?</summary><div><p>XChaCha20-Poly1305, Ed25519, X25519, HKDF-SHA256 and Argon2id from audited libraries, plus ES256 tokens for transport. There is no custom cryptography, and an unknown algorithm is refused.</p></div></details>
+            <details><summary>Does turning sync off stop all network traffic?</summary><div><p>That is a release gate: with sync off, <code>ak secrets</code> must make zero network requests, and <code>resolve</code> must work with the Worker unreachable.</p></div></details>
+          </div>
+        </div>
+        <div class="faq-group reveal" id="everyday">
+          <h2>Everyday use</h2>
+          <div class="faq">
+            <details><summary>What happens if the server is down?</summary><div><p>Running agents are not affected. <code>resolve</code> reads the local vault and never waits on the network. Changes made offline sync on the next successful connection.</p></div></details>
+            <details><summary>What if two devices edit the same secret?</summary><div><p>Neither edit is silently lost. Writes are compare-and-swap on a revision; the second writer gets a conflict and its version is kept as a branch until you choose. There is no last-writer-wins. <a href="/how-it-works/#conflicts">See the diagram</a>.</p></div></details>
+            <details><summary>Can a deleted secret come back?</summary><div><p>Not by accident. A delete is a signed tombstone, and a stale write based on a revision older than the delete gets <code>409 tombstoned</code>, so an offline device cannot resurrect it. You can still re-create the secret deliberately.</p></div></details>
+            <details><summary>How fast does a change reach my other devices?</summary><div><p>The design target is about a minute on a healthy connection. It is a target, not a measured result.</p></div></details>
+          </div>
+        </div>
+        <div class="faq-group reveal" id="teams">
+          <h2>Teams and agents</h2>
+          <div class="faq">
+            <details><summary>Can I give a teammate access to just one secret?</summary><div><p>Not within one vault. A vault key decrypts every item in the vault, so v1 makes no per-secret access claim. Put the secrets you want to share in a separate shared vault.</p></div></details>
+            <details><summary>Do agents see the values?</summary><div><p>An agent sees a value only when you grant or approve it, and then it receives plaintext. Planned <code>search</code> and <code>describe</code> let agents find secrets by description without seeing values.</p></div></details>
+            <details><summary>Can a shared description trick my agent?</summary><div><p>It can try. <code>ak</code> treats descriptions, URLs and profiles as untrusted, author-attributed data, never instructions, but an agent that reads a description (for example through the planned <code>describe</code>) can still be influenced by it. Portable policy can only narrow local grants and high-sensitivity secrets always need fresh approval, which bounds what a misled agent can obtain.</p></div></details>
+            <details><summary>What happens when I remove a member?</summary><div><p>The vault moves to a new key epoch wrapped only to the remaining members, and affected items are marked to rotate. Values the member already saw cannot be taken back.</p></div></details>
+          </div>
+        </div>
+        <div class="faq-group reveal" id="recovery">
+          <h2>Devices and recovery</h2>
+          <div class="faq">
+            <details><summary>What if I lose my laptop?</summary><div><p>Revoke the device. Revocation is checked on every request, so a revoked device or session is refused. Anything it already decrypted cannot be clawed back, so rotate sensitive credentials at the provider.</p></div></details>
+            <details><summary>What if I lose every device?</summary><div><p>A fresh device can recover with your master password or your recovery key through the encrypted recovery bundle. If you lose all devices, the password and the recovery key, nobody can decrypt the vault, including AgentKit.</p></div></details>
+            <details><summary>How do I add a new device safely?</summary><div><p>Both devices show the same six-digit code derived from the enrollment transcript. Approve only if the codes match; a mismatch aborts. <a href="/how-it-works/#enrollment">See enrollment</a>.</p></div></details>
+          </div>
+        </div>
+        <div class="faq-group reveal" id="project">
+          <h2>The project</h2>
+          <div class="faq">
+            <details><summary>How do I report a vulnerability?</summary><div><p>Privately, through <a href="https://github.com/bestagentkits/ak-vault/security">GitHub security advisories</a>. Please do not open a public issue.</p></div></details>
+            <details><summary>Where is the specification?</summary><div><p>The normative <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md">protocol v1 spec</a>, the <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/threat-model.md">threat model</a> and <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/adr/0001-opt-in-zero-knowledge-sync.md">ADR 0001</a> are on GitHub.</p></div></details>
+            <details><summary>How is this related to AgentKit?</summary><div><p>ak-vault is the sync service for <code>ak secrets</code>, the secrets vault in the <a href="https://agentkit.best">AgentKit</a> CLI. It uses your AgentKit account to sign in.</p></div></details>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="next-title">
+      <div class="container">
+        <h2 id="next-title" class="visually-hidden">Keep reading</h2>
+        <div class="next-grid">
+          <a class="next-card" href="/how-it-works/"><h3>How it works</h3><p>Keys, six-digit enrollment, conflicts and rollback, with diagrams.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+          <a class="next-card" href="/security/"><h3>Security model</h3><p>Each adversary, its defence in protocol v1 and the risk that stays with you.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+          <a class="next-card" href="/guide/"><h3>Guide</h3><p>Step by step: the local vault today, and what sync will add.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+          <a class="next-card" href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md"><h3>Protocol v1 spec</h3><p>The normative wire specification, on GitHub.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+        </div>
+      </div>
+    </section>
+    <section class="section section-tight" aria-label="Page actions for AI assistants">
+      <div class="container">
+        <div class="agent-strip">
+          <p>Reading this with an AI assistant? Grab the Markdown version, or open it straight in your assistant.</p>
+          <div class="agent-actions">
+            <button class="btn btn-ghost" type="button" data-copy-markdown="/faq/index.md"><span data-label>Copy page as Markdown</span></button>
+            <a class="btn btn-ghost" href="https://chatgpt.com/?q=Read%20https%3A%2F%2Fvault.agentkit.best%2Ffaq%2Findex.md%20and%20answer%20my%20questions%20about%20ak-vault." rel="noopener" target="_blank">Open in ChatGPT<span class="visually-hidden"> (opens in a new tab)</span></a>
+            <a class="btn btn-ghost" href="https://claude.ai/new?q=Read%20https%3A%2F%2Fvault.agentkit.best%2Ffaq%2Findex.md%20and%20answer%20my%20questions%20about%20ak-vault." rel="noopener" target="_blank">Open in Claude<span class="visually-hidden"> (opens in a new tab)</span></a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="brand" href="/" aria-label="ak-vault home">
+            <svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="4.5" y="4.5" width="23" height="23" rx="5"/><circle cx="16" cy="16" r="6.25"/><path d="M16 9.75v3M16 19.25v3M9.75 16h3M19.25 16h3" stroke-linecap="round"/><circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>
+            <span>ak-vault</span>
+          </a>
+          <p class="small footer-tagline">Opt-in, local-first, end-to-end encrypted sync for <code>ak secrets</code>. Part of the AgentKit family.</p>
+        </div>
+        <div>
+          <h2>Learn</h2>
+          <ul>
+            <li><a href="/how-it-works/">How it works</a></li>
+            <li><a href="/security/">Security model</a></li>
+            <li><a href="/guide/">Guide</a></li>
+            <li><a href="/faq/" aria-current="page">FAQ</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Project</h2>
+          <ul>
+            <li><a href="https://github.com/bestagentkits/ak-vault">GitHub repository</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md">Protocol v1 spec</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault/issues/1">Epic and roadmap</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault/security">Report a vulnerability</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>AgentKit</h2>
+          <ul>
+            <li><a href="https://agentkit.best">agentkit.best</a></li>
+            <li><a href="/llms.txt">llms.txt</a></li>
+            <li><a href="/faq/index.md">This page as Markdown</a></li>
+            <li><a href="https://github.com/bestagentkits/ak-vault/blob/main/LICENSE">MIT license</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-base">
+        <span>ak-vault · MIT licensed · protocol v1 proposed</span>
+        <span>This site loads no third-party scripts, fonts or trackers.</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
