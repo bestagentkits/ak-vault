@@ -7,8 +7,8 @@
   <meta name="description" content="ak-vault is the opt-in, local-first, end-to-end encrypted sync layer for AgentKit's ak secrets. Secrets are sealed on your device; the server stores only ciphertext. Protocol v1 is in security review; cloud sync is not generally available yet.">
   <link rel="canonical" href="https://vault.agentkit.best/">
   <link rel="alternate" type="text/markdown" href="https://vault.agentkit.best/index.md" title="Markdown version">
-  <meta name="theme-color" content="#07090c" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#f5f3ec" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#08090c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#fcfcfd" media="(prefers-color-scheme: light)">
   <meta name="robots" content="index, follow">
   <meta name="author" content="AgentKit">
 
@@ -28,8 +28,7 @@
 
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="preload" href="/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/styles.css">
   <script src="/site.js"></script>
 
@@ -74,28 +73,12 @@
 
   <header class="site-header">
     <div class="container header-inner">
-      <a class="brand" href="/" aria-label="ak-vault home">
-        <svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="4.5" y="4.5" width="23" height="23" rx="5"/><circle cx="16" cy="16" r="6.25"/><path d="M16 9.75v3M16 19.25v3M9.75 16h3M19.25 16h3" stroke-linecap="round"/><circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>
-        <span>ak-vault</span><small>by AgentKit</small>
-      </a>
+      <a class="brand" href="/" aria-label="ak-vault home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg-h" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#0ea5e9"/></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#lg-h)"/><path d="M16 7.5 23.5 11.8 16 16 8.5 11.8z" fill="#fff"/><path d="M8.5 11.8 16 16v8.5l-7.5-4.3z" fill="#fff" fill-opacity=".72"/><path d="M23.5 11.8 16 16v8.5l7.5-4.3z" fill="#fff" fill-opacity=".45"/></svg><span>ak-vault</span><small>by AgentKit</small></a>
       <nav class="nav" aria-label="Primary">
-        <ul class="nav-links">
-          <li><a href="/how-it-works/">How it works</a></li>
-          <li><a href="/security/">Security</a></li>
-          <li><a href="/guide/">Guide</a></li>
-          <li><a href="/faq/">FAQ</a></li>
-          <li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li>
-        </ul>
+        <ul class="nav-links"><li><a href="/how-it-works/">How it works</a></li><li><a href="/security/">Security</a></li><li><a href="/guide/">Guide</a></li><li><a href="/faq/">FAQ</a></li><li><a class="nav-gh" href="https://github.com/bestagentkits/ak-vault"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a></li></ul>
         <details class="nav-menu">
-          <summary>Menu</summary>
-          <ul>
-            <li><a href="/" aria-current="page">Home</a></li>
-            <li><a href="/how-it-works/">How it works</a></li>
-            <li><a href="/security/">Security model</a></li>
-            <li><a href="/guide/">Guide</a></li>
-            <li><a href="/faq/">FAQ</a></li>
-            <li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li>
-          </ul>
+          <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Menu</summary>
+          <ul><li><a href="/" aria-current="page">Home</a></li><li><a href="/how-it-works/">How it works</a></li><li><a href="/security/">Security model</a></li><li><a href="/guide/">Guide</a></li><li><a href="/faq/">FAQ</a></li><li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li></ul>
         </details>
         <button class="icon-btn theme-toggle" type="button" aria-label="Toggle color theme">
           <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
@@ -106,159 +89,206 @@
   </header>
 
   <main id="main">
-    <!-- Hero: value proposition, honest status, and the specimen card (one secret, two views). -->
+    <!-- Hero: value proposition, honest status, and the animated sealing scene. -->
     <section class="hero" aria-labelledby="hero-title">
-      <div class="container hero-grid">
-        <div class="hero-copy">
-          <span class="badge badge-review reveal"><span class="dot" aria-hidden="true"></span>Protocol v1 · in security review</span>
-          <h1 id="hero-title" class="reveal">Your secrets sync. <em>The server only sees ciphertext.</em></h1>
-          <p class="lede reveal">ak-vault is the opt-in, end-to-end encrypted sync layer for AgentKit's <code>ak secrets</code>. Secrets are sealed on your device before they leave it, agents keep reading from the local vault, and with sync off nothing touches the network.</p>
-          <div class="cta-row reveal">
-            <a class="btn btn-primary" href="#how">See how it works
-              <svg class="nudge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
-            <a class="btn btn-ghost" href="/guide/">Start with the local vault</a>
+      <div class="container">
+        <span class="badge badge-review hero-badge reveal"><span class="dot" aria-hidden="true"></span>Protocol v1 · in security review</span>
+        <h1 id="hero-title" class="reveal"><span class="line">Your secrets sync.</span> <span class="line grad">The server only sees ciphertext.</span></h1>
+        <p class="lede reveal">ak-vault is the opt-in, end-to-end encrypted sync layer for AgentKit's <code>ak secrets</code>. Secrets are sealed on your device before they leave it, agents keep reading from the local vault, and with sync off nothing touches the network.</p>
+        <div class="cta-row reveal">
+          <a class="btn btn-primary btn-lg magnetic" href="#how">See how it works<svg class="nudge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          <a class="btn btn-ghost btn-lg" href="/guide/">Start with the local vault</a>
+        </div>
+        <div class="callout hero-status reveal" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><p><strong>Cloud sync is not generally available.</strong> The production sync API stays switched off until an independent security review signs off. Do not put production credentials in it yet. The local <code>ak secrets</code> vault works today without it.</p></div>
+
+        <figure class="stage reveal" aria-labelledby="stage-caption">
+          <div class="stage-bar">
+            <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="stage-title">one secret, two devices · illustrative</span>
+            <button class="btn btn-ghost scene-toggle" type="button" aria-pressed="false" aria-label="Pause the sealing animation" hidden>
+              <svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg>
+              <span data-label>Pause</span></button>
           </div>
-          <div class="callout reveal" role="note">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-            <p><strong>Cloud sync is not generally available.</strong> The production sync API stays switched off until an independent security review signs off. Do not put production credentials in it yet. The local <code>ak secrets</code> vault works today without it.</p>
+          <div class="scene">
+<svg class="scene-svg" viewBox="96 44 568 316" aria-hidden="true" focusable="false">
+<defs>
+<radialGradient id="sc-fade" cx="50%" cy="52%" r="55%"><stop offset="0" stop-color="#fff"/><stop offset="0.65" stop-color="#fff" stop-opacity="0.55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+<mask id="sc-mask"><rect width="760" height="470" fill="url(#sc-fade)"/></mask>
+<linearGradient id="sc-seal" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="st-a"/><stop offset="1" class="st-b"/></linearGradient>
+<radialGradient id="sc-glow"><stop offset="0" class="gl-a"/><stop offset="1" class="gl-b"/></radialGradient>
+</defs>
+<g mask="url(#sc-mask)"><path class="sc-grid" d="M380,64L-1.1,284M380,64L761.1,284M399.1,75L18,295M360.9,75L742,295M418.1,86L37.1,306M341.9,86L722.9,306M437.2,97L56.1,317M322.8,97L703.9,317M456.2,108L75.2,328M303.8,108L684.8,328M475.3,119L94.2,339M284.7,119L665.8,339M494.3,130L113.3,350M265.7,130L646.7,350M513.4,141L132.3,361M246.6,141L627.7,361M532.4,152L151.4,372M227.6,152L608.6,372M551.5,163L170.4,383M208.5,163L589.6,383M570.5,174L189.5,394M189.5,174L570.5,394M589.6,185L208.5,405M170.4,185L551.5,405M608.6,196L227.6,416M151.4,196L532.4,416M627.7,207L246.6,427M132.3,207L513.4,427M646.7,218L265.7,438M113.3,218L494.3,438M665.8,229L284.7,449M94.2,229L475.3,449M684.8,240L303.8,460M75.2,240L456.2,460M703.9,251L322.8,471M56.1,251L437.2,471M722.9,262L341.9,482M37.1,262L418.1,482M742,273L360.9,493M18,273L399.1,493M761.1,284L380,504M-1.1,284L380,504"/></g>
+<path class="sc-route" d="M223.8,264.2L334.3,200.4M425.7,200.4L536.2,264.2"/>
+<path class="sc-route sc-route-flow" d="M223.8,264.2L334.3,200.4M425.7,200.4L536.2,264.2"/>
+<ellipse class="sc-pool pool-a" cx="189.5" cy="284" rx="120" ry="60" fill="url(#sc-glow)"/>
+<ellipse class="sc-pool pool-w" cx="380" cy="174" rx="120" ry="60" fill="url(#sc-glow)"/>
+<ellipse class="sc-pool pool-b" cx="570.5" cy="284" rx="120" ry="60" fill="url(#sc-glow)"/>
+<g class="sc-worker">
+<polygon class="m-wk f-l" points="303.8,174 380,218 380,201.5 303.8,157.5"/><polygon class="m-wk f-r" points="456.2,174 380,218 380,201.5 456.2,157.5"/><polygon class="m-wk f-t" points="380,113.5 456.2,157.5 380,201.5 303.8,157.5"/>
+<polygon class="m-wk f-l" points="303.8,152 380,196 380,179.5 303.8,135.5"/><polygon class="m-wk f-r" points="456.2,152 380,196 380,179.5 456.2,135.5"/><polygon class="m-wk f-t" points="380,91.5 456.2,135.5 380,179.5 303.8,135.5"/>
+<polygon class="m-wk m-wk-top f-l" points="303.8,130 380,174 380,157.5 303.8,113.5"/><polygon class="m-wk m-wk-top f-r" points="456.2,130 380,174 380,157.5 456.2,113.5"/><polygon class="m-wk m-wk-top f-t" points="380,69.5 456.2,113.5 380,157.5 303.8,113.5"/>
+<line class="sc-led" x1="444.8" y1="172.2" x2="429.5" y2="181"/>
+<line class="sc-vent" x1="330.5" y1="181" x2="372.4" y2="205.2"/>
+<line class="sc-led" x1="444.8" y1="150.2" x2="429.5" y2="159"/>
+<line class="sc-vent" x1="330.5" y1="159" x2="372.4" y2="183.2"/>
+<line class="sc-led" x1="444.8" y1="128.2" x2="429.5" y2="137"/>
+<line class="sc-vent" x1="330.5" y1="137" x2="372.4" y2="161.2"/>
+<g transform="matrix(19.1 11 -19.1 11 380 69.5)"><g class="sc-ledger"><rect class="sc-ledger-bg" x="0.45" y="0.45" width="3.1" height="3.1" rx="0.35"/><text class="sc-mono" x="0.8" y="1.25" font-size="0.42">ct Hq9Z…</text><text class="sc-mono" x="0.8" y="1.95" font-size="0.42">ct 9xKd…</text><text class="sc-mono" x="0.8" y="2.65" font-size="0.42">ct Lp0e…</text><g class="sc-ledger-new"><rect class="sc-ledger-hl" x="0.6" y="2.85" width="2.8" height="0.55" rx="0.15"/><text class="sc-mono sc-mono-hl" x="0.8" y="3.28" font-size="0.42">ct u3Rk…</text></g></g></g>
+</g>
+<g class="sc-dev sc-a"><polygon class="m-dev f-l" points="122.8,278.5 199,322.5 199,316.3 122.8,272.3"/><polygon class="m-dev f-r" points="256.2,289.5 199,322.5 199,316.3 256.2,283.3"/><polygon class="m-dev f-t" points="179.9,239.3 256.2,283.3 199,316.3 122.8,272.3"/><polygon class="sc-keys" points="170.4,255.8 227.6,288.8 197.1,306.4 139.9,273.4"/><polygon class="m-dev f-l" points="179.9,239.3 256.2,283.3 256.2,217.3 179.9,173.3"/><polygon class="m-dev f-r" points="259.2,281.6 256.2,283.3 256.2,217.3 259.2,215.6"/><polygon class="m-dev f-t" points="183,171.6 259.2,215.6 256.2,217.3 179.9,173.3"/><g transform="matrix(19.1 11 0 22 179.9 173.3)"><rect class="sc-screen" x="0.14" y="0.14" width="3.72" height="2.72" rx="0.16"/><circle class="sc-dot" cx="0.42" cy="0.42" r="0.08"/><circle class="sc-dot" cx="0.66" cy="0.42" r="0.08"/><circle class="sc-dot" cx="0.9" cy="0.42" r="0.08"/><text class="sc-mono sc-mono-dim" x="0.4" y="1.05" font-size="0.3">$ ak secrets set</text><text class="sc-mono" x="0.4" y="1.55" font-size="0.36">OPENAI_API_KEY</text><rect class="sc-val" x="0.4" y="1.85" width="2.6" height="0.42" rx="0.1"/><text class="sc-mono sc-mono-val" x="0.52" y="2.17" font-size="0.3">sk-proj-••••••</text></g></g>
+<g class="sc-dev sc-b"><polygon class="m-dev f-l" points="503.8,289.5 561,322.5 561,316.3 503.8,283.3"/><polygon class="m-dev f-r" points="637.2,278.5 561,322.5 561,316.3 637.2,272.3"/><polygon class="m-dev f-t" points="580.1,239.3 637.2,272.3 561,316.3 503.8,283.3"/><polygon class="sc-keys" points="589.6,255.8 620.1,273.4 562.9,306.4 532.4,288.8"/><polygon class="m-dev f-l" points="500.8,281.6 503.8,283.3 503.8,217.3 500.8,215.6"/><polygon class="m-dev f-r" points="580.1,239.3 503.8,283.3 503.8,217.3 580.1,173.3"/><polygon class="m-dev f-t" points="577,171.6 580.1,173.3 503.8,217.3 500.8,215.6"/><g transform="matrix(19.1 -11 0 22 503.8 217.3)"><rect class="sc-screen" x="0.14" y="0.14" width="3.72" height="2.72" rx="0.16"/><circle class="sc-dot" cx="0.42" cy="0.42" r="0.08"/><circle class="sc-dot" cx="0.66" cy="0.42" r="0.08"/><circle class="sc-dot" cx="0.9" cy="0.42" r="0.08"/><text class="sc-mono sc-mono-dim" x="0.4" y="1.05" font-size="0.26">verified · decrypted</text><text class="sc-mono" x="0.4" y="1.55" font-size="0.36">OPENAI_API_KEY</text><g class="sc-check"><circle class="sc-check-bg" cx="0.7" cy="2.08" r="0.3"/><path class="sc-check-mark" d="M0.56 2.08l0.1 0.1l0.2-0.22"/><text class="sc-mono sc-mono-ok" x="1.15" y="2.19" font-size="0.3">in local vault</text></g></g></g>
+<g class="sc-plain" transform="translate(189.5 169.6)"><g class="sc-plain-in"><rect class="sc-plain-bg" x="-58" y="-15" width="116" height="30" rx="15"/><text class="sc-mono sc-mono-plain" x="0" y="4.5" text-anchor="middle" font-size="11.5">sk-proj-a81f…</text></g></g>
+<g transform="translate(189.5 284)"><g class="sc-move"><ellipse class="sc-shadow" cx="0" cy="0" rx="16" ry="8"/></g></g>
+<g transform="translate(189.5 174)"><g class="sc-move"><g class="sc-packet"><ellipse class="pk-ring" cx="0" cy="0" rx="26" ry="26"/><polygon class="pk f-l" points="-24.8,14.3 0,28.6 0,0 -24.8,-14.3"/><polygon class="pk f-r" points="24.8,14.3 0,28.6 0,0 24.8,-14.3"/><polygon class="pk f-t" points="0,-28.6 24.8,-14.3 0,0 -24.8,-14.3"/><g transform="matrix(19.1 11 0 22 -17.1 -9.9)"><rect class="pk-lock" x="0.28" y="0.42" width="0.34" height="0.3" rx="0.05"/><path class="pk-shackle" d="M0.35 0.42v-0.08a0.1 0.1 0 0 1 0.2 0v0.08"/></g></g></g></g>
+<text class="sc-label lab-a" x="189.5" y="341.2" text-anchor="middle">Device A</text>
+<text class="sc-label lab-w" x="380" y="204.8" text-anchor="middle">Worker</text>
+<text class="sc-label lab-b" x="570.5" y="341.2" text-anchor="middle">Device B</text>
+</svg>
+          </div>
+          <ol class="stage-steps">
+            <li><strong>Sealed on device A</strong><span>Name, value and description are encrypted together and signed before anything leaves the laptop.</span></li>
+            <li><strong>Stored as ciphertext</strong><span>The Worker checks the device, orders the write and keeps the sealed record. It holds no key that opens it.</span></li>
+            <li><strong>Verified, then opened on device B</strong><span>Your other device checks signatures and history, then decrypts into its own local vault.</span></li>
+          </ol>
+          <figcaption id="stage-caption" class="stage-caption">The name, value, description and sensitivity all travel inside the ciphertext. The Worker sees metadata such as a random ID, revisions, sizes and a signature, and holds no key that opens them.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- The problem -->
+    <section class="section" id="problem" aria-labelledby="problem-title">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow">The problem</span>
+          <h2 id="problem-title">Secrets drift into places they were never meant to be.</h2>
+          <p>A key starts in one <code>.env</code> file. Then it is pasted into a chat for a teammate, lands in shell history, gets copied to a second laptop and ends up in an agent's config. Every copy is plaintext that someone else can read.</p>
+        </div>
+        <div class="problem">
+          <div class="problem-panel reveal">
+            <div class="panel-head"><h3>Before: plaintext copies</h3><span class="badge badge-review">every copy readable</span></div>
+            <ul class="shards" role="list">
+              <li class="shard"><span class="where"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>.env in a repo</span><code>OPENAI_API_KEY=<span class="leak">sk-proj-…</span></code></li>
+              <li class="shard"><span class="where"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>team chat</span><code>here's the key: <span class="leak">sk-proj-…</span></code></li>
+              <li class="shard"><span class="where"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 4 4-4 4M12 16h7"/></svg>shell history</span><code>export STRIPE_KEY=<span class="leak">rk_live_…</span></code></li>
+              <li class="shard"><span class="where"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg>agent config</span><code>"GITHUB_TOKEN": "<span class="leak">ghp_…</span>"</code></li>
+            </ul>
+          </div>
+          <div class="problem-arrow" aria-hidden="true"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></div>
+          <div class="problem-panel is-after reveal">
+            <div class="panel-head"><h3>After: one local vault</h3><span class="badge badge-ok">available today</span></div>
+            <div class="vault-rows">
+              <div class="vault-row"><span>OPENAI_API_KEY</span><span class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="11" width="15" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>sealed</span></div>
+              <div class="vault-row"><span>STRIPE_KEY</span><span class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="11" width="15" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>sealed</span></div>
+              <div class="vault-row"><span>GITHUB_TOKEN</span><span class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="11" width="15" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>sealed</span></div>
+            </div>
+            <p class="ref-line">configs say <b>${secret:OPENAI_API_KEY}</b></p>
+            <p class="muted">Values live in the OS keychain or the age-encrypted file vault. Agents receive a value only through a grant you approved, and every release is recorded in a local audit ledger.</p>
           </div>
         </div>
+        <p class="note reveal">That fixes one machine. ak-vault adds the missing piece: the same vault on your other devices, <strong>without handing the values to a server</strong>.</p>
+      </div>
+    </section>
 
+    <!-- How sync works: stepper. Content is complete without JS. -->
+    <section class="section section-alt" id="how" aria-labelledby="how-title">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow">How sync works</span>
+          <h2 id="how-title">Sealed on one device. Relayed as ciphertext. Verified on the next.</h2>
+          <p>Your local vault stays the source of truth. Sync is an optional path between devices you enrolled yourself.</p>
+        </div>
+        <figure class="flow-figure reveal" data-flow aria-labelledby="flow-caption">
+          <div class="flow-controls" hidden>
+            <div class="segmented" role="group" aria-label="Sync steps">
+              <button class="flow-step-btn" type="button" data-flow-step="1"><span class="n">1</span>Set</button>
+              <button class="flow-step-btn" type="button" data-flow-step="2"><span class="n">2</span>Seal</button>
+              <button class="flow-step-btn" type="button" data-flow-step="3"><span class="n">3</span>Relay</button>
+              <button class="flow-step-btn" type="button" data-flow-step="4"><span class="n">4</span>Verify</button>
+            </div>
+            <button class="flow-step-btn flow-play" type="button" aria-pressed="false" aria-label="Pause the sync walkthrough">
+              <svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg>
+              <span data-label>Pause</span></button>
+          </div>
+          <div class="flow-wrap">
+          <ol class="flow">
+            <li>
+              <div class="node-head"><span class="node-icon is-plain"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="11" rx="2"/><path d="M2 20h20"/></svg></span><span class="where"><b>01</b>Device A</span></div>
+              <h3>You set a secret</h3>
+              <p><code>ak secrets set</code> stores it in the OS keychain or the age-encrypted file vault, as it does today. Nothing leaves the machine unless you turn sync on.</p>
+              <div class="chip-row"><span class="chip is-plain">OPENAI_API_KEY</span><span class="chip is-plain">sk-proj-…</span></div>
+            </li>
+            <li>
+              <div class="node-head"><span class="node-icon is-sealed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="11" width="15" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span><span class="where"><b>02</b>Device A · local crypto</span></div>
+              <h3>It is sealed locally</h3>
+              <p>Name, value and description are encrypted together under a per-item key derived from the vault key. The device signs the record with its own key.</p>
+              <div class="chip-row"><span class="chip is-sealed">XChaCha20-Poly1305</span><span class="chip is-sealed">Ed25519 signature</span></div>
+            </li>
+            <li>
+              <div class="node-head"><span class="node-icon is-sealed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 0 1-.5-8.97A6 6 0 0 1 18 8.5a4.5 4.5 0 0 1-.5 9.5z"/></svg></span><span class="where"><b>03</b>Cloudflare Worker</span></div>
+              <h3>The Worker stores ciphertext</h3>
+              <p>It checks the device's token and proof, accepts the write only if the revision matches, and keeps conflicts and deletions. It holds no key that opens the record.</p>
+              <div class="chip-row"><span class="chip is-visible">rev 7 → 8</span><span class="chip is-sealed">ct: Hq9Z…</span></div>
+            </li>
+            <li>
+              <div class="node-head"><span class="node-icon is-sealed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="11" rx="2"/><path d="M2 20h20M9 9.5l2 2 4-4"/></svg></span><span class="where"><b>04</b>Device B</span></div>
+              <h3>Another device verifies, then decrypts</h3>
+              <p>Device B checks the signature, the owner-signed member list and its last witnessed checkpoint. It refuses anything older, then decrypts into its own local vault.</p>
+              <div class="chip-row"><span class="chip is-ok">signature ✓</span><span class="chip is-ok">membership ✓</span><span class="chip is-ok">checkpoint ✓</span></div>
+            </li>
+          </ol>
+          <div class="flow-rail" aria-hidden="true"><i></i></div>
+          </div>
+          <figcaption id="flow-caption" class="note">Cross-device updates are targeted to arrive within about a minute, only when <strong>both</strong> devices run an active sync service and the network works. A CLI without a background service syncs on its next run. Reads through <code>resolve</code> always come from the local vault. <a href="/how-it-works/">Read the full walkthrough: keys, enrollment and conflicts</a>.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Device view vs server view -->
+    <section class="section" id="server-view" aria-labelledby="server-title">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow">Two views of one secret</span>
+          <h2 id="server-title">What your device knows, and what the server gets.</h2>
+          <p>The server needs a little metadata to order and authorize writes. Everything that describes a secret travels inside the ciphertext.</p>
+        </div>
         <figure class="specimen reveal" aria-labelledby="specimen-caption">
-          <div class="specimen-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>one secret, two views · illustrative</span></div>
-          <div class="specimen-pane">
-            <div class="pane-label"><span class="is-plain">On your device</span><span>plaintext · local only</span></div>
+          <div class="window">
+            <div class="window-bar"><span class="label"><i aria-hidden="true"></i>On your device</span><span>plaintext · local only</span></div>
 <pre><span class="k">name</span>        <span class="s">OPENAI_API_KEY</span>
 <span class="k">value</span>       <span class="redact">sk-proj-xxxxxxxxxxxxxxxx</span>
 <span class="k">meta</span>        <span class="s">"Billing project key"</span>
 <span class="k">sensitivity</span> <span class="s">high</span></pre>
           </div>
-          <div class="seal-line" aria-hidden="true"><span class="seal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="11" width="15" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>sealed on device</span></div>
-          <div class="specimen-pane">
-            <div class="pane-label"><span class="is-sealed">What the Worker stores</span><span class="is-visible">ciphertext + metadata</span></div>
+          <span class="seal-chip" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="11" width="15" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>sealed on device</span>
+          <div class="window is-server">
+            <div class="window-bar"><span class="label"><i aria-hidden="true"></i>What the Worker stores</span><span>ciphertext + metadata</span></div>
 <pre><span class="c">{</span><span class="k">"item_id"</span>:<span class="w">"q7N2fXk0RZ1hTqLw9bYc4A"</span>,
  <span class="k">"base_revision"</span>:<span class="w">7</span>, <span class="k">"key_epoch"</span>:<span class="w">1</span>,
- <span class="k">"env"</span>:{<span class="k">"alg"</span>:<span class="s">"xc20p"</span>,
-   <span class="k">"n"</span>:<span class="s">"<span data-scramble>u3Rk9QeZ2vP0aL8m…</span>"</span>,
-   <span class="k">"ct"</span>:<span class="s">"<span data-scramble>Hq9Zx2LmVb0Rk7TnYc4W…</span>"</span>},
- <span class="k">"sig"</span>:<span class="s">"<span data-scramble>Zk3pW8…</span>"</span><span class="c">}</span></pre>
+ <span class="k">"env"</span>:{<span class="k">"alg"</span>:<span class="e">"xc20p"</span>,
+   <span class="k">"n"</span>:<span class="e">"<span data-scramble>u3Rk9QeZ2vP0aL8m…</span>"</span>,
+   <span class="k">"ct"</span>:<span class="e">"<span data-scramble>Hq9Zx2LmVb0Rk7TnYc4W…</span>"</span>},
+ <span class="k">"sig"</span>:<span class="e">"<span data-scramble>Zk3pW8…</span>"</span><span class="c">}</span></pre>
           </div>
-          <figcaption id="specimen-caption" class="specimen-foot">The name, value, description and sensitivity are all inside <code>ct</code>. The Worker sees a random ID, revisions and a signature, and holds no key that opens them.</figcaption>
+          <figcaption id="specimen-caption">The name, value, description and sensitivity are all inside <code>ct</code>. The Worker sees metadata such as a random ID, revisions and a signature, and holds no key that opens them.</figcaption>
         </figure>
-      </div>
-    </section>
-
-    <!-- 01 Problem -->
-    <section class="section" id="problem" aria-labelledby="problem-title">
-      <div class="container">
-        <div class="chapter reveal">
-          <span class="chapter-mark"><b>01</b>The problem</span>
-          <h2 id="problem-title">Secrets drift into places they were never meant to be.</h2>
-          <p>A key starts in one <code>.env</code> file. Then it is pasted into a chat for a teammate, lands in shell history, gets copied to a second laptop and ends up in an agent's config. Every copy is plaintext that someone else can read.</p>
-        </div>
-        <div class="problem">
-          <div class="panel reveal">
-            <div class="panel-title"><h3>Before: plaintext copies</h3><span class="badge badge-review">every copy readable</span></div>
-            <ul class="scatter" role="list">
-              <li class="shard"><span class="where">.env in a repo</span><code>OPENAI_API_KEY=<span class="leak">sk-proj-…</span></code></li>
-              <li class="shard"><span class="where">team chat</span><code>here's the key: <span class="leak">sk-proj-…</span></code></li>
-              <li class="shard"><span class="where">shell history</span><code>export STRIPE_KEY=<span class="leak">rk_live_…</span></code></li>
-              <li class="shard"><span class="where">agent config</span><code>"GITHUB_TOKEN": "<span class="leak">ghp_…</span>"</code></li>
-            </ul>
-          </div>
-          <div class="problem-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M14 6l6 6-6 6"/></svg></div>
-          <div class="panel vault-box reveal">
-            <div class="panel-title"><h3>After: one local vault</h3><span class="badge badge-ok">available today</span></div>
-            <div class="vault-rows">
-              <div class="vault-row"><span>OPENAI_API_KEY</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4.5" y="11" width="15" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
-              <div class="vault-row"><span>STRIPE_KEY</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4.5" y="11" width="15" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
-              <div class="vault-row"><span>GITHUB_TOKEN</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4.5" y="11" width="15" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
-            </div>
-            <p class="ref-line">configs say <b>${secret:OPENAI_API_KEY}</b></p>
-            <p>Values live in the OS keychain or the age-encrypted file vault. Agents receive a value only through a grant you approved, and every release is recorded in a local audit ledger.</p>
-          </div>
-        </div>
-        <p class="flow-note mt-6 reveal">That fixes one machine. ak-vault adds the missing piece: the same vault on your other devices, <strong>without handing the values to a server</strong>.</p>
-      </div>
-    </section>
-
-    <!-- 02 How sync works: stepper + animated data flow. Content is complete without JS. -->
-    <section class="section" id="how" aria-labelledby="how-title">
-      <div class="container">
-        <div class="chapter reveal">
-          <span class="chapter-mark"><b>02</b>How sync works</span>
-          <h2 id="how-title">Sealed on one device. Relayed as ciphertext. Verified on the next.</h2>
-          <p>Your local vault stays the source of truth. Sync is an optional path between devices you enrolled yourself.</p>
-        </div>
-        <figure class="flow-figure" data-flow aria-labelledby="flow-caption">
-          <div class="flow-controls" hidden>
-            <button class="flow-step-btn" type="button" data-flow-step="1">1 · Set</button>
-            <button class="flow-step-btn" type="button" data-flow-step="2">2 · Seal</button>
-            <button class="flow-step-btn" type="button" data-flow-step="3">3 · Relay</button>
-            <button class="flow-step-btn" type="button" data-flow-step="4">4 · Verify</button>
-            <button class="flow-step-btn flow-play" type="button" aria-pressed="false" aria-label="Pause the sync animation">
-              <svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
-              <svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg>
-              <span data-label>Pause</span></button>
-          </div>
-          <ol class="flow">
-            <li>
-              <div class="node-head"><span class="node-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg></span><span class="where"><b>01</b>Device A</span></div>
-              <h3>You set a secret</h3>
-              <p><code>ak secrets set</code> stores it in the OS keychain or the age-encrypted file vault, as it does today. Nothing leaves the machine unless you turn sync on.</p>
-              <div class="chip-row"><span class="chip is-plain">OPENAI_API_KEY</span><span class="chip is-plain">sk-proj-…</span></div>
-              <span class="packet is-plain" aria-hidden="true"></span><span class="link-label" aria-hidden="true">plaintext, in memory</span>
-            </li>
-            <li>
-              <div class="node-head"><span class="node-icon is-sealed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="11" width="15" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span><span class="where"><b>02</b>Device A · local crypto</span></div>
-              <h3>It is sealed locally</h3>
-              <p>Name, value and description are encrypted together under a per-item key derived from the vault key. The device signs the record with its own key.</p>
-              <div class="chip-row"><span class="chip is-sealed">XChaCha20-Poly1305</span><span class="chip is-sealed">Ed25519 signature</span></div>
-              <span class="packet" aria-hidden="true"></span><span class="link-label" aria-hidden="true">ciphertext leaves the device</span>
-            </li>
-            <li>
-              <div class="node-head"><span class="node-icon is-sealed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 0 1-.5-8.97A6 6 0 0 1 18 8.5a4.5 4.5 0 0 1-.5 9.5z"/></svg></span><span class="where"><b>03</b>Cloudflare Worker</span></div>
-              <h3>The Worker stores ciphertext</h3>
-              <p>It checks the device's token and proof, accepts the write only if the revision matches, and keeps conflicts and deletions. It holds no key that opens the record.</p>
-              <div class="chip-row"><span class="chip is-visible">rev 7 → 8</span><span class="chip is-sealed">ct: Hq9Z…</span></div>
-              <span class="packet" aria-hidden="true"></span><span class="link-label" aria-hidden="true">ciphertext + signatures</span>
-            </li>
-            <li>
-              <div class="node-head"><span class="node-icon is-sealed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20M9 10l2 2 4-4"/></svg></span><span class="where"><b>04</b>Device B</span></div>
-              <h3>Another device verifies, then decrypts</h3>
-              <p>Device B checks the signature, the owner-signed member list and its last witnessed checkpoint. It refuses anything older, then decrypts into its own local vault.</p>
-              <div class="chip-row"><span class="chip is-sealed">signature ✓</span><span class="chip is-sealed">membership ✓</span><span class="chip is-sealed">checkpoint ✓</span></div>
-            </li>
-          </ol>
-          <figcaption id="flow-caption" class="flow-note">Cross-device updates are targeted to arrive within about a minute, only when <strong>both</strong> devices run an active sync service and the network works. A CLI without a background service syncs on its next run. Reads through <code>resolve</code> always come from the local vault. <a href="/how-it-works/">Read the full walkthrough: keys, enrollment and conflicts</a>.</figcaption>
-        </figure>
-      </div>
-    </section>
-
-    <!-- 03 Device view vs server view -->
-    <section class="section" id="server-view" aria-labelledby="server-title">
-      <div class="container">
-        <div class="chapter reveal">
-          <span class="chapter-mark"><b>03</b>Two views of one secret</span>
-          <h2 id="server-title">What your device knows, and what the server gets.</h2>
-          <p>The server needs a little metadata to order and authorize writes. Everything that describes a secret travels inside the ciphertext.</p>
-        </div>
-        <div class="views-wrap reveal">
-          <table class="views">
+        <div class="table-wrap reveal">
+          <table class="views stack">
             <caption>One synced secret, seen from each side (protocol v1, proposed; values illustrative)</caption>
             <thead>
-              <tr><th scope="col">Data</th><th scope="col" class="col-device">On your device</th><th scope="col" class="col-server">What the server stores</th></tr>
+              <tr><th scope="col">Data</th><th scope="col">On your device</th><th scope="col">What the server stores</th></tr>
             </thead>
             <tbody>
-              <tr><th scope="row">Secret name</th><td data-label="On your device"><code>OPENAI_API_KEY</code></td><td class="col-server" data-label="What the server stores"><span class="vis vis-enc">encrypted</span>inside <code>ct</code><span class="note">Item IDs are random and never derived from names.</span></td></tr>
-              <tr><th scope="row">Secret value</th><td data-label="On your device"><code>sk-proj-…</code></td><td class="col-server" data-label="What the server stores"><span class="vis vis-enc">encrypted</span>inside <code>ct</code><span class="note">Never in logs, errors or telemetry.</span></td></tr>
-              <tr><th scope="row">Description, tags, profile, sensitivity</th><td data-label="On your device">"Billing project key", <code>high</code></td><td class="col-server" data-label="What the server stores"><span class="vis vis-enc">encrypted</span>inside <code>ct</code></td></tr>
-              <tr><th scope="row">Vault key</th><td data-label="On your device">Unwrapped in memory when needed</td><td class="col-server" data-label="What the server stores"><span class="vis vis-enc">wrapped</span>only to your devices, your password-derived key and your recovery key</td></tr>
-              <tr><th scope="row">Item ID and revision</th><td data-label="On your device">You use the name instead</td><td class="col-server" data-label="What the server stores"><span class="vis vis-meta">visible</span><code>q7N2fXk0…</code>, revision 8<span class="note">Needed to order writes and catch conflicts.</span></td></tr>
-              <tr><th scope="row">Sizes and timestamps</th><td data-label="On your device">Same</td><td class="col-server" data-label="What the server stores"><span class="vis vis-meta">visible</span><span class="note">Shows roughly how many items change, and when. Sizes hint at value length.</span></td></tr>
-              <tr><th scope="row">Devices and members</th><td data-label="On your device">Your device list</td><td class="col-server" data-label="What the server stores"><span class="vis vis-meta">visible</span>device IDs, public keys, roles, accounts<span class="note">The signed member list, so the server can authorize requests.</span></td></tr>
-              <tr><th scope="row">Network metadata</th><td data-label="On your device">Not applicable</td><td class="col-server" data-label="What the server stores"><span class="vis vis-meta">visible</span>IP address and request timing at the edge</td></tr>
-              <tr><th scope="row">Master password, recovery key, device private keys</th><td data-label="On your device">Only here</td><td class="col-server" data-label="What the server stores"><span class="vis vis-never">never sent</span></td></tr>
+              <tr><th scope="row">Secret name</th><td data-label="On your device"><code>OPENAI_API_KEY</code></td><td data-label="What the server stores"><span class="vis vis-enc">encrypted</span>inside <code>ct</code><span class="note">Item IDs are random and never derived from names.</span></td></tr>
+              <tr><th scope="row">Secret value</th><td data-label="On your device"><code>sk-proj-…</code></td><td data-label="What the server stores"><span class="vis vis-enc">encrypted</span>inside <code>ct</code><span class="note">Never in logs, errors or telemetry.</span></td></tr>
+              <tr><th scope="row">Description, tags, profile, sensitivity</th><td data-label="On your device">"Billing project key", <code>high</code></td><td data-label="What the server stores"><span class="vis vis-enc">encrypted</span>inside <code>ct</code></td></tr>
+              <tr><th scope="row">Vault key</th><td data-label="On your device">Unwrapped in memory when needed</td><td data-label="What the server stores"><span class="vis vis-enc">wrapped</span>only to your devices, your password-derived key and your recovery key</td></tr>
+              <tr><th scope="row">Item ID and revision</th><td data-label="On your device">You use the name instead</td><td data-label="What the server stores"><span class="vis vis-meta">visible</span><code>q7N2fXk0…</code>, revision 8<span class="note">Needed to order writes and catch conflicts.</span></td></tr>
+              <tr><th scope="row">Sizes and timestamps</th><td data-label="On your device">Same</td><td data-label="What the server stores"><span class="vis vis-meta">visible</span><span class="note">Shows roughly how many items change, and when. Sizes hint at value length.</span></td></tr>
+              <tr><th scope="row">Devices and members</th><td data-label="On your device">Your device list</td><td data-label="What the server stores"><span class="vis vis-meta">visible</span>device IDs, public keys, roles, accounts<span class="note">The signed member list, so the server can authorize requests.</span></td></tr>
+              <tr><th scope="row">Network metadata</th><td data-label="On your device">Not applicable</td><td data-label="What the server stores"><span class="vis vis-meta">visible</span>IP address and request timing at the edge</td></tr>
+              <tr><th scope="row">Master password, recovery key, device private keys</th><td data-label="On your device">Only here</td><td data-label="What the server stores"><span class="vis vis-never">never sent</span></td></tr>
             </tbody>
           </table>
         </div>
@@ -270,139 +300,132 @@
       </div>
     </section>
 
-    <!-- 04 Guarantees paired with their limitations -->
-    <section class="section" id="guarantees" aria-labelledby="guarantees-title">
+    <!-- Guarantees paired with their limitations -->
+    <section class="section section-alt" id="guarantees" aria-labelledby="guarantees-title">
       <div class="container">
-        <div class="chapter reveal">
-          <span class="chapter-mark"><b>04</b>Promises and fine print</span>
+        <div class="section-head reveal">
+          <span class="eyebrow">Promises and fine print</span>
           <h2 id="guarantees-title">Every promise comes with its fine print.</h2>
           <p>These are design properties of protocol v1 as proposed. They hold only after the implementation passes the security gate in <a href="https://github.com/bestagentkits/ak-vault/issues/8">issue #8</a> and an external review signs off.</p>
         </div>
-        <div class="pairs">
+        <div class="pairs" data-stagger>
           <div class="pairs-head" aria-hidden="true"><span>Design property</span><span>Limitation</span></div>
           <article class="pair reveal">
-            <div class="is-g"><span class="tag">Guarantee</span><strong>Encrypted before upload</strong><p>Values, names, descriptions, tags, profiles, policy and audit entries are sealed on the device. <span class="ref">spec §3.2, §7</span></p></div>
-            <div class="is-l"><span class="tag">Limitation</span><strong>Metadata is visible</strong><p>Random IDs, revisions, sizes, timestamps, device public keys, roles and request metadata.</p></div>
+            <div class="is-g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span class="tag">Guarantee</span><strong>Encrypted before upload</strong><p>Values, names, descriptions, tags, profiles, policy and audit entries are sealed on the device. <span class="ref">spec §3.2, §7</span></p></div>
+            <div class="is-l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span class="tag">Limitation</span><strong>Metadata is visible</strong><p>Random IDs, revisions, sizes, timestamps, device public keys, roles and request metadata.</p></div>
           </article>
           <article class="pair reveal">
-            <div class="is-g"><span class="tag">Guarantee</span><strong>Owner-signed membership</strong><p>A hash-chained, owner-signed log decides which devices receive the vault key. Injected recipients are rejected. <span class="ref">spec §4</span></p></div>
-            <div class="is-l"><span class="tag">Limitation</span><strong>One key per vault</strong><p>Anyone holding a vault's key can decrypt every item in it. There is no per-secret access; use separate vaults instead.</p></div>
+            <div class="is-g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span class="tag">Guarantee</span><strong>Owner-signed membership</strong><p>A hash-chained, owner-signed log decides which devices receive the vault key. Injected recipients are rejected. <span class="ref">spec §4</span></p></div>
+            <div class="is-l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span class="tag">Limitation</span><strong>One key per vault</strong><p>Anyone holding a vault's key can decrypt every item in it. There is no per-secret access; use separate vaults instead.</p></div>
           </article>
           <article class="pair reveal">
-            <div class="is-g"><span class="tag">Guarantee</span><strong>Rollback detection</strong><p>Devices keep signed checkpoints and refuse server state older than one they already witnessed. <span class="ref">spec §6</span></p></div>
-            <div class="is-l"><span class="tag">Limitation</span><strong>Withheld updates</strong><p>A malicious server can hide updates that a new or long-offline device has never seen. Detecting that needs a second channel, such as another device's checkpoint.</p></div>
+            <div class="is-g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span class="tag">Guarantee</span><strong>Rollback detection</strong><p>Devices keep signed checkpoints and refuse server state older than one they already witnessed. <span class="ref">spec §6</span></p></div>
+            <div class="is-l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span class="tag">Limitation</span><strong>Withheld updates</strong><p>A malicious server can hide updates that a new or long-offline device has never seen. Detecting that needs a second channel, such as another device's checkpoint.</p></div>
           </article>
           <article class="pair reveal">
-            <div class="is-g"><span class="tag">Guarantee</span><strong>Live revocation</strong><p>Device-bound tokens plus a per-request device signature. Revoked devices and sessions are refused on every request, and lookup errors fail closed. <span class="ref">spec §9</span></p></div>
-            <div class="is-l"><span class="tag">Limitation</span><strong>No claw-back</strong><p>Revocation blocks new keys and ciphertext. Anything a device already decrypted stays exposed, so affected secrets are marked to rotate.</p></div>
+            <div class="is-g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span class="tag">Guarantee</span><strong>Live revocation</strong><p>Device-bound tokens plus a per-request device signature. Revoked devices and sessions are refused on every request, and lookup errors fail closed. <span class="ref">spec §9</span></p></div>
+            <div class="is-l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span class="tag">Limitation</span><strong>No claw-back</strong><p>Revocation blocks new keys and ciphertext. Anything a device already decrypted stays exposed, so affected secrets are marked to rotate.</p></div>
           </article>
           <article class="pair reveal">
-            <div class="is-g"><span class="tag">Guarantee</span><strong>Local-first and opt-in</strong><p><code>resolve</code> reads the local vault and never waits on the Worker. With sync off, secrets make zero network requests.</p></div>
-            <div class="is-l"><span class="tag">Limitation</span><strong>Plaintext reaches the child process</strong><p><code>ak secrets run</code> (planned) hands the value to the process you approved. The vault controls and records the release; it cannot take the value back from that program.</p></div>
+            <div class="is-g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span class="tag">Guarantee</span><strong>Local-first and opt-in</strong><p><code>resolve</code> reads the local vault and never waits on the Worker. With sync off, secrets make zero network requests.</p></div>
+            <div class="is-l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span class="tag">Limitation</span><strong>Plaintext reaches the child process</strong><p><code>ak secrets run</code> (planned) hands the value to the process you approved. The vault controls and records the release; it cannot take the value back from that program.</p></div>
           </article>
           <article class="pair reveal">
-            <div class="is-g"><span class="tag">Guarantee</span><strong>No silent overwrites</strong><p>Writes use revision compare-and-swap. A stale write gets <code>409</code> and is kept as a conflict branch for you to resolve, and deleted stays deleted. <span class="ref">spec §5</span></p></div>
-            <div class="is-l"><span class="tag">Limitation</span><strong>Not yet reviewed</strong><p>Protocol v1 is a proposal. Treat every property on this page as a design target until the external review signs off.</p></div>
+            <div class="is-g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span class="tag">Guarantee</span><strong>No silent overwrites</strong><p>Writes use revision compare-and-swap. A stale write gets <code>409</code> and is kept as a conflict branch for you to resolve, and deleted stays deleted. <span class="ref">spec §5</span></p></div>
+            <div class="is-l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span class="tag">Limitation</span><strong>Not yet reviewed</strong><p>Protocol v1 is a proposal. Treat every property on this page as a design target until the external review signs off.</p></div>
           </article>
           <article class="pair reveal">
-            <div class="is-g"><span class="tag">Guarantee</span><strong>Recovery without trusting the server</strong><p>The encrypted recovery bundle carries the owner's public trust anchor, the recovery signing key and the newest witnessed checkpoint, so a fresh device does not take the server's word. <span class="ref">spec §3.4</span></p></div>
-            <div class="is-l"><span class="tag">Limitation</span><strong>Lose every key, lose the vault</strong><p>Without an enrolled device, your master password or your recovery key, nobody can decrypt the vault, including AgentKit.</p></div>
+            <div class="is-g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span class="tag">Guarantee</span><strong>Recovery without trusting the server</strong><p>The encrypted recovery bundle carries the owner's public trust anchor, the recovery signing key and the newest witnessed checkpoint, so a fresh device does not take the server's word. <span class="ref">spec §3.4</span></p></div>
+            <div class="is-l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span class="tag">Limitation</span><strong>Lose every key, lose the vault</strong><p>Without an enrolled device, your master password or your recovery key, nobody can decrypt the vault, including AgentKit.</p></div>
           </article>
         </div>
-        <p class="flow-note mt-6"><a href="/security/">Read the full security model</a>, with each adversary, its defence and the risk that stays with you.</p>
+        <p class="note reveal"><a href="/security/">Read the full security model</a>, with each adversary, its defence and the risk that stays with you.</p>
       </div>
     </section>
 
-    <!-- 05 Quick start -->
+    <!-- Quick start -->
     <section class="section" id="quickstart" aria-labelledby="quick-title">
       <div class="container">
-        <div class="chapter reveal">
-          <span class="chapter-mark"><b>05</b>Start</span>
+        <div class="section-head reveal">
+          <span class="eyebrow">Start</span>
           <h2 id="quick-title">Start local today. Turn on sync when it ships.</h2>
           <p>The local vault ships in the AgentKit CLI now. Sync and agent-discovery commands are planned and not available yet.</p>
         </div>
-        <div class="quick-grid">
-          <div class="quick-card reveal">
-            <span class="num">01 · <span class="badge badge-ok">available</span></span>
+        <div class="quick-grid" data-stagger>
+          <div class="card spot quick-card reveal">
+            <span class="num">01 <span class="badge badge-ok">available</span></span>
             <h3>Import your <code>.env</code></h3>
             <p>Move existing values into the vault in one pass. Delete the plaintext file once you have checked the import.</p>
-            <div class="terminal">
-              <div class="terminal-bar"><span class="title">shell</span>
-                <button class="copy-btn" type="button" data-copy-target="#cmd-import" aria-label="Copy the import command"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
-<pre><code id="cmd-import"><span class="p">$ </span>ak secrets import-env .env
+            <div class="terminal"><div class="terminal-bar"><span class="title">shell</span><button class="copy-btn" type="button" data-copy-target="#cmd-import" aria-label="Copy the import command"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
+<pre tabindex="0"><code id="cmd-import"><span class="p">$ </span>ak secrets import-env .env
 <span class="p">$ </span>ak secrets list</code></pre>
             </div>
           </div>
-          <div class="quick-card reveal">
-            <span class="num">02 · <span class="badge badge-ok">available</span></span>
+          <div class="card spot quick-card reveal">
+            <span class="num">02 <span class="badge badge-ok">available</span></span>
             <h3>Reference, don't paste</h3>
             <p>Agent configs carry a reference. The value is resolved locally, for an agent you granted it to.</p>
-            <div class="terminal">
-              <div class="terminal-bar"><span class="title">agent config</span>
-                <button class="copy-btn" type="button" data-copy-target="#cmd-ref" aria-label="Copy the secret reference"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
-<pre><code id="cmd-ref">OPENAI_API_KEY=${secret:OPENAI_API_KEY}</code></pre>
+            <div class="terminal"><div class="terminal-bar"><span class="title">agent config</span><button class="copy-btn" type="button" data-copy-target="#cmd-ref" aria-label="Copy the secret reference"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
+<pre tabindex="0"><code id="cmd-ref">OPENAI_API_KEY=${secret:OPENAI_API_KEY}</code></pre>
             </div>
           </div>
-          <div class="quick-card is-planned reveal">
-            <span class="num">03 · <span class="badge badge-planned">planned</span></span>
+          <div class="card spot quick-card reveal">
+            <span class="num">03 <span class="badge badge-planned">planned</span></span>
             <h3>Sync a second device</h3>
             <p>Opt in, then enroll another device by comparing a six-digit code on both screens. Syntax may change.</p>
-            <div class="terminal">
-              <div class="terminal-bar"><span class="title">shell · planned</span>
-                <button class="copy-btn" type="button" data-copy-target="#cmd-sync" aria-label="Copy the planned sync command"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
-<pre><code id="cmd-sync"><span class="c"># PLANNED: not available yet</span>
+            <div class="terminal"><div class="terminal-bar"><span class="title">shell · planned</span><button class="copy-btn" type="button" data-copy-target="#cmd-sync" aria-label="Copy the planned sync command"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
+<pre tabindex="0"><code id="cmd-sync"><span class="c"># PLANNED: not available yet</span>
 <span class="p">$ </span>ak secrets sync enable</code></pre>
             </div>
           </div>
         </div>
         <div class="cta-row mt-6">
-          <a class="btn btn-primary" href="/guide/">Read the step-by-step guide
-            <svg class="nudge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          <a class="btn btn-primary magnetic" href="/guide/">Read the step-by-step guide<svg class="nudge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
         </div>
       </div>
     </section>
 
-    <!-- 06 Status -->
-    <section class="section" id="roadmap" aria-labelledby="roadmap-title">
+    <!-- Status -->
+    <section class="section section-alt" id="roadmap" aria-labelledby="roadmap-title">
       <div class="container">
-        <div class="chapter reveal">
-          <span class="chapter-mark"><b>06</b>Where it stands</span>
+        <div class="section-head reveal">
+          <span class="eyebrow">Where it stands</span>
           <h2 id="roadmap-title">Built in the open, gated by review.</h2>
           <p>Work is tracked in the <a href="https://github.com/bestagentkits/ak-vault/issues/1">epic, issue #1</a>. Personal-vault sync comes first. No dates are promised.</p>
         </div>
         <ol class="track reveal">
-          <li class="is-done"><h3>Local vault</h3><div class="meta"><span class="badge badge-ok">available</span></div><p>Ships in the AgentKit CLI: keychain or age-encrypted file vault, agent grants, approvals and an audit ledger.</p></li>
-          <li class="is-done"><h3>Protocol v1 and test vectors</h3><div class="meta"><span class="badge badge-review">in review</span></div><p>Spec, TypeScript reference and a Go implementation that reproduce every vector. <a href="https://github.com/bestagentkits/ak-vault/issues/2">#2</a></p></li>
-          <li class="is-done"><h3>Worker and storage</h3><div class="meta"><span class="badge">staging only</span></div><p>Cloudflare Worker with a SQLite Durable Object per vault, including shared-vault membership. Production sync is switched off. <a href="https://github.com/bestagentkits/ak-vault/issues/4">#4</a>, <a href="https://github.com/bestagentkits/ak-vault/issues/5">#5</a></p></li>
-          <li class="is-now"><h3>Client sync in the CLI</h3><div class="meta"><span class="badge badge-planned">in development</span></div><p>The sync commands in <code>ak</code> are not released yet.</p></li>
-          <li class="is-next"><h3>Security gate</h3><div class="meta"><span class="badge badge-review">required for GA</span></div><p>Red team, staging soak, rollback rehearsal and an independent review. <a href="https://github.com/bestagentkits/ak-vault/issues/8">#8</a></p></li>
+          <li class="is-done"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><h3>Local vault</h3><div class="meta"><span class="badge badge-ok">available</span></div><p>Ships in the AgentKit CLI: keychain or age-encrypted file vault, agent grants, approvals and an audit ledger.</p></li>
+          <li class="is-done"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><h3>Protocol v1 and test vectors</h3><div class="meta"><span class="badge badge-review">in review</span></div><p>Spec, TypeScript reference and a Go implementation that reproduce every vector. <a href="https://github.com/bestagentkits/ak-vault/issues/2">#2</a></p></li>
+          <li class="is-done"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><h3>Worker and storage</h3><div class="meta"><span class="badge">staging only</span></div><p>Cloudflare Worker with a SQLite Durable Object per vault, including shared-vault membership. Production sync is switched off. <a href="https://github.com/bestagentkits/ak-vault/issues/4">#4</a>, <a href="https://github.com/bestagentkits/ak-vault/issues/5">#5</a></p></li>
+          <li class="is-now"><span class="mark" aria-hidden="true"></span><h3>Client sync in the CLI</h3><div class="meta"><span class="badge badge-planned">in development</span></div><p>The sync commands in <code>ak</code> are not released yet.</p></li>
+          <li class="is-next"><span class="mark" aria-hidden="true"></span><h3>Security gate</h3><div class="meta"><span class="badge badge-review">required for GA</span></div><p>Red team, staging soak, rollback rehearsal and an independent review. <a href="https://github.com/bestagentkits/ak-vault/issues/8">#8</a></p></li>
         </ol>
-        <p class="flow-note mt-5">After personal sync: read-only CI identities (<a href="https://github.com/bestagentkits/ak-vault/issues/6">#6</a>) and portable policy with encrypted audit (<a href="https://github.com/bestagentkits/ak-vault/issues/7">#7</a>).</p>
+        <p class="note reveal">After personal sync: read-only CI identities (<a href="https://github.com/bestagentkits/ak-vault/issues/6">#6</a>) and portable policy with encrypted audit (<a href="https://github.com/bestagentkits/ak-vault/issues/7">#7</a>).</p>
       </div>
     </section>
 
     <!-- FAQ (the full list lives on /faq/) -->
     <section class="section" id="faq" aria-labelledby="faq-title">
-      <div class="container">
-        <div class="chapter reveal">
-          <span class="chapter-mark"><b>07</b>Questions</span>
+      <div class="container narrow">
+        <div class="section-head center reveal">
+          <span class="eyebrow">Questions</span>
           <h2 id="faq-title">Questions worth asking a secrets product.</h2>
         </div>
-        <div class="faq">
+        <div class="faq reveal">
           <details><summary>Can I use cloud sync today?</summary><div><p>No. Protocol v1 is proposed and in security review, and the production sync API stays switched off until an independent review signs off (<a href="https://github.com/bestagentkits/ak-vault/issues/8">#8</a>). The local <code>ak secrets</code> vault works today.</p></div></details>
           <details><summary>Can AgentKit read my secrets?</summary><div><p>The design says no: the server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed under <a href="#server-view">two views of one secret</a>. Treat this as a design claim until the review completes.</p></div></details>
           <details><summary>What happens if the server is down?</summary><div><p>Nothing changes for running agents. <code>resolve</code> reads the local vault and never waits on the network. Changes made while offline sync on the next successful connection, and conflicting edits are kept for you to resolve.</p></div></details>
           <details><summary>Can I give a teammate access to just one secret?</summary><div><p>Not within one vault. A vault key decrypts every item in the vault, so v1 makes no per-secret access claim. Put the secrets you want to share in a separate shared vault.</p></div></details>
           <details><summary>What if I lose my laptop?</summary><div><p>Revoke the device. Revocation is checked on every request, so a revoked device or session is refused new reads and writes. Anything it already decrypted cannot be clawed back, so rotate sensitive credentials at the provider.</p></div></details>
         </div>
-        <p class="flow-note mt-5"><a href="/faq/">See all questions</a>, grouped by status, security, everyday use, teams and recovery.</p>
+        <p class="note center reveal"><a href="/faq/">See all questions</a>, grouped by status, security, everyday use, teams and recovery.</p>
       </div>
     </section>
 
-    <section class="section section-tight" aria-label="Page actions for AI assistants">
+    <section class="section-tight" aria-label="Page actions for AI assistants">
       <div class="container">
         <div class="agent-strip">
-          <p>Reading this with an AI assistant? Grab the Markdown version, or open it straight in your assistant.</p>
+          <p><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg><span>Reading this with an AI assistant? Grab the Markdown version, or open it straight in your assistant.</span></p>
           <div class="agent-actions">
             <button class="btn btn-ghost" type="button" data-copy-markdown="/index.md"><span data-label>Copy page as Markdown</span></button>
             <a class="btn btn-ghost" href="https://chatgpt.com/?q=Read%20https%3A%2F%2Fvault.agentkit.best%2Findex.md%20and%20help%20me%20understand%20ak-vault." rel="noopener" target="_blank">Open in ChatGPT<span class="visually-hidden"> (opens in a new tab)</span></a>
@@ -417,11 +440,8 @@
     <div class="container">
       <div class="footer-grid">
         <div>
-          <a class="brand" href="/" aria-label="ak-vault home">
-            <svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="4.5" y="4.5" width="23" height="23" rx="5"/><circle cx="16" cy="16" r="6.25"/><path d="M16 9.75v3M16 19.25v3M9.75 16h3M19.25 16h3" stroke-linecap="round"/><circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>
-            <span>ak-vault</span>
-          </a>
-          <p class="small footer-tagline">Opt-in, local-first, end-to-end encrypted sync for <code>ak secrets</code>. Part of the AgentKit family.</p>
+          <a class="brand" href="/" aria-label="ak-vault home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#0ea5e9"/></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#lg-f)"/><path d="M16 7.5 23.5 11.8 16 16 8.5 11.8z" fill="#fff"/><path d="M8.5 11.8 16 16v8.5l-7.5-4.3z" fill="#fff" fill-opacity=".72"/><path d="M23.5 11.8 16 16v8.5l7.5-4.3z" fill="#fff" fill-opacity=".45"/></svg><span>ak-vault</span></a>
+          <p class="footer-tagline">Opt-in, local-first, end-to-end encrypted sync for <code>ak secrets</code>. Part of the AgentKit family.</p>
         </div>
         <div>
           <h2>Learn</h2>

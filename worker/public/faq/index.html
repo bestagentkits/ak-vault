@@ -7,8 +7,8 @@
   <meta name="description" content="Answers about ak-vault: whether sync is available, what the server can see, conflicts, agents, teams, lost devices and recovery. Sync is not generally available.">
   <link rel="canonical" href="https://vault.agentkit.best/faq/">
   <link rel="alternate" type="text/markdown" href="https://vault.agentkit.best/faq/index.md" title="Markdown version">
-  <meta name="theme-color" content="#07090c" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#f5f3ec" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#08090c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#fcfcfd" media="(prefers-color-scheme: light)">
   <meta name="robots" content="index, follow">
 
   <meta property="og:type" content="article">
@@ -27,8 +27,7 @@
 
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="preload" href="/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/styles.css">
   <script src="/site.js"></script>
   <script type="application/ld+json">
@@ -257,28 +256,12 @@
 
   <header class="site-header">
     <div class="container header-inner">
-      <a class="brand" href="/" aria-label="ak-vault home">
-        <svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="4.5" y="4.5" width="23" height="23" rx="5"/><circle cx="16" cy="16" r="6.25"/><path d="M16 9.75v3M16 19.25v3M9.75 16h3M19.25 16h3" stroke-linecap="round"/><circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>
-        <span>ak-vault</span><small>by AgentKit</small>
-      </a>
+      <a class="brand" href="/" aria-label="ak-vault home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg-h" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#0ea5e9"/></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#lg-h)"/><path d="M16 7.5 23.5 11.8 16 16 8.5 11.8z" fill="#fff"/><path d="M8.5 11.8 16 16v8.5l-7.5-4.3z" fill="#fff" fill-opacity=".72"/><path d="M23.5 11.8 16 16v8.5l7.5-4.3z" fill="#fff" fill-opacity=".45"/></svg><span>ak-vault</span><small>by AgentKit</small></a>
       <nav class="nav" aria-label="Primary">
-        <ul class="nav-links">
-          <li><a href="/how-it-works/">How it works</a></li>
-          <li><a href="/security/">Security</a></li>
-          <li><a href="/guide/">Guide</a></li>
-          <li><a href="/faq/" aria-current="page">FAQ</a></li>
-          <li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li>
-        </ul>
+        <ul class="nav-links"><li><a href="/how-it-works/">How it works</a></li><li><a href="/security/">Security</a></li><li><a href="/guide/">Guide</a></li><li><a href="/faq/" aria-current="page">FAQ</a></li><li><a class="nav-gh" href="https://github.com/bestagentkits/ak-vault"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a></li></ul>
         <details class="nav-menu">
-          <summary>Menu</summary>
-          <ul>
-            <li><a href="/">Home</a></li>
-            <li><a href="/how-it-works/">How it works</a></li>
-            <li><a href="/security/">Security model</a></li>
-            <li><a href="/guide/">Guide</a></li>
-            <li><a href="/faq/" aria-current="page">FAQ</a></li>
-            <li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li>
-          </ul>
+          <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Menu</summary>
+          <ul><li><a href="/">Home</a></li><li><a href="/how-it-works/">How it works</a></li><li><a href="/security/">Security model</a></li><li><a href="/guide/">Guide</a></li><li><a href="/faq/" aria-current="page">FAQ</a></li><li><a href="https://github.com/bestagentkits/ak-vault">GitHub</a></li></ul>
         </details>
         <button class="icon-btn theme-toggle" type="button" aria-label="Toggle color theme">
           <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
@@ -291,15 +274,17 @@
   <main id="main">
     <section class="page-hero" aria-labelledby="page-title">
       <div class="container">
-        <span class="badge badge-review reveal"><span class="dot" aria-hidden="true"></span>Sync not generally available</span>
-        <h1 id="page-title" class="reveal">Questions worth asking a <em>secrets product</em>.</h1>
+        <span class="badge badge-review hero-badge reveal"><span class="dot" aria-hidden="true"></span>Sync not generally available</span>
+        <h1 id="page-title" class="reveal">Questions worth asking a <span class="grad">secrets product</span>.</h1>
         <p class="lede reveal">Straight answers about status, privacy, everyday use, teams, agents and recovery. Guarantees here are design properties of protocol v1 as proposed, and each comes with its limitation.</p>
         <nav class="toc reveal" aria-label="Question groups"><a href="#status">Status and availability</a><a href="#privacy">Security and privacy</a><a href="#everyday">Everyday use</a><a href="#teams">Teams and agents</a><a href="#recovery">Devices and recovery</a><a href="#project">The project</a></nav>
       </div>
     </section>
 
     <section class="section" aria-label="Frequently asked questions">
-      <div class="container">
+      <div class="container faq-layout">
+        <aside class="faq-aside" aria-label="Question groups (sidebar)"><p>Jump to</p><ul><li><a href="#status">Status and availability</a></li><li><a href="#privacy">Security and privacy</a></li><li><a href="#everyday">Everyday use</a></li><li><a href="#teams">Teams and agents</a></li><li><a href="#recovery">Devices and recovery</a></li><li><a href="#project">The project</a></li></ul></aside>
+        <div class="faq-groups">
         <div class="faq-group reveal" id="status">
           <h2>Status and availability</h2>
           <div class="faq">
@@ -354,23 +339,19 @@
           </div>
         </div>
       </div>
+      </div>
     </section>
 
     <section class="section" aria-labelledby="next-title">
       <div class="container">
         <h2 id="next-title" class="visually-hidden">Keep reading</h2>
-        <div class="next-grid">
-          <a class="next-card" href="/how-it-works/"><h3>How it works</h3><p>Keys, six-digit enrollment, conflicts and rollback, with diagrams.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
-          <a class="next-card" href="/security/"><h3>Security model</h3><p>Each adversary, its defence in protocol v1 and the risk that stays with you.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
-          <a class="next-card" href="/guide/"><h3>Guide</h3><p>Step by step: the local vault today, and what sync will add.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
-          <a class="next-card" href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md"><h3>Protocol v1 spec</h3><p>The normative wire specification, on GitHub.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
-        </div>
+        <div class="next-grid" data-stagger><a class="card spot lift next-card reveal" href="/how-it-works/"><h3>How it works</h3><p>Keys, six-digit enrollment, conflicts and rollback, with diagrams.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a><a class="card spot lift next-card reveal" href="/security/"><h3>Security model</h3><p>Each adversary, its defence in protocol v1 and the risk that stays with you.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a><a class="card spot lift next-card reveal" href="/guide/"><h3>Guide</h3><p>Step by step: the local vault today, and what sync will add.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a><a class="card spot lift next-card reveal" href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md"><h3>Protocol v1 spec</h3><p>The normative wire specification, on GitHub.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a></div>
       </div>
     </section>
-    <section class="section section-tight" aria-label="Page actions for AI assistants">
+    <section class="section-tight" aria-label="Page actions for AI assistants">
       <div class="container">
         <div class="agent-strip">
-          <p>Reading this with an AI assistant? Grab the Markdown version, or open it straight in your assistant.</p>
+          <p><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg><span>Reading this with an AI assistant? Grab the Markdown version, or open it straight in your assistant.</span></p>
           <div class="agent-actions">
             <button class="btn btn-ghost" type="button" data-copy-markdown="/faq/index.md"><span data-label>Copy page as Markdown</span></button>
             <a class="btn btn-ghost" href="https://chatgpt.com/?q=Read%20https%3A%2F%2Fvault.agentkit.best%2Ffaq%2Findex.md%20and%20answer%20my%20questions%20about%20ak-vault." rel="noopener" target="_blank">Open in ChatGPT<span class="visually-hidden"> (opens in a new tab)</span></a>
@@ -385,11 +366,8 @@
     <div class="container">
       <div class="footer-grid">
         <div>
-          <a class="brand" href="/" aria-label="ak-vault home">
-            <svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="4.5" y="4.5" width="23" height="23" rx="5"/><circle cx="16" cy="16" r="6.25"/><path d="M16 9.75v3M16 19.25v3M9.75 16h3M19.25 16h3" stroke-linecap="round"/><circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>
-            <span>ak-vault</span>
-          </a>
-          <p class="small footer-tagline">Opt-in, local-first, end-to-end encrypted sync for <code>ak secrets</code>. Part of the AgentKit family.</p>
+          <a class="brand" href="/" aria-label="ak-vault home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#0ea5e9"/></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#lg-f)"/><path d="M16 7.5 23.5 11.8 16 16 8.5 11.8z" fill="#fff"/><path d="M8.5 11.8 16 16v8.5l-7.5-4.3z" fill="#fff" fill-opacity=".72"/><path d="M23.5 11.8 16 16v8.5l7.5-4.3z" fill="#fff" fill-opacity=".45"/></svg><span>ak-vault</span></a>
+          <p class="footer-tagline">Opt-in, local-first, end-to-end encrypted sync for <code>ak secrets</code>. Part of the AgentKit family.</p>
         </div>
         <div>
           <h2>Learn</h2>
@@ -397,7 +375,7 @@
             <li><a href="/how-it-works/">How it works</a></li>
             <li><a href="/security/">Security model</a></li>
             <li><a href="/guide/">Guide</a></li>
-            <li><a href="/faq/" aria-current="page">FAQ</a></li>
+            <li><a href="/faq/">FAQ</a></li>
           </ul>
         </div>
         <div>
