@@ -32,10 +32,10 @@ Desktop UX (agentkit#2300), account dashboard (ak-web#569), discovery/exec
 |---|---|---|---|
 | 1 | Tag `go/v0.1.0`; staging audience (#13). Trusting ak-web's staging issuer waits for #568 on staging | ak-vault | done: #13 shipped (#19), `go/v0.1.0`; protocol revision #20 shipped (#23), `go/v0.2.0`. Staging issuer switch moves to phase 6 |
 | 2 | Vault token mint (device key possession, `sid`/`did`, aud per env) + revocation outbox/webhook + revoke-all | ak-web (#568) | merged to dev (ak-web#571), flag off |
-| 3 | Gates: `secrets` excluded from auto-update, zero-HTTP sync-off test, offline resolve test, resolve benchmark rig | agentkit | PR agentkit#2318 in review |
+| 3 | Gates: `secrets` excluded from auto-update, zero-HTTP sync-off test, offline resolve test, resolve benchmark rig | agentkit | done: agentkit#2318 merged |
 | 4 | Sync client design (UX, schemas, local state, mapping v1 store to akv1 items) reviewed before code | agentkit (#2298) | done: design revision 2 (`agentkit-sync-client-design.md`), reviewed |
-| 5 | Sync client implementation: device key, token client, genesis/enroll (SAS), push/pull with CAS and conflicts, recovery | agentkit (#2298) | in progress: P1 agentkit#2323 and P2 (with P4b) agentkit#2322 reviewed, waiting on agentkit CI; revision 3 notes in the design |
-| 6 | Staging soak wiring and evidence on #8 | all | in progress: ak-web staging OAuth signing key set; staging Worker trusts `https://staging.agentkit.best` (#27, #28); webhook secrets matched; live smoke needs a staging CLI session |
+| 5 | Sync client implementation: device key, token client, genesis/enroll (SAS), push/pull with CAS and conflicts, recovery | agentkit (#2298) | done on dev: #2322, #2364, #2375 (P5), #2380 (P8), #2381 (P6), #2399 (P7), #2402 (P10), #2425 (P9 gates), #2423 (device/recovery audit), #2424 (file-vault unseal outside lock); #2446 (interleaved overhead rig) waits for the batch train. Overhead gate p95: memory +1.8 ms, file +10.3 ms |
+| 6 | Staging wiring and evidence on #8 (soak dropped by owner) | all | in progress: ak-web staging OAuth signing key set; staging Worker trusts `https://staging.agentkit.best` (#27, #28); webhook secrets matched; live smoke needs a staging CLI session |
 
 ## Acceptance
 - ak-web: mint refuses without CLI session, wrong key possession, revoked session, flag off;
