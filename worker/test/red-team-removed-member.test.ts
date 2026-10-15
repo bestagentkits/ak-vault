@@ -16,8 +16,7 @@ describe('red team: removed member', () => {
     const exposed = randomId();
     expect((await fx.write(bob, exposed, 0, { name: 'SHARED_SYNTHETIC', value: 'seen-by-bob' })).status).toBe(200);
 
-    const head = await fx.logHead();
-    const removal = fx.buildEvent('member_remove', { account: bob.account, log_fence: head });
+    const removal = fx.buildEvent('member_remove', { account: bob.account, ...(await fx.fence()) });
     expect((await fx.append(removal)).status).toBe(201);
 
     const { event, wraps, vk } = fx.rekeyEvent();
@@ -56,7 +55,7 @@ describe('red team: removed member', () => {
   it('writes by the remaining members wait for the rekey after a removal', async () => {
     const fx = await VaultFixture.create('shared');
     const bob = await fx.addDevice({ account: `acct-${randomId()}`, role: 'editor' });
-    expect((await fx.append(fx.buildEvent('member_remove', { account: bob.account, log_fence: await fx.logHead() }))).status).toBe(201);
+    expect((await fx.append(fx.buildEvent('member_remove', { account: bob.account, ...(await fx.fence()) }))).status).toBe(201);
     const blocked = await fx.write(fx.owner, randomId(), 0, { name: 'A', value: 'b' });
     expect([blocked.status, blocked.json.error.code]).toEqual([409, 'rekey_required']);
   });

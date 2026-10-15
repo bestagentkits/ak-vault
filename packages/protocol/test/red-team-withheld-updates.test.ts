@@ -29,7 +29,7 @@ function fullChain(): MembershipEvent[] {
   const next = (type: 'device_add' | 'device_remove' | 'rekey', body: Record<string, unknown>) =>
     chain.push(nextMembershipEvent(verifyMembershipChain(chain), { type, ts: chain.length + 1, author: owner.record.device_id, body: body as never }, owner.signSecret));
   next('device_add', { device: { ...lost.record }, sas: digest(), wraps_digest: digest() });
-  next('device_remove', { device_id: lost.record.device_id, reason: 'stolen', log_fence: 0 });
+  next('device_remove', { device_id: lost.record.device_id, reason: 'stolen', log_fence: 0, log_head: '' });
   next('rekey', { new_key_epoch: 2, wraps_digest: digest(), needs_rotate: [] });
   return chain;
 }

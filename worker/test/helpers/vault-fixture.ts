@@ -200,6 +200,12 @@ export class VaultFixture {
    * log_head}`. A given `logFence` is signed with the head at that position (a random head
    * when the position does not exist yet).
    */
+  /** The signed removal fence `{log_fence, log_head}` at the current head, as `by` verified the log. */
+  async fence(by: TestDevice = this.owner): Promise<{ log_fence: number; log_head: string }> {
+    const heads = await this.verifiedLogHeads(by);
+    return { log_fence: heads.length - 1, log_head: heads[heads.length - 1]! };
+  }
+
   async removeDevice(device: TestDevice, logFence?: number, by: TestDevice = this.owner): Promise<CallResult> {
     const heads = await this.verifiedLogHeads(by);
     const fence = logFence ?? heads.length - 1;
