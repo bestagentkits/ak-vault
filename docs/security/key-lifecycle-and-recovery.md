@@ -40,8 +40,9 @@ Web login alone never enrolls a device. The SAS transcript is defined in
 
 1. Revoke the device's session and device ID in ak-web; the Worker refuses it on the
    next request through the live revocation check.
-2. From a remaining owner device, pull the change log, then sign `device_remove`
-   with its head as `log_fence` (on `409`, pull again and re-sign; step 1 stops the
+2. From a remaining owner device, pull and verify the change log, then sign
+   `device_remove` with its last position and the head you computed there as
+   `log_fence` and `log_head` (on `409`, pull again and re-sign; step 1 stops the
    device from keeping the fence stale), and post a checkpoint. The vault enters
    `rekey_required`; writes are refused until rekey. Records by the removed device
    above the fence are refused from then on
@@ -119,7 +120,9 @@ A fresh device with the password or recovery key:
 2. Decrypts the bundle: vault keys, owner anchor, the owner **recovery signing
    key**, and the newest owner-witnessed checkpoint. It verifies the membership
    chain from that anchor and checks the bundle's recovery key is the chain's
-   current one.
+   current one and that the bundle holds the chain's current key epoch. A bundle
+   sealed before the latest rekey cannot enroll: finish the stopped removal (rekey
+   and reseal) on a device that still syncs first.
 3. Wraps the vault keys it holds to itself, signs a `device_add` for itself with the
    recovery signing key and the digest of that wrap set, and enrolls; the server
    verifies the event against the current `recovery_sign_pub`.

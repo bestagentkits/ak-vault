@@ -22,6 +22,8 @@ export const VAULT_SCHEMA = `
     revision INTEGER, conflict_id TEXT, digest TEXT NOT NULL, record_json TEXT NOT NULL,
     UNIQUE (item_id, digest)
   );
+  -- log_heads.head at log_seq n = nextLogHead(head at n - 1, n, conflict_id, digest) of the record at n (spec §5).
+  CREATE TABLE IF NOT EXISTS log_heads (log_seq INTEGER PRIMARY KEY, head TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS conflicts (
     conflict_id TEXT PRIMARY KEY, item_id TEXT NOT NULL, log_seq INTEGER NOT NULL, resolved_revision INTEGER
   );

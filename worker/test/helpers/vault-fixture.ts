@@ -6,6 +6,11 @@
 import {
   b64encode,
   buildGenesisEvent,
+  LOG_START,
+  nextLogHead,
+  recordDigest,
+  verifyChangeLog,
+  type ChangeLogCursor,
   createDeviceKeys,
   deviceIdFromSignPub,
   nextMembershipEvent,
@@ -27,6 +32,14 @@ import {
   type X25519Wrap,
 } from '@ak-vault/protocol';
 import { call, createDevice, type CallOptions, type CallResult, type TestDevice } from './api-client.js';
+
+/** One entry of `GET /changes` (fields a client verifies; the rest is server metadata). */
+export interface ChangeFeedEntry {
+  log_seq: number;
+  conflict_id: string | null;
+  record: unknown;
+  log_head: string;
+}
 
 export interface ItemValue {
   name: string;
@@ -157,10 +170,41 @@ export class VaultFixture {
     return (res.json as { head: { log_seq: number } }).head.log_seq;
   }
 
-  /** `by` removes `device`, signing the current change-log head as log_fence unless `logFence` is given. */
+  /**
+   * Pull the whole change log as `device`, verify it against the local chain as a client
+   * would (`verifyChangeLog`, page by page) and return the head at every position
+   * (`heads[n]`; `heads[0]` = ""). A remover signs the head it computed, never the server's.
+   */
+  async verifiedLogHeads(device: TestDevice = this.owner): Promise<string[]> {
+    const heads = [LOG_START.log_head];
+    let cursor: ChangeLogCursor = LOG_START;
+    for (;;) {
+      const res = await this.get(device, `/changes?cursor=${cursor.log_seq}`);
+      if (res.status !== 200) throw new Error(`changes failed: ${res.status}`);
+      const page = res.json as { changes: ChangeFeedEntry[]; has_more: boolean };
+      const entries = page.changes.map(({ log_seq, conflict_id, record }) => ({ log_seq, conflict_id, record }));
+      const keptHeads = new Map(heads.map((h, i) => [i, h]));
+      const { head, records } = verifyChangeLog(entries, this.state, { from: cursor, complete: !page.has_more, keptHeads });
+      let prev = cursor.log_head;
+      records.forEach((r, i) => {
+        prev = nextLogHead(prev, entries[i]!.log_seq, entries[i]!.conflict_id, recordDigest(r));
+        heads.push(prev);
+      });
+      cursor = head;
+      if (!page.has_more) return heads;
+    }
+  }
+
+  /**
+   * `by` removes `device`, signing the head of the change log it verified as `{log_fence,
+   * log_head}`. A given `logFence` is signed with the head at that position (a random head
+   * when the position does not exist yet).
+   */
   async removeDevice(device: TestDevice, logFence?: number, by: TestDevice = this.owner): Promise<CallResult> {
-    const fence = logFence ?? (await this.logHead(by));
-    return this.append(this.buildEvent('device_remove', { device_id: device.keys.record.device_id, reason: 'lost', log_fence: fence }, signerOf(by)), undefined, by);
+    const heads = await this.verifiedLogHeads(by);
+    const fence = logFence ?? heads.length - 1;
+    const head = heads[fence] ?? b64encode(randomBytes(32));
+    return this.append(this.buildEvent('device_remove', { device_id: device.keys.record.device_id, reason: 'lost', log_fence: fence, log_head: head }, signerOf(by)), undefined, by);
   }
 
   /** Rekey to a fresh vault key with wraps for every current device (signed by `by`, default the owner). */

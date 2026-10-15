@@ -52,7 +52,7 @@ describe('membership builders', () => {
     let state = verifyMembershipChain([genesis]);
     const add = nextMembershipEvent(state, { type: 'device_add', ts: 2, author: owner.record.device_id, body: { device: { ...second.record }, sas: b64encode(randomBytes(32)), wraps_digest: b64encode(randomBytes(32)) } }, owner.signSecret);
     state = verifyMembershipChain([genesis, add]);
-    const rm = nextMembershipEvent(state, { type: 'device_remove', ts: 3, author: second.record.device_id, body: { device_id: owner.record.device_id, reason: 'retired', log_fence: 0 } }, second.signSecret);
+    const rm = nextMembershipEvent(state, { type: 'device_remove', ts: 3, author: second.record.device_id, body: { device_id: owner.record.device_id, reason: 'retired', log_fence: 0, log_head: '' } }, second.signSecret);
     const rekey = nextMembershipEvent(verifyMembershipChain([genesis, add, rm]), { type: 'rekey', ts: 4, author: second.record.device_id, body: { new_key_epoch: 2, wraps_digest: b64encode(randomBytes(32)), needs_rotate: [] } }, second.signSecret);
     const final = verifyMembershipChain([genesis, add, rm, rekey], { vaultId });
     expect(final).toMatchObject({ seq: 3, key_epoch: 2, rekey_required: false, removed_device_ids: [owner.record.device_id] });

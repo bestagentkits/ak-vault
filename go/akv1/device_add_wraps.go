@@ -31,10 +31,10 @@ func AddedDevices(e MembershipEvent) ([]DeviceRecord, error) {
 // Order: the event adds devices (bad_request); wraps parse (bad_request /
 // unsupported_version); every rcpt is a device the event adds (forbidden); key
 // epochs lie in 1..event.key_epoch and (rcpt, key_epoch) pairs are unique
-// (bad_request); completeness (bad_request): a recovery-authored device_add
-// (sas "", which replay allows only for the recovery author) carries at least
-// one wrap, every other event carries a wrap at event.key_epoch for every added
-// device (older epochs are optional); finally WrapsDigest(wraps) ==
+// (bad_request); completeness (bad_request): every event, a recovery-authored
+// device_add included, carries a wrap at event.key_epoch for every added
+// device, so every device holds the key of the epoch it joined at (the audit
+// verifier requires it, spec §7; older epochs are optional); finally WrapsDigest(wraps) ==
 // body.wraps_digest (bad_request). Input order does not matter.
 func VerifyDeviceWraps(event any, wraps []any) ([]X25519Wrap, error) {
 	ev, err := parseMembershipEventAs(event, "membership event")
@@ -78,17 +78,10 @@ func VerifyDeviceWraps(event any, wraps []any) ([]X25519Wrap, error) {
 		}
 		seen[k] = true
 	}
-	byRecovery := ev.Type == EventDeviceAdd && ev.Body["sas"] == ""
-	complete := len(parsed) > 0
-	if !byRecovery {
-		for id := range added {
-			if !seen[pairKey(id, ev.KeyEpoch)] {
-				complete = false
-			}
+	for id := range added {
+		if !seen[pairKey(id, ev.KeyEpoch)] {
+			return nil, badRequest("wrap set is incomplete")
 		}
-	}
-	if !complete {
-		return nil, badRequest("wrap set is incomplete")
 	}
 	digest, err := WrapsDigest(parsed)
 	if err != nil {

@@ -17,6 +17,7 @@ import {
   type Role,
   type VaultKind,
 } from './membership-types.js';
+import { parseLogPosition, type ChangeLogCursor } from './change-log.js';
 import { deviceIdFromSignPub } from './signing.js';
 import { asArray, asB64, asEnum, asId, asIdList, asInt, asString, exactKeys } from './validate.js';
 
@@ -61,9 +62,9 @@ export class ReplayState {
   }
 
   /** Record a removal; the caller has already deleted the device from `devices`. */
-  private recordRemoval(device: DeviceRecord, seq: number, logFence: number): void {
+  private recordRemoval(device: DeviceRecord, seq: number, fence: ChangeLogCursor): void {
     this.removed.add(device.device_id);
-    this.removals.push({ device_id: device.device_id, sign_pub: device.sign_pub, removed_seq: seq, key_epoch: this.keyEpoch, log_fence: logFence });
+    this.removals.push({ device_id: device.device_id, sign_pub: device.sign_pub, removed_seq: seq, key_epoch: this.keyEpoch, log_fence: fence.log_seq, log_head: fence.log_head });
   }
 
   applyGenesis(body: JsonObject, author: string): DeviceRecord {
@@ -123,10 +124,10 @@ export class ReplayState {
         return this.admitDevice(device, true);
       }
       case 'device_remove': {
-        exactKeys(body, ['device_id', 'reason', 'log_fence'], 'device_remove.body');
+        exactKeys(body, ['device_id', 'reason', 'log_fence', 'log_head'], 'device_remove.body');
         const id = asId(body['device_id'], 'device_remove.body.device_id');
         asEnum(body['reason'], REMOVE_REASONS, 'device_remove.body.reason');
-        const logFence = asInt(body['log_fence'], 'device_remove.body.log_fence');
+        const logFence = parseLogPosition(body['log_fence'], body['log_head'], 'device_remove.body.log_fence', 'device_remove.body.log_head');
         const removed = this.devices.get(id);
         if (!removed) fail('bad_request', 'device is not a current member');
         this.devices.delete(id);
@@ -152,10 +153,10 @@ export class ReplayState {
         return;
       }
       case 'member_remove': {
-        exactKeys(body, ['account', 'log_fence'], 'member_remove.body');
+        exactKeys(body, ['account', 'log_fence', 'log_head'], 'member_remove.body');
         if (this.vaultKind !== 'shared') fail('forbidden', 'member_remove is only allowed in shared vaults');
         const account = asString(body['account'], 'member_remove.body.account', MAX_ACCOUNT_LENGTH, 1);
-        const logFence = asInt(body['log_fence'], 'member_remove.body.log_fence');
+        const logFence = parseLogPosition(body['log_fence'], body['log_head'], 'member_remove.body.log_fence', 'member_remove.body.log_head');
         if (!this.members.has(account)) fail('bad_request', 'account is not a member');
         this.members.delete(account);
         const leaving = [...this.devices.values()].filter((d) => d.account === account).sort((a, b) => (a.device_id < b.device_id ? -1 : 1));

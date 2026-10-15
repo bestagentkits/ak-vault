@@ -56,7 +56,8 @@ AgentKit (agentkit#2298/#2299). Decisions and rationale are in
 - No recipient, device or member exists unless an owner-signed event added it, and
   no device uses a vault-key wrap that event's signed `wraps_digest` does not cover.
 - No record by a removed device is accepted at a change-log position above its
-  signed removal fence.
+  signed removal fence, and no client accepts a log prefix at or below a removal
+  fence that differs from the one the removal signed.
 - A client never accepts state older than, or forked from, a checkpoint it witnessed.
 - Unknown version, algorithm, event type, key epoch or signature fails closed.
 - A request is served only if token, proof, live revocation check and membership all
@@ -75,8 +76,8 @@ directories themselves are the authority for exact file names.
 | S1 | Forged record or membership event | Server | Ed25519 signatures with domain-separated contexts ([spec §2, §4, §5](../protocol/v1/spec.md#4-membership-log-owner-signed-hash-chained)) | Vectors: invalid signature, wrong context |
 | S2 | Injected recipient / added device | Server, member | Owner-signed hash-chained membership; every wrap belongs to the set an owner-signed event commits to with `wraps_digest`; no separate wrap upload ([spec §3.3, §4](../protocol/v1/spec.md#33-device-key-wrap-x25519-xc20p)) | Vectors: injected recipient, non-owner author, `device-add-wraps.json`; `worker/test/` injected-recipient rejection, digest mismatch; `authorization.test.ts` "wraps are accepted only inside a signed event" (`POST /wraps` → 404) |
 | S6 | Key substitution for a joining device: the server swaps the vault key wrapped to a new device for one it knows, then reads what the device writes | Server | The joiner verifies the wrap set against the signed `wraps_digest` before unwrapping (`verifyDeviceWraps`); the full set is served per event to members, including wraps of devices removed since | Vectors: `device-add-wraps.json` injected key, dropped wrap, missing current epoch; `worker/test/signed-wrap-sets.test.ts` |
-| S7 | A removed device, colluding with the server, appends records after its removal | Server + removed device | Signed `log_fence` on every removal; contiguous change-log positions; `verifyLoggedRecord` refuses a record by a removed author above the fence; the Worker refuses records by non-current authors and stale or future fences. Positions at or below the fence: see limitations ([spec §5](../protocol/v1/spec.md#5-records-revisions-conflicts-and-tombstones)) | Vectors: `removal-fence.json`; `worker/test/removal-fence-and-recovery-rotation.test.ts` stale/ahead fence, relayed write by a removed author |
-| S8 | A leaked or superseded recovery key enrolls a device | Holder of an old recovery key or bundle | Owner-signed `recovery_rotate`; only the current recovery key may author, and only `device_add`; the resealed bundle lands atomically with the event; a bundle sealed before the latest rotation is refused; recovering devices check the bundle key against the chain ([spec §3.5](../protocol/v1/spec.md#35-owner-recovery-signing-key-and-sas-enrollment)) | Vectors: `membership.json` rotation cases, `recovery-bundle.json` rotated key; `worker/test/removal-fence-and-recovery-rotation.test.ts` rotation and stale-sealer refusal |
+| S7 | A removed device, colluding with the server, appends records after its removal, or places them at or below the fence in place of honest records | Server + removed device | Every removal signs `log_fence` and `log_head`, the change-log head chain at the fence computed by the remover; contiguous change-log positions; `verifyLoggedRecord` refuses a record by a removed author above the fence; `verifyChangeLog` refuses a prefix whose head differs from a signed fence (substituted, dropped or reordered records, or a changed `conflict_id`), a resume past a fence without the head the client kept there, and a log behind a fence; clients derive kind, revision and resolution from their own replay, never from served feed fields; the Worker refuses records by non-current authors, stale or future fences and a `log_head` that does not match the stored log ([spec §5](../protocol/v1/spec.md#5-records-revisions-conflicts-and-tombstones)) | Vectors: `removal-fence.json` (records and log replay, including substitution at and below the fence); `worker/test/removal-fence-and-recovery-rotation.test.ts` stale/ahead fence, relayed write by a removed author; `worker/test/removal-fence-binds-log.test.ts` signed head, wrong head refused, substitution detected by a device enrolled after the removal, head backfill |
+| S8 | A leaked or superseded recovery key enrolls a device | Holder of an old recovery key or bundle | Owner-signed `recovery_rotate`; only the current recovery key may author, and only `device_add`; the resealed bundle lands atomically with the event; a bundle sealed before the latest rotation is refused; recovering devices check the bundle key against the chain ([spec §3.5](../protocol/v1/spec.md#35-owner-recovery-signing-key-and-sas-enrollment)) | Vectors: `membership.json` rotation cases, `recovery-bundle.json` rotated key, `device-add-wraps.json` recovery set without the current epoch; `worker/test/removal-fence-and-recovery-rotation.test.ts` rotation, stale-sealer refusal and stale-bundle enrollment refusal |
 | S3 | Token replay or theft without device key | Stolen token, network | Device-signed `AKV-Proof` bound to method, URL, token hash and body hash; single-use `jti` window | `worker/test/` replayed proof, missing proof, wrong `did` |
 | S4 | Audience/issuer/alg confusion | Network, attacker | Exact `iss`/`aud`, `alg` = ES256 only, `kid` must match JWKS; production and staging use distinct audiences and distinct issuers, each with keys fetched from its own JWKS URL (separate signing keys are ak-web's responsibility) | `worker/test/` wrong `aud`/`iss`/`alg`/`kid`, expired, `nbf` in future; `auth-token.test.ts` cross-environment refusal using the deployed audiences, and deployed issuer/JWKS URLs with no inline keys |
 | S5 | Revoked session/device keeps access | Stolen device/token | Live revocation registry per request; fail closed on registry error | `worker/test/` revoked `sid`, revoked `did`, minimum-`iat`, registry failure → 503 |
@@ -131,17 +132,15 @@ These are accepted and must be stated wherever the guarantees are described:
   A reader with it can still receive a chain the server truncated before the first
   entry at its minimum epoch, which is entirely opaque and passes; only a witnessed
   audit checkpoint bounds that, and clients must not present it as verified.
-- **The removal fence binds positions, not contents.** It refuses a removed
-  author's records above the fence. Records it got accepted before its removal
+- **The removal fence binds the log as its remover verified it.** A device that
+  first reads the log after a removal detects any record substituted, dropped or
+  reordered, or any `conflict_id` changed, at or below the fence. The fence cannot vouch for what the remover
+  itself was shown: records the removed device got accepted before its removal
   stay valid, including any written after it was compromised but before it was
-  removed. A client detects a substituted record at or below the fence only if it
-  had pulled the log up to the fence before the removal and kept a per-position
-  digest of each record. Every other device trusts the server for those
-  positions: a new or recovered device, and equally an existing device that was
-  offline or behind when the removal landed. A colluding server could place a
-  record the removed device signed after its removal there. Binding the log
-  contents in the removal ([#21](https://github.com/bestagentkits/ak-vault/issues/21))
-  is a [release gate](./release-gates.md).
+  removed. Positions above the latest fence are covered only by checkpoints and
+  the withholding limitation above. A client that passed a fence before it
+  learned of the removal must compare a head it kept or replay the log from the
+  start.
 - **A live device can stall its own removal.** The fence must equal the current
   log head, so a device that keeps writing keeps the fence stale. Revoke it first;
   live revocation stops its requests.
@@ -155,6 +154,13 @@ These are accepted and must be stated wherever the guarantees are described:
   replacing a fresh bundle; it cannot stop an owner device that declares a current
   position yet seals the wrong key. Recovering devices detect the mismatch
   (`forbidden`) instead of trusting it.
+- **A stopped removal can strand the recovery bundle.** Every device-adding
+  event, recovery included, must deliver the current key epoch, so a bundle sealed
+  before the latest rekey cannot enroll a device. A removal whose author stopped
+  after its rekey and before it resealed the bundle therefore makes the bundle
+  unusable until a device that still syncs reseals it; if no such device remains,
+  that bundle cannot recover the vault
+  ([#36](https://github.com/bestagentkits/ak-vault/issues/36)).
 - **Wraps of older epochs are optional.** A device enrolled without a wrap for an
   older epoch cannot read items still at that epoch; they are rotated forward by a
   device that can, never delivered by an unsigned late wrap.

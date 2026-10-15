@@ -24,6 +24,7 @@ import {
 import { ApiError, okResult, type ApiResult } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
 import type { JsonObject } from '@ak-vault/protocol';
+import { appendLogHead } from './change-log-heads.js';
 
 /** `meta` key holding `{records, bytes}` totals for the per-vault record caps. */
 export const RECORD_USAGE_KEY = 'record_usage';
@@ -97,6 +98,7 @@ function insertRecord(sql: SqlStorage, record: SignedRecord, kind: 'applied' | '
       json,
     )
     .one();
+  appendLogHead(sql, row.log_seq, conflictId, digest);
   const next: RecordUsage = { records: usage.records + 1, bytes: usage.bytes + size };
   sql.exec('INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v', RECORD_USAGE_KEY, JSON.stringify(next));
   return row.log_seq;

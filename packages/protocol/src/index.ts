@@ -40,6 +40,8 @@
  *   `authorizeRecordWrite(state, record): void`, `recordDigest`.
  * - `verifyLoggedRecord(record, state, logSeq)` verifies change-log records, including those by removed
  *   authors, against each removal's signed `log_fence`.
+ * - `verifyChangeLog(entries, state, {from?, complete?}): {head, records}` replays change-log entries,
+ *   chains `nextLogHead` and checks each removal's signed `log_head`; `LOG_START`, `parseLogPosition`.
  * - `applyRecord(itemState | undefined, record, {conflictId?, isReplay?}): {state, outcome}` (pure CAS model),
  *   `emptyItemState`, `computeStateDigest(items)`.
  *
@@ -169,6 +171,16 @@ export { openRecoveryBundle, sealRecoveryBundle, type OpenRecoveryBundleArgs, ty
 export { authorizeRecordWrite, parseRecord, recordDigest, signRecord, verifyRecord, verifyRecordSignature, type SignedRecord, type UnsignedRecord } from './records.js';
 export { applyRecord, computeStateDigest, emptyItemState, type ApplyOutcome, type ApplyRecordOptions, type ConflictBranch, type ItemState } from './record-state.js';
 export { verifyLoggedRecord } from './removal-fence.js';
+export {
+  LOG_START,
+  MAX_CHANGE_LOG_ENTRIES,
+  nextLogHead,
+  parseLogPosition,
+  verifyChangeLog,
+  type ChangeLogCursor,
+  type VerifiedChangeLog,
+  type VerifyChangeLogOptions,
+} from './change-log.js';
 export { checkRollback, parseCheckpoint, signCheckpoint, verifyCheckpoint, type Checkpoint, type CheckpointView, type UnsignedCheckpoint } from './checkpoints.js';
 export {
   appendAuditEntry,

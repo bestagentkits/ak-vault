@@ -1,19 +1,13 @@
-/** removal-fence.json: change-log records by removed authors against each removal's signed log_fence. */
-import { sealItem, signRecord, verifyLoggedRecord, verifyMembershipChain, type MembershipEvent, type SignedRecord } from '../../src/index.js';
-import { aliceLaptop, aliceNewPhone, alicePhone, BASE_TS, bobLaptop, carolPhone, flipByte, id, key32, negative, nonce, stranger, VAULT_PERSONAL, VAULT_SHARED, type VectorDevice } from './fixtures.js';
+/**
+ * removal-fence.json: change-log records by removed authors against each removal's signed
+ * log_fence, and change-log replay against each removal's signed log_head.
+ */
+import { b64encode, verifyChangeLog, verifyLoggedRecord, verifyMembershipChain, type ChangeLogCursor, type MembershipEvent, type SignedRecord } from '../../src/index.js';
+import { CHANGE_LOGS, cursorAt, LOG_HEADS, vectorRecord, type ChainName, type LogEntry } from './change-log.js';
+import { aliceLaptop, aliceNewPhone, alicePhone, bobLaptop, carolPhone, flipByte, id, negative, seed, stranger } from './fixtures.js';
 import { personalChain, sharedChain } from './membership.js';
 
-type ChainName = 'shared' | 'personal';
 const CHAINS: Record<ChainName, MembershipEvent[]> = { shared: sharedChain, personal: personalChain };
-const VAULTS: Record<ChainName, string> = { shared: VAULT_SHARED, personal: VAULT_PERSONAL };
-
-function record(label: string, chain: ChainName, author: VectorDevice, keyEpoch: number): SignedRecord {
-  const vault = VAULTS[chain];
-  const vk = vault === VAULT_SHARED ? key32(`vk/epoch${keyEpoch}`) : key32(`vk/${vault}/epoch${keyEpoch}`);
-  const ctx = { vault_id: vault, item_id: id(`fence/item/${label}`), base_revision: 0, key_epoch: keyEpoch, author: author.record.device_id, tombstone: false };
-  const env = sealItem({ ...ctx, vk, payload: { name: 'API_KEY', value: `fence-${label}`, meta: {}, sensitivity: 'normal' }, nonce: nonce(`fence/record/${label}`) });
-  return signRecord({ ...ctx, ts: BASE_TS, resolves: [], env }, author.signSecret);
-}
 
 export function removalFenceVectors(): Record<string, unknown> {
   const states = { shared: verifyMembershipChain(sharedChain), personal: verifyMembershipChain(personalChain) };
@@ -27,14 +21,41 @@ export function removalFenceVectors(): Record<string, unknown> {
   // Shared chain: aliceLaptop removed at seq 5 (key epoch 1, log_fence 4); carolPhone removed
   // with acct_carol at seq 7 (key epoch 2, log_fence 7). Personal chain: alicePhone removed at
   // seq 2 (key epoch 1, log_fence 5) and re-added at seq 4 (key epoch 2).
+  const record = (label: string, chain: ChainName, author: typeof alicePhone, keyEpoch: number) => vectorRecord(chain, { label, author, keyEpoch });
   const laptopE1 = record('laptop-e1', 'shared', aliceLaptop, 1);
   const carolE2 = record('carol-e2', 'shared', carolPhone, 2);
   const phoneE1 = record('phone-e1', 'personal', alicePhone, 1);
 
+  // Change-log replay. `slice(chain, a, b)` = entries at positions a..b of the honest log.
+  const slice = (chain: ChainName, a: number, b: number): LogEntry[] => CHANGE_LOGS[chain].slice(a - 1, b);
+  const replace = (entries: LogEntry[], logSeq: number, change: Partial<LogEntry>): LogEntry[] => entries.map((e) => (e.log_seq === logSeq ? { ...e, ...change } : e));
+  // kept_heads: heads the client computed earlier, keyed by decimal position.
+  type Kept = Record<string, string>;
+  const keptMap = (kept: Kept) => new Map(Object.entries(kept).map(([k, h]) => [Number(k), h]));
+  const logOk = (name: string, chain: ChainName, from: ChangeLogCursor, entries: LogEntry[], complete: boolean, kept: Kept = {}) => {
+    const { head } = verifyChangeLog(entries, states[chain], { from, complete, keptHeads: keptMap(kept) });
+    return { name, chain, from, kept_heads: kept, entries, complete, head };
+  };
+  const logBad = (name: string, code: string, chain: ChainName, from: unknown, entries: unknown[], complete: boolean, kept: Kept = {}) =>
+    negative(name, code, { chain, from, kept_heads: kept, entries, complete }, () =>
+      verifyChangeLog(entries, states[chain], { from: from as ChangeLogCursor, complete, keptHeads: keptMap(kept) }),
+    );
+  const keptAt = (chain: ChainName, ...positions: number[]): Kept => Object.fromEntries(positions.map((p) => [String(p), LOG_HEADS[chain][p]!]));
+  const start = cursorAt('shared', 0);
+  const full = slice('shared', 1, 8);
+  // Records the removed devices sign after their removal, which a colluding server places at or below the fence.
+  const laptopLate = { log_seq: 0, conflict_id: null, record: vectorRecord('shared', { label: 'log/shared/laptop-late', author: aliceLaptop, keyEpoch: 1, item: 'log/b' }) };
+  const phoneLate = { log_seq: 0, conflict_id: null, record: vectorRecord('personal', { label: 'log/personal/phone-late', author: alicePhone, keyEpoch: 1, item: 'log/p1' }) };
+  // The conflict branch at position 3 dropped and the later entries renumbered so the log stays gap-free.
+  const dropped = [...slice('shared', 1, 2), ...slice('shared', 4, 8).map((e) => ({ ...e, log_seq: e.log_seq - 1 }))];
+
   return {
     version: 1,
     description:
-      'Removal fence (spec §5, §6). chains: membership.json chains (shared = chains[0], personal = chains[1]); state = verifyMembershipChain(chain); state.removals lists each removal with the removed sign_pub, the key_epoch current at removal and the signed log_fence of the removing event. verifyLoggedRecord(record, state, log_seq): record parses; same vault; log_seq >= 1 (bad_request); the author is a current device, or a removed device whose record key_epoch is not newer than the key_epoch of its last removal (forbidden); the signature verifies under that device key (invalid_signature); for every removal of the author with removal.key_epoch >= record.key_epoch, log_seq > removal.log_fence is forbidden. cases MUST pass; invalid MUST fail with expect_error.',
+      'Removal fence (spec §5, §6). chains: membership.json chains (shared = chains[0], personal = chains[1]); state = verifyMembershipChain(chain); state.removals lists each removal with the removed sign_pub, the key_epoch current at removal and the signed log_fence and log_head of the removing event. ' +
+      'verifyLoggedRecord(record, state, log_seq): record parses; same vault; log_seq >= 1 (bad_request); the author is a current device, or a removed device whose record key_epoch is not newer than the key_epoch of its last removal (forbidden); the signature verifies under that device key (invalid_signature); for every removal of the author with removal.key_epoch >= record.key_epoch, log_seq > removal.log_fence is forbidden. cases MUST pass; invalid MUST fail with expect_error. ' +
+      'change_logs: the honest change log of each chain, entries {log_seq, conflict_id (null = applied record), record}; heads[n] is the log head at position n: heads[0] = "", heads[n] = b64 sha256(utf8("akv1/log-head\\n") || cjson({"conflict_id", "log_seq": n, "prev": heads[n-1], "record": b64 sha256(record signing input)})). ' +
+      'verifyChangeLog(entries, state, {from, complete}): from is a valid position (log_head "" exactly at 0, else 32 bytes; bad_request); per entry: exact keys {log_seq, conflict_id, record}, conflict_id null or an ID (bad_request); log_seq = previous + 1 (rollback); verifyLoggedRecord; the head advances; every removal whose log_fence equals the from position or an entry position MUST carry the head computed there (rollback); every removal whose log_fence lies in 1..from.log_seq-1 needs a head in kept_heads (keyed by decimal position; missing: bad_request) equal to its log_head (rollback); with complete, a removal log_fence beyond the last position is rollback. log_cases MUST pass and yield head; log_invalid MUST fail with expect_error.',
     chains: CHAINS,
     removals: { shared: states.shared.removals, personal: states.personal.removals },
     cases: [
@@ -57,6 +78,42 @@ export function removalFenceVectors(): Record<string, unknown> {
       bad('bad_record_signature', 'invalid_signature', 'shared', { ...laptopE1, sig: flipByte(laptopE1.sig, 6) }, 3),
       bad('record_from_other_vault', 'bad_request', 'shared', phoneE1, 3),
       bad('log_seq_zero', 'bad_request', 'shared', laptopE1, 0),
+    ],
+    change_logs: {
+      shared: { entries: CHANGE_LOGS.shared, heads: LOG_HEADS.shared },
+      personal: { entries: CHANGE_LOGS.personal, heads: LOG_HEADS.personal },
+    },
+    log_cases: [
+      logOk('shared_full_log', 'shared', start, full, true),
+      logOk('shared_resume_below_fence', 'shared', cursorAt('shared', 2), slice('shared', 3, 8), true),
+      logOk('shared_resume_at_fence', 'shared', cursorAt('shared', 4), slice('shared', 5, 8), true),
+      logOk('shared_first_page', 'shared', start, slice('shared', 1, 2), false),
+      logOk('shared_resume_past_fence_with_kept_head', 'shared', cursorAt('shared', 6), slice('shared', 7, 8), true, keptAt('shared', 4)),
+      logOk('shared_no_entries_at_cursor', 'shared', cursorAt('shared', 8), [], true, keptAt('shared', 4, 7)),
+      logOk('personal_full_log', 'personal', cursorAt('personal', 0), slice('personal', 1, 7), true),
+    ],
+    log_invalid: [
+      logBad('removed_device_record_substituted_below_fence', 'rollback', 'shared', start, replace(full, 2, { record: laptopLate.record }), true),
+      logBad('removed_device_record_substituted_at_fence', 'rollback', 'shared', start, replace(full, 4, { record: laptopLate.record, conflict_id: null }), true),
+      logBad('removed_member_record_substituted_at_second_fence', 'rollback', 'shared', cursorAt('shared', 4), replace(slice('shared', 5, 8), 7, { record: vectorRecord('shared', { label: 'log/shared/carol-late', author: carolPhone, keyEpoch: 2, item: 'log/c', base: 1 }) }), true),
+      logBad('conflict_branch_dropped_and_renumbered', 'rollback', 'shared', start, dropped, false),
+      logBad('conflict_branch_relabelled', 'rollback', 'shared', start, replace(full, 3, { conflict_id: id('fence/conflict/other') }), true),
+      logBad('applied_record_marked_as_conflict', 'rollback', 'shared', start, replace(full, 1, { conflict_id: id('fence/conflict/other') }), true),
+      logBad('records_reordered', 'rollback', 'shared', start, [...slice('shared', 1, 1), { ...full[2]!, log_seq: 2 }, { ...full[1]!, log_seq: 3 }, ...slice('shared', 4, 8)], true),
+      logBad('personal_record_substituted_below_fence', 'rollback', 'personal', cursorAt('personal', 0), replace(slice('personal', 1, 7), 1, { record: phoneLate.record }), true),
+      logBad('resume_cursor_head_differs_at_fence', 'rollback', 'shared', { log_seq: 4, log_head: b64encode(seed('log/bogus-head')) }, slice('shared', 5, 8), true),
+      logBad('resume_past_fence_without_kept_head', 'bad_request', 'shared', cursorAt('shared', 6), slice('shared', 7, 8), true),
+      logBad('resume_past_fence_with_forked_kept_head', 'rollback', 'shared', cursorAt('shared', 6), slice('shared', 7, 8), true, { '4': b64encode(seed('log/forked-head')) }),
+      logBad('log_truncated_before_fence', 'rollback', 'shared', start, slice('shared', 1, 3), true),
+      logBad('log_truncated_between_fences', 'rollback', 'shared', start, slice('shared', 1, 6), true),
+      logBad('gap', 'rollback', 'shared', start, [...slice('shared', 1, 2), ...slice('shared', 4, 8)], true),
+      logBad('first_entry_does_not_follow_cursor', 'rollback', 'shared', cursorAt('shared', 2), slice('shared', 4, 8), true),
+      logBad('repeated_position', 'rollback', 'shared', start, [...slice('shared', 1, 2), ...slice('shared', 2, 8)], true),
+      logBad('removed_author_above_fence_in_log', 'forbidden', 'shared', start, [...slice('shared', 1, 4), { ...laptopLate, log_seq: 5 }], false),
+      logBad('entry_extra_key', 'bad_request', 'shared', start, [{ ...full[0]!, kind: 'applied' }], false),
+      logBad('entry_malformed_conflict_id', 'bad_request', 'shared', start, replace(slice('shared', 1, 3), 3, { conflict_id: 'not-an-id' }), false),
+      logBad('from_log_head_at_zero', 'bad_request', 'shared', { log_seq: 0, log_head: LOG_HEADS.shared[1]! }, full, true),
+      logBad('from_empty_log_head_above_zero', 'bad_request', 'shared', { log_seq: 2, log_head: '' }, slice('shared', 3, 8), true),
     ],
   };
 }

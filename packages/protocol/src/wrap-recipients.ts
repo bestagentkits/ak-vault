@@ -77,12 +77,11 @@ export function addedDevices(event: MembershipEvent): DeviceRecord[] {
  * Order: the event adds devices (bad_request); wraps parse (bad_request /
  * unsupported_version); every rcpt is a device the event adds (forbidden); key
  * epochs lie in 1..event.key_epoch and (rcpt, key_epoch) pairs are unique
- * (bad_request); completeness (bad_request): a recovery-authored device_add
- * (`sas` "", which replay allows only for the recovery author) carries at least
- * one wrap, because the recovery bundle may predate later rekeys; every other
- * event carries a wrap at event.key_epoch for every added device. Older epochs
- * are optional: content the joiner cannot read is rotated forward, never
- * delivered by a later unsigned wrap. Finally
+ * (bad_request); completeness (bad_request): every event, a recovery-authored
+ * device_add included, carries a wrap at event.key_epoch for every added
+ * device, so every device holds the key of the epoch it joined at (the audit
+ * verifier requires it, spec §7). Older epochs are optional: content the joiner
+ * cannot read is rotated forward, never delivered by a later unsigned wrap. Finally
  * wrapsDigest(wraps) === body.wraps_digest (bad_request). Input order does not matter.
  */
 export function verifyDeviceWraps(event: unknown, wraps: readonly unknown[]): X25519Wrap[] {
@@ -99,9 +98,7 @@ export function verifyDeviceWraps(event: unknown, wraps: readonly unknown[]): X2
     if (seen.has(key)) fail('bad_request', 'duplicate wrap for a recipient and epoch');
     seen.add(key);
   }
-  const byRecovery = ev.type === 'device_add' && ev.body['sas'] === '';
-  const complete = byRecovery ? parsed.length > 0 : [...added].every((id) => seen.has(`${id}/${ev.key_epoch}`));
-  if (!complete) fail('bad_request', 'wrap set is incomplete');
+  if (![...added].every((id) => seen.has(`${id}/${ev.key_epoch}`))) fail('bad_request', 'wrap set is incomplete');
   if (wrapsDigest(parsed) !== ev.body['wraps_digest']) fail('bad_request', 'wrap set does not match the signed wraps_digest');
   return parsed;
 }

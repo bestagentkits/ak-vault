@@ -1,7 +1,7 @@
 /** Reproduce recovery-bundle.json and rekey-wraps.json. */
 import { describe, expect, it } from 'vitest';
 import {
-  b64decode, b64encode, openEnvelope, openRecoveryBundle, sealRecoveryBundle, unwrapFromDevice, utf8Decode, verifyDeviceWraps, verifyLoggedRecord,
+  b64decode, b64encode, LOG_START, nextLogHead, openEnvelope, recordDigest, verifyChangeLog, openRecoveryBundle, sealRecoveryBundle, unwrapFromDevice, utf8Decode, verifyDeviceWraps, verifyLoggedRecord,
   verifyMembershipChain, verifyRekeyWraps,
 } from '../src/index.js';
 import { expectCode, loadVector, named, type Vec } from './helpers.js';
@@ -86,6 +86,11 @@ describe('device-add-wraps.json', () => {
 
 describe('removal-fence.json', () => {
   const v = loadVector('removal-fence.json');
+  const logOptions = (c: Vec) => ({
+    from: c.from,
+    complete: c.complete,
+    keptHeads: new Map(Object.entries(c.kept_heads as Record<string, string>).map(([k, h]) => [Number(k), h])),
+  });
   const states = { shared: verifyMembershipChain(v.chains.shared), personal: verifyMembershipChain(v.chains.personal) } as Record<string, ReturnType<typeof verifyMembershipChain>>;
   it('removals carry the signed log_fence of the removing event', () => {
     expect(states['shared']!.removals).toEqual(v.removals.shared);
@@ -96,5 +101,23 @@ describe('removal-fence.json', () => {
   });
   it.each(named(v.invalid))('rejects %s', (_n, c: Vec) => {
     expectCode(() => verifyLoggedRecord(c.record, states[c.chain]!, c.log_seq), c.expect_error);
+  });
+  it.each(['shared', 'personal'])('change log %s: heads chain and every removal signs the head at its fence', (chain) => {
+    const { entries, heads } = v.change_logs[chain] as { entries: Vec[]; heads: string[] };
+    expect(heads[0]).toBe(LOG_START.log_head);
+    entries.forEach((e, i) => {
+      expect(e.log_seq).toBe(i + 1);
+      expect(nextLogHead(heads[i]!, e.log_seq, e.conflict_id, recordDigest(e.record))).toBe(heads[i + 1]);
+    });
+    for (const r of states[chain]!.removals) expect(r.log_head).toBe(heads[r.log_fence]);
+    const { head, records } = verifyChangeLog(entries, states[chain]!, { complete: true });
+    expect(head).toEqual({ log_seq: entries.length, log_head: heads[entries.length] });
+    expect(records).toEqual(entries.map((e) => e.record));
+  });
+  it.each(named(v.log_cases))('log %s', (_n, c: Vec) => {
+    expect(verifyChangeLog(c.entries, states[c.chain]!, logOptions(c)).head).toEqual(c.head);
+  });
+  it.each(named(v.log_invalid))('log rejects %s', (_n, c: Vec) => {
+    expectCode(() => verifyChangeLog(c.entries, states[c.chain]!, logOptions(c)), c.expect_error);
   });
 });
