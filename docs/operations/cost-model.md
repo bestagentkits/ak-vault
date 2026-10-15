@@ -102,7 +102,7 @@ without one those configurations do not run at all
 | 1,000 | ≈ $7 → ≈ $6 | ≈ $101 → ≈ $666 |
 | 10,000 | ≈ $38 → ≈ $231 | ≈ $1,039 → ≈ $7,109 |
 
-At 10,000 vaults with active polling, **rows written dominate**: about 6.3 billion a
+At 10,000 vaults with active polling, **rows written dominate**: about 6.2 billion a
 month (≈ $6,142), then about 1.3 billion Worker requests (≈ $388), 2.6 billion
 Durable Object requests (≈ $386), duration (≈ $103) and CPU (≈ $86). Rows read stay
 inside the included 25 billion and storage is minor.
