@@ -120,7 +120,10 @@ These are accepted and must be stated wherever the guarantees are described:
 - **Recovery bundle ciphertext.** Anyone holding a live owner-account session can
   download the encrypted recovery bundle and guess the password offline. A weak
   password is the residual exposure; revoking the owner's sessions after a loss
-  closes the path.
+  closes the path. This includes a machine device on the owner account: it can
+  fetch the bundle and membership log of every vault of that account, not only
+  the one it is enrolled in
+  ([#42](https://github.com/bestagentkits/ak-vault/issues/42)).
 - **Audit entries are not signed per author.** Any device that held `VK[e]` can
   write audit entries at epoch `e`, including a device removed later. With a
   colluding server it can keep doing so after the rekey until the first entry at a

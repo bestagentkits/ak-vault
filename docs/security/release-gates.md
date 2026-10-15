@@ -27,6 +27,7 @@ evidence does not count.
 - [ ] `resolve` keeps working with the Worker unreachable (agentkit#2298).
 - [ ] Every scenario in the [red-team list](#red-team-scenarios) executed, findings
       triaged on GitHub.
+      Latest run: [red-team evidence](./red-team-evidence.md).
 - [ ] Staging soak complete (below).
 - [ ] Backup/restore and rollback rehearsed on staging using the
       [runbooks](../operations/runbooks.md).
