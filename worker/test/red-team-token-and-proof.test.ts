@@ -8,6 +8,7 @@ import { b64encode, buildProof, randomBytes, randomId, utf8Encode } from '@ak-va
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BASE, call } from './helpers/api-client.js';
 import { mintToken, TEST_AUDIENCE, TEST_ISSUER } from './helpers/issuer.js';
+import { codes, every, readEverything, snapshot, statuses, WRITE_ROUTES, writeEverything } from './helpers/red-team-routes.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 const UNAUTHORIZED = { error: { code: 'unauthorized', message: 'authentication failed' } };
@@ -58,6 +59,7 @@ describe('red team: token forgery and confusion', () => {
       const relabelled = `${part({ alg, typ: 'JWT', kid: 'test-issuer-key-1' })}.${payload}.${sig}`;
       const res = await call(fx.owner, 'GET', membershipPath(), undefined, { token: relabelled });
       expect(res.status).toBe(401);
+      expect(res.json).toEqual(UNAUTHORIZED);
     }
   });
 });
@@ -76,7 +78,11 @@ describe('red team: proof binding', () => {
     const first = await mintToken({ sub: fx.owner.account, did: fx.owner.keys.record.device_id, sid: fx.owner.sid });
     const second = await mintToken({ sub: fx.owner.account, did: fx.owner.keys.record.device_id, sid: fx.owner.sid });
     const proof = buildProof({ htm: 'GET', htu: `${BASE}${membershipPath()}`, ts: Date.now(), token: first, body: new Uint8Array(), secretKey: fx.owner.keys.signSecret });
-    expect((await call(fx.owner, 'GET', membershipPath(), undefined, { token: second, proof })).status).toBe(401);
+    const moved = await call(fx.owner, 'GET', membershipPath(), undefined, { token: second, proof });
+    // A proof bound to another token is a binding failure (unauthorized), not a bad signature.
+    expect([moved.status, moved.json]).toEqual([401, UNAUTHORIZED]);
+    // Positive control: a refused proof is not spent, and it works with the token it was made for.
+    expect((await call(fx.owner, 'GET', membershipPath(), undefined, { token: first, proof })).status).toBe(200);
   });
 
   it('a device enrolled in two vaults cannot move a proof between them', async () => {
@@ -98,19 +104,15 @@ describe('red team: stolen token without the device key', () => {
   it('gets no data and changes nothing on any vault route', async () => {
     const itemId = randomId();
     expect((await fx.write(fx.owner, itemId, 0, { name: 'SYNTHETIC_KEY', value: 'synthetic' })).status).toBe(200);
+    // The thief holds a valid token for the owner device but signs proofs with a key of its own.
     const thief = { proofSecret: randomBytes(32) };
-    const reads = ['/membership', '/wraps', '/changes', `/items/${itemId}`, '/checkpoints', '/audit', '/recovery'];
-    for (const sub of reads) {
-      const res = await fx.get(fx.owner, sub, thief);
-      expect(res.status, sub).toBe(401);
-      expect(res.json.error.code, sub).toBe('invalid_signature');
-    }
-    const write = await fx.write(fx.owner, itemId, 1, { name: 'SYNTHETIC_KEY', value: 'overwritten' }, thief);
-    expect(write.status).toBe(401);
-    const tombstone = await fx.write(fx.owner, itemId, 1, null, thief);
-    expect(tombstone.status).toBe(401);
-    const head = await fx.get(fx.owner, `/items/${itemId}`);
-    expect(head.json.revision).toBe(1);
-    expect(head.json.tombstone).toBe(false);
+    const before = await snapshot(fx);
+    const reads = await readEverything(fx, fx.owner, itemId, thief);
+    expect(statuses(reads)).toEqual(every(Object.keys(reads), 401));
+    expect(codes(reads)).toEqual(every(Object.keys(reads), 'invalid_signature'));
+    const writes = await writeEverything(fx, fx.owner, itemId, thief);
+    expect(statuses(writes)).toEqual(every(WRITE_ROUTES, 401));
+    expect(codes(writes)).toEqual(every(WRITE_ROUTES, 'invalid_signature'));
+    expect(await snapshot(fx)).toEqual(before);
   });
 });

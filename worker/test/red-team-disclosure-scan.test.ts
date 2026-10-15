@@ -11,7 +11,7 @@ import { env } from 'cloudflare:workers';
 import { randomId, utf8Encode } from '@ak-vault/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { LIMITS } from '../src/limits.js';
-import { call, fetchRaw, type CallResult } from './helpers/api-client.js';
+import { call, createDevice, fetchRaw, type CallResult } from './helpers/api-client.js';
 import { dumpDurableObject, findLeak } from './helpers/disclosure-scan.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 import { hmac } from './helpers/webhook.js';
@@ -77,7 +77,8 @@ describe('red team: planted plaintext in attacker-controlled request surfaces', 
     seen.push(fromCall(await fx.write(fx.owner, reused, 0, { name: CANARY_NAME, value: 'a' }, { idempotencyKey: CANARY_IDEM })));
     seen.push(fromCall(await fx.write(fx.owner, reused, 0, { name: CANARY_NAME, value: 'b' }, { idempotencyKey: CANARY_IDEM }))); // 422
     seen.push(fromCall(await fx.get(fx.owner, '/changes', { proof: CANARY_PROOF })));
-    seen.push(fromCall(await fx.get(fx.owner, '/recovery', { headers: { 'AKV-Device-Key': CANARY_DEVICE_KEY } }))); // no bundle stored yet
+    // The device-key header is parsed only on the recovery-identity path: a fresh, not-enrolled device of the owner account.
+    seen.push(fromCall(await fx.get(createDevice(fx.owner.account), '/recovery', { headers: { 'AKV-Device-Key': CANARY_DEVICE_KEY } })));
     seen.push(fromCall(await fx.get(fx.owner, '/changes', { token: CANARY_BEARER })));
 
     // Refused bodies: malformed JSON, wrong shapes, oversize.
@@ -98,7 +99,7 @@ describe('red team: planted plaintext in attacker-controlled request surfaces', 
     seen.push(await webhook(utf8Encode(JSON.stringify({ v: 1, event_id: randomId(), revoke_sids: [], revoke_dids: [], min_iat: [], [CANARY_WEBHOOK]: CANARY_NAME }))));
     seen.push(await webhook(utf8Encode(`{"v":1,"event_id":"${CANARY_WEBHOOK}`)));
 
-    expect(seen.map((s) => s.status)).toEqual([200, 409, 200, 409, 400, 400, 400, 400, 404, 404, 200, 422, 401, 404, 401, 400, 400, 400, 400, 413, 401, 400, 400]);
+    expect(seen.map((s) => s.status)).toEqual([200, 409, 200, 409, 400, 400, 400, 400, 404, 404, 200, 422, 401, 401, 401, 400, 400, 400, 400, 413, 401, 400, 400]);
 
     const responses = seen.map((s) => s.text).join('\n');
     // The accepted write's own name and value are inside ciphertext only, so no response may carry them either.
