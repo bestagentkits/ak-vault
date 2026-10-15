@@ -106,13 +106,33 @@ describe('recovery identity', () => {
     expect(unwrapFromDevice({ wrap: wrap!, vaultId: fx.vaultId, deviceId: fresh.keys.record.device_id, kxSecret: fresh.keys.kxSecret })).toEqual(opened.vk['1']);
 
     // The recovered device removes the lost ones itself (the recovery key may not), then rekeys.
-    const removeByRecovery = fx.buildEvent('device_remove', { device_id: laptop.keys.record.device_id, reason: 'lost', log_fence: 1 }, { id: chain.recovery_author, secret: opened.recovery_sign_sk });
+    const removeByRecovery = fx.buildEvent('device_remove', { device_id: laptop.keys.record.device_id, reason: 'lost', log_fence: 1, log_head: (await fx.verifiedLogHeads(fresh))[1]! }, { id: chain.recovery_author, secret: opened.recovery_sign_sk });
     expect((await fx.append(removeByRecovery, undefined, fresh)).status).toBe(403);
     expect((await fx.removeDevice(laptop, undefined, fresh)).status).toBe(201);
     expect((await fx.removeDevice(fx.owner, undefined, fresh)).status).toBe(201);
     expect((await fx.rekey(fresh)).status).toBe(201);
     expect((await fx.write(fresh, randomId(), 0, v)).status).toBe(200);
     expect((await fx.write(laptop, randomId(), 0, v)).status).toBe(403);
+  });
+});
+
+describe('recovery from a bundle sealed before the latest rekey', () => {
+  it('is refused: a recovery device_add must deliver the current key epoch', async () => {
+    const fx = await VaultFixture.create();
+    expect((await putTestBundle(fx, fx.owner, sealTestBundle(fx, 1))).status).toBe(200);
+    const laptop = await fx.addDevice();
+    // The removal stops after its rekey, before it reseals the bundle (which holds only epoch 1).
+    expect((await fx.removeDevice(laptop)).status).toBe(201);
+    expect((await fx.rekey()).status).toBe(201);
+    const seq = fx.state.seq;
+    const fresh = createDevice(fx.owner.account, 'owner');
+    const stale = fx.enrollEvent(fresh, [1], { id: fx.recoveryAuthorId(), secret: fx.recovery.secretKey });
+    const res = await fx.append(stale.event, stale.wraps, fresh);
+    expect(res.status).toBe(400);
+    expect(res.json.error.code).toBe('bad_request');
+    expect((await fx.get(fx.owner, '/membership')).json.membership.seq).toBe(seq);
+    const current = fx.enrollEvent(fresh, [1, 2], { id: fx.recoveryAuthorId(), secret: fx.recovery.secretKey });
+    expect((await fx.append(current.event, current.wraps, fresh)).status).toBe(201);
   });
 });
 

@@ -2,6 +2,7 @@
 import { parseMembershipEvent, verifyDeviceWraps, verifyRekeyWraps, type JsonObject, type MembershipEvent, type MembershipState, type X25519Wrap } from '@ak-vault/protocol';
 import { ApiError, okResult, type ApiResult } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
+import { logHeadAt } from './change-log-heads.js';
 import { currentLogSeq } from './changes-feed.js';
 import type { MembershipStore } from './membership-store.js';
 import { recordRecoveryRotate, storeRecoveryBundle } from './recovery-store.js';
@@ -42,7 +43,9 @@ function verifyEventWraps(event: MembershipEvent, raw: unknown, next: Membership
  * A removal's signed `log_fence` must be the change-log head at the moment the
  * removal lands: then every record the removed device got accepted is at or below
  * the fence, and nothing it writes later can be. A stale fence is `conflict` (pull
- * the change log and re-sign); a fence ahead of the log is `bad_request`.
+ * the change log and re-sign); a fence ahead of the log is `bad_request`. Its
+ * signed `log_head` must equal the stored head at the fence (`bad_request`), so
+ * the signed head describes the log every later reader is served.
  */
 function checkLogFence(sql: SqlStorage, event: MembershipEvent): void {
   if (event.type !== 'device_remove' && event.type !== 'member_remove') return;
@@ -50,6 +53,7 @@ function checkLogFence(sql: SqlStorage, event: MembershipEvent): void {
   const head = currentLogSeq(sql);
   if (fence > head) throw new ApiError('bad_request', { message: 'log_fence is ahead of the change log' });
   if (fence < head) throw new ApiError('conflict', { message: 'log_fence is behind the change log head' });
+  if (event.body['log_head'] !== logHeadAt(sql, head)) throw new ApiError('bad_request', { message: 'log_head does not match the change log' });
 }
 
 /**

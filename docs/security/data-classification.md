@@ -22,10 +22,10 @@ rules. Rationale is in [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md).
 | Data | Why the server needs it |
 |---|---|
 | Opaque IDs: `vault_id`, `item_id`, `conflict_id`, event IDs | Routing, CAS and conflict tracking |
-| Revisions, `base_revision`, change-log sequence, cursors | CAS and incremental pull |
+| Revisions, `base_revision`, change-log sequence and heads (hashes of stored record digests), cursors | CAS, incremental pull and removal fences |
 | Tombstone flag | Refusing resurrection |
 | `key_epoch`, `membership_epoch`, `rekey_required` | Refusing stale-epoch writes |
-| Membership log in clear (signed): accounts, device IDs, device public keys, roles, device kind, `needs_rotate` item IDs, `device_remove.reason`, recovery signing public keys, removal `log_fence` positions, `wraps_digest` values | Enforcing membership and roles; the recovery identity may read it |
+| Membership log in clear (signed): accounts, device IDs, device public keys, roles, device kind, `needs_rotate` item IDs, `device_remove.reason`, recovery signing public keys, removal `log_fence` positions and `log_head` values, `wraps_digest` values | Enforcing membership and roles; the recovery identity may read it |
 | Wrap headers: recipient device ID, ephemeral public key, Argon2id salt and `t`/`m`/`p`; which membership event each device wrap set belongs to (kept after its recipients are removed) | Delivering the right wrap to each device and serving each signed set whole |
 | Checkpoint fields (sequences, digests, author, timestamp) | Relayed to devices for anti-rollback |
 | Timestamps and ciphertext sizes | Inherent to storage; sizes leak approximate value length |

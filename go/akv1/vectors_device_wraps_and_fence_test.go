@@ -2,6 +2,7 @@ package akv1
 
 import (
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -112,6 +113,77 @@ func checkRemovalFence(t *testing.T, f *rec, n *counter) {
 	}
 	for _, c := range f.recs("invalid") {
 		_, err := VerifyLoggedRecord(c.raw("record"), state(c), c.i64("log_seq"))
+		expectCode(t, c, err)
+		c.done()
+		n.add(1)
+	}
+	checkChangeLogs(t, f, n, states)
+}
+
+// checkChangeLogs reproduces the change-log head chains and the log replay
+// cases of removal-fence.json.
+func checkChangeLogs(t *testing.T, f *rec, n *counter, states map[string]MembershipState) {
+	cl := f.obj("change_logs")
+	for name := range cl.m {
+		log := cl.obj(name)
+		entries := log.list("entries")
+		heads := log.list("heads")
+		if len(heads) != len(entries)+1 || heads[0] != "" {
+			t.Fatalf("%s: heads must be \"\" followed by one head per entry", log.path)
+		}
+		for i, raw := range entries {
+			e := newRec(t, log.path+".entries["+strconv.Itoa(i)+"]", raw)
+			if e.i64("log_seq") != int64(i+1) {
+				t.Errorf("%s: log_seq is not its position", e.path)
+			}
+			conflictID := ""
+			if cid := e.raw("conflict_id"); cid != nil {
+				conflictID = cid.(string)
+			}
+			r := mustOK(ParseRecord(e.raw("record")))(t, e.path)
+			digest := mustOK(RecordDigest(r))(t, e.path)
+			got := mustOK(NextLogHead(heads[i].(string), int64(i+1), conflictID, digest))(t, e.path)
+			eqStr(t, e.path+" head", got, heads[i+1].(string))
+			e.done()
+		}
+		st := states[name]
+		for _, rm := range st.Removals {
+			eqStr(t, log.path+" removal log_head", rm.LogHead, heads[rm.LogFence].(string))
+		}
+		got := mustOK(VerifyChangeLog(entries, st, VerifyChangeLogOptions{Complete: true}))(t, log.path)
+		eqJSON(t, log.path+" head", got.Head, ChangeLogCursor{LogSeq: int64(len(entries)), LogHead: heads[len(entries)].(string)})
+		log.done()
+		n.add(1)
+	}
+	cl.done()
+	run := func(c *rec) (VerifiedChangeLog, error) {
+		st, ok := states[c.str("chain")]
+		if !ok {
+			t.Fatalf("%s: unknown chain", c.path)
+		}
+		from := c.obj("from")
+		cursor := ChangeLogCursor{LogSeq: from.i64("log_seq"), LogHead: from.str("log_head")}
+		from.done()
+		kept := map[int64]string{}
+		kr := c.obj("kept_heads")
+		for k := range kr.m {
+			pos, err := strconv.ParseInt(k, 10, 64)
+			if err != nil {
+				t.Fatalf("%s: kept_heads key %q is not a position", kr.path, k)
+			}
+			kept[pos] = kr.str(k)
+		}
+		kr.done()
+		return VerifyChangeLog(c.list("entries"), st, VerifyChangeLogOptions{From: cursor, Complete: c.boolean("complete"), KeptHeads: kept})
+	}
+	for _, c := range f.recs("log_cases") {
+		got := mustOK(run(c))(t, c.path)
+		eqJSON(t, c.path+" head", got.Head, c.raw("head"))
+		c.done()
+		n.add(1)
+	}
+	for _, c := range f.recs("log_invalid") {
+		_, err := run(c)
 		expectCode(t, c, err)
 		c.done()
 		n.add(1)

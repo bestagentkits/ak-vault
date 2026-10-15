@@ -3,10 +3,11 @@ package akv1
 // VerifyLoggedRecord verifies a record read from the change log at position
 // logSeq against verified membership, for current and removed authors alike
 // (spec §5, §6). Every device_remove and member_remove carries a signed
-// log_fence, the change-log head its author had verified gap-free. The fence
-// binds a position, not the log contents: it refuses a removed author's record
-// above the fence, while the contents of positions at or below it are trusted
-// only by a client that holds its own copy of them (spec §5). Writes are
+// log_fence, the change-log position its author had verified gap-free. This
+// check binds the position: it refuses a removed author's record above the
+// fence. The removal also signs log_head, which binds the contents of every
+// position at or below the fence; VerifyChangeLog replays the log and checks
+// it (spec §5). Writes are
 // refused between a removal and the next rekey, so every legitimate later
 // write by a re-added device ID uses a newer key epoch and is unaffected.
 //

@@ -51,8 +51,10 @@ export interface DeviceRemoval {
   removed_seq: number;
   /** Key epoch current when the device was removed (the newest key it could hold). */
   key_epoch: number;
-  /** Signed `log_fence` of the removing event: the change-log head its author verified. */
+  /** Signed `log_fence` of the removing event: the change-log position its author verified. */
   log_fence: number;
+  /** Signed `log_head` of the removing event: the change-log head at `log_fence` (`""` at 0). */
+  log_head: string;
 }
 
 /**

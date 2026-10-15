@@ -73,9 +73,9 @@ func (r *replayState) admitDevice(d DeviceRecord, allowReadd bool) error {
 }
 
 // recordRemoval records a removal; the caller has already deleted the device from devices.
-func (r *replayState) recordRemoval(d DeviceRecord, seq, logFence int64) {
+func (r *replayState) recordRemoval(d DeviceRecord, seq int64, fence ChangeLogCursor) {
 	r.removed[d.DeviceID] = true
-	r.removals = append(r.removals, DeviceRemoval{DeviceID: d.DeviceID, SignPub: d.SignPub, RemovedSeq: seq, KeyEpoch: r.keyEpoch, LogFence: logFence})
+	r.removals = append(r.removals, DeviceRemoval{DeviceID: d.DeviceID, SignPub: d.SignPub, RemovedSeq: seq, KeyEpoch: r.keyEpoch, LogFence: fence.LogSeq, LogHead: fence.LogHead})
 }
 
 func parseDeviceList(v any, what string) ([]DeviceRecord, error) {
@@ -167,7 +167,7 @@ func (r *replayState) apply(e MembershipEvent) error {
 	case EventDeviceAdd:
 		return r.applyDeviceAdd(body, byRecovery)
 	case EventDeviceRemove:
-		if err := exactKeys(body, []string{"device_id", "reason", "log_fence"}, "device_remove.body"); err != nil {
+		if err := exactKeys(body, []string{"device_id", "reason", "log_fence", "log_head"}, "device_remove.body"); err != nil {
 			return err
 		}
 		id, err := asID(body["device_id"], "device_remove.body.device_id")
@@ -177,7 +177,7 @@ func (r *replayState) apply(e MembershipEvent) error {
 		if _, err := asEnum(body["reason"], removeReasons, "device_remove.body.reason"); err != nil {
 			return err
 		}
-		logFence, err := asInt(body["log_fence"], "device_remove.body.log_fence", 0, MaxSafeInteger)
+		logFence, err := ParseLogPosition(body["log_fence"], body["log_head"], "device_remove.body.log_fence", "device_remove.body.log_head")
 		if err != nil {
 			return err
 		}
@@ -195,7 +195,7 @@ func (r *replayState) apply(e MembershipEvent) error {
 	case EventMemberAdd:
 		return r.applyMemberAdd(body)
 	case EventMemberRemove:
-		if err := exactKeys(body, []string{"account", "log_fence"}, "member_remove.body"); err != nil {
+		if err := exactKeys(body, []string{"account", "log_fence", "log_head"}, "member_remove.body"); err != nil {
 			return err
 		}
 		if r.vaultKind != VaultShared {
@@ -205,7 +205,7 @@ func (r *replayState) apply(e MembershipEvent) error {
 		if err != nil {
 			return err
 		}
-		logFence, err := asInt(body["log_fence"], "member_remove.body.log_fence", 0, MaxSafeInteger)
+		logFence, err := ParseLogPosition(body["log_fence"], body["log_head"], "member_remove.body.log_fence", "member_remove.body.log_head")
 		if err != nil {
 			return err
 		}

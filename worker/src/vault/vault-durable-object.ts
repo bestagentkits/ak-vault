@@ -13,6 +13,7 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env.js';
 import { ApiError, errorResult, toApiError, type ApiResult } from '../http/errors.js';
 import { appendAudit, readAudit } from './audit-store.js';
+import { backfillLogHeads } from './change-log-heads.js';
 import { getChanges } from './changes-feed.js';
 import { listCheckpoints, postCheckpoint } from './checkpoint-store.js';
 import { lookupIdempotent, storeIdempotent, validateIdempotencyKey } from './idempotency.js';
@@ -38,7 +39,11 @@ export class VaultDurableObject extends DurableObject<Env> {
     // Reading sqlite_master writes nothing; re-running the idempotent schema on an
     // existing vault applies any newly added tables or indexes.
     this.schemaReady = this.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").toArray().length > 0;
-    if (this.schemaReady) this.sql.exec(VAULT_SCHEMA);
+    if (this.schemaReady) {
+      this.sql.exec(VAULT_SCHEMA);
+      // Vaults that stored records before change-log heads existed get them once, in log order.
+      ctx.storage.transactionSync(() => backfillLogHeads(this.sql));
+    }
   }
 
   /** True once a genesis has been stored; reads only, never creates storage. */

@@ -131,7 +131,11 @@ unlocks the bundle with the password or recovery key and authors `device_add` fo
 with the recovery key, so ownership is restored without trusting the server. Before
 signing, the device MUST verify the membership chain from the pinned owner anchor and
 check that the bundle's recovery key is the chain's current `recovery_sign_pub`
-(`openRecoveryBundle` option `recoverySignPub`, `forbidden` on mismatch). The recovery
+(`openRecoveryBundle` option `recoverySignPub`, `forbidden` on mismatch), and that the
+bundle holds `VK` of the chain's current `key_epoch`. A bundle without it cannot enroll
+a device (§4: every device-adding event delivers the current epoch), so the device MUST
+refuse before posting anything; finishing the stopped rekey-and-reseal on a device that
+still syncs is the only way to make that bundle usable again. The recovery
 key authors `device_add` only: it cannot read the change log, so it cannot sign an
 honest removal fence (§5). The enrolled device removes the lost devices itself and
 rekeys.
@@ -183,9 +187,9 @@ Signing context `akv1/membership`. `seq` starts at 0 (genesis) and increments by
 |---|---|---|
 | `genesis` | `{"vault_kind":"personal"|"shared"|"ci","owner_account","recovery_sign_pub","devices":[device],"wraps_digest":b64}` | seq 0, key_epoch 1, author ∈ devices with role owner. The genesis author `sign_pub` is the pinned trust anchor (TOFU, or from the recovery bundle / SAS). `recovery_sign_pub` is the owner recovery signing key (§3.5). `wraps_digest` commits to the wrap set of the genesis devices (§3.3). |
 | `device_add` | `{"device":device,"sas":"<b64 sha256 of SAS transcript>","wraps_digest":b64}` | author is an owner device or the current recovery signing key (§3.5). `sas` = `""` only when authored by the recovery key. `wraps_digest` commits to the new device's wrap set. |
-| `device_remove` | `{"device_id","reason":"lost"|"stolen"|"retired"|"compromised","log_fence":n}` | closed reason set; `log_fence` is the removal fence (§5); sets `rekey_required`. |
+| `device_remove` | `{"device_id","reason":"lost"|"stolen"|"retired"|"compromised","log_fence":n,"log_head":b64|""}` | closed reason set; `log_fence` and `log_head` are the removal fence (§5); sets `rekey_required`. |
 | `member_add` | `{"account","role","devices":[device],"wraps_digest":b64}` | shared vaults only; `wraps_digest` commits to the new devices' wrap set. |
-| `member_remove` | `{"account","log_fence":n}` | removes all its devices, each fenced at `log_fence` (§5); sets `rekey_required`. |
+| `member_remove` | `{"account","log_fence":n,"log_head":b64|""}` | removes all its devices, each fenced at `log_fence` and `log_head` (§5); sets `rekey_required`. |
 | `role_set` | `{"account","role"}` | cannot demote the last owner. |
 | `rekey` | `{"new_key_epoch":e+1,"wraps_digest":b64,"needs_rotate":[item_id…]}` | clears `rekey_required`; `wraps_digest` (§11) commits to the wrap list for the new epoch. |
 | `recovery_rotate` | `{"recovery_sign_pub":b64}` | owner device only; replaces the recovery signing key (§3.5). The new key was never a recovery key of this chain and is not the key of a current or removed device (`bad_request`). |
@@ -197,13 +201,16 @@ key ID the chain has trusted is refused (`bad_request`).
 
 **Wrap sets of device-adding events.** The set carried by `genesis`, `device_add` or
 `member_add` (checked by `verifyDeviceWraps`, §11) holds only wraps to devices the
-event adds, at epochs `1..event.key_epoch`. An owner-authored event MUST include a
-wrap at the event's `key_epoch` for every added device and SHOULD include every
-retained older epoch, so items written before a rekey stay readable. A
-recovery-authored `device_add` carries whatever epochs the bundle holds (at least
-one), because the bundle may predate later rekeys. An epoch missing from the signed
-set is never delivered later; items the device cannot read are rotated forward by a
-device that can. A verifier replays the
+event adds, at epochs `1..event.key_epoch`. Every such event, a recovery-authored
+`device_add` included, MUST include a wrap at the event's `key_epoch` for every added
+device, so every device holds the key of the epoch it joins at, which the audit
+verifier requires (§7). It SHOULD include every retained older epoch (for a
+recovery-authored `device_add`, every older epoch the bundle holds), so items written
+before a rekey stay readable. An epoch missing from the signed set is never delivered
+later; items the device cannot read are rotated forward by a device that can. A
+bundle sealed before the latest rekey lacks the current epoch and cannot enroll a
+device (§3.5): a removal whose author stopped after its rekey and before it resealed
+the bundle leaves recovery dependent on a device that still syncs. A verifier replays the
 chain from genesis (or from a trusted checkpoint) and MUST reject: bad signature,
 wrong `prev`, non-sequential `seq`, author not an owner at that point, a removed
 device reappearing without a fresh `device_add`, `key_epoch` decreasing, or any wrap
@@ -237,13 +244,28 @@ if `base_revision` equals the item's current revision (0 for a new item) —
   `log_seq`, starting at 1 and contiguous (no gaps, no reuse). A client that sees a
   gap, or a different record at a position it already holds, MUST raise the rollback
   alarm (§6).
+- **Change-log heads.** Every position has a head that commits to the whole prefix:
+  `log_head[0] = ""` and `log_head[n] = b64 sha256(utf8("akv1/log-head") || 0x0A ||
+  cjson({"conflict_id","log_seq":n,"prev":log_head[n-1],"record":recordDigest}))`, where
+  `conflict_id` is the preserved branch's ID or `null` for an applied record and
+  `recordDigest` is `b64 sha256(record signing input)`. The domain tag keeps it
+  distinct from every other cjson hash. The change feed returns each entry's
+  `log_head` and the head at the current `log_seq`; clients compute the chain
+  themselves and never sign or trust a served head. The head binds only
+  `log_seq`, `conflict_id` and the record: clients take an entry's kind from
+  `conflict_id` and its revision and resolution from their own replay of the
+  records (`applyRecord`, `resolves`), never from the served `kind`, `revision` or
+  `resolved_revision`.
 
 **Removal fence.** A removed device keeps its signing key and the vault keys it held,
 so with a colluding server it could keep appending validly signed records. Every
-`device_remove` and `member_remove` therefore signs `log_fence`: the change-log head
-its author verified, gap-free, when it removed the device. The server MUST refuse a
+`device_remove` and `member_remove` therefore signs `log_fence` and `log_head`: the
+change-log position its author verified, gap-free, when it removed the device, and the
+head it computed itself at that position from the records it verified (`""` exactly
+when `log_fence` is 0, else 32 bytes; `bad_request` otherwise). The server MUST refuse a
 removal whose `log_fence` is behind the current head (`409 conflict`: pull and
-re-sign) or ahead of it (`bad_request`). Right after the removal lands, the remover
+re-sign) or ahead of it (`bad_request`), or whose `log_head` is not the stored head at
+the fence (`bad_request`). Right after the removal lands, the remover
 MUST sign and post a checkpoint (§6, accepted while `rekey_required` is set) so other
 devices witness the log at the fence; the fence itself is the signed `log_fence`, so
 verification never depends on the server keeping that checkpoint.
@@ -252,16 +274,23 @@ A device that is still live can write between the remover's pull and its removal
 so keep the fence stale. The device MUST therefore be revoked first (§9, live
 revocation stops its requests); the remover then retries a `409` fence with backoff.
 
-**Scope of the fence.** The fence binds a position, not the log contents. It
-guarantees that no record by a removed author is accepted above the fence. The
-contents of positions at or below it are protected only for a client that had pulled
-the log up to the fence before the removal and kept a per-position digest of what it
-pulled (the rule above). Every other device trusts the server for those positions:
-a newly enrolled or recovered device, and equally an existing device that was offline
-or behind when the removal landed. A colluding server could place a record the
-removed device signed after its removal at such a position. Detecting that needs the
-per-position digests; binding the contents in the removal itself is a release gate
-([#21](https://github.com/bestagentkits/ak-vault/issues/21)).
+**Scope of the fence.** `log_fence` guarantees that no record by a removed author is
+accepted above the fence; `log_head` binds the contents of every position at or below
+it. A device that first reads the log after the removal (newly enrolled, recovered,
+or offline when it landed) replays the log with `verifyChangeLog` and refuses
+(`rollback`) any prefix whose head differs from a signed fence: a record substituted,
+dropped or reordered, or a `conflict_id` changed, at or below the fence changes the head. The fence
+binds the log as its remover verified it. It cannot vouch for records the removed
+device got accepted before its removal, including any it wrote after it was
+compromised but before it was removed, and it says nothing about positions above the
+latest fence (§6 checkpoints and the freeze limitation apply there).
+
+A client MUST check every removal of its verified chain against the head it computed
+at that removal's `log_fence`. A client that learns of a removal after its cursor
+passed the fence compares the head it kept for that position (`keptHeads`), or
+replays the log again from position 1; it MUST NOT take the head from the server. Once the client has
+read the whole log, a fence beyond the last position means the log is behind a signed
+removal (`rollback`).
 
 `verifyLoggedRecord(record, state, log_seq)` (vectors: `removal-fence.json`) checks a
 record read from the change log against the verified membership state, in order:
@@ -273,7 +302,22 @@ the record's `key_epoch`, a `log_seq` above that removal's `log_fence` is
 `forbidden`. Because writes are refused between a removal and the next rekey, every
 legitimate later write, including one by a re-added device ID, uses a newer key epoch
 and is unaffected. The membership state lists each removal (`removals`: `device_id`,
-`sign_pub`, `removed_seq`, `key_epoch`, `log_fence`).
+`sign_pub`, `removed_seq`, `key_epoch`, `log_fence`, `log_head`).
+
+`verifyChangeLog(entries, state, {from?, complete?, keptHeads?})` (vectors: `removal-fence.json`)
+replays change-log entries `{"log_seq","conflict_id","record"}` that continue from
+`from` (a cursor `{log_seq, log_head}` the client computed itself; default position 0,
+head `""`). In order: `from` is a valid position (`bad_request`); every removal whose
+`log_fence` is the `from` position carries `from.log_head` (`rollback`); every removal
+whose `log_fence` lies in `1..from.log_seq - 1` has a head in `keptHeads` (heads the
+client computed earlier, by position; missing: `bad_request`) equal to its `log_head`
+(`rollback`); per entry: exact keys,
+`log_seq` an integer ≥ 1, `conflict_id` `null` or an ID (`bad_request`); `log_seq` is the
+previous position + 1 (`rollback`: gap, repeat or reorder); `verifyLoggedRecord`; the
+head advances. Every removal whose `log_fence` is an entry's position MUST carry the
+head computed there (`rollback`). With `complete` (the entries
+reach the current head), a `log_fence` beyond the last position is `rollback`. It
+returns the new cursor and the verified records.
 
 ## 6. Checkpoints (anti-rollback)
 
@@ -312,7 +356,8 @@ chained by `prev = b64 sha256(previous entry wire cjson)`. Key epochs never decr
 along the chain and never exceed the vault's current key epoch (`bad_request`); the
 server accepts new entries only at the current key epoch. A verifier MUST hold the
 key of the current epoch, and of every entry epoch at or above its minimum epoch (the
-epoch it joined at, or the oldest its recovery bundle covers); a missing required key
+`key_epoch` of the event that added it, whose signed wrap set always delivers that
+epoch's key (§4), or an older epoch from which it holds every key); a missing required key
 is a refusal (`bad_request`), never an opaque result, so every entry at an epoch at
 or above the minimum is decrypted. Holding the current key does not prove the chain
 has an entry at that epoch: a chain that ends before the first entry at the minimum
@@ -527,8 +572,8 @@ These resolve points the sections above leave open; the vectors in
   (`genesis`, `device_add`, `member_add`; else `bad_request`); each wrap parses (§3.3);
   every `rcpt` is a device the event adds (`forbidden`); key epochs lie in
   `1..event.key_epoch` and (`rcpt`, `key_epoch`) pairs are unique (`bad_request`);
-  completeness (`bad_request`): a recovery-authored `device_add` (`sas` `""`) carries at
-  least one wrap, every other event a wrap at `event.key_epoch` for every added device;
+  completeness (`bad_request`): every event, a recovery-authored `device_add` (`sas` `""`)
+  included, carries a wrap at `event.key_epoch` for every added device;
   finally `wraps_digest(wraps)` MUST equal `body.wraps_digest` (`bad_request`). Input
   order does not matter.
 
@@ -545,3 +590,7 @@ under an earlier revision does not verify and is reset rather than migrated.
   sealer's membership position; a domain-tagged `wraps_digest`; audit verification
   requires the current epoch's key and marks opaque entries explicitly; membership
   quotas leave room for the rekey a removal requires and for recovery.
+- **2026-10 (issues #21, #36):** removals also sign `log_head`, the change-log head at
+  `log_fence`, and clients replay the head chain against it (`verifyChangeLog`); the
+  change feed publishes per-entry and current heads; a recovery-authored `device_add`
+  MUST deliver the current key epoch like every other device-adding event.

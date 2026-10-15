@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Wrap sets of device-adding events (spec §4, §11). chains: shared and personal are the verified membership chains of membership.json (chains[0], chains[1]); personal_current_only is the personal chain up to its first rekey plus an owner device_add whose set delivers only the current epoch. verifyDeviceWraps(chains[chain][event_seq], wraps). Checks in order: the event is genesis, device_add or member_add; wraps parse; every rcpt is a device the event adds (forbidden); key_epoch in 1..event.key_epoch and (rcpt, key_epoch) unique; completeness: a recovery-authored device_add (sas \"\") carries at least one wrap (the bundle may predate later rekeys), any other event carries a wrap at event.key_epoch for every added device (older epochs optional); finally b64 sha256(utf8(\"akv1/wraps\\n\") || cjson(wraps sorted by rcpt, then key_epoch)) == body.wraps_digest. Input order does not matter. cases MUST pass and every wrap MUST unwrap (with the recipient device kx_secret from membership.json) to vault_keys[chain][key_epoch]; invalid MUST fail with expect_error.",
+  "description": "Wrap sets of device-adding events (spec §4, §11). chains: shared and personal are the verified membership chains of membership.json (chains[0], chains[1]); personal_current_only is the personal chain up to its first rekey plus an owner device_add whose set delivers only the current epoch; personal_stale_bundle is the personal chain up to its recovery_rotate plus a recovery-authored device_add at key epoch 2 whose signed set holds only epoch 1. verifyDeviceWraps(chains[chain][event_seq], wraps). Checks in order: the event is genesis, device_add or member_add; wraps parse; every rcpt is a device the event adds (forbidden); key_epoch in 1..event.key_epoch and (rcpt, key_epoch) unique; completeness: every event, a recovery-authored device_add (sas \"\") included, carries a wrap at event.key_epoch for every added device (older epochs optional); finally b64 sha256(utf8(\"akv1/wraps\\n\") || cjson(wraps sorted by rcpt, then key_epoch)) == body.wraps_digest. Input order does not matter. cases MUST pass and every wrap MUST unwrap (with the recipient device kx_secret from membership.json) to vault_keys[chain][key_epoch]; invalid MUST fail with expect_error.",
   "chains": {
     "shared": [
       {
@@ -146,16 +146,17 @@
         "body": {
           "device_id": "mPcGN24XundmA61ifDsv_A",
           "reason": "lost",
-          "log_fence": 4
+          "log_fence": 4,
+          "log_head": "VWwmeemWDSoykxUrp4MbdzlNMfwL7GtpIh13b9ulKRk"
         },
-        "sig": "3jyw39Z5TmGgTpBXR9HJy9Ja0z1QDH9ZaUUXy3MIDpJYquCcempZCXEB6tXdiJ4yPi3iN0H7tLsWrMXRcfsjBQ"
+        "sig": "PJLHKjPJkRl47M9ZVEQnLmcpZRiK4VM3GBXyGmVw-lqMYRCMILpKbYOQrSCuantY1Wkd-UXlk5MIEyREA6X5Dw"
       },
       {
         "v": 1,
         "type": "rekey",
         "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
         "seq": 6,
-        "prev": "SZqAcUjqfSzvIfgqCXkOjX27tQ0wJQlWjakfiH7_beU",
+        "prev": "Dol8g5u0Dr3o8SJQAJLb-fH5MZ-mduIdetDS1CGE9zc",
         "membership_epoch": 6,
         "key_epoch": 2,
         "ts": 1767225960000,
@@ -168,30 +169,31 @@
             "FAIn9G3vsydsuqirnEn95g"
           ]
         },
-        "sig": "qcw7ehruqAzU1dbaVaqn-ZWHXjz2i6wriIYr-MzP4KvDvA1MgJCH9smuje_qr7Y0w-R1ghrcSNAqNUnuDebHCQ"
+        "sig": "01tF8hYU6_CEtpv7_1nvCf206a1PPowdEOLjTwXW_jLjqjx3nlurXgqjBLu_ko1oAL6tdd631l4iKu1zSYaeBg"
       },
       {
         "v": 1,
         "type": "member_remove",
         "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
         "seq": 7,
-        "prev": "no1ONBbQcOE8h_K0RgdsU6pyLa1QneepLZ4x2DXB5Bc",
+        "prev": "wWNvJZGxZplkahNWe5Glr6OpFrG-zkGK-qq4auVeOs8",
         "membership_epoch": 7,
         "key_epoch": 2,
         "ts": 1767226020000,
         "author": "HuCy7tB5ixWPisxMZQdTTA",
         "body": {
           "account": "acct_carol",
-          "log_fence": 7
+          "log_fence": 7,
+          "log_head": "WekwrFZS0qMyUFmfWlyrHivE1FOg4MsfzDoBDA4iT0o"
         },
-        "sig": "WInrxQADrI6fYTioIqvRlCiuVBdRjCwnjUY5emPdka0fx9w__QlGGty8ZsLsah7PR7INmmymHksB1mHnLLR_AQ"
+        "sig": "LiBe5Y3RJGhJMc104Ee_ckpjQTILFUNyAADVxGDy7TE98UWyJpAk-QKEEGKtzfN6ms9hD8SGP9XH-B3-eIAdCQ"
       },
       {
         "v": 1,
         "type": "rekey",
         "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
         "seq": 8,
-        "prev": "kSbXxcT2GkdSgl-QzM936wmHtHiUFtBNF1-5vur158g",
+        "prev": "lKGx4lHQSoLo2rBhYMB80XGV4X6OcoxxZOSbc8G3pOQ",
         "membership_epoch": 8,
         "key_epoch": 3,
         "ts": 1767226080000,
@@ -203,7 +205,7 @@
             "B94HiPggPKmPe3VT4nr3rQ"
           ]
         },
-        "sig": "reiixYdDOxSml2LEIM-ccqH4AMg0b7q6ZiiZKyp0jlS23Rf3h_45qL77c3-cUYjHA2u1lAPywj9Mr-pDG5R7DA"
+        "sig": "avC7jKYH8EMHw52Lo2f79_wvAFNULcUsM5koHL31QWIIw6JL91GTRMNNbX6SdK2PRvoVwvWVTV2YVjmcnupxCw"
       }
     ],
     "personal": [
@@ -272,16 +274,17 @@
         "body": {
           "device_id": "HuCy7tB5ixWPisxMZQdTTA",
           "reason": "lost",
-          "log_fence": 5
+          "log_fence": 5,
+          "log_head": "0xz0Ja02E48LQWedzugwdtIkxQgQH_97-O8TDJVmim0"
         },
-        "sig": "W_aoAXy7WHJPBH8aWv3BDrRGirm3CGMX2DjI3nIeGLEgfY8NJnw3nLAjfijXHMANel6XcLVwRB1-xOK7G4EgBg"
+        "sig": "YXia1AHOontsEI_86f5zOVYAsdcQytrRXInBbMIsk5q5g_lELEqnkILneFAXyIo1Dp7--Twnlr8VB-LDzo9gAg"
       },
       {
         "v": 1,
         "type": "rekey",
         "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
         "seq": 3,
-        "prev": "9davCP15lTRYsUYpigcmpIBzv2t81ZCGw3enrb302jI",
+        "prev": "06veCawHUGwi-3H6X4GRYRCmdCRqsI32_81FiNIKHN0",
         "membership_epoch": 3,
         "key_epoch": 2,
         "ts": 1767225780000,
@@ -291,14 +294,14 @@
           "wraps_digest": "e_Uc-F4zuE4nDtaR8Syb9kdU9MWSlE4_Cp2tPKJKdZ4",
           "needs_rotate": []
         },
-        "sig": "cg7XbJGTRegOctKE5qt1EfSCjruqkgOhnqSaNzMBVZ0UaOCh8sclW2Wp9hwxC7KAHB2yh4qbHbIgDSZvnoq8Cw"
+        "sig": "EyJCDQYE3aHYrCKfCtAY33ezx4jNvIswKw6YPGXhI2ZqlhckhWrrdolNtzI6KGMm3YKHn5_RA8yAv7SIV27lAw"
       },
       {
         "v": 1,
         "type": "device_add",
         "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
         "seq": 4,
-        "prev": "1lMTaQrDTXs19AmzU5PG379ZpGQ7p8uMSZbLuvJtStA",
+        "prev": "d8JnWplb141PFt7mBMyuHKaTPg6fPvYI7VOg5qGTB30",
         "membership_epoch": 4,
         "key_epoch": 2,
         "ts": 1767225840000,
@@ -315,14 +318,14 @@
           "sas": "KkYM-NUlLRJP4cPU0CLNO95AtvkGrO6KMijUkV8NipU",
           "wraps_digest": "hIxiEQZuJDmpDdypl_BKWhEI2OIMhi8QBGeGokf7tP4"
         },
-        "sig": "7t9sxt7__bP8uuijh7K_xrV_17BDG24fKlA7ib3OyzXB-X2erEiH_0Y03uRBLHsMnpmm-HjfrgPd57qdRkjfBA"
+        "sig": "qhXBqbhZSdy-WxXOOZv4hZT4Bcnaw6yQ6ipCTOaB2ciltXZgUGsbJgzOw88HuRi6U4BS3fthMAYxC8LzPmevBQ"
       },
       {
         "v": 1,
         "type": "recovery_rotate",
         "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
         "seq": 5,
-        "prev": "7IFewxLYsYXEFLpi8wEJjjUT4oJjUMG8m_php1qNx_A",
+        "prev": "Ny-JjBvxUA-jMRWUJL4hylFscGayok2_hKT10uiuWQw",
         "membership_epoch": 5,
         "key_epoch": 2,
         "ts": 1767225900000,
@@ -330,14 +333,14 @@
         "body": {
           "recovery_sign_pub": "bln2-jlPPPN95lKHq6GH5XWgX4NtNC-hOIPLhMR_0wg"
         },
-        "sig": "q8d6eWsu8qXbVZ2hx7Sf5tqV9sZExqqjdqamQkpsy5w9fJGTSs_06EYgt4CCsK-HW8HyNj0PxKTwTWxQxAQyDA"
+        "sig": "Ae26ujJj76ec3DHq0_q9gJFER5FdrwmgNXWYUu6-hVK5WPOsy4wy1tGNVbDRo7Jp-Gj-obKUkUVutmw-bBqUDQ"
       },
       {
         "v": 1,
         "type": "device_add",
         "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
         "seq": 6,
-        "prev": "M4XSPlQ2Ptac_eXAnXcfNOZQUDAs_p-G2btnFN5RcGk",
+        "prev": "jyzgj2-46Wg-SN01vfqh-9mQtimaiR17BVCj-mxXQKc",
         "membership_epoch": 6,
         "key_epoch": 2,
         "ts": 1767225960000,
@@ -354,7 +357,7 @@
           "sas": "",
           "wraps_digest": "qX5SToJfmIaYaEgAiA-lBF6xUnUCdNuaSaQI6gb5MMk"
         },
-        "sig": "IFdAgVWcMrkpcMf90nXdP6v6t9Av7u9H3SY0tpCgM6XogGhUginS-zsi19zaopmJkKLhIOgO6VNhKPOIHbBcAA"
+        "sig": "0K7ojJXoy1u-CtBdaZ2HNz47soCRbQiYUjHymGtFMwjWuSi5gINYXPTwDHhnMI5E0Og3CaxqmdBFk69iQ5lhCw"
       }
     ],
     "personal_current_only": [
@@ -423,16 +426,17 @@
         "body": {
           "device_id": "HuCy7tB5ixWPisxMZQdTTA",
           "reason": "lost",
-          "log_fence": 5
+          "log_fence": 5,
+          "log_head": "0xz0Ja02E48LQWedzugwdtIkxQgQH_97-O8TDJVmim0"
         },
-        "sig": "W_aoAXy7WHJPBH8aWv3BDrRGirm3CGMX2DjI3nIeGLEgfY8NJnw3nLAjfijXHMANel6XcLVwRB1-xOK7G4EgBg"
+        "sig": "YXia1AHOontsEI_86f5zOVYAsdcQytrRXInBbMIsk5q5g_lELEqnkILneFAXyIo1Dp7--Twnlr8VB-LDzo9gAg"
       },
       {
         "v": 1,
         "type": "rekey",
         "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
         "seq": 3,
-        "prev": "9davCP15lTRYsUYpigcmpIBzv2t81ZCGw3enrb302jI",
+        "prev": "06veCawHUGwi-3H6X4GRYRCmdCRqsI32_81FiNIKHN0",
         "membership_epoch": 3,
         "key_epoch": 2,
         "ts": 1767225780000,
@@ -442,14 +446,14 @@
           "wraps_digest": "e_Uc-F4zuE4nDtaR8Syb9kdU9MWSlE4_Cp2tPKJKdZ4",
           "needs_rotate": []
         },
-        "sig": "cg7XbJGTRegOctKE5qt1EfSCjruqkgOhnqSaNzMBVZ0UaOCh8sclW2Wp9hwxC7KAHB2yh4qbHbIgDSZvnoq8Cw"
+        "sig": "EyJCDQYE3aHYrCKfCtAY33ezx4jNvIswKw6YPGXhI2ZqlhckhWrrdolNtzI6KGMm3YKHn5_RA8yAv7SIV27lAw"
       },
       {
         "v": 1,
         "type": "device_add",
         "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
         "seq": 4,
-        "prev": "1lMTaQrDTXs19AmzU5PG379ZpGQ7p8uMSZbLuvJtStA",
+        "prev": "d8JnWplb141PFt7mBMyuHKaTPg6fPvYI7VOg5qGTB30",
         "membership_epoch": 4,
         "key_epoch": 2,
         "ts": 1767225840000,
@@ -466,7 +470,159 @@
           "sas": "xFrOu8sQ-ULCep_c-1rA5EMhcQU86lhs7ojp9ATIrkQ",
           "wraps_digest": "O5kvbtBxoP1WCABvspfF0wGvh5dJDieZMuo-roDtV7c"
         },
-        "sig": "znSFlmJz0okW6Bid6jzDYxoP6mIGN6dpE2m32yx9zTT5HvbsElnQbiviLP52WKG2zLG7lKiqUka5eUWYZV15Dg"
+        "sig": "1zuOuYTKM4yeD_-eStTX1ssQLLBs-oQMgp5jzLxIWIa35K_HNADs3LRhk_h7QcG-FhHP4rxHJD5ntlfZuSqIAw"
+      }
+    ],
+    "personal_stale_bundle": [
+      {
+        "v": 1,
+        "type": "genesis",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "seq": 0,
+        "prev": "",
+        "membership_epoch": 0,
+        "key_epoch": 1,
+        "ts": 1767225600000,
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "body": {
+          "vault_kind": "personal",
+          "owner_account": "acct_alice",
+          "recovery_sign_pub": "cicjpS4sa49tP_XHQxIU9fqmlEzg3-5zEAB9hXr8f3w",
+          "devices": [
+            {
+              "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+              "sign_pub": "6HmixYpiJSFzQIgnT27y_mTRwBNlDQ-HiRJOPm32aXc",
+              "kx_pub": "LqtEeFnOdQnH87ofhDVV9PNJHIEajekVqv-SDVZR9Sc",
+              "account": "acct_alice",
+              "role": "owner",
+              "kind": "human"
+            }
+          ],
+          "wraps_digest": "oa7_aOtT73QHsfrxdwj6-1UxWkk0sg5ypMYGMeco0sM"
+        },
+        "sig": "DCH5ZlIJOHTPEfjNFgSkwtQp5_vEcxwdC_vXD_0zS6SRK3v64DTAI38go1GvlLN54551VZahzAQkuc4bTVknAw"
+      },
+      {
+        "v": 1,
+        "type": "device_add",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "seq": 1,
+        "prev": "AM2njd8XSjn51ZsUikHLvzMxxGFteW2e7znGwZdKHQk",
+        "membership_epoch": 1,
+        "key_epoch": 1,
+        "ts": 1767225660000,
+        "author": "6u45vtLgIz-3ItFG6w1MeA",
+        "body": {
+          "device": {
+            "device_id": "alGMSPgjHiFibCbcuBDleA",
+            "sign_pub": "sArVNbjwSTWmyXz_9tyDVHVHAAXbkYJmc49HBNghA4o",
+            "kx_pub": "1v52S3Ko7m61qkOBBrrWj2waZjxf0hbphkgToix7dwo",
+            "account": "acct_alice",
+            "role": "owner",
+            "kind": "human"
+          },
+          "sas": "",
+          "wraps_digest": "zPYT1ha-RSnYDW9gdFz6RNPGXwoDQvrkKMHZsGpUmPM"
+        },
+        "sig": "gJ9ES8Gfivyh1TRV2U2NUCC-Q8tz5_hjGxm5yFWHPwILGp-CslT34AJetJv_3AjuYhSzuNVAIkGzv7flDI8-Bg"
+      },
+      {
+        "v": 1,
+        "type": "device_remove",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "seq": 2,
+        "prev": "0ZZraBhXgXsKK1PcDZ-hVoH_fLZ8KXUCyyesYfSM8Tc",
+        "membership_epoch": 2,
+        "key_epoch": 1,
+        "ts": 1767225720000,
+        "author": "alGMSPgjHiFibCbcuBDleA",
+        "body": {
+          "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+          "reason": "lost",
+          "log_fence": 5,
+          "log_head": "0xz0Ja02E48LQWedzugwdtIkxQgQH_97-O8TDJVmim0"
+        },
+        "sig": "YXia1AHOontsEI_86f5zOVYAsdcQytrRXInBbMIsk5q5g_lELEqnkILneFAXyIo1Dp7--Twnlr8VB-LDzo9gAg"
+      },
+      {
+        "v": 1,
+        "type": "rekey",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "seq": 3,
+        "prev": "06veCawHUGwi-3H6X4GRYRCmdCRqsI32_81FiNIKHN0",
+        "membership_epoch": 3,
+        "key_epoch": 2,
+        "ts": 1767225780000,
+        "author": "alGMSPgjHiFibCbcuBDleA",
+        "body": {
+          "new_key_epoch": 2,
+          "wraps_digest": "e_Uc-F4zuE4nDtaR8Syb9kdU9MWSlE4_Cp2tPKJKdZ4",
+          "needs_rotate": []
+        },
+        "sig": "EyJCDQYE3aHYrCKfCtAY33ezx4jNvIswKw6YPGXhI2ZqlhckhWrrdolNtzI6KGMm3YKHn5_RA8yAv7SIV27lAw"
+      },
+      {
+        "v": 1,
+        "type": "device_add",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "seq": 4,
+        "prev": "d8JnWplb141PFt7mBMyuHKaTPg6fPvYI7VOg5qGTB30",
+        "membership_epoch": 4,
+        "key_epoch": 2,
+        "ts": 1767225840000,
+        "author": "alGMSPgjHiFibCbcuBDleA",
+        "body": {
+          "device": {
+            "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+            "sign_pub": "6HmixYpiJSFzQIgnT27y_mTRwBNlDQ-HiRJOPm32aXc",
+            "kx_pub": "LqtEeFnOdQnH87ofhDVV9PNJHIEajekVqv-SDVZR9Sc",
+            "account": "acct_alice",
+            "role": "owner",
+            "kind": "human"
+          },
+          "sas": "KkYM-NUlLRJP4cPU0CLNO95AtvkGrO6KMijUkV8NipU",
+          "wraps_digest": "hIxiEQZuJDmpDdypl_BKWhEI2OIMhi8QBGeGokf7tP4"
+        },
+        "sig": "qhXBqbhZSdy-WxXOOZv4hZT4Bcnaw6yQ6ipCTOaB2ciltXZgUGsbJgzOw88HuRi6U4BS3fthMAYxC8LzPmevBQ"
+      },
+      {
+        "v": 1,
+        "type": "recovery_rotate",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "seq": 5,
+        "prev": "Ny-JjBvxUA-jMRWUJL4hylFscGayok2_hKT10uiuWQw",
+        "membership_epoch": 5,
+        "key_epoch": 2,
+        "ts": 1767225900000,
+        "author": "alGMSPgjHiFibCbcuBDleA",
+        "body": {
+          "recovery_sign_pub": "bln2-jlPPPN95lKHq6GH5XWgX4NtNC-hOIPLhMR_0wg"
+        },
+        "sig": "Ae26ujJj76ec3DHq0_q9gJFER5FdrwmgNXWYUu6-hVK5WPOsy4wy1tGNVbDRo7Jp-Gj-obKUkUVutmw-bBqUDQ"
+      },
+      {
+        "v": 1,
+        "type": "device_add",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "seq": 6,
+        "prev": "jyzgj2-46Wg-SN01vfqh-9mQtimaiR17BVCj-mxXQKc",
+        "membership_epoch": 6,
+        "key_epoch": 2,
+        "ts": 1767225960000,
+        "author": "okQfscQxzoTJI7YHUS707g",
+        "body": {
+          "device": {
+            "device_id": "Ba374UfSdmte3zNp_Inf0g",
+            "sign_pub": "gT_kh1uqFt_6Y_ezbPLxl4a-jmAL71zXkZS6minclVs",
+            "kx_pub": "N1ABDpM6ei4eJL_KsPsz10MbIMH1at-Q9QTaT9gFXCU",
+            "account": "acct_alice",
+            "role": "owner",
+            "kind": "human"
+          },
+          "sas": "",
+          "wraps_digest": "9bN5BmQhOAuqbUq751zxlA4oIDsAznRzbDilU3klBpM"
+        },
+        "sig": "Sw1QeeeLNy-vvJqU1rtvjniLvWYNuTm45TRiHGP9kuS4eItpcK-XT5puTBGVkmNcE5sQTi57diXNkGveGKz3CQ"
       }
     ]
   },
@@ -481,6 +637,10 @@
       "2": "O4SiiDXovO8apPCdiiDuhqxdALLhWqRFtcLDVYoJmXQ"
     },
     "personal_current_only": {
+      "1": "U8M6_L5fJbyRv5cyNYJ4MefUyWm_9tqR3AOcZool8bA",
+      "2": "O4SiiDXovO8apPCdiiDuhqxdALLhWqRFtcLDVYoJmXQ"
+    },
+    "personal_stale_bundle": {
       "1": "U8M6_L5fJbyRv5cyNYJ4MefUyWm_9tqR3AOcZool8bA",
       "2": "O4SiiDXovO8apPCdiiDuhqxdALLhWqRFtcLDVYoJmXQ"
     }
@@ -626,7 +786,7 @@
       ]
     },
     {
-      "name": "recovery_device_add_bundle_epochs_only",
+      "name": "recovery_device_add_current_epoch",
       "chain": "personal",
       "event_seq": 6,
       "wraps": [
@@ -829,6 +989,23 @@
       "chain": "personal",
       "event_seq": 1,
       "wraps": [],
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "recovery_set_without_current_epoch",
+      "chain": "personal_stale_bundle",
+      "event_seq": 6,
+      "wraps": [
+        {
+          "v": 1,
+          "alg": "x25519-xc20p",
+          "rcpt": "Ba374UfSdmte3zNp_Inf0g",
+          "key_epoch": 1,
+          "epk": "5wvJ4rSPaxotry8NeS97oQsG_jZZeapT6sL_0uFB1k0",
+          "n": "rTHT1O631Pk7XkElE9CDDvEQLYdqTv1o",
+          "ct": "aMItIm4spbCcuM7Q7brllqJ-jmUYuqhgM0uiC6FNS55O3TN4_GHRe4A9DNo1KqXW"
+        }
+      ],
       "expect_error": "bad_request"
     },
     {

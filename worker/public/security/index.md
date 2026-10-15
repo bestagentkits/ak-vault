@@ -87,7 +87,7 @@ These are design properties of protocol v1 as proposed, not reviewed results.
 - **Key loss is final.** Lose every enrolled device, the master password and the recovery key, and nobody can decrypt the vault.
 - **Audit entries are not signed per author.** Any device that held a key epoch can write audit entries at that epoch, including one removed later, until the rekeying device appends at the new epoch. (spec §7)
 - **Roles are enforced by the Worker.** Clients do not yet check records against role history, so read-only roles and machine identities rely on the Worker ([#22](https://github.com/bestagentkits/ak-vault/issues/22)).
-- **Removal fence binds positions.** It refuses a removed device's records above the fence, not substituted records below it; binding the contents is a release gate ([#21](https://github.com/bestagentkits/ak-vault/issues/21)). A device that keeps writing can stall its own removal, so revoke it first.
+- **Removal fence binds the log its remover verified.** A device that reads the log later detects records substituted at or below the fence, but records the removed device wrote before its removal stay valid. A device that keeps writing can stall its own removal, so revoke it first. (spec §5)
 - **Recovery bundle can be guessed offline.** Anyone with a live owner-account session can download the encrypted bundle and guess a weak password offline. Revoke your sessions after a loss. (spec §3.4)
 - **Trust on first use at genesis.** The owner's key is pinned on first use unless it arrives through the recovery bundle or a SAS-verified pairing. (spec §4)
 

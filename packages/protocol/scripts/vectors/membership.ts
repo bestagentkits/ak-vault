@@ -20,6 +20,7 @@ import {
   flipByte, id, key32, negative, nonce, recoverySign, recoverySign2, recoveryAuthor, recoverySignPub, recoverySignPub2, seed, stranger,
   VAULT_PERSONAL, VAULT_SHARED, type ChainStep, type VectorDevice,
 } from './fixtures.js';
+import { fenceAt } from './change-log.js';
 
 const rec = (d: VectorDevice) => ({ ...d.record }) as unknown as JsonObject;
 
@@ -65,9 +66,9 @@ const SHARED: ChainStep[] = [
   { type: 'member_add', ...by(alicePhone), body: { account: 'acct_carol', role: 'reader', devices: [rec(carolPhone)], wraps_digest: digestOf('shared/2') } },
   { type: 'device_add', ...by(aliceLaptop), body: { device: rec(bobCi), sas: sasDigest(sasInput), wraps_digest: digestOf('shared/3') } },
   { type: 'role_set', ...by(alicePhone), body: { account: 'acct_carol', role: 'editor' } },
-  { type: 'device_remove', ...by(alicePhone), body: { device_id: aliceLaptop.record.device_id, reason: 'lost', log_fence: 4 } },
+  { type: 'device_remove', ...by(alicePhone), body: { device_id: aliceLaptop.record.device_id, reason: 'lost', ...fenceAt('shared', 4) } },
   { type: 'rekey', ...by(alicePhone), body: { new_key_epoch: 2, wraps_digest: wrapsDigest(epoch2Wraps), needs_rotate: [id('item/1'), id('item/2')] } },
-  { type: 'member_remove', ...by(alicePhone), body: { account: 'acct_carol', log_fence: 7 } },
+  { type: 'member_remove', ...by(alicePhone), body: { account: 'acct_carol', ...fenceAt('shared', 7) } },
   { type: 'rekey', ...by(alicePhone), body: { new_key_epoch: 3, wraps_digest: wrapsDigest(epoch3Wraps), needs_rotate: [id('item/3')] } },
 ];
 
@@ -79,7 +80,7 @@ export const PERSONAL_RECOVERY: ChainStep[] = [
   genesisPersonal,
   { type: 'device_add', ...byRecovery, body: { device: rec(aliceNewPhone), sas: '', wraps_digest: digestOf('personal/1') } },
   // The recovered device removes the lost one itself, after verifying the change log up to log_fence.
-  { type: 'device_remove', ...by(aliceNewPhone), body: { device_id: alicePhone.record.device_id, reason: 'lost', log_fence: 5 } },
+  { type: 'device_remove', ...by(aliceNewPhone), body: { device_id: alicePhone.record.device_id, reason: 'lost', ...fenceAt('personal', 5) } },
   { type: 'rekey', ...by(aliceNewPhone), body: { new_key_epoch: 2, wraps_digest: b64(seed('personal/wraps')), needs_rotate: [] } },
   { type: 'device_add', ...by(aliceNewPhone), body: { device: rec(alicePhone), sas: b64(seed('personal/sas')), wraps_digest: digestOf('personal/4') } },
   { type: 'recovery_rotate', ...by(aliceNewPhone), body: { recovery_sign_pub: recoverySignPub2 } },
@@ -131,13 +132,18 @@ function invalidChains() {
     bad('key_epoch_decrease', 'rollback', withStep(7, { ...SHARED[7]!, override: { key_epoch: 1 } })),
     bad('key_epoch_change_without_rekey', 'bad_request', withStep(1, { ...SHARED[1]!, override: { key_epoch: 2 } })),
     bad('rekey_skips_epoch', 'bad_request', withStep(6, { type: 'rekey', ...by(alicePhone), body: { new_key_epoch: 3, wraps_digest: b64(seed('w')), needs_rotate: [] } })),
-    bad('invalid_remove_reason', 'bad_request', withStep(5, { ...SHARED[5]!, body: { device_id: aliceLaptop.record.device_id, reason: 'other', log_fence: 4 } })),
-    bad('device_remove_without_log_fence', 'bad_request', withStep(5, { ...SHARED[5]!, body: { device_id: aliceLaptop.record.device_id, reason: 'lost' } })),
-    bad('device_remove_string_log_fence', 'bad_request', withStep(5, { ...SHARED[5]!, body: { device_id: aliceLaptop.record.device_id, reason: 'lost', log_fence: '4' } })),
-    bad('member_remove_without_log_fence', 'bad_request', withStep(7, { ...SHARED[7]!, body: { account: 'acct_carol' } })),
+    bad('invalid_remove_reason', 'bad_request', withStep(5, { ...SHARED[5]!, body: { device_id: aliceLaptop.record.device_id, reason: 'other', ...fenceAt('shared', 4) } })),
+    bad('device_remove_without_log_fence', 'bad_request', withStep(5, { ...SHARED[5]!, body: { device_id: aliceLaptop.record.device_id, reason: 'lost', log_head: fenceAt('shared', 4).log_head } })),
+    bad('device_remove_string_log_fence', 'bad_request', withStep(5, { ...SHARED[5]!, body: { device_id: aliceLaptop.record.device_id, reason: 'lost', log_fence: '4', log_head: fenceAt('shared', 4).log_head } })),
+    bad('device_remove_without_log_head', 'bad_request', withStep(5, { ...SHARED[5]!, body: { device_id: aliceLaptop.record.device_id, reason: 'lost', log_fence: 4 } })),
+    bad('device_remove_empty_log_head_above_zero', 'bad_request', withStep(5, { ...SHARED[5]!, body: { device_id: aliceLaptop.record.device_id, reason: 'lost', log_fence: 4, log_head: '' } })),
+    bad('device_remove_log_head_at_zero_fence', 'bad_request', withStep(5, { ...SHARED[5]!, body: { device_id: aliceLaptop.record.device_id, reason: 'lost', log_fence: 0, log_head: fenceAt('shared', 4).log_head } })),
+    bad('device_remove_short_log_head', 'bad_request', withStep(5, { ...SHARED[5]!, body: { device_id: aliceLaptop.record.device_id, reason: 'lost', log_fence: 4, log_head: b64(seed('short').slice(0, 16)) } })),
+    bad('member_remove_without_log_fence', 'bad_request', withStep(7, { ...SHARED[7]!, body: { account: 'acct_carol', log_head: fenceAt('shared', 7).log_head } })),
+    bad('member_remove_without_log_head', 'bad_request', withStep(7, { ...SHARED[7]!, body: { account: 'acct_carol', log_fence: 7 } })),
     bad('recovery_key_authors_device_remove', 'forbidden', personal(2, { ...P[2]!, ...byRecovery })),
     bad('demote_last_owner', 'forbidden', withStep(1, { type: 'role_set', ...by(alicePhone), body: { account: 'acct_alice', role: 'editor' } })),
-    bad('remove_last_owner_device', 'forbidden', personal(1, { type: 'device_remove', ...by(alicePhone), body: { device_id: alicePhone.record.device_id, reason: 'retired', log_fence: 0 } })),
+    bad('remove_last_owner_device', 'forbidden', personal(1, { type: 'device_remove', ...by(alicePhone), body: { device_id: alicePhone.record.device_id, reason: 'retired', log_fence: 0, log_head: '' } })),
     bad('member_add_in_personal_vault', 'forbidden', personal(1, { type: 'member_add', ...by(alicePhone), body: { account: 'acct_bob', role: 'editor', devices: [rec(bobLaptop)], wraps_digest: anyDigest } })),
     bad('recovery_key_authors_member_add', 'forbidden', withStep(1, { type: 'member_add', ...byRecovery, body: { account: 'acct_bob', role: 'editor', devices: [rec(bobLaptop)], wraps_digest: anyDigest } })),
     bad('recovery_key_adds_non_owner', 'forbidden', withStep(2, { type: 'device_add', ...byRecovery, body: { device: { ...rec(stranger), account: 'acct_bob', role: 'editor' }, sas: '', wraps_digest: anyDigest } })),
@@ -191,7 +197,7 @@ export function membershipVectors(): Record<string, unknown> {
   return {
     version: 1,
     description:
-      'Membership log (spec §3.5, §4). devices: secrets and records used. recovery / rotated_recovery: the owner recovery signing key before and after the personal chain\'s recovery_rotate. chains: verifying `events` with `options` (trusted_anchor, witnessed_checkpoint) MUST yield `expected_state` exactly (removals lists every removal with the removed sign_pub, removed_seq, the key_epoch current at removal and the signed log_fence; the recovery key may author only device_add). genesis, device_add and member_add bodies carry wraps_digest (wrap sets: device-add-wraps.json). invalid: verification MUST fail with expect_error. wrap_checks: validate `wraps` against the final state of chain `chain` (options.key_epoch null = any retained epoch 1..key_epoch); positives also give wraps_digest = b64 sha256(utf8("akv1/wraps\\n") || cjson(wraps sorted by rcpt, then key_epoch)). sas: transcript, 6-digit code and digest for `input`.',
+      'Membership log (spec §3.5, §4). devices: secrets and records used. recovery / rotated_recovery: the owner recovery signing key before and after the personal chain\'s recovery_rotate. chains: verifying `events` with `options` (trusted_anchor, witnessed_checkpoint) MUST yield `expected_state` exactly (removals lists every removal with the removed sign_pub, removed_seq, the key_epoch current at removal and the signed log_fence and log_head (the change-log head at the fence, "" at fence 0, from removal-fence.json change_logs); the recovery key may author only device_add). genesis, device_add and member_add bodies carry wraps_digest (wrap sets: device-add-wraps.json). invalid: verification MUST fail with expect_error. wrap_checks: validate `wraps` against the final state of chain `chain` (options.key_epoch null = any retained epoch 1..key_epoch); positives also give wraps_digest = b64 sha256(utf8("akv1/wraps\\n") || cjson(wraps sorted by rcpt, then key_epoch)). sas: transcript, 6-digit code and digest for `input`.',
     devices: [alicePhone, aliceLaptop, bobLaptop, bobCi, carolPhone, aliceNewPhone, aliceTablet, stranger].map(deviceFixture),
     recovery: { sign_seed: b64(recoverySign.secretKey), sign_pub: recoverySignPub, author: recoveryAuthor },
     rotated_recovery: { sign_seed: b64(recoverySign2.secretKey), sign_pub: recoverySignPub2, author: byRecovery2.author },

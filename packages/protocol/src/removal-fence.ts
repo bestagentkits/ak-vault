@@ -10,10 +10,10 @@
  * and are contiguous, so every position at or below the fence was already
  * filled when the fence was signed.
  *
- * The fence binds a position, not the log contents. It refuses a removed
- * author's record above the fence; a client that holds its own copy of the
- * positions at or below the fence detects a substituted one, but a device that
- * first reads them later (a new or recovered device) trusts the server for them.
+ * This check binds the position: it refuses a removed author's record above
+ * the fence. The removal also signs `log_head`, the change-log head at the
+ * fence, which binds the contents of every position at or below it;
+ * `verifyChangeLog` (change-log.ts) replays the log and checks that head.
  *
  * A record by a removed device D at key epoch <= the epoch current at that
  * removal is accepted only at a `log_seq` not above that removal's fence.

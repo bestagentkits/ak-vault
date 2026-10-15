@@ -84,11 +84,12 @@ type DeviceRemoval struct {
 	RemovedSeq int64  // seq of the removing event
 	KeyEpoch   int64  // key epoch current at removal (the newest key the device could hold)
 	LogFence   int64  // signed log_fence of the removing event
+	LogHead    string // signed log_head of the removing event: the change-log head at LogFence ("" at 0)
 }
 
 // JSONValue returns the wire object.
 func (r DeviceRemoval) JSONValue() any {
-	return map[string]any{"device_id": r.DeviceID, "sign_pub": r.SignPub, "removed_seq": r.RemovedSeq, "key_epoch": r.KeyEpoch, "log_fence": r.LogFence}
+	return map[string]any{"device_id": r.DeviceID, "sign_pub": r.SignPub, "removed_seq": r.RemovedSeq, "key_epoch": r.KeyEpoch, "log_fence": r.LogFence, "log_head": r.LogHead}
 }
 
 // Member is an account and its role.
