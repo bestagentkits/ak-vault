@@ -39,26 +39,60 @@ stay up. Any value other than exactly `true` disables sync (fail closed). Exact
 route behavior is owned by the Worker source and its tests.
 
 - To disable: set the variable to `false` for the production environment in the
-  Worker configuration and deploy through the gated workflow.
+  Worker configuration and deploy through the gated workflow. That path is a pull
+  request, CI on it and on the merge (about 1 minute each in October 2026), the
+  staging deploy (about 30 s) and then the production reviewer's approval; plan
+  for minutes, not seconds.
 - To re-enable: only after the incident issue records the cause and fix, and the
   [release gates](../security/release-gates.md) relevant to the cause are green.
+- Verify from outside: `GET /healthz` reports `sync_enabled`, and any `/v1/vaults/...`
+  request answers `503 sync_disabled` instead of `401`. Edge propagation is not
+  atomic: for up to about 30 s after a deploy some requests still reach the
+  previous version, so probe several times before declaring the switch set.
+- The switch is a var baked into each Worker version. Every later deploy from
+  `main` applies the value in the Wrangler config, and a [rollback](#worker-rollback)
+  applies the value of the version it targets. Either can silently re-enable sync
+  ([#53](https://github.com/bestagentkits/ak-vault/issues/53)).
+
+**Staging rehearsal** (direct deploy, staging only; the production rule above still
+applies). From a clean checkout of the commit staging runs:
+
+```sh
+pnpm --filter <worker package> exec wrangler deployments status --env staging   # note the current version ID
+pnpm --filter <worker package> exec wrangler deploy --env staging --var VAULT_SYNC_ENABLED:false --message "<issue URL>"
+# restore the prior value by rolling back to the version noted above
+pnpm --filter <worker package> exec wrangler rollback <VERSION_ID> --name <staging worker name> --message "<issue URL>"
+```
+
+Evidence: [rehearsal log](./rehearsal-2026-10.md).
 
 ## Worker rollback
 
 Use when a deploy introduced a fault and the previous version is known good.
 
 ```sh
-pnpm --filter <worker package> exec wrangler deployments list --env=""   # production is the top-level Wrangler config
+pnpm --filter <worker package> exec wrangler deployments list --env=""   # production is the top-level Wrangler config; staging: --env staging
 pnpm --filter <worker package> exec wrangler rollback <VERSION_ID> --name <production worker name> --message "<incident issue URL>"
 ```
 
-The worker package name is in `worker/package.json`; the production Worker name is
-in the Wrangler config. `wrangler rollback` takes `--name`, not `--env`. Cloudflare
-allows rollback only to the 100 most recently published versions and refuses a rollback across a Durable Object class
+The worker package name is in `worker/package.json`; the Worker names are in the
+Wrangler config. Always pass `--name`: run from `worker/` without it, `wrangler
+rollback` targets the top-level config, which is **production**. In a
+non-interactive shell `wrangler rollback` does not prompt; it answers its own
+confirmation with yes and deploys at once. Cloudflare allows rollback only to the
+100 most recently published versions and refuses a rollback across a Durable Object class
 migration ([Cloudflare rollbacks](https://developers.cloudflare.com/workers/configuration/versions-and-deployments/rollbacks/)).
-Rollback changes code only; Durable Object data is untouched, so a rollback past a
-storage schema change can fail at runtime. Prefer a forward fix when the schema
-moved. Confirm with `wrangler deployments status` and the staging/production smoke.
+
+- A rollback restores the target version's code **and its vars**, including the
+  [kill switch](#kill-switch). Rolling back past a kill-switch deploy turns sync
+  back on; check the target version's `VAULT_SYNC_ENABLED` first.
+- Durable Object data is untouched, so a rollback past a storage schema change can
+  fail at runtime. Prefer a forward fix when the schema moved. Vaults written
+  under a newer protocol revision may not parse under older code.
+- The Deploy workflow redeploys `main` after every green push, which replaces a
+  rollback. Hold merges to `main`, or land the fix, until the incident is resolved.
+- Confirm with `wrangler deployments status` (it shows the rollback message) and
+  the staging/production smoke. On staging the rollback was live within about 6 s.
 
 **Staging smoke.** The `smoke:staging` script in `worker/package.json` runs the sync
 flow against staging with real vault tokens. It does not sign in itself: it reads a
@@ -92,28 +126,77 @@ names, HTTP statuses and stable error codes.
 
 **Protocol revisions without a version bump.** A revision listed under "Revisions" in
 the [spec](../protocol/v1/spec.md#revisions) changes wire bodies, so a vault created
-before it no longer verifies. The Worker refuses every request to it with
-`unsupported_version` ("vault predates the current protocol revision"), and its old
-`wraps` table is no longer read. Such vaults exist only on staging (production sync
+before it may no longer verify. Such vaults exist only on staging (production sync
 is disabled until the [release gates](../security/release-gates.md) are met) and hold
-synthetic data; abandon them and create fresh vaults rather than migrating.
+synthetic data; abandon them and create fresh vaults rather than migrating. How a
+stale vault shows up depends on the revision:
+
+- Vaults from before the signed-wrap-set / removal-fence revision: the Worker
+  refuses every request with `unsupported_version` ("vault predates the current
+  protocol revision"), and their old `wraps` table is no longer read.
+- Vaults from before the removal `log_head` revision (2026-10, #21): on its first
+  start under the new code each vault backfills its change-log heads, and vaults
+  without removals keep working. A vault whose membership log already holds a
+  `device_remove` or `member_remove` is still **served** by the Worker (reads `200`,
+  writes `409 rekey_required` until rekeyed), but clients refuse its chain with
+  `bad_request` ("log_head is required"). Reset it: create a fresh vault. Restoring
+  a backup does not help, because the old removal is in every backup. The Worker
+  should refuse these too ([#52](https://github.com/bestagentkits/ak-vault/issues/52)).
+
+Before deploying a revision that changes stored data, write the deploy time (UTC)
+and the version ID it replaces on the issue. That is the backup: point-in-time
+recovery can return any vault to a moment before the deploy for 30 days (see
+below), and rolling back the Worker needs the version ID.
 
 ## Durable Object backup and restore
 
 SQLite-backed Durable Objects support point-in-time recovery to any point in the
-past 30 days through the storage API (`getBookmarkForTime`,
-`onNextSessionRestoreBookmark`, then `ctx.abort()` to restart)
+past 30 days through the storage API
 ([Cloudflare SQLite storage API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)).
 It is not available in local development. The Worker exposes no restore or export
 route (routing is in `worker/src/index.ts`), so a restore needs a reviewed code
-change.
+change ([#51](https://github.com/bestagentkits/ak-vault/issues/51)); until one exists
+the procedure below was rehearsed on a separate lab Worker (see the
+[rehearsal log](./rehearsal-2026-10.md)).
+
+**Backup.** History is kept automatically; nothing has to run beforehand. For a
+planned change, also take `getCurrentBookmark()` on each affected vault object and
+record it: it is exact, while a time lookup is not (below).
+
+**Restore**, inside the vault's Durable Object, one vault at a time:
+
+1. Get the bookmark: the one recorded before the change, or
+   `getBookmarkForTime(t)`.
+2. `onNextSessionRestoreBookmark(bookmark)`. It returns the **undo bookmark** (the
+   moment just before the restore). Record it on the incident issue before going
+   on; nothing else returns it.
+3. `ctx.abort()` restarts the object (the call that aborts receives an error; that
+   is expected). The next request sees the restored state; in the rehearsal that
+   took 2 to 4 s.
+4. Verify with a client pull: the membership chain and the change log verify, and
+   the head matches the intended point.
+5. To undo, repeat steps 2 and 3 with the undo bookmark.
+
+What the rehearsal showed about `getBookmarkForTime`:
+
+- It is approximate and resolved **earlier** than the requested time for recent
+  points: exact for a point 5 minutes old, about 90 s early for a point 2 minutes
+  old. Check the restored head before accepting a time-based restore.
+- For a vault created minutes ago it fails ("This database has no history." or
+  "Requested time is before this database existed.") even for times after its
+  creation. Use a recorded bookmark for young vaults.
 
 Restoring a vault is **an incident in itself**:
 
 - Every client that witnessed a checkpoint newer than the restore point will refuse
-  the restored state as a rollback. That is the protocol working, not a bug.
-- `onNextSessionRestoreBookmark` returns a bookmark for the moment before the
-  restore; keep it on the incident issue so the restore can be undone.
+  the restored state as a rollback. That is the protocol working, not a bug. A
+  device that only witnessed older state cannot tell: the restore is invisible to it.
+- The whole object is restored, including the checkpoint relay, idempotency records,
+  proof `jti` replay entries and rate counters. Relayed checkpoints newer than the
+  restore point are gone, and a device re-posting its newer checkpoint gets
+  `400 bad_request` (ahead of the stored state).
+- Revocations live in the separate revocation registry object. Never restore that
+  object to before a revocation: it would un-revoke sessions and devices.
 - How clients re-converge after a deliberate restore is not yet specified
   ([ADR 0001 open items](../adr/0001-opt-in-zero-knowledge-sync.md#open-items-before-approval)).
   Until it is, restore only to recover from server-side corruption, one vault at a

@@ -14,6 +14,7 @@ page to find the owner of a question.
 | Which tests exercised each red-team scenario, and what they found | [Red-team evidence](./security/red-team-evidence.md) |
 | Incidents, kill switch, rollback, restore, key rotation | [Runbooks](./operations/runbooks.md) |
 | What it costs on Cloudflare | [Cost model](./operations/cost-model.md) |
+| What the rollback, restore and kill-switch rehearsals and the cost run showed | [Rehearsal log](./operations/rehearsal-2026-10.md) |
 | Landing page visual design | [Design guidelines](./design-guidelines.md) |
 | How to review a change | [REVIEW.md](../REVIEW.md) |
 

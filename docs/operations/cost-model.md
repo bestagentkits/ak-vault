@@ -1,10 +1,11 @@
 # Cost model
 
-An **estimate before measurement** for the Worker + one SQLite-backed Durable
-Object per vault ([ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md)). Every
-input below is an assumption to be replaced by staging measurements as part of the
-[release gates](../security/release-gates.md). Do not quote these figures as
-observed cost.
+An estimate for the Worker + one SQLite-backed Durable Object per vault
+([ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md)). The first table of
+[assumptions](#assumptions) was written before any measurement; per-call inputs were
+then [measured](#measured-2026-10-15) on a defined workload and replace them where
+they differ. Device counts and pull rates are still assumptions, so do not quote
+these figures as observed cost.
 
 ## Prices used
 
@@ -46,22 +47,67 @@ Sources: [Workers pricing](https://developers.cloudflare.com/workers/platform/pr
 | Stored data per vault | 1 MB | Ciphertext, change log, tombstones, membership |
 | Days per month | 30 | |
 
+## Measured 2026-10-15
+
+Workload: Worker code at commit `3f77991`, deployed as a temporary lab Worker with a
+synthetic token issuer (staging only accepts tokens minted by ak-web staging; see
+the [rehearsal log](./rehearsal-2026-10.md#cost-measurement)). Five vaults with two
+devices each: genesis, `device_add`, 50 item writes, 1,000 incremental change
+pulls (the steady-state poll), then a full verified pull and one checkpoint per
+device, 1,090 API calls over 5 minutes. Figures are from the Cloudflare GraphQL
+Analytics API (`workersInvocationsAdaptive`, `durableObjectsInvocationsAdaptiveGroups`,
+`durableObjectsPeriodicGroups`), which samples: it reported 1,072 Worker requests.
+Per-call values divide by that count.
+
+| Input | Assumed | Measured | Delta |
+|---|---|---|---|
+| Durable Object requests per API call | 2 | 1.98 (vault 1,070, revocation registry 1,048) | as assumed |
+| Durable Object active time per request (vault) | 50 ms | 51 ms (54.3 s / 1,070) | as assumed |
+| Durable Object duration per call | 0.0125 GB-s | vault 0.0065 GB-s; registry 0.014 GB-s, but one global object is capped at about 324,000 GB-s a month | lower at scale |
+| Worker CPU per API call | 2 ms | 3.3 ms mean (p50 3.1 ms, p99 9.8 ms) | +66 % |
+| Rows read per call | 10 | 7.0 | lower |
+| Rows written | 5 per write, 0 per pull | **4.8 per call, pulls included** | every pull writes |
+| Stored data per vault | 1 MB | 124 KiB for a vault holding 4 records (`sql.databaseSize`) | lower for small vaults |
+
+Every authenticated request, pulls included, writes SQLite rows in the vault
+object: the per-device rate counter, the proof `jti` replay entry and the deletion
+of expired `jti` entries, with their index updates (`worker/src/vault/request-guard.ts`).
+The model counted rows written only for item writes.
+
+The revocation check reads no rows, yet its Durable Object wall time was 167 ms at
+p50 against 17 ms for the vault object. It made Worker wall time 211 ms at p50 in
+this run ([#10](https://github.com/bestagentkits/ak-vault/issues/10)).
+
+Staging itself, 2026-10-08 to 2026-10-15 14:00 UTC (smoke runs, landing page and
+probes, no sustained sync): 1,640 Worker requests, 0.83 ms mean CPU, 19 vault and 21
+registry Durable Object requests, and 245,760 bytes stored in the vault namespace
+(45,056 in the registry). That traffic is too small to size anything; it is
+recorded as the baseline.
+
 ## Estimates (USD per month, including the $5 minimum)
 
-| Vaults | Lazy pulls | Active polling every 60 s |
-|---|---|---|
-| 100 | ≈ $5 | ≈ $10 |
-| 1,000 | ≈ $7 | ≈ $101 |
-| 10,000 | ≈ $38 | ≈ $1,039 |
+Same device count and pull rates as the assumptions, with the measured per-call
+inputs (rows written 4.8 per call, CPU 3.3 ms, duration as measured with the
+registry capped):
 
-At 10,000 vaults with active polling, requests dominate: about 1.3 billion Worker
-requests (≈ $388), 2.6 billion Durable Object requests (≈ $390), duration
-(≈ $203) and CPU (≈ $51). Rows read stay inside the included 25 billion; rows
-written and storage are minor.
+| Vaults | Lazy pulls (assumed → measured) | Active polling every 60 s (assumed → measured) |
+|---|---|---|
+| 100 | ≈ $5 → ≈ $5 | ≈ $10 → ≈ $23 |
+| 1,000 | ≈ $7 → ≈ $6 | ≈ $101 → ≈ $677 |
+| 10,000 | ≈ $38 → ≈ $235 | ≈ $1,039 → ≈ $7,222 |
+
+At 10,000 vaults with active polling, **rows written dominate**: about 6.3 billion a
+month (≈ $6,252), then about 1.3 billion Worker requests (≈ $388), 2.6 billion
+Durable Object requests (≈ $387), duration (≈ $105) and CPU (≈ $86). Rows read stay
+inside the included 25 billion and storage is minor.
 
 ## What this means
 
-- **Polling frequency is the cost driver**, not storage. Before GA, measure
+- **Rows written per pull are the cost driver**, followed by polling frequency;
+  storage is not. A pull that wrote no rows would bring the 10,000-vault active
+  case back to about $1,000. Reducing them is a Worker design decision
+  ([#50](https://github.com/bestagentkits/ak-vault/issues/50)).
+- **Polling frequency multiplies everything.** Before GA, measure
   whether longer intervals, conditional pulls, or WebSocket hibernation (incoming
   messages billed at 20:1, idle hibernated objects not billed for duration) meet
   the < 60 s target more cheaply. Any change is a client/Worker design decision,
@@ -81,7 +127,8 @@ written and storage are minor.
 
 ## Replacing estimates with measurements
 
-During the staging soak, record per vault-day: API calls by route, Durable Object
-requests, duration, rows read and written, and stored bytes, from the Cloudflare
-dashboard or analytics. Replace the assumption table with those figures and note
-the date and workload.
+Per-call inputs are measured above. Still open: devices per vault, writes per
+vault-day and the pull rate a real sync service uses. Measure those during a
+two-device staging soak with real clients, by route, from the analytics datasets
+above (vault and registry namespaces of the staging Worker), and note the date and
+workload. Re-measure the per-call inputs after any change to the request path.

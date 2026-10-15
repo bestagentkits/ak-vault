@@ -31,8 +31,12 @@ evidence does not count.
 - [ ] Staging soak complete (below).
 - [ ] Backup/restore and rollback rehearsed on staging using the
       [runbooks](../operations/runbooks.md).
+      Latest run: [rehearsal log](../operations/rehearsal-2026-10.md) (rollback and
+      kill switch on staging; restore on a lab Worker until
+      [#51](https://github.com/bestagentkits/ak-vault/issues/51)).
 - [ ] Cost measured on staging and compared with the
       [cost model](../operations/cost-model.md).
+      Latest run: [rehearsal log](../operations/rehearsal-2026-10.md#cost-measurement).
 - [ ] External review signed off (below).
 - [ ] The removal fence binds the change-log contents, not only a position
       ([#21](https://github.com/bestagentkits/ak-vault/issues/21)): a device that
