@@ -47,15 +47,17 @@ route behavior is owned by the Worker source and its tests.
   [release gates](../security/release-gates.md) relevant to the cause are green.
 - Verify from outside: `GET /healthz` reports `sync_enabled`, and any `/v1/vaults/...`
   request answers `503 sync_disabled` instead of `401`. Edge propagation is not
-  atomic: for up to about 30 s after a deploy some requests still reach the
-  previous version, so probe several times before declaring the switch set.
+  atomic: in the rehearsal, requests still reached the previous version up to 12 s
+  after the deploy. Keep probing until several consecutive probes agree.
 - The switch is a var baked into each Worker version. Every later deploy from
   `main` applies the value in the Wrangler config, and a [rollback](#worker-rollback)
   applies the value of the version it targets. Either can silently re-enable sync
   ([#53](https://github.com/bestagentkits/ak-vault/issues/53)).
 
 **Staging rehearsal** (direct deploy, staging only; the production rule above still
-applies). From a clean checkout of the commit staging runs:
+applies). Find the commit staging runs from the latest successful Deploy workflow
+run (CI deployments carry no Wrangler message), check it out clean and run
+`pnpm install --frozen-lockfile`. Then:
 
 ```sh
 pnpm --filter <worker package> exec wrangler deployments status --env staging   # note the current version ID
@@ -63,6 +65,11 @@ pnpm --filter <worker package> exec wrangler deploy --env staging --var VAULT_SY
 # restore the prior value by rolling back to the version noted above
 pnpm --filter <worker package> exec wrangler rollback <VERSION_ID> --name <staging worker name> --message "<issue URL>"
 ```
+
+Before the rollback, run `deployments status` again. If anything other than your
+kill-switch version was deployed since you noted the ID (for example a CI deploy),
+do not roll back, which would downgrade the code; redeploy from the same clean
+checkout without `--var` instead.
 
 Evidence: [rehearsal log](./rehearsal-2026-10.md).
 
@@ -89,8 +96,10 @@ migration ([Cloudflare rollbacks](https://developers.cloudflare.com/workers/conf
 - Durable Object data is untouched, so a rollback past a storage schema change can
   fail at runtime. Prefer a forward fix when the schema moved. Vaults written
   under a newer protocol revision may not parse under older code.
-- The Deploy workflow redeploys `main` after every green push, which replaces a
-  rollback. Hold merges to `main`, or land the fix, until the incident is resolved.
+- After every green push to `main` the Deploy workflow redeploys staging
+  automatically and queues production for the reviewer. Either replaces a
+  rollback: hold merges to `main` (or land the fix), and do not approve a pending
+  production deploy, until the incident is resolved.
 - Confirm with `wrangler deployments status` (it shows the rollback message) and
   the staging/production smoke. On staging the rollback was live within about 6 s.
 
@@ -139,8 +148,9 @@ stale vault shows up depends on the revision:
   without removals keep working. A vault whose membership log already holds a
   `device_remove` or `member_remove` is still **served** by the Worker (reads `200`,
   writes `409 rekey_required` until rekeyed), but clients refuse its chain with
-  `bad_request` ("log_head is required"). Reset it: create a fresh vault. Restoring
-  a backup does not help, because the old removal is in every backup. The Worker
+  `bad_request` ("log_head is required"). Reset it: create a fresh vault. A backup
+  taken after the removal is refused the same way, and restoring to before the
+  removal would re-admit the removed device, so never do that. The Worker
   should refuse these too ([#52](https://github.com/bestagentkits/ak-vault/issues/52)).
 
 Before deploying a revision that changes stored data, write the deploy time (UTC)
@@ -194,7 +204,9 @@ Restoring a vault is **an incident in itself**:
 - The whole object is restored, including the checkpoint relay, idempotency records,
   proof `jti` replay entries and rate counters. Relayed checkpoints newer than the
   restore point are gone, and a device re-posting its newer checkpoint gets
-  `400 bad_request` (ahead of the stored state).
+  `400 bad_request` (ahead of the stored state). `jti` entries burned after the
+  restore point are forgotten, so a captured token and proof could be replayed once
+  within the `jti` window (`worker/src/limits.ts`) after the restore.
 - Revocations live in the separate revocation registry object. Never restore that
   object to before a revocation: it would un-revoke sessions and devices.
 - How clients re-converge after a deliberate restore is not yet specified

@@ -56,17 +56,18 @@ devices each: genesis, `device_add`, 50 item writes, 1,000 incremental change
 pulls (the steady-state poll), then a full verified pull and one checkpoint per
 device, 1,090 API calls over 5 minutes. Figures are from the Cloudflare GraphQL
 Analytics API (`workersInvocationsAdaptive`, `durableObjectsInvocationsAdaptiveGroups`,
-`durableObjectsPeriodicGroups`), which samples: it reported 1,072 Worker requests.
-Per-call values divide by that count.
+`durableObjectsPeriodicGroups`). The request datasets sample and reported 1,072
+Worker requests, so request and CPU figures divide by 1,072; the periodic Durable
+Object figures (active time, duration, rows) divide by the 1,090 calls the client made.
 
 | Input | Assumed | Measured | Delta |
 |---|---|---|---|
 | Durable Object requests per API call | 2 | 1.98 (vault 1,070, revocation registry 1,048) | as assumed |
-| Durable Object active time per request (vault) | 50 ms | 51 ms (54.3 s / 1,070) | as assumed |
-| Durable Object duration per call | 0.0125 GB-s | vault 0.0065 GB-s; registry 0.014 GB-s, but one global object is capped at about 324,000 GB-s a month | lower at scale |
+| Durable Object active time per request (vault) | 50 ms | 50 ms (54.3 s / 1,090) | as assumed |
+| Durable Object duration per call | 0.0125 GB-s | vault 0.0064 GB-s; registry 0.0135 GB-s, but one global object is capped at about 324,000 GB-s a month | lower at scale |
 | Worker CPU per API call | 2 ms | 3.3 ms mean (p50 3.1 ms, p99 9.8 ms) | +66 % |
-| Rows read per call | 10 | 7.0 | lower |
-| Rows written | 5 per write, 0 per pull | **4.8 per call, pulls included** | every pull writes |
+| Rows read per call | 10 | 6.9 | lower |
+| Rows written | 5 per write, 0 per pull | **4.76 per call, pulls included** | every pull writes |
 | Stored data per vault | 1 MB | 124 KiB for a vault holding 4 records (`sql.databaseSize`) | lower for small vaults |
 
 Every authenticated request, pulls included, writes SQLite rows in the vault
@@ -74,8 +75,9 @@ object: the per-device rate counter, the proof `jti` replay entry and the deleti
 of expired `jti` entries, with their index updates (`worker/src/vault/request-guard.ts`).
 The model counted rows written only for item writes.
 
-The revocation check reads no rows, yet its Durable Object wall time was 167 ms at
-p50 against 17 ms for the vault object. It made Worker wall time 211 ms at p50 in
+The revocation check read no rows in this run (the registry was empty), yet its
+Durable Object wall time was 167 ms at p50 against 17 ms for the vault object, and
+its active time about 110 ms per check. It made Worker wall time 211 ms at p50 in
 this run ([#10](https://github.com/bestagentkits/ak-vault/issues/10)).
 
 Staging itself, 2026-10-08 to 2026-10-15 14:00 UTC (smoke runs, landing page and
@@ -87,25 +89,29 @@ recorded as the baseline.
 ## Estimates (USD per month, including the $5 minimum)
 
 Same device count and pull rates as the assumptions, with the measured per-call
-inputs (rows written 4.8 per call, CPU 3.3 ms, duration as measured with the
-registry capped):
+inputs (rows written 4.76 per call, CPU 3.3 ms, duration as measured with the
+registry capped). The active-polling rows at 1,000 and 10,000 vaults (about 50 and
+500 requests a second) also assume a sharded or cached revocation registry: at the
+measured active time a single registry object handles roughly 10 checks a second, so
+without one those configurations do not run at all
+([#10](https://github.com/bestagentkits/ak-vault/issues/10)).
 
 | Vaults | Lazy pulls (assumed → measured) | Active polling every 60 s (assumed → measured) |
 |---|---|---|
-| 100 | ≈ $5 → ≈ $5 | ≈ $10 → ≈ $23 |
-| 1,000 | ≈ $7 → ≈ $6 | ≈ $101 → ≈ $677 |
-| 10,000 | ≈ $38 → ≈ $235 | ≈ $1,039 → ≈ $7,222 |
+| 100 | ≈ $5 → ≈ $5 | ≈ $10 → ≈ $22 |
+| 1,000 | ≈ $7 → ≈ $6 | ≈ $101 → ≈ $666 |
+| 10,000 | ≈ $38 → ≈ $231 | ≈ $1,039 → ≈ $7,109 |
 
 At 10,000 vaults with active polling, **rows written dominate**: about 6.3 billion a
-month (≈ $6,252), then about 1.3 billion Worker requests (≈ $388), 2.6 billion
-Durable Object requests (≈ $387), duration (≈ $105) and CPU (≈ $86). Rows read stay
+month (≈ $6,142), then about 1.3 billion Worker requests (≈ $388), 2.6 billion
+Durable Object requests (≈ $386), duration (≈ $103) and CPU (≈ $86). Rows read stay
 inside the included 25 billion and storage is minor.
 
 ## What this means
 
 - **Rows written per pull are the cost driver**, followed by polling frequency;
   storage is not. A pull that wrote no rows would bring the 10,000-vault active
-  case back to about $1,000. Reducing them is a Worker design decision
+  case back to about $1,000 (assuming about 15 rows per item write). Reducing them is a Worker design decision
   ([#50](https://github.com/bestagentkits/ak-vault/issues/50)).
 - **Polling frequency multiplies everything.** Before GA, measure
   whether longer intervals, conditional pulls, or WebSocket hibernation (incoming

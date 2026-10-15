@@ -3,8 +3,8 @@
 Evidence for two [release gates](../security/release-gates.md) on
 [#8](https://github.com/bestagentkits/ak-vault/issues/8): backup/restore and rollback
 rehearsed using the [runbooks](./runbooks.md), and cost measured and compared with
-the [cost model](./cost-model.md). Production was not touched. Times are UTC
-(Asia/Saigon is UTC+7). Commands are shown without credentials; `wrangler` ran from
+the [cost model](./cost-model.md). Production was not touched. Times are UTC.
+Commands are shown without credentials; `wrangler` ran from
 `worker/` with the Cloudflare token and account loaded from the environment.
 
 Runbook corrections that came out of this rehearsal are already in the runbooks and
@@ -64,7 +64,8 @@ now says so.
 | 14:07:24 → 14:09:37 | Probes | `sync_enabled=false`, probe `503 sync_disabled`, healthz/meta/landing up. One probe at 14:07:36 still saw `sync_enabled=true` (edge propagation) |
 | 14:09:52 | `wrangler rollback c2c18885-… --name ak-vault-staging --message "staging kill-switch restore rehearsal (#8)"` | Prior value `true` restored with the rollback; the first probe at 14:09:58 still saw `false`, every probe from 14:10:25 to 14:12:15 saw sync on and `401` |
 
-Findings, now in the runbook: propagation takes up to about 30 s in each direction;
+Findings, now in the runbook: stale responses up to 12 s after a deploy in each
+direction (the next probes, 20 to 30 s later, all agreed);
 a rollback restores the target version's vars, so rolling back past a kill-switch
 deploy re-enables sync; and the next deploy from `main` re-applies the config value
 ([#53](https://github.com/bestagentkits/ak-vault/issues/53)). The gated production
@@ -155,11 +156,12 @@ ingestion settled:
 
 Compared with the model's assumptions: Durable Object requests per call and active
 time per request match. Worker CPU is 66 % higher. Rows read are lower. **Rows
-written are 4.8 per call including pulls**, where the model assumed none for pulls.
-At 10,000 vaults with active polling this moves the estimate from about $1,039 to
-about $7,222 a month, almost all of it rows written
+written are 4.76 per call including pulls** (5,184 over the 1,090 calls made), where
+the model assumed none for pulls. At 10,000 vaults with active polling this moves the
+estimate from about $1,039 to about $7,109 a month, almost all of it rows written
 ([#50](https://github.com/bestagentkits/ak-vault/issues/50)). Registry latency is
-reported on [#10](https://github.com/bestagentkits/ak-vault/issues/10). The full
+reported on [#10](https://github.com/bestagentkits/ak-vault/issues/10): at about
+110 ms active per check a single registry handles roughly 10 checks a second. The full
 comparison and revised table are in the [cost model](./cost-model.md#measured-2026-10-15).
 The client-side latency of this run (494 ms p50 per pull) is dominated by the
 operator network noted above and is not a service measurement.
