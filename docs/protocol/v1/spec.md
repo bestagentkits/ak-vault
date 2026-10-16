@@ -434,8 +434,10 @@ never saw the newer revision is subject to the withholding limitation (§6).
    `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`. Optional
    `session_kind` ∈ {`email_otp`, `api_key_device`, `machine`}: how the session behind the
    token signed in. An absent claim means `email_otp` (the only kind issued before the claim
-   existed); any other value, or a non-string, is `401 unauthorized`. ak-web sets it; the
-   Worker never infers it. Header `alg`
+   existed); any other value, or a non-string, is `401 unauthorized`. ak-web MUST set it for
+   every session that is not a human email-OTP sign-in; the Worker never infers it, so a
+   non-human session minted without it is read as `email_otp` (see the threat model's
+   recovery bundle limitation). Header `alg`
    MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. If the JWKS
    cannot be loaded the server fails closed (`503`) and backs off for 30 s before
    fetching again; it never serves expired keys.
