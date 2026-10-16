@@ -307,7 +307,9 @@ operator script's `bookmark` action: it is exact, while a time lookup is not (be
    the head matches the intended point.
 7. To undo, read the current bookmark and restore to the undo bookmark the same way.
 8. Delete the secret (`wrangler secret delete VAULT_OPERATOR_SECRET` with the same
-   environment) and the local file. The route answers 404 again.
+   environment; there is no `--force` flag, and a non-interactive shell confirms on
+   its own) and the local file. Check that `wrangler secret list` no longer shows it
+   and that the route answers 404 again.
 
 What the rehearsal showed about `getBookmarkForTime`:
 
@@ -337,10 +339,16 @@ Restoring a vault is **an incident in itself**:
 - Revocations live in the separate revocation registry object, which the operator
   route cannot reach. Never restore it to before a revocation by any other means: it
   would un-revoke sessions and devices.
-- How clients re-converge after a deliberate restore is not yet specified
-  ([ADR 0001 open items](../adr/0001-opt-in-zero-knowledge-sync.md#open-items)).
-  Until it is, restore only to recover from server-side corruption, one vault at a
-  time, and expect the vault owner's devices to need manual reconciliation.
+- Clients do not re-converge on their own (spec §6; a re-seed protocol is an
+  [ADR 0001 open item](../adr/0001-opt-in-zero-knowledge-sync.md#open-items)).
+  A device that witnessed newer state refuses the restored vault with `rollback`
+  and stops syncing; its local vault and `resolve` keep working. Restore only to
+  recover from server-side corruption, one vault at a time. To reconcile, either
+  undo the restore, which returns those devices to what they witnessed (devices
+  that wrote after the restore then refuse in turn), or have the vault owner move
+  to a fresh vault from a device's local state (the client has no command for
+  that yet; it is part of the re-seed open item). Never tell users to delete local
+  vaults.
 
 **Export.** A vault export is ciphertext plus visible metadata and is handled as
 confidential ([data classification](../security/data-classification.md#handling-rules)).

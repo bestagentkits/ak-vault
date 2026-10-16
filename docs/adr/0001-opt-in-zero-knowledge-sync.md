@@ -143,8 +143,10 @@ ADR adds an **opt-in** layer next to v1; it does not reinterpret v1:
 The owner accepted this ADR with the item below still open; it is a stated
 limitation, not a resolved design.
 
-- **Restore reconciliation.** How clients re-converge after a deliberate server
-  restore is not specified beyond the operator-confirmed re-seed in spec §6.
+- **Restore reconciliation.** v1 specifies no automatic re-convergence after a
+  deliberate server restore (spec §6): devices that witnessed newer state refuse it
+  and stop syncing, and recovery is operational (undo the restore, or move to a
+  fresh vault). A client re-seed protocol remains open.
 
 Resolved since the first draft: owner authority after losing every owner device
 (the recovery signing key in the bundle, spec §3.5) and the SAS transcript format

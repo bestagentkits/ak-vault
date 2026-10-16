@@ -23,6 +23,7 @@ the cost model; gaps are tracked in
 | Backup, restore, undo, client rollback detection | temporary lab Worker | `3dcec74` | Staging has no restore route and accepts only ak-web-minted tokens |
 | Wire-change upgrade with backup | lab Worker | `3dcec74` → `3f77991` | Same reasons; mirrors the staging deploy of the removal `log_head` revision |
 | Cost workload | lab Worker | `3f77991` | Authenticated workload needs tokens staging would not accept |
+| Backup, restore, undo, client reconciliation (2026-10-16) | staging | `6851b0b` | Operator restore route and an owner `ak login` session now exist |
 
 The **lab Worker** (`ak-vault-restore-drill`, on a `workers.dev` URL, deleted at
 14:56) ran the real Worker entry and Durable Object classes from the commit above. It
@@ -166,10 +167,53 @@ comparison and revised table are in the [cost model](./cost-model.md#measured-20
 The client-side latency of this run (494 ms p50 per pull) is dominated by the
 operator network noted above and is not a service measurement.
 
+## Staging restore (2026-10-16)
+
+The restore procedure in the [runbooks](./runbooks.md#durable-object-backup-and-restore)
+ran end to end on staging ([#51](https://github.com/bestagentkits/ak-vault/issues/51)),
+through the operator route merged in
+[#73](https://github.com/bestagentkits/ak-vault/pull/73) (`6851b0b`, CI-deployed to
+staging at 08:32:43 as version `7d959abc`). The clients were
+`worker/scripts/staging-restore-rehearsal.ts` (its header lists what each pull
+verifies): two synthetic device keys, owner and laptop, bound to the owner's staging
+account through an `ak login` email sign-in, holding ak-web-minted vault tokens. The
+vault and every record were synthetic. Bookmarks appear here only as their first 8
+characters.
+
+| Time | Step | Result |
+|---|---|---|
+| 08:33:27 | `wrangler secret put VAULT_OPERATOR_SECRET --env staging` from a `0600` file outside the repository | Version `18f179ce`; the route answers `401` to an unsigned probe |
+| 08:35:57 → 08:36:01 | Storage mechanics on an empty random object id through the route | Two bookmark reads with no writes in between are identical. Restore `200`, restart confirmed; the bookmark afterwards sorts after the one before. Replay `409`. Undo `200`; its undo bookmark sorts before the current one, and the bookmark afterwards sorts after it. Replay of the first restore after the undo `409`. Time lookup 5 s back `400` |
+| 08:42:20 → 08:42:27 | `tsx scripts/staging-restore-rehearsal.ts` step 1: genesis, `device_add`, two writes; both devices pull, verify and checkpoint `log_seq` 2 | All `201`/`200` |
+| 08:42:27 | **Backup**: current bookmark | Recorded; a second read is identical. A time lookup 5 s back on this young vault: `400` |
+| 08:42:28 → 08:42:31 | Laptop makes two writes (item A rev 2, item C) and checkpoints `log_seq` 4; the owner does not pull | `200`, `201` |
+| 08:42:33 | **Restore** to the backup bookmark | `200` with the undo bookmark; replay `409`; serving `log_seq` 2 after 0.4 s; the bookmark afterwards sorts after the one before |
+| 08:42:35 → 08:42:37 | Reconciliation | **Laptop (witnessed 4) refuses with `rollback`.** The owner (witnessed 2) accepts `log_seq` 2: the documented limitation. Re-posting the laptop's `log_seq` 4 checkpoint: `400`; the relay holds `[2, 2]` |
+| 08:42:38 → 08:42:41 | The owner makes three writes (item D, item B rev 2, item D rev 2), so the restored history reaches `log_seq` 5 with different contents | **Laptop (witnessed 4) refuses the fork with `rollback`.** `checkRollback` alone passes it; the digest and head check at the witnessed position refuses it (below) |
+| 08:42:44 | **Undo** to the undo bookmark | `200`; serving `log_seq` 4 after 0.3 s; replays of the restore and of the undo `409`. The laptop accepts `log_seq` 4 with the state digest of its pre-restore checkpoint. **The owner (witnessed the post-restore `log_seq` 5) refuses with `rollback`**: its writes after the restore are gone and are not accepted silently. A new write `200` |
+| 08:42:51 → 08:42:54 | Restore to the bookmark read before genesis, then its undo | `200`; `vault_exists: false` and a client read `404`; the undo serves `log_seq` 5 with `vault_exists: true`, and the laptop accepts it |
+| 08:43:49 | `wrangler secret delete VAULT_OPERATOR_SECRET --env staging` | Version `692a04b9`; `secret list` no longer shows it, and the route answers `404` |
+
+Findings:
+
+- A restore and its undo each move the current bookmark forward, and the
+  compare-and-swap refused every replayed restore request on staging storage. The
+  [threat model](../security/threat-model.md) (T8) now relies on that evidence.
+- `checkRollback` compares digests only at an equal `log_seq`, so a vault restored
+  and then grown past a device's witnessed position passes it. Spec §6 now spells
+  out that such a log must be refused; the §5 head rule and the §6 digest rule
+  already required it. No vector or CI test covers the case yet
+  ([#76](https://github.com/bestagentkits/ak-vault/issues/76)).
+- `wrangler secret delete` has no `--force` flag (an unknown flag prints the help
+  and deletes nothing). A non-interactive shell auto-confirms the prompt.
+
+The staging CLI session was revoked afterwards (ak-web then refuses the session
+token), and the two synthetic device keys were reported to the owner for
+revocation.
+
 ## Not covered
 
-- Restore on staging or production: no restore route exists yet
-  ([#51](https://github.com/bestagentkits/ak-vault/issues/51)).
+- Restore on production: not exercised; this rehearsal ran on staging only.
 - Authenticated traffic on staging and the two-device soak: need the owner's
   `ak login` session (above).
 - The production kill switch path was timed from CI history, not exercised.

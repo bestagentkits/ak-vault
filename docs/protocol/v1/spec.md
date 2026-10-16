@@ -335,9 +335,16 @@ than witnessed, the same `seq` with a different hash, a `log_seq` below the witn
 one, or a state that no longer matches a witnessed `state_digest` at that `log_seq`.
 
 **Server restore:** a legitimate point-in-time restore looks exactly like a rollback
-and MUST raise the alarm. Clients never accept it silently; the operator-confirmed
-recovery path re-uploads the client's witnessed records and membership (re-seed),
-then signs a new checkpoint. See `docs/operations/runbooks.md`.
+and MUST raise the alarm on every device that witnessed newer state. Clients never
+accept it silently. That includes a restored log that has since grown past the
+witnessed `log_seq`: the change-log head at that position differs from the one the
+client computed (§5) and the state there no longer matches the witnessed
+`state_digest`. `checkRollback` on checkpoints alone does not catch that case. A
+device that never witnessed newer state cannot tell and accepts the restored state
+(the limitation below). v1 defines no client re-seed or other
+automatic re-convergence: a device that raised the alarm stops syncing and keeps
+its local vault. Recovery is operational (`docs/operations/runbooks.md`): undo the
+restore, or the vault owner moves to a fresh vault from a device's local state.
 
 **Acknowledged limitation:** a malicious server can withhold updates a device has never
 witnessed (freeze attack against a new or long-offline device). Detection needs a

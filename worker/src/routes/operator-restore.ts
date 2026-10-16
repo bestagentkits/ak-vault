@@ -17,7 +17,7 @@
  * `origin` must equal this Worker's origin and `ts` (unix s) be within ±60 s.
  * Replay: a bookmark read is harmless; a restore is compare-and-swap on the
  * vault's current bookmark, so a replay is refused with `409` once the bookmark
- * has moved (every write moves it; that a restore does is to be checked on staging).
+ * has moved (every write moves it, and on staging every restore and undo did).
  *
  * A restore schedules the target, refuses every request to that vault from then
  * until the restart (so nothing is acknowledged that the restore discards),
