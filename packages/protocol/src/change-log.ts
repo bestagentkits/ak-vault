@@ -95,7 +95,8 @@ export interface VerifiedChangeLog {
  * Verify change-log entries `{log_seq, conflict_id, record}` that continue from
  * `opts.from`, against verified membership. Order: `from` is a valid position
  * (bad_request); `entries` is an array; every removal whose fence is at `from`
- * matches `from.log_head` (rollback); every removal whose fence lies in
+ * matches `from.log_head` (rollback); a kept head at `from` equals
+ * `from.log_head` (rollback); every removal whose fence lies in
  * `1..from.log_seq - 1` has a kept head (bad_request) equal to its signed head
  * (rollback); then for each entry: exact keys,
  * `log_seq` integer, `conflict_id` null or an ID (bad_request); `log_seq` is the

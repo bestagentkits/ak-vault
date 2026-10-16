@@ -316,20 +316,22 @@ and is unaffected. The membership state lists each removal (`removals`: `device_
 `verifyChangeLog(entries, state, {from?, complete?, keptHeads?})` (vectors: `removal-fence.json`)
 replays change-log entries `{"log_seq","conflict_id","record"}` that continue from
 `from` (a cursor `{log_seq, log_head}` the client computed itself; default position 0,
-head `""`). In order: `from` is a valid position (`bad_request`); every removal whose
-`log_fence` is the `from` position carries `from.log_head` (`rollback`); every removal
-whose `log_fence` lies in `1..from.log_seq - 1` has a head in `keptHeads` (heads the
-client computed earlier, by position; missing: `bad_request`) equal to its `log_head`
+head `""`). `keptHeads` are heads the client computed earlier, by position. In order:
+`from` is a valid position (`bad_request`); every removal whose `log_fence` is the
+`from` position carries `from.log_head` (`rollback`); a kept head at the `from` position
+equals `from.log_head` (`rollback`); every removal whose `log_fence` lies in
+`1..from.log_seq - 1` has a kept head (missing: `bad_request`) equal to its `log_head`
 (`rollback`); per entry: exact keys,
 `log_seq` an integer ≥ 1, `conflict_id` `null` or an ID (`bad_request`); `log_seq` is the
 previous position + 1 (`rollback`: gap, repeat or reorder); `verifyLoggedRecord`; the
-head advances. Every removal whose `log_fence` is an entry's position MUST carry the
-head computed there (`rollback`), and every head in `keptHeads` at the `from` position
-or an entry's position MUST equal the head computed there (`rollback`: a different
-record at a position the client already holds). With `complete` (the entries
-reach the current head), a `log_fence` or a `keptHeads` position beyond the last
-position is `rollback`. It returns the new cursor and the verified records. A kept head
-the entries do not reach is not an error; only fences below `from` require one.
+head advances; every removal whose `log_fence` is the entry's position carries the head
+computed there (`rollback`); a kept head at the entry's position equals the head
+computed there (`rollback`: a different record at a position the client already
+holds). With `complete` (the entries reach the current head), a `log_fence` beyond the
+last position is `rollback`, then a kept head beyond the last position is `rollback`.
+It returns the new cursor and the verified records. Apart from fences below `from`,
+no position requires a kept head, and on a page that is not `complete` a kept head
+beyond the last entry is not checked.
 
 ## 6. Checkpoints (anti-rollback)
 
@@ -350,9 +352,9 @@ accept it silently. That includes a restored log that has since grown past the
 witnessed `log_seq`: the change-log head at that position differs from the one the
 client computed (§5) and the state there no longer matches the witnessed
 `state_digest`. `checkRollback` on checkpoints alone does not catch that case: a
-client that reads those positions again passes the head it computed at its highest
-witnessed `log_seq` in `keptHeads` (§5), and compares its own `state_digest` at the
-`log_seq` of a peer's checkpoint, which carries no head (vectors: `checkpoints.json`
+client that reads positions at or below its highest witnessed `log_seq` again MUST
+pass the head it computed there in `keptHeads` (§5), and MUST compare its own
+`state_digest` at the `log_seq` of a peer's checkpoint, which carries no head (vectors: `checkpoints.json`
 `regrown_past_witnessed_passes_checkpoint_comparison_alone`, `removal-fence.json`
 `restored_regrown_*`). A client that resumes from its own cursor does not read those
 positions again, so the log alone does not show it the restore. Comparing the

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Removal fence (spec §5, §6). chains: membership.json chains (shared = chains[0], personal = chains[1]); state = verifyMembershipChain(chain); state.removals lists each removal with the removed sign_pub, the key_epoch current at removal and the signed log_fence and log_head of the removing event. verifyLoggedRecord(record, state, log_seq): record parses; same vault; log_seq >= 1 (bad_request); the author is a current device, or a removed device whose record key_epoch is not newer than the key_epoch of its last removal (forbidden); the signature verifies under that device key (invalid_signature); for every removal of the author with removal.key_epoch >= record.key_epoch, log_seq > removal.log_fence is forbidden. cases MUST pass; invalid MUST fail with expect_error. change_logs: the honest change log of each chain, entries {log_seq, conflict_id (null = applied record), record}; heads[n] is the log head at position n: heads[0] = \"\", heads[n] = b64 sha256(utf8(\"akv1/log-head\\n\") || cjson({\"conflict_id\", \"log_seq\": n, \"prev\": heads[n-1], \"record\": b64 sha256(record signing input)})). verifyChangeLog(entries, state, {from, complete}): from is a valid position (log_head \"\" exactly at 0, else 32 bytes; bad_request); per entry: exact keys {log_seq, conflict_id, record}, conflict_id null or an ID (bad_request); log_seq = previous + 1 (rollback); verifyLoggedRecord; the head advances; every removal whose log_fence equals the from position or an entry position MUST carry the head computed there (rollback); every removal whose log_fence lies in 1..from.log_seq-1 needs a head in kept_heads (keyed by decimal position; missing: bad_request) equal to its log_head (rollback); every kept head at the from position or an entry position MUST equal the head computed there (rollback); with complete, a removal log_fence or a kept head beyond the last position is rollback. A client passes at least the head it kept at its highest witnessed checkpoint, so a log restored below that position and regrown past it is refused (restored_regrown_*): checkRollback on checkpoints alone accepts it. log_cases MUST pass and yield head; log_invalid MUST fail with expect_error.",
+  "description": "Removal fence (spec §5, §6). chains: membership.json chains (shared = chains[0], personal = chains[1]); state = verifyMembershipChain(chain); state.removals lists each removal with the removed sign_pub, the key_epoch current at removal and the signed log_fence and log_head of the removing event. verifyLoggedRecord(record, state, log_seq): record parses; same vault; log_seq >= 1 (bad_request); the author is a current device, or a removed device whose record key_epoch is not newer than the key_epoch of its last removal (forbidden); the signature verifies under that device key (invalid_signature); for every removal of the author with removal.key_epoch >= record.key_epoch, log_seq > removal.log_fence is forbidden. cases MUST pass; invalid MUST fail with expect_error. change_logs: the honest change log of each chain, entries {log_seq, conflict_id (null = applied record), record}; heads[n] is the log head at position n: heads[0] = \"\", heads[n] = b64 sha256(utf8(\"akv1/log-head\\n\") || cjson({\"conflict_id\", \"log_seq\": n, \"prev\": heads[n-1], \"record\": b64 sha256(record signing input)})). verifyChangeLog(entries, state, {from, complete}): from is a valid position (log_head \"\" exactly at 0, else 32 bytes; bad_request); per entry: exact keys {log_seq, conflict_id, record}, conflict_id null or an ID (bad_request); log_seq = previous + 1 (rollback); verifyLoggedRecord; the head advances; every removal whose log_fence equals the from position or an entry position MUST carry the head computed there (rollback); every removal whose log_fence lies in 1..from.log_seq-1 needs a head in kept_heads (keyed by decimal position; missing: bad_request) equal to its log_head (rollback); a kept head at the from position MUST equal from.log_head (rollback), checked right after the fence at from and before the kept heads of fences below from; a kept head at an entry position MUST equal the head computed there (rollback), checked after the fence at that position; with complete, a removal log_fence beyond the last position is rollback, then a kept head beyond the last position is rollback. A client passes at least the head it kept at its highest witnessed checkpoint, so a log restored below that position and regrown past it is refused (restored_regrown_*): checkRollback on checkpoints alone accepts it. log_cases MUST pass and yield head; log_invalid MUST fail with expect_error.",
   "chains": {
     "shared": [
       {
@@ -6307,6 +6307,20 @@
           }
         }
       ],
+      "complete": true,
+      "expect_error": "rollback"
+    },
+    {
+      "name": "kept_head_at_from_checked_before_missing_fence_heads",
+      "chain": "shared",
+      "from": {
+        "log_seq": 8,
+        "log_head": "cSaU1YYtW-KsxzlPKpsjkcp5FNzTbPAAQ8n1GMNFmsM"
+      },
+      "kept_heads": {
+        "8": "5ygmU_uX_STWWs4UGmJNlMGTccxUNAxARKQ3lzjMkSA"
+      },
+      "entries": [],
       "complete": true,
       "expect_error": "rollback"
     },

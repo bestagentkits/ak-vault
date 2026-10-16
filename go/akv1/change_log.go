@@ -98,7 +98,8 @@ type VerifiedChangeLog struct {
 // VerifyChangeLog verifies change-log entries {log_seq, conflict_id, record}
 // that continue from opts.From, against verified membership. Order: From is a
 // valid position (bad_request); entries is bounded; every removal whose fence
-// is at From matches From.LogHead (rollback); every removal whose fence lies in
+// is at From matches From.LogHead (rollback); a kept head at From equals
+// From.LogHead (rollback); every removal whose fence lies in
 // 1..From.LogSeq-1 has a kept head (bad_request) equal to its signed head
 // (rollback); then per entry: exact
 // keys, log_seq integer, conflict_id null or an ID (bad_request); log_seq is

@@ -115,7 +115,9 @@ ADR adds an **opt-in** layer next to v1; it does not reinterpret v1:
   [data classification](../security/data-classification.md)) and can deny service
   or withhold updates a device has never witnessed. It cannot read values or names,
   forge records, inject recipients, or roll back a device past a witnessed
-  checkpoint without detection.
+  checkpoint without detection. A device that resumes from its own cursor after a
+  restore can still be forked without detection (see the threat model's
+  explicit limitations).
 - Removing a device or member forces a rekey before further writes, and every item
   the removed party could decrypt is flagged `needs-rotate`. Rekey cannot recall
   plaintext already obtained; provider-side rotation is the only remedy.

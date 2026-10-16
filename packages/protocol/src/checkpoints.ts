@@ -63,10 +63,11 @@ export function verifyCheckpoint(value: unknown, state: MembershipState): Checkp
  * log_seq, same log_seq with a different state_digest, or lower key_epoch.
  *
  * This compares checkpoints only, so it is not the whole §6 check: a log
- * restored below `witnessed.log_seq` and regrown past it passes. Callers MUST
- * also replay the log with `verifyChangeLog` passing the head they kept at
- * `witnessed.log_seq` in `keptHeads`, and, for a peer's checkpoint (which
- * carries no head), compare the state digest they computed at that position.
+ * restored below `witnessed.log_seq` and regrown past it passes. A caller that
+ * reads positions at or below `witnessed.log_seq` again MUST pass the head it
+ * kept there to `verifyChangeLog` in `keptHeads`, and, for a peer's checkpoint
+ * (which carries no head), compare the state digest it computed at that
+ * position (spec §6).
  */
 export function checkRollback(witnessed: CheckpointView, incoming: CheckpointView): void {
   if (witnessed.vault_id !== incoming.vault_id) fail('bad_request', 'checkpoint belongs to another vault');
