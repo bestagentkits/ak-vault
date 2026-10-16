@@ -1,9 +1,11 @@
 /**
  * Per-vault request checks that need vault state: rate limit, proof of
  * possession with single-use `jti`, membership of `sub`/`did`, token scope and
- * role. Order (after the vault-exists check): rate limit -> membership -> proof
- * -> scope -> role, all before any item, wrap, audit or recovery data is read
- * or written.
+ * role. Order (after the vault-exists check): membership -> proof -> scope ->
+ * role, then the rate limit, all before any item, wrap, audit or recovery data
+ * is read or written. The rate limit is charged after authorization so a request
+ * refused there (for example a stolen token without the device key) spends a
+ * separate budget and cannot exhaust the budget of the device it names.
  */
 import { isAkvError, verifyProof, type DeviceRecord, type MembershipState } from '@ak-vault/protocol';
 import type { Scope } from '../auth/jwt-verify.js';
@@ -14,12 +16,25 @@ import type { VaultRequest } from './vault-request.js';
 /** Who may call an op once authenticated. */
 export type RoleRule = 'any_device' | 'writer' | 'human_owner';
 
-export function enforceRateLimit(sql: SqlStorage, did: string, nowMs: number): void {
+/**
+ * Per-device budgets, each a fixed window of `rate_requests_per_window`:
+ * `authorized` for requests that passed authorization (only the holder of the
+ * device key can spend it), `refused` for requests refused before or during it.
+ */
+export type RateBucket = 'authorized' | 'refused';
+
+const RATE_TABLES: Record<RateBucket, string> = {
+  authorized: 'rate_counters',
+  refused: 'refused_rate_counters',
+};
+
+export function enforceRateLimit(sql: SqlStorage, bucket: RateBucket, did: string, nowMs: number): void {
+  const table = RATE_TABLES[bucket];
   const windowMs = LIMITS.rate_window_seconds * 1000;
   const windowStart = Math.floor(nowMs / windowMs) * windowMs;
-  const row = sql.exec<{ window_start: number; count: number }>('SELECT window_start, count FROM rate_counters WHERE did = ?', did).toArray()[0];
+  const row = sql.exec<{ window_start: number; count: number }>(`SELECT window_start, count FROM ${table} WHERE did = ?`, did).toArray()[0];
   const count = row && row.window_start === windowStart ? row.count + 1 : 1;
-  sql.exec('INSERT INTO rate_counters (did, window_start, count) VALUES (?, ?, ?) ON CONFLICT (did) DO UPDATE SET window_start = excluded.window_start, count = excluded.count', did, windowStart, count);
+  sql.exec(`INSERT INTO ${table} (did, window_start, count) VALUES (?, ?, ?) ON CONFLICT (did) DO UPDATE SET window_start = excluded.window_start, count = excluded.count`, did, windowStart, count);
   if (count > LIMITS.rate_requests_per_window) {
     const retryAfter = Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000));
     throw new ApiError('rate_limited', { headers: { 'Retry-After': String(retryAfter) } });

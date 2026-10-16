@@ -1,8 +1,10 @@
 /**
  * One SQLite-backed Durable Object per vault: the serialization point for every
- * mutation. `handle` runs vault-exists check -> rate limit -> authorization
- * (membership, proof, scope, role) -> idempotency -> one `transactionSync` per
- * mutation. Errors leave as stable codes with fixed messages.
+ * mutation. `handle` runs vault-exists check -> authorization (membership,
+ * proof, scope, role) -> rate limit -> idempotency -> one `transactionSync` per
+ * mutation. A request refused at authorization is counted against the device's
+ * separate `refused` budget, never its `authorized` one. Errors leave as stable
+ * codes with fixed messages.
  *
  * No storage is written for a vault that does not exist: every op other than
  * genesis answers 404 before the rate counter or proof `jti` tables are touched,
@@ -74,9 +76,7 @@ export class VaultDurableObject extends DurableObject<Env> {
         if (!this.schemaReady) preflightGenesis(req);
         this.ensureSchema();
       } else if (!this.vaultExists()) throw new ApiError('not_found');
-      enforceRateLimit(this.sql, req.claims.did, req.nowMs);
-      if (isMutation(req.op)) validateIdempotencyKey(req.idempotencyKey);
-      const auth = authorize(req, this.sql, this.membership);
+      const auth = this.authorizeAndCharge(req);
       if (!isMutation(req.op)) return this.read(req, auth);
       const replayed = lookupIdempotent(this.sql, req);
       if (replayed) return replayed;
@@ -93,6 +93,24 @@ export class VaultDurableObject extends DurableObject<Env> {
     } catch (err) {
       return errorResult(toApiError(err));
     }
+  }
+
+  /**
+   * Authorize, then charge the device's `authorized` budget. A refusal charges the
+   * `refused` budget instead (answering `rate_limited` once that is spent), so a
+   * caller that cannot prove the device key cannot exhaust the device's budget.
+   */
+  private authorizeAndCharge(req: VaultRequest): Authorized {
+    let auth: Authorized;
+    try {
+      if (isMutation(req.op)) validateIdempotencyKey(req.idempotencyKey);
+      auth = authorize(req, this.sql, this.membership);
+    } catch (err) {
+      enforceRateLimit(this.sql, 'refused', req.claims.did, req.nowMs);
+      throw err;
+    }
+    enforceRateLimit(this.sql, 'authorized', req.claims.did, req.nowMs);
+    return auth;
   }
 
   private refuseWhileRestorePending(): void {

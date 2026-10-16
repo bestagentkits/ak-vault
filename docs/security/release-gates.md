@@ -110,9 +110,10 @@ page and docs, and its own CI run is linked from its pull request.
       Latest run: [red-team evidence](./red-team-evidence.md) (PR
       [#46](https://github.com/bestagentkits/ak-vault/pull/46), signed removal
       `log_head` in [#49](https://github.com/bestagentkits/ak-vault/pull/49)):
-      scenarios 1 to 12, 14 and 15 executed, findings filed as issues (open
-      include [#41](https://github.com/bestagentkits/ak-vault/issues/41) and
-      [#42](https://github.com/bestagentkits/ak-vault/issues/42)). **Open:**
+      scenarios 1 to 12, 14 and 15 executed, findings filed as issues
+      ([#41](https://github.com/bestagentkits/ak-vault/issues/41) fixed; open include
+      [#42](https://github.com/bestagentkits/ak-vault/issues/42), blocked on ak-web
+      marking non-human sessions). **Open:**
       scenario 13 must run again when
       [#7](https://github.com/bestagentkits/ak-vault/issues/7) or agentkit#2299 lands.
       Its 2026-10-16 run ([#80](https://github.com/bestagentkits/ak-vault/issues/80))
