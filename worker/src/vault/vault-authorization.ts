@@ -14,7 +14,9 @@
  *    `recovery_sign_sk`, and `GET /membership` to verify the chain it must append
  *    to (spec §3.5, §9.4); nothing else. It presents its `sign_pub` in
  *    `AKV-Device-Key`; the token `did` must equal `kid(sign_pub)` and the proof
- *    must verify against that key. Exposure: any holder of an owner-account token
+ *    must verify against that key. Only an `email_otp` session may take this path
+ *    and recovery enrollment; `api_key_device` and `machine` sessions are refused
+ *    (spec §9.4), so a leaked API key cannot collect bundles. Exposure: any holder of an owner-account token
  *    plus a key it generates can fetch the bundle and attempt offline guessing of
  *    the bundle password, and can read membership metadata (accounts, roles,
  *    device public keys).
@@ -48,6 +50,11 @@ const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: r
   'recovery.get': { scope: READ, role: 'human_owner' },
   'recovery.put': { scope: WRITE, role: 'human_owner' },
 };
+
+/** Fail closed: outside membership only an `email_otp` session is admitted (spec §9.4). */
+function requireHumanSession(req: VaultRequest): void {
+  if (req.claims.kind !== 'email_otp') throw new ApiError('forbidden');
+}
 
 export interface Authorized {
   /** Current state, or for genesis the state the genesis event creates. */
@@ -95,7 +102,9 @@ function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: Memb
     // retried append returns its stored result instead of failing as a stale seq.
     return { state, device, body };
   }
-  // Recovery enrollment: only a recovery-signed device_add that adds the caller itself.
+  // Recovery enrollment: only a recovery-signed device_add that adds the caller itself,
+  // and only for a human email-OTP session (it needs the bundle that path refuses others).
+  requireHumanSession(req);
   const event = parseMembershipEvent(body['event']);
   if (event.type !== 'device_add' || event.author !== state.recovery_author) throw new ApiError('forbidden');
   const next = store.verifyAppend(body['event']);
@@ -112,6 +121,7 @@ function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: Memb
  * possession of the key it presents.
  */
 function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: MembershipState): Authorized {
+  requireHumanSession(req);
   const did = req.claims.did;
   if (req.claims.sub !== state.owner_account || state.removed_device_ids.includes(did)) throw new ApiError('forbidden');
   let signPub: string;

@@ -5,6 +5,8 @@
  * `crit`, `jku`, `jwk`, `x5u`, `x5c` are refused. Claims: exact `iss` and `aud`,
  * `exp`/`nbf`/`iat` with 60 s skew, and `sub`, `jti`, `sid`, `did`, `scope`
  * required. `scope` must be a non-empty subset of {vault:read, vault:write}.
+ * `session_kind` is optional: absent means `email_otp` (the only kind issued before
+ * the claim existed); a present value outside SESSION_KINDS is refused.
  * Every failure is `unauthorized`; nothing from the token is echoed.
  */
 import { b64decode, b64decodeLength, utf8Decode, utf8Encode } from '@ak-vault/protocol';
@@ -15,6 +17,13 @@ import { getIssuerKey } from './jwks.js';
 export const SCOPES = ['vault:read', 'vault:write'] as const;
 export type Scope = (typeof SCOPES)[number];
 
+/**
+ * How the session behind a token signed in. Only `email_otp` is a human session
+ * that may take the recovery-identity path; the others never may (spec §9.1).
+ */
+export const SESSION_KINDS = ['email_otp', 'api_key_device', 'machine'] as const;
+export type SessionKind = (typeof SESSION_KINDS)[number];
+
 export interface VerifiedClaims {
   sub: string;
   sid: string;
@@ -23,6 +32,7 @@ export interface VerifiedClaims {
   iat: number;
   exp: number;
   scope: Scope[];
+  kind: SessionKind;
 }
 
 export interface TokenConfig {
@@ -77,6 +87,12 @@ function parseScope(value: unknown): Scope[] {
   return [...out];
 }
 
+function parseSessionKind(value: unknown): SessionKind {
+  if (value === undefined) return 'email_otp';
+  if (typeof value !== 'string' || !(SESSION_KINDS as readonly string[]).includes(value)) deny();
+  return value as SessionKind;
+}
+
 /** Verify a bearer token and return its claims. `nowMs` is injectable for tests. */
 export async function verifyToken(token: string, config: TokenConfig, nowMs = Date.now()): Promise<VerifiedClaims> {
   if (token.length === 0 || token.length > MAX_TOKEN_LENGTH) deny();
@@ -126,6 +142,7 @@ export async function verifyToken(token: string, config: TokenConfig, nowMs = Da
     iat,
     exp,
     scope: parseScope(claims['scope']),
+    kind: parseSessionKind(claims['session_kind']),
   };
 }
 

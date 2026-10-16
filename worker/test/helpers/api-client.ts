@@ -24,6 +24,8 @@ export interface CallOptions {
   /** Explicit token; default mints one for the device. `null` sends none. */
   token?: string | null;
   scope?: string;
+  /** `session_kind` claim of the minted token; omitted by default (a legacy `email_otp` token). */
+  sessionKind?: string;
   /** Explicit proof header; `null` sends none. */
   proof?: string | null;
   /** Sign the proof with another key (stolen-token scenario). */
@@ -53,7 +55,7 @@ export async function call(device: TestDevice | null, method: string, path: stri
   const headers: Record<string, string> = { ...opts.headers };
   let token: string | null = null;
   if (opts.token !== undefined) token = opts.token;
-  else if (device) token = await mintToken({ sub: device.account, did: device.keys.record.device_id, sid: device.sid, ...(opts.scope ? { scope: opts.scope } : {}) });
+  else if (device) token = await mintToken({ sub: device.account, did: device.keys.record.device_id, sid: device.sid, ...(opts.scope ? { scope: opts.scope } : {}), ...(opts.sessionKind ? { claims: { session_kind: opts.sessionKind } } : {}) });
   if (token) headers['Authorization'] = `Bearer ${token}`;
   let proof: string | null = null;
   if (opts.proof !== undefined) proof = opts.proof;

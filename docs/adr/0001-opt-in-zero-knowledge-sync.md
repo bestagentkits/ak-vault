@@ -153,6 +153,34 @@ Resolved since the first draft: owner authority after losing every owner device
 (the recovery signing key in the bundle, spec §3.5) and the SAS transcript format
 (spec §3.5).
 
+## Amendment: API-key-bootstrapped device sessions
+
+Owner decision, 2026-10-16 ([#74](https://github.com/bestagentkits/ak-vault/issues/74)):
+a user signed in with an AgentKit API key can use sync. This adds a second sign-in
+path next to email OTP; it does not change the cryptographic design.
+
+- An API key never mints vault tokens. The CLI exchanges it, with a proof of
+  possession of a fresh device key, for a revocable ak-web device session tagged
+  `api_key_device` and linked to the key. Vault tokens carry `session_kind`
+  (`email_otp`, `api_key_device`, `machine`; [spec §9.1](../protocol/v1/spec.md#9-transport-authentication-worker)).
+- Revoking the key revokes every derived session through the existing revocation
+  webhook; a device is revoked as today.
+- The Worker refuses the recovery identity and recovery enrollment for
+  `api_key_device` and `machine` sessions and fails closed on an unknown kind, so a
+  leaked key cannot collect recovery bundles. Joining an existing vault requires a
+  `device_add` signed by an existing owner device; creating a vault is allowed.
+- ak-web enforces opt-in per API key (off by default, existing keys included), at
+  most 5 devices per key and an email notice on every new API-key device
+  ([ak-web#583](https://github.com/bestagentkits/ak-web/issues/583)); the CLI enrols
+  and approves devices ([agentkit#2475](https://github.com/bestagentkits/agentkit/issues/2475)).
+- Rejected: minting vault tokens directly from an API key (no per-device revocation,
+  a leaked key syncs until revoked, exposes recovery bundles).
+- A personal API key in CI gets full personal-device rights; read-only scoped CI stays
+  in [#6](https://github.com/bestagentkits/ak-vault/issues/6).
+- Transition: a token without `session_kind` is read as `email_otp` until ak-web emits
+  the claim; ak-web must set it on every `api_key_device` and machine token before
+  those sessions are minted.
+
 ## External review milestone
 
 GA is blocked until an independent cryptographic and security reviewer, who is not

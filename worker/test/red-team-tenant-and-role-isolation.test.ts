@@ -29,11 +29,13 @@ describe('red team: machine identity outside its vault', () => {
     expect(statuses(await writeEverything(other, machine, itemId))).toEqual(every(WRITE_ROUTES, 403));
     expect(await snapshot(other)).toEqual(before);
 
-    // Open finding #42 (not an accepted limitation): presenting its own key, the machine takes
-    // the recovery-identity path and fetches the other vault's encrypted bundle and membership
-    // log, and nothing else. This pins today's behaviour; a fix for #42 flips these two to 403.
+    // #42: a machine session is marked `session_kind: machine` in its vault token, and the
+    // recovery-identity path refuses it, so it fetches neither the other vault's encrypted
+    // bundle nor its membership log. A token without the claim is a legacy email-OTP session.
     expect((await putTestBundle(other, other.owner, sealTestBundle(other, 1))).status).toBe(200);
     const presented = { headers: { 'AKV-Device-Key': machine.keys.record.sign_pub } };
+    const marked = { ...presented, sessionKind: 'machine' };
+    expect(statuses(await readEverything(other, machine, itemId, marked))).toEqual(every(reads, 403));
     expect(statuses(await readEverything(other, machine, itemId, presented))).toEqual({ ...every(reads, 403), '/recovery': 200, '/membership': 200 });
 
     // In its own vault it reads (recovery stays owner-human only).

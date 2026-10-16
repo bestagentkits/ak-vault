@@ -29,7 +29,7 @@ rules. Rationale is in [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md).
 | Wrap headers: recipient device ID, ephemeral public key, Argon2id salt and `t`/`m`/`p`; which membership event each device wrap set belongs to (kept after its recipients are removed) | Delivering the right wrap to each device and serving each signed set whole |
 | Checkpoint fields (sequences, digests, author, timestamp) | Relayed to devices for anti-rollback |
 | Timestamps and ciphertext sizes | Inherent to storage; sizes leak approximate value length |
-| Token claims: `sub`, `sid`, `did`, `scope`, `jti` | Authentication, authorization and revocation |
+| Token claims: `sub`, `sid`, `did`, `scope`, `jti`, `session_kind` (`email_otp`, `api_key_device`, `machine`) | Authentication, authorization and revocation |
 | Quota and rate-limit counters | Abuse protection |
 | Durable Object point-in-time bookmarks (operator restore route only) | Positions in a vault object's storage history; they carry no vault contents |
 | Client IP and TLS metadata at the Cloudflare edge | Inherent to the platform |

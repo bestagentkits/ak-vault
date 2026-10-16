@@ -47,10 +47,18 @@ describe('token verification', () => {
     ['malformed did', { did: 'not-a-device-id' }],
     ['unknown scope', { scope: 'vault:read vault:admin' }],
     ['empty scope', { scope: '' }],
+    ['unknown session kind', { session_kind: 'admin' }],
+    ['non-string session kind', { session_kind: 7 }],
+    ['empty session kind', { session_kind: '' }],
+    ['null session kind', { session_kind: null }],
   ])('rejects %s', async (_name, claims) => {
     const res = await withToken(await mintToken({ sub: sub(), did: did(), claims }));
     expect(res.status).toBe(401);
     expect(res.json).toEqual({ error: { code: 'unauthorized', message: 'authentication failed' } });
+  });
+
+  it.each(['email_otp', 'api_key_device', 'machine'])('accepts the %s session kind on a member route', async (kind) => {
+    expect((await withToken(await mintToken({ sub: sub(), did: did(), claims: { session_kind: kind } }))).status).toBe(200);
   });
 
   it('rejects alg none, HS256 and unknown kid', async () => {

@@ -90,3 +90,52 @@ describe('recovery fetch by a not-yet-enrolled device', () => {
     expect((await fetchBundle(laptop, { headers: keyHeader(laptop) })).status).toBe(403);
   });
 });
+
+describe('recovery identity is for human email-OTP sessions only', () => {
+  const READS = ['/recovery', '/membership'];
+
+  it.each(['api_key_device', 'machine'])('refuses a not-yet-enrolled %s device on both recovery reads and leaks nothing', async (kind) => {
+    const fresh = createDevice(fx.owner.account, 'owner');
+    for (const path of READS) {
+      const res = await fx.get(fresh, path, { headers: keyHeader(fresh), sessionKind: kind });
+      expect(res.status).toBe(403);
+      expect(JSON.stringify(res.json)).not.toContain('bundle');
+    }
+  });
+
+  it('accepts an explicit email_otp session and a token without the claim', async () => {
+    const explicit = createDevice(fx.owner.account, 'owner');
+    expect((await fetchBundle(explicit, { headers: keyHeader(explicit), sessionKind: 'email_otp' })).status).toBe(200);
+    const legacy = createDevice(fx.owner.account, 'owner');
+    expect((await fetchBundle(legacy, { headers: keyHeader(legacy) })).status).toBe(200);
+  });
+
+  it('fails closed on an unknown session kind', async () => {
+    const fresh = createDevice(fx.owner.account, 'owner');
+    expect((await fetchBundle(fresh, { headers: keyHeader(fresh), sessionKind: 'service' })).status).toBe(401);
+  });
+
+  it('an api_key_device session may still create a vault and read it as a member', async () => {
+    const created = VaultFixture.local('personal', `acct-${randomId()}`);
+    expect((await created.putGenesis({ sessionKind: 'api_key_device' })).status).toBe(201);
+    expect((await created.get(created.owner, '/membership', { sessionKind: 'api_key_device' })).status).toBe(200);
+  });
+
+  it('refuses recovery enrollment by an api_key_device session, and accepts it for email_otp', async () => {
+    const recoverer = { id: fx.state.recovery_author, secret: fx.recovery.secretKey };
+    const seqBefore = (await fx.get(fx.owner, '/membership')).json.membership.seq;
+    const blocked = createDevice(fx.owner.account, 'owner');
+    const attempt = fx.enrollEvent(blocked, [1], recoverer);
+    expect((await fx.append(attempt.event, attempt.wraps, blocked, { sessionKind: 'api_key_device' })).status).toBe(403);
+    expect((await fx.get(fx.owner, '/membership')).json.membership.seq).toBe(seqBefore);
+
+    const human = createDevice(fx.owner.account, 'owner');
+    const ok = fx.enrollEvent(human, [1], recoverer);
+    expect((await fx.append(ok.event, ok.wraps, human, { sessionKind: 'email_otp' })).status).toBe(201);
+  });
+
+  it('a member-signed device_add approves an api_key_device, which then reads as a member', async () => {
+    const approved = await fx.addDevice({ account: fx.owner.account });
+    expect((await fx.get(approved, '/items/missing', { sessionKind: 'api_key_device' })).status).not.toBe(403);
+  });
+});
