@@ -21,7 +21,7 @@ evidence does not count.
       every error response from a run seeded with known plaintext values and names
       contain none of them ([data classification](./data-classification.md)).
       Platform logs, traces and analytics were scanned with seeded traffic on a
-      deployed lab Worker on 2026-10-16 at `2fdad1b`
+      deployed lab Worker on 2026-10-16, Worker source as `main` at `d097c41`
       ([platform log scan](./red-team-evidence.md#platform-log-scan);
       [run on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6208699925)):
       zero hits everywhere except `wrangler tail`, which shows `AKV-Proof` and
@@ -79,8 +79,9 @@ Cloudflare edge are verified by configuration and by the lab Worker rehearsal
 ([#54](https://github.com/bestagentkits/ak-vault/pull/54),
 [rehearsal log](../operations/rehearsal-2026-10.md)), not by authenticated staging
 traffic. Platform logs, traces and analytics were scanned with seeded traffic on a
-lab Worker instead (disclosure-scan gate above). Staging trusts ak-web staging's issuer and JWKS; keeping staging's
-signing keys separate from production's is ak-web's responsibility, so before GA
+lab Worker instead (disclosure-scan gate above). Staging trusts ak-web staging's
+issuer and JWKS; keeping staging's signing keys separate from production's is
+ak-web's responsibility, so before GA
 confirm the two JWKS endpoints share no key material (compare the keys' `x`/`y`
 coordinates, not only their `kid`s).
 

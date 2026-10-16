@@ -72,10 +72,11 @@ rather than an enforced setting (#45).
 ## Platform log scan
 
 Run on 2026-10-16 with [`worker/scripts/platform-log-scan/`](../../worker/scripts/platform-log-scan/README.md)
-at `2fdad1b`, whose Worker source, protocol library and `wrangler.jsonc` are those of
-`main` at `d097c41`. A throwaway lab Worker on `workers.dev` ran the real Worker and
-Durable Object classes with a synthetic issuer and sync on, and was deleted afterwards
-together with its Durable Object namespaces (checked through the API). Counts and
+as merged, on Worker source, protocol library and `wrangler.jsonc` identical to
+`main` at `d097c41`; an earlier run with the pre-review script gave the same result.
+A throwaway lab Worker on `workers.dev` ran the real Worker and Durable Object classes
+with a synthetic issuer and sync on, and was deleted afterwards together with its
+Durable Object namespaces (checked through the API). Counts and
 settings are recorded [on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6208699925).
 
 **Settings scanned:** production's `observability` block as in
@@ -102,23 +103,23 @@ metadata.
 
 | Source | Rows | Gating hits |
 |---|---|---|
-| Workers Observability events (operational log lines and trace spans) | 1,458 | 0 |
-| Workers Observability traces | 72 | 0 |
-| Workers Observability invocations | 72 | 0 |
+| Workers Observability events (operational log lines and trace spans) | 1,466 | 0 |
+| Workers Observability traces | 73 | 0 |
+| Workers Observability invocations | 73 | 0 |
 | GraphQL Workers and Durable Object analytics | n/a | 0 |
 | Durable Object dump (vault and revocation registry, every table) | 120 | 0 |
 | Responses (status, headers, body) | 70 | 0 |
-| `wrangler tail` | 84 events | 108: every captured `AKV-Proof` (35) and `AKV-Webhook-Signature` (3) value |
+| `wrangler tail` | 137 events | 130 needle-form matches: 127 of `AKV-Proof` values (a proof is searched whole and per segment, in several encodings) and 3 of `AKV-Webhook-Signature` values |
 
 In tail, Cloudflare replaced `Authorization`, `Idempotency-Key` and `AKV-Device-Key`
 with `REDACTED`, because it redacts by header name
 ([#61](https://github.com/bestagentkits/ak-vault/issues/61)). Tail also carries the
-full request URL and the client IP. Workers Observability recorded only the
-`accept*` request headers, and replaced most ID-like path
-segments with `REDACTED` but not all; some item IDs remain, which the
+request URL, with long ID-like segments redacted heuristically, and the client IP.
+Workers Observability recorded only the `accept*` request headers, and replaced most
+ID-like path segments with `REDACTED` but not all; some item IDs remain, which the
 [data classification](./data-classification.md#visible-operational-metadata-unavoidable)
 already lists as visible. Trace spans record SQL statement text with placeholders,
-never bound values. Tail is best effort: it delivered 42 of the 73 requests that
+never bound values. Tail is best effort: it delivered 50 of the 73 requests that
 analytics counted.
 
 ## What this run does not cover
