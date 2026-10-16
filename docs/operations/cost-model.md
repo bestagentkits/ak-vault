@@ -137,6 +137,31 @@ Durable Object wall time was 167 ms at p50 against 17 ms for the vault object, a
 its active time about 110 ms per check. It made Worker wall time 211 ms at p50 in
 this run ([#10](https://github.com/bestagentkits/ak-vault/issues/10)).
 
+### Pull writes after #63 item 1 (local measurement, not a lab re-run)
+
+The per-device rate window now lives in vault object memory, and the proof `jti`
+replay state is one row per device (a JSON list of its unexpired `jti`s, pruned in
+the same write) instead of one row per `jti` with an expiry index
+(`worker/src/vault/proof-replay-store.ts`). `worker/test/pull-storage-writes.test.ts`
+counts `rowsWritten` over every statement of a steady-state pull in workerd:
+**1 row per pull, down from about 5** (rate upsert 1, `jti` insert 3, expired-`jti`
+delete 1). That is a measurement of the code, not of Cloudflare billing: re-run
+`pnpm cost:measure` on a lab Worker to refresh the table above before using it for
+pricing.
+
+Zero rows is not reachable without changing a stated guarantee. A read still has to
+remember its `jti` so a captured proof cannot be replayed (spec §9), and a Durable
+Object that is idle is evicted from memory after a short while (the interval is
+not measured here; confirm it on the lab Worker), so state that is not written may
+be lost between polls spaced a minute or more apart. A persisted floor ("refuse proofs
+older than the last checkpoint plus the skew") would then refuse the honest next
+poll whenever the poll interval is shorter than the skew window plus the checkpoint
+horizon, which a 60 s poll is. The remaining options are owner decisions, listed on
+#63: accept one row per pull (about 80 % fewer rows written); drop single-use for
+read-only proofs, which needs a spec and threat-model change (a captured `GET` proof
+could then be replayed for its 60 s validity, by someone who already holds the
+token); or remove most polls (items 3 to 5).
+
 Staging itself, 2026-10-08 to 2026-10-15 14:00 UTC (smoke runs, landing page and
 probes, no sustained sync): 1,640 Worker requests, 0.83 ms mean CPU, 19 vault and 21
 registry Durable Object requests, and 245,760 bytes stored in the vault namespace

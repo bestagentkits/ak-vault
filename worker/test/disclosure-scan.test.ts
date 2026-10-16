@@ -74,7 +74,7 @@ describe('disclosure scan', () => {
     expect(credentials.length).toBeGreaterThan(10);
 
     const vault = await dumpDurableObject(env.VAULT.get(env.VAULT.idFromName(fx.vaultId)));
-    expect(vault.tables).toEqual(expect.arrayContaining(['records', 'audit_entries', 'recovery_blob', 'idempotency', 'proof_jti']));
+    expect(vault.tables).toEqual(expect.arrayContaining(['records', 'audit_entries', 'recovery_blob', 'idempotency', 'proof_seen']));
     expect(vault.text.length).toBeGreaterThan(1000);
     const registry = await dumpDurableObject(env.REVOCATIONS.get(env.REVOCATIONS.idFromName('global')));
     const stored = `${vault.text}\n${registry.text}`;

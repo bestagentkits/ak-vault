@@ -143,7 +143,7 @@ async function main(): Promise<number> {
     const doText = [...Object.values(dump.vaults).map((v) => v.text), dump.registry.text].join('\n');
     const doRows = Object.values(dump.vaults).reduce((n, v) => n + v.rows, 0) + dump.registry.rows;
     const vaultTables = new Set(Object.values(dump.vaults).flatMap((v) => v.tables));
-    for (const t of ['records', 'audit_entries', 'recovery_blob', 'idempotency', 'proof_jti']) if (!vaultTables.has(t)) problems.push(`vault dump lacks table ${t}`);
+    for (const t of ['records', 'audit_entries', 'recovery_blob', 'idempotency', 'proof_seen']) if (!vaultTables.has(t)) problems.push(`vault dump lacks table ${t}`);
 
     unlessInterrupted();
     say('pulling platform telemetry (ingestion can take minutes)');

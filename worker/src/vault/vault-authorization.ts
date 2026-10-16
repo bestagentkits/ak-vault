@@ -23,6 +23,7 @@ import { b64decodeLength, deviceIdFromSignPub, parseMembershipEvent, type Device
 import type { Scope } from '../auth/jwt-verify.js';
 import { ApiError } from '../http/errors.js';
 import { MembershipStore } from './membership-store.js';
+import type { ProofReplayStore } from './proof-replay-store.js';
 import { parseBodyObject, requireKeys } from './request-body.js';
 import { enforceRole, memberDevice, requireScope, verifyRequestProof, type RoleRule } from './request-guard.js';
 import type { VaultOp, VaultRequest } from './vault-request.js';
@@ -69,26 +70,26 @@ export function preflightGenesis(req: VaultRequest): void {
   authorizeGenesis(req, null);
 }
 
-function authorizeGenesis(req: VaultRequest, sql: SqlStorage | null): Authorized {
+function authorizeGenesis(req: VaultRequest, replay: ProofReplayStore | null): Authorized {
   const body = parseBodyObject(req.body);
   requireKeys(body, ['event'], ['wraps']);
   const state = MembershipStore.verifyGenesis(body['event'], req.vaultId);
   const author = parseMembershipEvent(body['event']).author;
   if (author !== req.claims.did || state.owner_account !== req.claims.sub) throw new ApiError('forbidden');
   const device = state.devices.find((d) => d.device_id === author)!;
-  verifyRequestProof(sql, req, device.sign_pub);
+  verifyRequestProof(replay, req, device.sign_pub);
   requireScope(req.claims.scope, WRITE);
   return { state, device, body };
 }
 
-function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: MembershipStore): Authorized {
+function authorizeMembershipPost(req: VaultRequest, replay: ProofReplayStore, store: MembershipStore): Authorized {
   const state = store.requireState();
   const body = parseBodyObject(req.body);
   requireKeys(body, ['event'], ['wraps', 'bundle']);
   const known = state.devices.find((d) => d.device_id === req.claims.did);
   if (known) {
     const device = memberDevice(state, req.claims.sub, req.claims.did);
-    verifyRequestProof(sql, req, device.sign_pub);
+    verifyRequestProof(replay, req, device.sign_pub);
     requireScope(req.claims.scope, WRITE);
     enforceRole(device, 'human_owner');
     // The chain is verified in the mutation step, after the idempotency lookup, so a
@@ -101,7 +102,7 @@ function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: Memb
   const next = store.verifyAppend(body['event']);
   const device = next.devices.find((d) => d.device_id === req.claims.did);
   if (!device || device.account !== req.claims.sub) throw new ApiError('forbidden');
-  verifyRequestProof(sql, req, device.sign_pub);
+  verifyRequestProof(replay, req, device.sign_pub);
   requireScope(req.claims.scope, WRITE);
   return { state, device, body, next };
 }
@@ -111,7 +112,7 @@ function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: Memb
  * not-yet-enrolled device may call) by a fresh owner-account device that proves
  * possession of the key it presents.
  */
-function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: MembershipState): Authorized {
+function authorizeRecoveryFetch(req: VaultRequest, replay: ProofReplayStore, state: MembershipState): Authorized {
   const did = req.claims.did;
   if (req.claims.sub !== state.owner_account || state.removed_device_ids.includes(did)) throw new ApiError('forbidden');
   let signPub: string;
@@ -122,21 +123,21 @@ function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: Membe
   } catch {
     throw new ApiError('unauthorized');
   }
-  verifyRequestProof(sql, req, signPub);
+  verifyRequestProof(replay, req, signPub);
   requireScope(req.claims.scope, READ);
   return { state, device: null, body: null };
 }
 
-export function authorize(req: VaultRequest, sql: SqlStorage, store: MembershipStore): Authorized {
-  if (req.op === 'genesis') return authorizeGenesis(req, sql);
-  if (req.op === 'membership.post') return authorizeMembershipPost(req, sql, store);
+export function authorize(req: VaultRequest, replay: ProofReplayStore, store: MembershipStore): Authorized {
+  if (req.op === 'genesis') return authorizeGenesis(req, replay);
+  if (req.op === 'membership.post') return authorizeMembershipPost(req, replay, store);
   const state = store.requireState();
   // The bundle is only ever fetched this way; a membership read takes this path only
   // when the caller presents its key, so other non-member reads stay `forbidden`.
   const recoveryIdentity = req.op === 'recovery.get' || (req.op === 'membership.get' && req.deviceKey !== null);
-  if (recoveryIdentity && !state.devices.some((d) => d.device_id === req.claims.did)) return authorizeRecoveryFetch(req, sql, state);
+  if (recoveryIdentity && !state.devices.some((d) => d.device_id === req.claims.did)) return authorizeRecoveryFetch(req, replay, state);
   const device = memberDevice(state, req.claims.sub, req.claims.did);
-  verifyRequestProof(sql, req, device.sign_pub);
+  verifyRequestProof(replay, req, device.sign_pub);
   const policy = POLICY[req.op];
   requireScope(req.claims.scope, policy.scope);
   enforceRole(device, policy.role);

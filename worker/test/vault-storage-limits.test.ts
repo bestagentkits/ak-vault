@@ -75,7 +75,7 @@ describe('non-existent vaults', () => {
     const fx = await VaultFixture.create();
     const dump = await dumpDurableObject(stubFor(fx.vaultId));
     expect(dump.tables).toContain('membership_events');
-    expect(dump.tables).toContain('rate_counters');
+    expect(dump.tables).toContain('proof_seen');
   });
 });
 

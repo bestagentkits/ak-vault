@@ -39,7 +39,6 @@ export const VAULT_SCHEMA = `
     key_hash TEXT PRIMARY KEY, request_hash TEXT NOT NULL, status INTEGER NOT NULL, body_json TEXT NOT NULL, expires_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idempotency_expiry ON idempotency (expires_at);
-  CREATE TABLE IF NOT EXISTS proof_jti (did TEXT NOT NULL, jti TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY (did, jti));
-  CREATE INDEX IF NOT EXISTS proof_jti_expiry ON proof_jti (expires_at);
-  CREATE TABLE IF NOT EXISTS rate_counters (did TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);
+  -- Unexpired proof jtis per device as JSON [[jti, expires_at_ms], ...]; one row rewritten per verified request.
+  CREATE TABLE IF NOT EXISTS proof_seen (did TEXT PRIMARY KEY, jtis TEXT NOT NULL);
 `;

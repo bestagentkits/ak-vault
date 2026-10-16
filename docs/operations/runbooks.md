@@ -326,7 +326,7 @@ Restoring a vault is **an incident in itself**:
   the restored state as a rollback. That is the protocol working, not a bug. A
   device that only witnessed older state cannot tell: the restore is invisible to it.
 - The whole object is restored, including the checkpoint relay, idempotency records,
-  proof `jti` replay entries and rate counters. Relayed checkpoints newer than the
+  per-device proof `jti` rows. (The rate window is in memory only.) Relayed checkpoints newer than the
   restore point are gone, and a device re-posting its newer checkpoint gets
   `400 bad_request` (ahead of the stored state). `jti` entries burned after the
   restore point are forgotten, so a captured token and proof could be replayed once

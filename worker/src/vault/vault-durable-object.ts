@@ -5,7 +5,7 @@
  * mutation. Errors leave as stable codes with fixed messages.
  *
  * No storage is written for a vault that does not exist: every op other than
- * genesis answers 404 before the rate counter or proof `jti` tables are touched,
+ * genesis answers 404 before the proof `jti` table is touched,
  * and genesis creates the schema only after a storage-free preflight (event,
  * author/owner, scope, proof signature) passes. Only a valid genesis creates state.
  */
@@ -23,6 +23,7 @@ import { handleGenesis, handleMembershipGet, handleMembershipPost, handleWrapsGe
 import { MembershipStore } from './membership-store.js';
 import { bookmarkForTime, currentBookmark, scheduleRestore } from './point-in-time-restore.js';
 import { getRecovery, putRecovery } from './recovery-store.js';
+import { ProofReplayStore, RateLimiter } from './proof-replay-store.js';
 import { enforceRateLimit } from './request-guard.js';
 import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
 import { isMutation, type VaultRequest } from './vault-request.js';
@@ -31,6 +32,8 @@ import { VAULT_SCHEMA } from './vault-schema.js';
 export class VaultDurableObject extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private readonly membership: MembershipStore;
+  private readonly replay: ProofReplayStore;
+  private readonly rateLimiter = new RateLimiter();
   /** Whether the vault tables exist (created by the first genesis attempt). */
   private schemaReady: boolean;
   /** Random per start; the operator route reads it to confirm a restart. */
@@ -46,6 +49,7 @@ export class VaultDurableObject extends DurableObject<Env> {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.membership = new MembershipStore(this.sql);
+    this.replay = new ProofReplayStore(this.sql);
     // Reading sqlite_master writes nothing; re-running the idempotent schema on an
     // existing vault applies any newly added tables or indexes.
     this.schemaReady = this.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").toArray().length > 0;
@@ -74,9 +78,9 @@ export class VaultDurableObject extends DurableObject<Env> {
         if (!this.schemaReady) preflightGenesis(req);
         this.ensureSchema();
       } else if (!this.vaultExists()) throw new ApiError('not_found');
-      enforceRateLimit(this.sql, req.claims.did, req.nowMs);
+      enforceRateLimit(this.rateLimiter, req.claims.did, req.nowMs);
       if (isMutation(req.op)) validateIdempotencyKey(req.idempotencyKey);
-      const auth = authorize(req, this.sql, this.membership);
+      const auth = authorize(req, this.replay, this.membership);
       if (!isMutation(req.op)) return this.read(req, auth);
       const replayed = lookupIdempotent(this.sql, req);
       if (replayed) return replayed;

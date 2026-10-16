@@ -9,32 +9,25 @@ import { isAkvError, verifyProof, type DeviceRecord, type MembershipState } from
 import type { Scope } from '../auth/jwt-verify.js';
 import { ApiError } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
+import type { ProofReplayStore, RateLimiter } from './proof-replay-store.js';
 import type { VaultRequest } from './vault-request.js';
 
 /** Who may call an op once authenticated. */
 export type RoleRule = 'any_device' | 'writer' | 'human_owner';
 
-export function enforceRateLimit(sql: SqlStorage, did: string, nowMs: number): void {
-  const windowMs = LIMITS.rate_window_seconds * 1000;
-  const windowStart = Math.floor(nowMs / windowMs) * windowMs;
-  const row = sql.exec<{ window_start: number; count: number }>('SELECT window_start, count FROM rate_counters WHERE did = ?', did).toArray()[0];
-  const count = row && row.window_start === windowStart ? row.count + 1 : 1;
-  sql.exec('INSERT INTO rate_counters (did, window_start, count) VALUES (?, ?, ?) ON CONFLICT (did) DO UPDATE SET window_start = excluded.window_start, count = excluded.count', did, windowStart, count);
-  if (count > LIMITS.rate_requests_per_window) {
-    const retryAfter = Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000));
-    throw new ApiError('rate_limited', { headers: { 'Retry-After': String(retryAfter) } });
-  }
+export function enforceRateLimit(limiter: RateLimiter, did: string, nowMs: number): void {
+  const retryAfter = limiter.hit(did, nowMs);
+  if (retryAfter !== null) throw new ApiError('rate_limited', { headers: { 'Retry-After': String(retryAfter) } });
 }
 
 /**
  * Verify `AKV-Proof` against `signPub` and burn its `jti` for this device. With
- * `sql === null` only the signature and bindings are checked and nothing is
+ * `replay === null` only the signature and bindings are checked and nothing is
  * written (genesis preflight before the vault has storage).
  */
-export function verifyRequestProof(sql: SqlStorage | null, req: VaultRequest, signPub: string): void {
+export function verifyRequestProof(replay: ProofReplayStore | null, req: VaultRequest, signPub: string): void {
   if (!req.proof) throw new ApiError('unauthorized');
   const did = req.claims.did;
-  sql?.exec('DELETE FROM proof_jti WHERE expires_at < ?', req.nowMs);
   try {
     const proof = verifyProof(req.proof, {
       htm: req.method,
@@ -44,9 +37,9 @@ export function verifyRequestProof(sql: SqlStorage | null, req: VaultRequest, si
       now: req.nowMs,
       signPub,
       maxSkewMs: LIMITS.clock_skew_seconds * 1000,
-      isReplay: (jti) => (sql ? sql.exec('SELECT 1 FROM proof_jti WHERE did = ? AND jti = ?', did, jti).toArray().length > 0 : false),
+      isReplay: (jti) => replay?.isReplay(did, jti, req.nowMs) ?? false,
     });
-    sql?.exec('INSERT INTO proof_jti (did, jti, expires_at) VALUES (?, ?, ?)', did, proof.jti, req.nowMs + LIMITS.proof_jti_ttl_seconds * 1000);
+    replay?.burn(did, proof.jti, req.nowMs);
   } catch (err) {
     if (isAkvError(err) && err.code === 'invalid_signature') throw new ApiError('invalid_signature', { status: 401 });
     throw new ApiError('unauthorized');

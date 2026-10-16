@@ -111,7 +111,7 @@ describe('red team: planted plaintext in attacker-controlled request surfaces', 
 
     const vault = await dumpDurableObject(env.VAULT.get(env.VAULT.idFromName(fx.vaultId)));
     const registry = await dumpDurableObject(env.REVOCATIONS.get(env.REVOCATIONS.idFromName('global')));
-    expect(vault.tables).toEqual(expect.arrayContaining(['records', 'idempotency', 'proof_jti']));
+    expect(vault.tables).toEqual(expect.arrayContaining(['records', 'idempotency', 'proof_seen']));
     expect(findLeak(`${vault.text}\n${registry.text}`, CANARIES)).toBeNull();
     // Nothing was created under a malformed or canary vault path.
     const stray = await dumpDurableObject(env.VAULT.get(env.VAULT.idFromName(CANARY_PATH)));
