@@ -364,6 +364,65 @@ backups until the [cost model](./cost-model.md) justifies it.
 | Cloudflare API token used by CI | Repository admin | Rotate in Cloudflare, update the GitHub Environment secret, run the staging deploy. |
 | Vault keys | Clients | Not an operator action; see [key lifecycle](../security/key-lifecycle-and-recovery.md). |
 
+## Revocation registry capacity alert
+
+Every authenticated `/v1` request makes one call to the single `global` revocation
+registry object, so its request rate is the service's capacity signal
+([#65](https://github.com/bestagentkits/ak-vault/issues/65)). The ceiling is derived,
+not measured: about 8 to 10 checks a second from the lab's active time per check
+([cost model](./cost-model.md)); the true knee is unknown until a lab ramp test
+records it. Past the knee, requests queue and then fail closed with `503`.
+
+**Query (owner, read-only).** With a Cloudflare token that has analytics read access
+(never paste it or the account or namespace identifiers anywhere), query the GraphQL
+Analytics API for the registry namespace. Its namespace is the one bound as
+`REVOCATIONS`; find the ID in the Durable Objects page of the production Worker; the query follows the shape of `USAGE_QUERY` in
+`worker/scripts/cost-measurement/cost-analytics.ts`:
+
+```graphql
+query ($account: String!, $ns: String!, $from: Time!, $to: Time!) {
+  viewer { accounts(filter: {accountTag: $account}) {
+    durableObjectsInvocationsAdaptiveGroups(
+      limit: 100
+      filter: {namespaceId: $ns, datetime_geq: $from, datetime_lt: $to}
+      orderBy: [datetimeFiveMinutes_ASC]
+    ) {
+      sum { requests errors }
+      dimensions { datetimeFiveMinutes }
+    }
+  } }
+}
+```
+
+Checks per second for a window is `sum.requests / 300` (revocation webhook writes are
+included, but are negligible next to check traffic). Run it over the last hour
+whenever sync usage grows, after a client release that changes the sync interval, and
+on any report of `503` from sync. As a second signal, a sustained rate of `503`
+responses with code `unauthorized` means the registry, or the JWKS fetch, is already
+queueing or failing; check which before treating it as capacity. Read that rate from
+Workers Logs, where the Worker logs status and code only, and not from `wrangler tail`,
+which exposes request headers.
+
+**Threshold.** Alert the owner when the registry sustains **4 checks a second for
+15 minutes** (50% of the conservative 8 checks a second), and on any sustained
+`503 unauthorized`. Once the lab ramp records the real knee, set the threshold to 50%
+of it and update this section and the [cost model](./cost-model.md). A scheduled check
+in CI needs an analytics-read-only token, which is an owner decision; until then the
+query above is the minimum and the owner runs it.
+
+**Response.**
+
+1. Short term: lower the client sync rate (a longer default interval in the next
+   client release; adaptive polling is tracked on
+   [#63](https://github.com/bestagentkits/ak-vault/issues/63)). If `503` is already
+   widespread, use the [kill switch](#emergency-kill-switch) rather than let devices
+   retry against a saturated registry.
+2. Lasting: replicate the registry (write to all replicas, read from one, with
+   `global` as coordinator) or shard it, so the guarantee that a revoked session or
+   device is refused on its next request still holds. Do not add a TTL cache in front
+   of the check: it weakens that guarantee to "within the TTL" and needs an owner
+   decision and a spec change. The design analysis is on #65.
+
 ## Secret scanning
 
 - Repository: GitHub secret scanning and push protection (see

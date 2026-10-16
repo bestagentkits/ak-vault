@@ -41,12 +41,14 @@ user on such a release upgrades, or revokes a lost device in the ak-web account,
 which the Worker enforces on the device's next request.
 
 **Capacity.** Every authenticated request checks the single revocation registry,
-which the lab measurement puts at roughly 10 checks a second for the whole service
+which the lab's measured active time per check puts at roughly 8 to 10 checks a
+second for the whole service (derived, not measured)
 ([cost model](../operations/cost-model.md)). Beyond that, requests queue and then
 fail closed with `503`. With the client's 15 s default sync interval that is a few
-dozen active devices. Watch the registry's request rate in the Durable Object
-analytics ([#65](https://github.com/bestagentkits/ak-vault/issues/65)), and cache or
-shard revocation state before it nears that ceiling.
+dozen active devices. The query, alert threshold and response are in the
+[runbook](../operations/runbooks.md#revocation-registry-capacity-alert)
+([#65](https://github.com/bestagentkits/ak-vault/issues/65)); replicate or shard
+revocation state before the rate nears the ceiling.
 
 CI evidence cited below is the `main` run at `b25c2bb`
 ([CI run](https://github.com/bestagentkits/ak-vault/actions/runs/38858206218)); the
