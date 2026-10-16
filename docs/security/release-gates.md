@@ -13,8 +13,9 @@ tokens ([owner waivers](#owner-waivers)). Any logged-in user running the preview
 `ak secrets sync` commands can sync to production. That is an owner waiver, not a
 review sign-off: production sync is pre-release, not externally reviewed and not yet
 recommended for production credentials. It was enabled while these remain open:
-ADR 0001 approval, every red-team scenario executed (scenario 13), the staging
-restore, the staging cost measurement and the external review. Also open while
+every red-team scenario executed (scenario 13), the staging restore, the staging
+cost measurement, the external review and ADR 0001 approval (since accepted by the
+owner, P0 gates below). Also open while
 production is live: confirming that the staging and production JWKS share no key
 material ([staging soak](#staging-soak)), and the owner confirming on #8 that
 Workers Tail access on production is limited, the complement to the tail waiver.
@@ -46,8 +47,12 @@ page and docs, and its own CI run is linked from its pull request.
 
 ## P0 gates
 
-- [ ] [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md) approved by the owner,
-      including resolution of its open items. **Open:** the ADR is still Proposed.
+- [x] [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md) approved by the owner.
+      Evidence: the owner accepted it on 2026-10-16
+      ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210567772)). The owner accepted it with restore reconciliation
+      still an [open item](../adr/0001-opt-in-zero-knowledge-sync.md#open-items) of
+      the ADR, so this gate no longer requires that item resolved; the staging
+      restore gate below stays open. Acceptance is not the external review.
 - [x] Go and TypeScript reproduce every vector in `protocol/v1/vectors/` byte for
       byte, including every rejection vector (tamper, wrong AAD, duplicate nonce,
       invalid signature, injected recipient, replay, rollback, unsupported version).
@@ -169,6 +174,7 @@ does not satisfy the external review.
 | 2026-10-16 | The Docker two-device e2e replaces the staging two-device round trip and the staging soak; no authenticated staging session is used. Residual risk is stated under [staging soak](#staging-soak). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6207406980) |
 | 2026-10-16 | The external-review gate is waived for enabling `VAULT_SYNC_ENABLED=true` on the production Worker. The external review stays open on #8. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248) |
 | 2026-10-16 | Production sync is fully live: ak-web production mints vault tokens together with the Worker flag, so any logged-in user running the preview `ak secrets sync` commands can sync to production before the external review. Docs say it is pre-release, not externally reviewed and not yet recommended for production credentials. This supersedes the earlier statement that minting stays off. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209425010) |
+| 2026-10-16 | ADR 0001 is accepted with restore reconciliation still an open item, so the ADR gate no longer requires its open items resolved. The staging backup/restore and staging cost gates are not waived. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210567772) |
 | 2026-10-16 | The owner approves the deploy that enables production sync while the shared-Cloudflare-token bootstrap exception stays an open item ([production deploy control](#production-deploy-control)). Superseded by the next row. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209176887) |
 | 2026-10-16 | Staging keeps a Cloudflare token that can reach the production Worker, because Cloudflare cannot scope a Workers token to one script. The exception closes under owner code review of `.github/` and `worker/wrangler.jsonc`, in effect since 2026-10-16 ([production deploy control](#production-deploy-control)). Residual risk: agents act as the owner's GitHub account. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210230956) |
 
@@ -197,7 +203,10 @@ Landing page and health endpoints are not affected by the flag.
   are scoped to the deploy step; actions are pinned by commit SHA. Missing
   credentials fail the job rather than skipping it.
 - Production and staging use separate Worker secrets and distinct token audiences,
-  so neither accepts the other's tokens. Production CI deploys with its own
+  so neither accepts the other's tokens. ak-web production's `VAULT_*` environment
+  values, which configure its vault-token issuing, were set by the owner personally
+  in DXUP, ak-web's deploy platform ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210567772));
+  this repository holds none of them. Production CI deploys with its own
   Cloudflare token. Staging's token can still reach the production Worker; the
   owner accepted that under code-owner review (below), not a separate credential.
   The Worker never receives ak-web's CLI HS256 signing key.

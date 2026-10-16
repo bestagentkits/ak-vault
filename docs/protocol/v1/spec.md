@@ -1,6 +1,8 @@
 # ak-vault protocol v1 (`akv1`) — normative wire specification
 
-Status: **Proposed** (see [ADR 0001](../../adr/0001-opt-in-zero-knowledge-sync.md)).
+Status: **Proposed**; external review pending on #8. The design rationale,
+[ADR 0001](../../adr/0001-opt-in-zero-knowledge-sync.md), was accepted by the owner on
+2026-10-16; that acceptance is not the external review.
 Not approved for production credentials until the security gate in issue #8 records
 an external review sign-off.
 

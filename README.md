@@ -8,8 +8,9 @@ Landing page: https://vault.agentkit.best
 
 ## Status
 
-- **Design: Proposed.** [ADR 0001](./docs/adr/0001-opt-in-zero-knowledge-sync.md)
-  awaits owner approval and an external cryptographic review.
+- **Design: Accepted by the owner** (2026-10-16).
+  [ADR 0001](./docs/adr/0001-opt-in-zero-knowledge-sync.md) still awaits an
+  external cryptographic review.
 - **Security review: pending.** Tracked on
   [#8](https://github.com/bestagentkits/ak-vault/issues/8).
 - **Sync is not generally available.** Do not store production credentials in it.
