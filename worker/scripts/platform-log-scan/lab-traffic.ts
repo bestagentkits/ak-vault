@@ -56,7 +56,9 @@ export async function runLabTraffic(client: LabClient, needles: NeedleSet, webho
   const owner = labDevice('owner', account, needles);
   const laptop = labDevice('laptop', account, needles);
   const vault = new LabVault(client, needles, owner);
-  expect('genesis', await vault.genesis(), 201);
+  // Everything after this builds on the vault, so a refused genesis stops the run with its status and stable error code.
+  const genesis = expect('genesis', await vault.genesis(), 201);
+  if (genesis.status !== 201) throw new Error(`genesis returned ${genesis.status} (${String(genesis.json?.error?.code ?? 'no error code')})`);
   const enroll = vault.enrollEvent(laptop);
   expect('enroll laptop (device_add with wrap)', await vault.append(owner, enroll.event, enroll.wraps), 201);
   const laptopWrap = await vault.receiveWrap(laptop, vault.state.seq);
