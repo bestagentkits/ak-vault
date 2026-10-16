@@ -1,0 +1,8 @@
+# Only the device helpers enter the main build context; the CLI source comes
+# from the separate `agentkit` context.
+*
+!e2e/docker/device/bin/
+**/.env*
+**/.dev.vars*
+**/__pycache__
+**/*.pyc

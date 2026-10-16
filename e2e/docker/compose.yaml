@@ -1,0 +1,93 @@
+# Two-device secrets-sync e2e stack. Run it through run.sh, which exports the
+# agentkit source, builds, runs the scenarios and tears everything down.
+# See README.md in this directory.
+name: akvault-e2e
+
+x-device: &device
+  build:
+    context: ../..
+    dockerfile: e2e/docker/device/Dockerfile
+    additional_contexts:
+      agentkit: ${AGENTKIT_SRC_DIR:?run through run.sh, which exports the agentkit source}
+    args:
+      AGENTKIT_SHA: ${AGENTKIT_SHA:-unknown}
+  image: akvault-e2e-device:${AGENTKIT_SHA:-unknown}
+  init: true
+  networks: [e2e]
+  tmpfs:
+    - /run/e2e:uid=1000,gid=1000,mode=0700
+  environment:
+    E2E_SYNC_INTERVAL: ${E2E_SYNC_INTERVAL:-5s}
+    TZ: Asia/Saigon
+  depends_on:
+    vault: { condition: service_healthy }
+    fake-akweb: { condition: service_healthy }
+
+services:
+  fake-akweb:
+    build:
+      context: ../..
+      dockerfile: e2e/docker/fake-akweb/Dockerfile
+    image: akvault-e2e-fake-akweb:local
+    init: true
+    networks: [e2e]
+    environment:
+      FAKE_AKWEB_ISSUER: http://127.0.0.1:8788
+      FAKE_AKWEB_AUDIENCE: http://127.0.0.1:8787
+      FAKE_AKWEB_WEBHOOK_URL: http://vault:8787/internal/v1/revocations
+      FAKE_AKWEB_ACCESS_TTL: ${E2E_ACCESS_TTL:-15m}
+    volumes:
+      - shared:/shared
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/fake-akweb", "healthcheck"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  vault:
+    build:
+      context: ../..
+      dockerfile: e2e/docker/vault/Dockerfile
+      args:
+        VAULT_COMMIT: ${VAULT_COMMIT:-unknown}
+    image: akvault-e2e-vault:local
+    init: true
+    networks: [e2e]
+    environment:
+      # The kill switch; run.sh recreates this service to toggle it.
+      VAULT_SYNC_ENABLED: ${E2E_SYNC_ENABLED:-true}
+      VAULT_ISSUER: http://127.0.0.1:8788
+      VAULT_AUDIENCE: http://127.0.0.1:8787
+    tmpfs:
+      - /run/vault:uid=1000,gid=1000,mode=0700
+    volumes:
+      - shared:/shared:ro
+      - vault-state:/state
+      - vault-logs:/logs
+    depends_on:
+      fake-akweb: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+      start_period: 10s
+
+  device-a:
+    <<: *device
+    hostname: device-a
+
+  device-b:
+    <<: *device
+    hostname: device-b
+
+networks:
+  # No route out: nothing in the stack can reach a real ak-web, vault or
+  # Cloudflare endpoint.
+  e2e:
+    internal: true
+
+volumes:
+  shared:
+  vault-state:
+  vault-logs:

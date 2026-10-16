@@ -12,6 +12,7 @@ page to find the owner of a question.
 | Devices, rekey, recovery, compromise response | [Key lifecycle and recovery](./security/key-lifecycle-and-recovery.md) |
 | What must be true before GA | [Release gates](./security/release-gates.md) |
 | Which tests exercised each red-team scenario, and what they found | [Red-team evidence](./security/red-team-evidence.md) |
+| How to run the real CLI on two devices against a local Worker (soak, latency, disclosure) | [Docker two-device e2e](../e2e/docker/README.md) |
 | Incidents, kill switch, rollback, restore, key rotation | [Runbooks](./operations/runbooks.md) |
 | What it costs on Cloudflare | [Cost model](./operations/cost-model.md) |
 | What the rollback, restore and kill-switch rehearsals and the cost run showed | [Rehearsal log](./operations/rehearsal-2026-10.md) |
@@ -24,6 +25,7 @@ Executable owners:
 - TypeScript reference implementation: `packages/protocol/`
 - Go implementation: `go/`
 - Worker, Durable Object, limits and tests: `worker/src/`, `worker/test/`
+- Two-device Docker e2e (real `ak`, fake ak-web, local Worker): `e2e/docker/`
 - Landing page: `worker/public/`
 - CI/CD: `.github/workflows/`
 
