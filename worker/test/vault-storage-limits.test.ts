@@ -5,7 +5,7 @@
  */
 import { env } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
-import { randomId } from '@ak-vault/protocol';
+import { randomBytes, randomId } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';
 import { LIMITS } from '../src/limits.js';
 import { RECORD_USAGE_KEY } from '../src/vault/item-store.js';
@@ -48,10 +48,13 @@ describe('non-existent vaults', () => {
       [victim.owner, `/v1/vaults/${victim.vaultId}`, victim.genesisBody(), { proofSecret: intruder.owner.keys.signSecret }],
       // A read-only token.
       [victim.owner, `/v1/vaults/${victim.vaultId}`, victim.genesisBody(), { scope: 'vault:read' }],
+      // A valid genesis with a malformed Idempotency-Key.
+      [victim.owner, `/v1/vaults/${victim.vaultId}`, victim.genesisBody(), { idempotencyKey: 'k'.repeat(200) }],
     ];
     for (const [device, path, body, opts] of cases) {
       const res = await call(device, 'PUT', path, body, opts);
       expect(res.status).toBeGreaterThanOrEqual(400);
+      if (opts.idempotencyKey) expect(res.json.error.code).toBe('bad_request');
       const vid = path.split('/')[3]!;
       const dump = await dumpDurableObject(stubFor(vid));
       expect(dump.tables).toEqual([]);
@@ -71,11 +74,24 @@ describe('non-existent vaults', () => {
     expect(res.status).toBe(200);
   });
 
+  it('a vault created before the refused rate budget gets its table on reload', async () => {
+    const fx = await VaultFixture.create();
+    await runInDurableObject(stubFor(fx.vaultId), async (_instance, state) => {
+      state.storage.sql.exec('DROP TABLE refused_rate_counters');
+      new VaultDurableObject(state, env);
+      expect(state.storage.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refused_rate_counters'").toArray()).toHaveLength(1);
+    });
+    // A refused request answers its real error, not a storage fault.
+    const res = await call(fx.owner, 'GET', `/v1/vaults/${fx.vaultId}/membership`, undefined, { proofSecret: randomBytes(32) });
+    expect(res.status).toBe(401);
+  });
+
   it('genesis still creates the vault', async () => {
     const fx = await VaultFixture.create();
     const dump = await dumpDurableObject(stubFor(fx.vaultId));
     expect(dump.tables).toContain('membership_events');
     expect(dump.tables).toContain('rate_counters');
+    expect(dump.tables).toContain('refused_rate_counters');
   });
 });
 

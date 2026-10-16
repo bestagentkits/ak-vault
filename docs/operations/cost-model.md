@@ -130,6 +130,9 @@ Object figures (active time, duration, rows) divide by the 1,090 calls the clien
 Every authenticated request, pulls included, writes SQLite rows in the vault
 object: the per-device rate counter, the proof `jti` replay entry and the deletion
 of expired `jti` entries, with their index updates (`worker/src/vault/request-guard.ts`).
+A request refused at authorization writes a second per-device counter instead of
+the first; one refused because the device's authorized budget is spent writes
+neither.
 The model counted rows written only for item writes.
 
 The revocation check read no rows in this run (the registry was empty), yet its

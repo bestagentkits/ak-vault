@@ -1,13 +1,18 @@
 /**
  * One SQLite-backed Durable Object per vault: the serialization point for every
- * mutation. `handle` runs vault-exists check -> rate limit -> authorization
- * (membership, proof, scope, role) -> idempotency -> one `transactionSync` per
- * mutation. Errors leave as stable codes with fixed messages.
+ * mutation. For an existing vault `handle` runs read-only check of the device's
+ * `authorized` rate budget -> Idempotency-Key format (mutations) -> authorization
+ * (membership, proof, scope, role) -> charge the `authorized` budget ->
+ * idempotency replay -> one `transactionSync` per mutation. A refusal by the
+ * Idempotency-Key check or authorization is charged to the device's separate
+ * `refused` budget instead; a 429 from the pre-check charges nothing. A missing
+ * vault answers 404 and a fresh-vault genesis runs its storage-free checks
+ * first; neither charges a budget. Errors leave as stable codes with fixed messages.
  *
  * No storage is written for a vault that does not exist: every op other than
  * genesis answers 404 before the rate counter or proof `jti` tables are touched,
  * and genesis creates the schema only after a storage-free preflight (event,
- * author/owner, scope, proof signature) passes. Only a valid genesis creates state.
+ * author/owner, scope, proof signature, Idempotency-Key) passes. Only a valid genesis creates state.
  */
 import { DurableObject } from 'cloudflare:workers';
 import { randomId } from '@ak-vault/protocol';
@@ -23,7 +28,7 @@ import { handleGenesis, handleMembershipGet, handleMembershipPost, handleWrapsGe
 import { MembershipStore } from './membership-store.js';
 import { bookmarkForTime, currentBookmark, scheduleRestore } from './point-in-time-restore.js';
 import { getRecovery, putRecovery } from './recovery-store.js';
-import { enforceRateLimit } from './request-guard.js';
+import { enforceRateLimit, requireRateBudget } from './request-guard.js';
 import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
 import { isMutation, type VaultRequest } from './vault-request.js';
 import { VAULT_SCHEMA } from './vault-schema.js';
@@ -71,12 +76,14 @@ export class VaultDurableObject extends DurableObject<Env> {
     try {
       this.refuseWhileRestorePending();
       if (req.op === 'genesis') {
-        if (!this.schemaReady) preflightGenesis(req);
+        if (!this.schemaReady) {
+          // Everything checkable without storage runs before the schema is created.
+          preflightGenesis(req);
+          validateIdempotencyKey(req.idempotencyKey);
+        }
         this.ensureSchema();
       } else if (!this.vaultExists()) throw new ApiError('not_found');
-      enforceRateLimit(this.sql, req.claims.did, req.nowMs);
-      if (isMutation(req.op)) validateIdempotencyKey(req.idempotencyKey);
-      const auth = authorize(req, this.sql, this.membership);
+      const auth = this.authorizeAndCharge(req);
       if (!isMutation(req.op)) return this.read(req, auth);
       const replayed = lookupIdempotent(this.sql, req);
       if (replayed) return replayed;
@@ -93,6 +100,27 @@ export class VaultDurableObject extends DurableObject<Env> {
     } catch (err) {
       return errorResult(toApiError(err));
     }
+  }
+
+  /**
+   * Authorize, then charge the device's `authorized` budget. A refusal charges the
+   * `refused` budget instead (answering `rate_limited` once that is spent), so a
+   * caller that cannot prove the device key cannot exhaust the device's budget.
+   * The refused budget is shared by everyone presenting the device's token: during a
+   * flood the device's own refusals also answer `rate_limited`.
+   */
+  private authorizeAndCharge(req: VaultRequest): Authorized {
+    requireRateBudget(this.sql, 'authorized', req.claims.did, req.nowMs);
+    let auth: Authorized;
+    try {
+      if (isMutation(req.op)) validateIdempotencyKey(req.idempotencyKey);
+      auth = authorize(req, this.sql, this.membership);
+    } catch (err) {
+      enforceRateLimit(this.sql, 'refused', req.claims.did, req.nowMs);
+      throw err;
+    }
+    enforceRateLimit(this.sql, 'authorized', req.claims.did, req.nowMs);
+    return auth;
   }
 
   private refuseWhileRestorePending(): void {

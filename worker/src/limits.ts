@@ -57,7 +57,11 @@ export const LIMITS = {
    * wraps_per_request.
    */
   wraps_per_vault: 20_000,
-  /** Requests per device per vault per rate window. */
+  /**
+   * Per device, per vault, per rate window, applied to each of two budgets:
+   * requests that pass authorization, and requests the vault's Durable Object
+   * refuses at authorization of an existing vault.
+   */
   rate_requests_per_window: 120,
   rate_window_seconds: 60,
   /** Idempotency records are kept this long. */

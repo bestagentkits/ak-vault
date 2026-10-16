@@ -1,9 +1,13 @@
 /**
  * Per-vault request checks that need vault state: rate limit, proof of
  * possession with single-use `jti`, membership of `sub`/`did`, token scope and
- * role. Order (after the vault-exists check): rate limit -> membership -> proof
- * -> scope -> role, all before any item, wrap, audit or recovery data is read
- * or written.
+ * role. Order for an existing vault: read-only check of the device's `authorized`
+ * budget -> Idempotency-Key format (mutations) -> membership -> proof -> scope ->
+ * role -> charge the `authorized` budget, all before any item, wrap, audit or
+ * recovery data is read or written. A refusal by the Idempotency-Key check or
+ * authorization (for example a stolen token without the device key) is charged
+ * to the separate `refused` budget, so it cannot exhaust the budget of the
+ * device it names.
  */
 import { isAkvError, verifyProof, type DeviceRecord, type MembershipState } from '@ak-vault/protocol';
 import type { Scope } from '../auth/jwt-verify.js';
@@ -14,16 +18,56 @@ import type { VaultRequest } from './vault-request.js';
 /** Who may call an op once authenticated. */
 export type RoleRule = 'any_device' | 'writer' | 'human_owner';
 
-export function enforceRateLimit(sql: SqlStorage, did: string, nowMs: number): void {
+/**
+ * Per-device budgets, each a fixed window of `rate_requests_per_window`:
+ * `authorized` for requests that passed authorization (only the holder of the
+ * device key can spend it), `refused` for requests refused before or during it.
+ */
+export type RateBucket = 'authorized' | 'refused';
+
+const RATE_TABLES: Record<RateBucket, string> = {
+  authorized: 'rate_counters',
+  refused: 'refused_rate_counters',
+};
+
+interface RateWindow {
+  table: string;
+  windowStart: number;
+  /** Requests already counted in the current window. */
+  used: number;
+  /** Seconds until the current window ends (at least 1). */
+  retryAfter: number;
+}
+
+function rateWindow(sql: SqlStorage, bucket: RateBucket, did: string, nowMs: number): RateWindow {
+  const table = RATE_TABLES[bucket];
   const windowMs = LIMITS.rate_window_seconds * 1000;
   const windowStart = Math.floor(nowMs / windowMs) * windowMs;
-  const row = sql.exec<{ window_start: number; count: number }>('SELECT window_start, count FROM rate_counters WHERE did = ?', did).toArray()[0];
-  const count = row && row.window_start === windowStart ? row.count + 1 : 1;
-  sql.exec('INSERT INTO rate_counters (did, window_start, count) VALUES (?, ?, ?) ON CONFLICT (did) DO UPDATE SET window_start = excluded.window_start, count = excluded.count', did, windowStart, count);
-  if (count > LIMITS.rate_requests_per_window) {
-    const retryAfter = Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000));
-    throw new ApiError('rate_limited', { headers: { 'Retry-After': String(retryAfter) } });
-  }
+  const row = sql.exec<{ window_start: number; count: number }>(`SELECT window_start, count FROM ${table} WHERE did = ?`, did).toArray()[0];
+  const used = row && row.window_start === windowStart ? row.count : 0;
+  return { table, windowStart, used, retryAfter: Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000)) };
+}
+
+function rateLimited(retryAfter: number): ApiError {
+  return new ApiError('rate_limited', { headers: { 'Retry-After': String(retryAfter) } });
+}
+
+/** Count one request against `bucket`; `rate_limited` once the window's budget is spent. */
+export function enforceRateLimit(sql: SqlStorage, bucket: RateBucket, did: string, nowMs: number): void {
+  const w = rateWindow(sql, bucket, did, nowMs);
+  const count = w.used + 1;
+  sql.exec(`INSERT INTO ${w.table} (did, window_start, count) VALUES (?, ?, ?) ON CONFLICT (did) DO UPDATE SET window_start = excluded.window_start, count = excluded.count`, did, w.windowStart, count);
+  if (count > LIMITS.rate_requests_per_window) throw rateLimited(w.retryAfter);
+}
+
+/**
+ * Read-only: `rate_limited` if `bucket` is already spent this window. Used on the
+ * `authorized` budget before authorization, so a device over its own budget is
+ * refused without verification work; only the key holder can have spent it.
+ */
+export function requireRateBudget(sql: SqlStorage, bucket: RateBucket, did: string, nowMs: number): void {
+  const w = rateWindow(sql, bucket, did, nowMs);
+  if (w.used >= LIMITS.rate_requests_per_window) throw rateLimited(w.retryAfter);
 }
 
 /**

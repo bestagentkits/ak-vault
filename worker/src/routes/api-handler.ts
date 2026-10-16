@@ -1,7 +1,7 @@
 /**
  * `/v1/*` pipeline in the Worker: kill switch -> route -> body limits -> ES256
- * token -> live revocation -> vault Durable Object (membership, proof, scope,
- * role, idempotency, mutation). Only `/v1/meta` bypasses auth and the kill switch.
+ * token -> live revocation -> vault Durable Object (rate budget, membership, proof, scope,
+ * role, rate charge, idempotency, mutation). Only `/v1/meta` bypasses auth and the kill switch.
  */
 import { assertNotRevoked } from '../auth/revocation-check.js';
 import { bearerToken, verifyToken } from '../auth/jwt-verify.js';

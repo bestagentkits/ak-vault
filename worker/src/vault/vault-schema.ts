@@ -42,4 +42,6 @@ export const VAULT_SCHEMA = `
   CREATE TABLE IF NOT EXISTS proof_jti (did TEXT NOT NULL, jti TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY (did, jti));
   CREATE INDEX IF NOT EXISTS proof_jti_expiry ON proof_jti (expires_at);
   CREATE TABLE IF NOT EXISTS rate_counters (did TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);
+  -- Requests refused before or during authorization, counted apart so they never spend rate_counters.
+  CREATE TABLE IF NOT EXISTS refused_rate_counters (did TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);
 `;
