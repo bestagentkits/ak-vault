@@ -23,7 +23,7 @@ import {
 } from '../../src/index.js';
 import { hkdf32 } from '../../src/hkdf.js';
 import { concatBytes, utf8Encode } from '../../src/bytes.js';
-import { alicePhone, b64, bobLaptop, flipByte, id, key32, negative, nonce, seed, VAULT_SHARED } from './fixtures.js';
+import { alicePhone, b64, bobLaptop, flipByte, id, key32, negative, nonce, seed, VAULT_PERSONAL, VAULT_SHARED } from './fixtures.js';
 
 const VK = key32('vk/epoch1');
 
@@ -64,6 +64,8 @@ export function itemVectors(): Record<string, unknown> {
     cases,
     invalid: [
       neg('moved_to_other_item', 'decrypt_failed', { ...ctx0, item_id: id('item/other') }, live.env),
+      // Same vault key on purpose: the vault_id in the AAD and the item-key salt alone refuse the move.
+      neg('moved_to_other_vault', 'decrypt_failed', { ...ctx0, vault_id: VAULT_PERSONAL }, live.env),
       neg('base_revision_changed', 'decrypt_failed', { ...ctx0, base_revision: 1 }, live.env),
       neg('tombstone_flag_flipped', 'decrypt_failed', { ...ctx0, tombstone: true }, live.env),
       neg('author_changed', 'decrypt_failed', { ...ctx0, author: bobLaptop.record.device_id }, live.env),

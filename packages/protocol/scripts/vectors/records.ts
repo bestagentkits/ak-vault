@@ -110,6 +110,7 @@ export function recordVectors(): Record<string, unknown> {
     b2,
     b3,
     { ...b2, name: 'replayed_applied_record', expect: err('conflict') },
+    { ...b1, name: 'replayed_older_revision', expect: err('conflict') },
     { ...b3, name: 'replayed_conflict_record', expect: err('conflict'), conflictId: id('conflict/2') },
     mk({ author: alicePhone, item: B, base: 2, resolves: [id('conflict/unknown')] }, 'resolve_unknown_branch', err('bad_request')),
     mk({ author: alicePhone, item: B, base: 2, resolves: [c1] }, 'resolve_branch', 'applied'),

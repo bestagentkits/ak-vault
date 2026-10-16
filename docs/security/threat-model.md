@@ -91,7 +91,7 @@ directories themselves are the authority for exact file names.
 | T2 | Lost update via concurrent writes | Any two devices | CAS + `409` + preserved conflict branch | `worker/test/` concurrent writers, conflict preservation, resolution |
 | T3 | Resurrection of deleted/revoked secret | Stale offline device | Tombstones; stale writes refused and not preserved | `worker/test/` tombstone replay, offline rejoin |
 | T4 | Duplicate side effects on retry | Network | Idempotency keys; mismatched body → `422` | `worker/test/` duplicate request, idempotency mismatch |
-| T5 | Rollback or fork of vault state | Server | Client-signed checkpoints; rollback/fork alarm | Vectors: rollback, fork; `worker/test/` stale membership |
+| T5 | Rollback or fork of vault state, including a restore regrown past the witnessed position and an older policy revision re-served | Server | Client-signed checkpoints; rollback/fork alarm; `verifyChangeLog` refuses a log whose head differs from one the client kept, or that ends below it once the whole log is read; a replayed record is refused per item ([spec §5, §6](../protocol/v1/spec.md#6-checkpoints-anti-rollback)) | Vectors: `checkpoints.json` rollback, fork and the regrown view that passes the checkpoint comparison alone; `removal-fence.json` `restored_regrown_*`, `restored_log_behind_kept_head`; `records.json` `replayed_older_revision`; `red-team-replayed-policy.test.ts` / `red_team_replayed_policy_test.go`; `worker/test/` stale membership; [staging restore rehearsal](../operations/rehearsal-2026-10.md#staging-restore-2026-10-16) |
 | T8 | Misuse of the operator restore route (forged, replayed or cross-environment restore, restoring the revocation registry, writes lost around a restore) | Network attacker, holder of a captured request, operator mistake | Off (404) without its secret; HMAC-SHA256 over a context-separated request carried in the body, not a header, so live tail does not show it; origin and ±60 s time bound; compare-and-swap on the vault's current bookmark (a replay is refused: on staging storage the bookmark stayed put without writes and every restore and undo checked moved it forward); one vault object per request, never the registry; every request to the vault refused from scheduling until the confirmed restart; platform errors never echoed. A restore by the secret holder is a rollback: detected only by devices that witnessed a newer checkpoint (T5), invisible to the others, and it can roll membership back to before a removal or rekey | `worker/test/operator-restore.test.ts`; [staging restore rehearsal](../operations/rehearsal-2026-10.md#staging-restore-2026-10-16) |
 | T6 | Nonce reuse | Buggy client | Random 24-byte nonces from the platform CSPRNG; only vectors inject fixed nonces | Vectors: duplicate nonce |
 | T7 | Weak password parameters downgrade | Server | Argon2id minimums enforced by verifiers; re-wrap upgrade | Vectors: below-minimum parameters |
@@ -102,7 +102,7 @@ directories themselves are the authority for exact file names.
 | D1 | Server outage blocks local use | Server, network | `resolve` reads local backend only | agentkit#2298 regression (owned there) |
 | D2 | Abuse / quota exhaustion | Any client | Rate limits and quotas published by `/v1/meta`; membership quotas never block the rekey a removal requires, nor recovery enrollment | `worker/test/` rate-limit and quota responses; `vault-storage-limits.test.ts` boundary cases |
 | E1 | Reader or machine identity writes | Member, CI | Role and device kind enforced read-only | `worker/test/` reader write denied, machine write denied |
-| E2 | Synced policy or profile elevates a grant | Hostile profile, injected agent | Policy is a maximum; profile text is untrusted data ([spec §8](../protocol/v1/spec.md#8-portable-policy-restrictive-only)) | agentkit#2299 / #7 negative tests (owned client-side) |
+| E2 | Synced policy or profile elevates a grant | Hostile profile, injected agent | Policy is a maximum; profile text is untrusted data; project IDs only narrow the device-local grant; a policy item does not open in another vault ([spec §8](../protocol/v1/spec.md#8-portable-policy-restrictive-only)) | Vectors: `policy.json` (including `foreign_project_ids_grant_nothing`), `item.json` `moved_to_other_vault`; red-team hostile policy tests; agentkit#2299 / #7 negative tests (owned client-side) |
 | E3 | Unsupported version accepted | Server, attacker | Closed identifier sets; fail closed | Vectors: unsupported version, unknown algorithm |
 | C1 | Forked PR reaches secrets or deploys | Forked PR | No secrets to fork workflows; production Environment reviewer | Workflow config in `.github/`; red-team scenario in [release gates](./release-gates.md) |
 | I4 | Offline guessing of the recovery bundle; recovery identity reading beyond its need | Holder of an owner-account token (stolen session) | Bundle and the read-only membership log are released only to the owner account with a device-key proof; every other route refuses the recovery identity; removed device IDs refused; Argon2id minimums and a 256-bit recovery key; owner revokes sessions after a loss | `worker/test/recovery-fetch.test.ts` wrong account, removed device, key/did mismatch; `worker/test/removal-fence-and-recovery-rotation.test.ts` route refusals |
@@ -117,6 +117,15 @@ These are accepted and must be stated wherever the guarantees are described:
   long-offline device at any state it has not yet witnessed. Detection needs a
   second channel (another device's checkpoint, SAS transfer, or the recovery
   bundle). No transparency log or gossip in v1.
+- **A device resuming from its cursor does not see a restore below it.** A device
+  that only reads positions above its own cursor cannot compare heads at a
+  restored position. Comparing the served current head catches an operational
+  restore, not a server that serves the head the device expects. The device keeps
+  the records it holds (a re-served older revision is refused as a replay), but
+  records members wrote on the restored line still apply by compare-and-swap.
+  Reading the log again with the kept head at the witnessed position, or comparing
+  its own state digest with another device's checkpoint at that checkpoint's
+  position, detects it ([spec §6](../protocol/v1/spec.md#6-checkpoints-anti-rollback)).
 - **Vault-wide key.** Any member device can decrypt every item in the vault. Roles
   do not create per-secret read boundaries.
 - **No clawback.** Values already decrypted by a removed member or a lost device

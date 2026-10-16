@@ -61,6 +61,13 @@ export function verifyCheckpoint(value: unknown, state: MembershipState): Checkp
  * Throws `rollback` if `incoming` is older than or forked from `witnessed`:
  * lower membership_seq, same membership_seq with a different head, lower
  * log_seq, same log_seq with a different state_digest, or lower key_epoch.
+ *
+ * This compares checkpoints only, so it is not the whole §6 check: a log
+ * restored below `witnessed.log_seq` and regrown past it passes. A caller that
+ * reads positions at or below `witnessed.log_seq` again MUST pass the head it
+ * kept there to `verifyChangeLog` in `keptHeads`, and, for a peer's checkpoint
+ * (which carries no head), compare the state digest it computed at that
+ * position (spec §6).
  */
 export function checkRollback(witnessed: CheckpointView, incoming: CheckpointView): void {
   if (witnessed.vault_id !== incoming.vault_id) fail('bad_request', 'checkpoint belongs to another vault');

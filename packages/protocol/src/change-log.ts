@@ -74,7 +74,12 @@ export interface VerifyChangeLogOptions {
    * Heads this client computed earlier, by position. Every removal whose fence lies
    * below `from` (other than at 0) MUST be covered: a missing head is bad_request,
    * a different one rollback. Keep the head of every verified position, or verify
-   * again from {@link LOG_START}.
+   * again from {@link LOG_START}. A kept head at a position this call covers (`from`
+   * or an entry) MUST equal the head computed there, and with `complete` no kept
+   * head may lie beyond the last position (rollback): a log restored below a
+   * position the client holds, then regrown past it, is refused here, which
+   * `checkRollback` on checkpoints alone does not do. Pass at least the head at
+   * the highest witnessed checkpoint's `log_seq`.
    */
   keptHeads?: ReadonlyMap<number, string>;
 }
@@ -90,15 +95,17 @@ export interface VerifiedChangeLog {
  * Verify change-log entries `{log_seq, conflict_id, record}` that continue from
  * `opts.from`, against verified membership. Order: `from` is a valid position
  * (bad_request); `entries` is an array; every removal whose fence is at `from`
- * matches `from.log_head` (rollback); every removal whose fence lies in
+ * matches `from.log_head` (rollback); a kept head at `from` equals
+ * `from.log_head` (rollback); every removal whose fence lies in
  * `1..from.log_seq - 1` has a kept head (bad_request) equal to its signed head
  * (rollback); then for each entry: exact keys,
  * `log_seq` integer, `conflict_id` null or an ID (bad_request); `log_seq` is the
  * previous position + 1 (rollback: gap, repeat or reorder);
  * `verifyLoggedRecord(record, state, log_seq)`; the head advances. Every removal
  * whose `log_fence` is a position covered (the `from` position or an entry's)
- * MUST have signed exactly the head computed there (rollback). With
- * `opts.complete`, a removal fence beyond the last position is rollback.
+ * MUST have signed exactly the head computed there (rollback), and every kept
+ * head at a covered position MUST equal it (rollback). With `opts.complete`, a
+ * removal fence or a kept head beyond the last position is rollback.
  */
 export function verifyChangeLog(entries: readonly unknown[], state: MembershipState, opts: VerifyChangeLogOptions = {}): VerifiedChangeLog {
   const from = opts.from ?? LOG_START;
@@ -110,6 +117,8 @@ export function verifyChangeLog(entries: readonly unknown[], state: MembershipSt
         fail('rollback', 'change log differs from the log a removal fence signed');
       }
     }
+    const kept = opts.keptHeads?.get(at.log_seq);
+    if (kept !== undefined && kept !== at.log_head) fail('rollback', 'change log differs from a head this client kept');
   };
   checkFences(head);
   for (const removal of state.removals) {
@@ -133,6 +142,9 @@ export function verifyChangeLog(entries: readonly unknown[], state: MembershipSt
   });
   if (opts.complete && state.removals.some((r) => r.log_fence > head.log_seq)) {
     fail('rollback', 'change log is behind a signed removal fence');
+  }
+  if (opts.complete && opts.keptHeads) {
+    for (const logSeq of opts.keptHeads.keys()) if (logSeq > head.log_seq) fail('rollback', 'change log is behind a head this client kept');
   }
   return { head, records };
 }

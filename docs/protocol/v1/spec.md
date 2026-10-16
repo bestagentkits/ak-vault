@@ -316,17 +316,22 @@ and is unaffected. The membership state lists each removal (`removals`: `device_
 `verifyChangeLog(entries, state, {from?, complete?, keptHeads?})` (vectors: `removal-fence.json`)
 replays change-log entries `{"log_seq","conflict_id","record"}` that continue from
 `from` (a cursor `{log_seq, log_head}` the client computed itself; default position 0,
-head `""`). In order: `from` is a valid position (`bad_request`); every removal whose
-`log_fence` is the `from` position carries `from.log_head` (`rollback`); every removal
-whose `log_fence` lies in `1..from.log_seq - 1` has a head in `keptHeads` (heads the
-client computed earlier, by position; missing: `bad_request`) equal to its `log_head`
+head `""`). `keptHeads` are heads the client computed earlier, by position. In order:
+`from` is a valid position (`bad_request`); every removal whose `log_fence` is the
+`from` position carries `from.log_head` (`rollback`); a kept head at the `from` position
+equals `from.log_head` (`rollback`); every removal whose `log_fence` lies in
+`1..from.log_seq - 1` has a kept head (missing: `bad_request`) equal to its `log_head`
 (`rollback`); per entry: exact keys,
 `log_seq` an integer ≥ 1, `conflict_id` `null` or an ID (`bad_request`); `log_seq` is the
 previous position + 1 (`rollback`: gap, repeat or reorder); `verifyLoggedRecord`; the
-head advances. Every removal whose `log_fence` is an entry's position MUST carry the
-head computed there (`rollback`). With `complete` (the entries
-reach the current head), a `log_fence` beyond the last position is `rollback`. It
-returns the new cursor and the verified records.
+head advances; every removal whose `log_fence` is the entry's position carries the head
+computed there (`rollback`); a kept head at the entry's position equals the head
+computed there (`rollback`: a different record at a position the client already
+holds). With `complete` (the entries reach the current head), a `log_fence` beyond the
+last position is `rollback`, then a kept head beyond the last position is `rollback`.
+It returns the new cursor and the verified records. Apart from fences below `from`,
+no position requires a kept head, and on a page that is not `complete` a kept head
+beyond the last entry is not checked.
 
 ## 6. Checkpoints (anti-rollback)
 
@@ -346,7 +351,18 @@ and MUST raise the alarm on every device that witnessed newer state. Clients nev
 accept it silently. That includes a restored log that has since grown past the
 witnessed `log_seq`: the change-log head at that position differs from the one the
 client computed (§5) and the state there no longer matches the witnessed
-`state_digest`. `checkRollback` on checkpoints alone does not catch that case. A
+`state_digest`. `checkRollback` on checkpoints alone does not catch that case: a
+client that reads positions at or below its highest witnessed `log_seq` again MUST
+pass the head it computed there in `keptHeads` (§5) (vectors: `checkpoints.json`
+`regrown_past_witnessed_passes_checkpoint_comparison_alone`, `removal-fence.json`
+`restored_regrown_*`). Every client that verifies a peer's checkpoint, which carries
+no head, MUST compare the `state_digest` it computed at that checkpoint's `log_seq`. A client that resumes from its own cursor does not read those
+positions again, so the log alone does not show it the restore. Comparing the
+served current head with its own catches an operational restore, not a server that
+serves the head the client expects. Such a client keeps the records it holds: a
+re-served older revision is a replay (`applyRecord`: `conflict`), while records
+current members wrote on the restored line still apply or branch by
+compare-and-swap. A
 device that never witnessed newer state cannot tell and accepts the restored state
 (the limitation below). v1 defines no client re-seed or other
 automatic re-convergence: a device that raised the alarm stops syncing and keeps
@@ -401,6 +417,14 @@ Effective grant = local grant ∩ portable policy. A policy can only narrow; a m
 field means "no extra restriction", never "allow". `sensitivity:"high"` always
 requires fresh operator approval. Policy text, URLs, `when_to_use` and descriptions
 are untrusted, author-attributed data and are never interpreted as instructions.
+Project IDs have no vault or device namespace on the wire: a project named only in
+`allowed_projects` and absent from the device-local grant grants nothing
+(`policy.json` `foreign_project_ids_grant_nothing`), and a policy item moved to
+another vault fails to open (item AAD and item-key salt bind `vault_id`, §3.2;
+`item.json` `moved_to_other_vault`). A device that holds a newer policy revision
+refuses an older one the server re-serves, as a replay (`applyRecord`: `conflict`) or
+as a rollback against its witnessed checkpoint and kept head (§5, §6); a device that
+never saw the newer revision is subject to the withholding limitation (§6).
 
 ## 9. Transport authentication (Worker)
 

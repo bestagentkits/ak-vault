@@ -40,13 +40,15 @@
  *   `authorizeRecordWrite(state, record): void`, `recordDigest`.
  * - `verifyLoggedRecord(record, state, logSeq)` verifies change-log records, including those by removed
  *   authors, against each removal's signed `log_fence`.
- * - `verifyChangeLog(entries, state, {from?, complete?}): {head, records}` replays change-log entries,
- *   chains `nextLogHead` and checks each removal's signed `log_head`; `LOG_START`, `parseLogPosition`.
+ * - `verifyChangeLog(entries, state, {from?, complete?, keptHeads?}): {head, records}` replays change-log
+ *   entries, chains `nextLogHead`, checks each removal's signed `log_head` and every head the client kept;
+ *   `LOG_START`, `parseLogPosition`.
  * - `applyRecord(itemState | undefined, record, {conflictId?, isReplay?}): {state, outcome}` (pure CAS model),
  *   `emptyItemState`, `computeStateDigest(items)`.
  *
  * Checkpoints (§6) — `signCheckpoint`, `parseCheckpoint`, `verifyCheckpoint(cp, state)`,
- * `checkRollback(witnessed, incoming): void`.
+ * `checkRollback(witnessed, incoming): void` (checkpoint comparison only; pair it with `verifyChangeLog`
+ * and the head kept at the witnessed position to refuse a restored-then-regrown log).
  *
  * Audit (§7) — `deriveAuditKey`, `appendAuditEntry`, `verifyAuditChain(entries, {vaultKeys, vaultId, keyEpoch, witnessed?})`,
  * `auditEntryHash`, `signAuditCheckpoint`, `verifyAuditCheckpoint`.

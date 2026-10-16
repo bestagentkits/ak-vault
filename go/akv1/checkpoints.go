@@ -120,6 +120,13 @@ func VerifyCheckpoint(v any, state MembershipState) (Checkpoint, error) {
 // CheckRollback returns CodeRollback if incoming is older than or forked from
 // witnessed: lower membership_seq, same membership_seq with a different head,
 // lower log_seq, same log_seq with a different state_digest, or lower key_epoch.
+//
+// It compares checkpoints only, so it is not the whole spec §6 check: a log
+// restored below witnessed.LogSeq and regrown past it passes. A caller that
+// reads positions at or below witnessed.LogSeq again MUST pass the head it kept
+// there to VerifyChangeLog in KeptHeads, and, for a peer's checkpoint (which
+// carries no head), compare the state digest it computed at that position
+// (spec §6).
 func CheckRollback(witnessed, incoming CheckpointView) error {
 	if witnessed.VaultID != incoming.VaultID {
 		return badRequest("checkpoint belongs to another vault")

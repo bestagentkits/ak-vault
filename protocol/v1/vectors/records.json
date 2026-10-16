@@ -803,6 +803,30 @@
           "expect_error": "conflict"
         },
         {
+          "name": "replayed_older_revision",
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "VwR6msilknfuD7MxslM76w",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "HuCy7tB5ixWPisxMZQdTTA",
+            "tombstone": false,
+            "ts": 1767225607000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "dkP8LZyuOe8F_xj-MDquETXiHN8q3_Mj",
+              "ct": "r2orw-IUJNDaYdlLa9EImp4_CVfVBHKY2ndIAzduwIfvSmn2O8u5UPh7WnI1OaeI-0dvlG4S5j95Fz3sxxBvINLpRSV5MkrqVD1T6lJ5SigFggLFWw"
+            },
+            "sig": "VRDBxFhz8XxuFc6CgBNqq52FbEx6d2_sLHHS1kCmUQ-QP4EDloNaI0CRzl0BcejTsmCZTbwkrG-Wiw5tBjvVCw"
+          },
+          "conflict_id": null,
+          "expect_error": "conflict"
+        },
+        {
           "name": "replayed_conflict_record",
           "record": {
             "v": 1,

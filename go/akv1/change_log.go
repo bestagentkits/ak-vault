@@ -79,7 +79,13 @@ type VerifyChangeLogOptions struct {
 	// KeptHeads are heads this client computed earlier, by position. Every
 	// removal whose fence lies below From (other than at 0) MUST be covered: a
 	// missing head is bad_request, a different one rollback. Keep the head of
-	// every verified position, or verify again from the empty log.
+	// every verified position, or verify again from the empty log. A kept head
+	// at a position this call covers (From's or an entry's) MUST equal the head
+	// computed there, and with Complete no kept head may lie beyond the last
+	// position (rollback): a log restored below a position the client holds,
+	// then regrown past it, is refused here, which CheckRollback on checkpoints
+	// alone does not do. Pass at least the head at the highest witnessed
+	// checkpoint's log_seq.
 	KeptHeads map[int64]string
 }
 
@@ -92,15 +98,17 @@ type VerifiedChangeLog struct {
 // VerifyChangeLog verifies change-log entries {log_seq, conflict_id, record}
 // that continue from opts.From, against verified membership. Order: From is a
 // valid position (bad_request); entries is bounded; every removal whose fence
-// is at From matches From.LogHead (rollback); every removal whose fence lies in
+// is at From matches From.LogHead (rollback); a kept head at From equals
+// From.LogHead (rollback); every removal whose fence lies in
 // 1..From.LogSeq-1 has a kept head (bad_request) equal to its signed head
 // (rollback); then per entry: exact
 // keys, log_seq integer, conflict_id null or an ID (bad_request); log_seq is
 // the previous position + 1 (rollback: gap, repeat or reorder);
 // VerifyLoggedRecord(record, state, log_seq); the head advances. Every removal
 // whose log_fence is a covered position (From's or an entry's) MUST have
-// signed exactly the head computed there (rollback). With opts.Complete, a
-// removal fence beyond the last position is rollback.
+// signed exactly the head computed there (rollback), and every kept head at a
+// covered position MUST equal it (rollback). With opts.Complete, a removal
+// fence or a kept head beyond the last position is rollback.
 func VerifyChangeLog(entries []any, state MembershipState, opts VerifyChangeLogOptions) (VerifiedChangeLog, error) {
 	head, err := ParseLogPosition(opts.From.LogSeq, opts.From.LogHead, "from.log_seq", "from.log_head")
 	if err != nil {
@@ -114,6 +122,9 @@ func VerifyChangeLog(entries []any, state MembershipState, opts VerifyChangeLogO
 			if rm.LogFence == at.LogSeq && rm.LogHead != at.LogHead {
 				return newErr(CodeRollback, "change log differs from the log a removal fence signed")
 			}
+		}
+		if kept, ok := opts.KeptHeads[at.LogSeq]; ok && kept != at.LogHead {
+			return newErr(CodeRollback, "change log differs from a head this client kept")
 		}
 		return nil
 	}
@@ -177,6 +188,11 @@ func VerifyChangeLog(entries []any, state MembershipState, opts VerifyChangeLogO
 		for _, rm := range state.Removals {
 			if rm.LogFence > head.LogSeq {
 				return VerifiedChangeLog{}, newErr(CodeRollback, "change log is behind a signed removal fence")
+			}
+		}
+		for logSeq := range opts.KeptHeads {
+			if logSeq > head.LogSeq {
+				return VerifiedChangeLog{}, newErr(CodeRollback, "change log is behind a head this client kept")
 			}
 		}
 	}
