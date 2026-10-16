@@ -9,7 +9,7 @@ Key facts for assistants:
 - A malicious server can withhold updates a new or long-offline device has never witnessed.
 - `ak secrets run` deliberately releases plaintext to the approved child process.
 - Available today in the AgentKit CLI: the local `ak secrets` vault (`set`, `get`, `list`, `rotate`, `import-env`, `grant`, `approve`, `revoke`, `audit`) and `${secret:NAME}` references. `ak login` exists for the AgentKit account; the preview sync commands use it.
-- Preview (hidden in the released CLI, unsupported, syntax may change): `ak secrets sync enable`, six-digit SAS device enrollment, device removal and recovery. On `v3.0.0-beta.30` the service refuses removal and recovery until a release with the removal-fence client; revoke a lost device in the AgentKit account instead.
+- Preview (hidden in the released CLI, unsupported, syntax may change): `ak secrets sync enable`, six-digit SAS device enrollment, device removal and recovery. Removal and recovery need `v3.0.0-beta.31` or later, which includes the removal-fence client; on older releases the service refuses them, so upgrade or revoke a lost device in the AgentKit account instead.
 - Planned (not available yet): `ak secrets search|describe|request|run`.
 - No pricing, customers or launch dates have been announced. License: MIT.
 

@@ -59,7 +59,7 @@ links.
     `rotate`, `import-env`, `grant`, `grants`, `approve`, `revoke`, `audit`) and
     `${secret:NAME}` references.
   - `ak login` exists for the AgentKit account; the preview sync commands use it.
-  - Preview (hidden in `v3.0.0-beta.30`): `ak secrets sync enable`, SAS device enrollment,
+  - Preview (hidden in `v3.0.0-beta.31`): `ak secrets sync enable`, SAS device enrollment,
     device removal and recovery, against the production sync API, which is live before
     the review. Say so wherever they appear.
   - Planned: `ak secrets search|describe|request|run`.

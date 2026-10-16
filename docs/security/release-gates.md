@@ -25,15 +25,16 @@ Tail access on production restricted, was confirmed by the owner on 2026-10-16
 The owner's decisions on #8 enabled production sync with these items open; they still gate GA. The waivers recorded on
 #8 are listed [below](#owner-waivers); nothing else is waived, and sync is not GA.
 
-**Released client lags the Worker.** The latest agentkit release with the preview
-sync commands, `v3.0.0-beta.30`, predates the removal-fence client (agentkit `dev`
-`67ff8e6`). Against the production Worker its device and member removals fail closed
-(`400 bad_request`, no signed `log_head`), recovery is blocked as well (the pre-fence
-client in the [Docker e2e run on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6206840562)
-showed both), and it does not verify change-log contents against removal fences. A release that includes the fence client is tracked in
-[agentkit#2469](https://github.com/bestagentkits/agentkit/issues/2469). Until then,
-a beta.30 user who loses a device revokes it in the ak-web account, which the Worker
-enforces on the device's next request.
+**Older clients lag the Worker.** The removal-fence client (agentkit `67ff8e6`)
+first shipped in agentkit [`v3.0.0-beta.31`](https://github.com/bestagentkits/agentkit/releases/tag/v3.0.0-beta.31) (2026-10-16,
+[agentkit#2469](https://github.com/bestagentkits/agentkit/issues/2469)), with the
+sync commands still hidden. Releases up to `v3.0.0-beta.30` predate it. Against the
+production Worker their device and member removals fail closed (`400 bad_request`,
+no signed `log_head`), recovery is blocked as well (the pre-fence client in the
+[Docker e2e run on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6206840562)
+showed both), and they do not verify change-log contents against removal fences. A
+user on such a release upgrades, or revokes a lost device in the ak-web account,
+which the Worker enforces on the device's next request.
 
 **Capacity.** Every authenticated request checks the single revocation registry,
 which the lab measurement puts at roughly 10 checks a second for the whole service
