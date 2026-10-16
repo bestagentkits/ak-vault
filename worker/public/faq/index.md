@@ -30,7 +30,7 @@ Yes. The Worker, the TypeScript and Go protocol implementations and the cross-la
 
 ### Can AgentKit read my secrets?
 
-The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the [data classification](https://vault.agentkit.best/how-it-works/#data). Treat this as a design claim until the review completes.
+The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the [data classification](https://vault.agentkit.best/how-it-works/#data). Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met.
 
 ### What can the server see?
 

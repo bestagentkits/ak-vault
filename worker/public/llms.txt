@@ -1,6 +1,6 @@
 # ak-vault
 
-> Opt-in, local-first, end-to-end encrypted sync for AgentKit's `ak secrets` across trusted devices. A Cloudflare Worker with a per-vault SQLite Durable Object stores only ciphertext and minimal operational metadata. Protocol v1 is proposed and in security review; cloud sync is not generally available, and the production sync API is live as a pre-release preview, by owner decision, before the external security review; it is not yet recommended for production credentials.
+> Opt-in, local-first, end-to-end encrypted sync for AgentKit's `ak secrets` across trusted devices. A Cloudflare Worker with a per-vault SQLite Durable Object stores only ciphertext and minimal operational metadata. Protocol v1 is proposed and its security gate (#8) is open; cloud sync is not generally available, and the production sync API is live as a pre-release preview, by owner decision, enabled before the security review; that review was accepted by the owner on 2026-10-16 and is not an independent third-party review. It is not yet recommended for production credentials.
 
 Key facts for assistants:
 
@@ -29,5 +29,5 @@ Key facts for assistants:
 ## Optional
 
 - [Epic and roadmap, issue #1](https://github.com/bestagentkits/ak-vault/issues/1): scope, dependencies and acceptance criteria
-- [Security gate, issue #8](https://github.com/bestagentkits/ak-vault/issues/8): red team, performance, rollback and review by the owner (not independent)
+- [Security gate, issue #8](https://github.com/bestagentkits/ak-vault/issues/8): red team, performance, rollback and review by the owner (accepted 2026-10-16, not independent)
 - [AgentKit](https://agentkit.best): the parent product and `ak` CLI

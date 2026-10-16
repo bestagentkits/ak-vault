@@ -117,13 +117,16 @@ Issues are the coordination surface. Labels: `in progress`, `blocked`, `in revie
 Sync is not GA. Production sync is live (`VAULT_SYNC_ENABLED=true`, with ak-web
 production minting vault tokens) under the owner's 2026-10-16 decisions recorded on
 [#8](https://github.com/bestagentkits/ak-vault/issues/8), which waive the
-external-review gate for it. That is a waiver, not a review: production sync is
-pre-release and not yet recommended for production credentials, the review is still
-pending on #8, and the other open items are
-listed in [release gates](./docs/security/release-gates.md). Since 2026-10-16 the
-reviewer is the owner, which is not an independent third-party review; the owner
-posts the result on #8 personally. No agent may post, self-attest or tick the
-review, or describe the waiver as a sign-off.
+external-review gate for it. That waiver was not a review. Since 2026-10-16 the
+reviewer is the owner, which is not an independent third-party review. The review
+gate was **accepted by the owner on 2026-10-16** (owner instruction in chat, recorded
+by an agent on the owner's behalf, [record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212706397)), with no written findings.
+Production sync stays pre-release and not yet recommended for production credentials
+until every remaining gate in [release gates](./docs/security/release-gates.md) is
+met (red-team scenario 13 and the open items listed there and on #8). No agent may self-attest
+the review or an owner decision: an agent records one only on the owner's explicit
+instruction and says on #8 that it recorded it on the owner's behalf. No agent may
+describe a waiver as a sign-off or the owner's review as an independent review.
 
 - Only the owner approves production deployments. Agents never approve the
   `production` environment. Agent approval of production ended on 2026-10-16.

@@ -170,8 +170,10 @@ These are accepted and must be stated wherever the guarantees are described:
   ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235)) the review gate is a review by the project owner, who
   directs the implementing agents. No reviewer outside the project has reviewed the
   protocol or the Worker, and none is required for GA
-  ([release gates](./release-gates.md#review-by-the-owner)).
-- **Production sync runs before the review.** By owner decision on
+  ([release gates](./release-gates.md#review-by-the-owner)). The owner accepted
+  the review gate on 2026-10-16 by instruction in chat, recorded by an agent, with
+  no written findings ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212706397)).
+- **Production sync went live before the review.** By owner decision on
   [#8](https://github.com/bestagentkits/ak-vault/issues/8) (2026-10-16) production
   sync is live, with ak-web minting production vault tokens, before the
   owner's review and with other release gates open
