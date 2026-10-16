@@ -138,8 +138,9 @@ page and docs, and its own CI run is linked from its pull request.
       reconciliation on staging through the operator restore route
       ([2026-10-16](../operations/rehearsal-2026-10.md#staging-restore-2026-10-16),
       [#51](https://github.com/bestagentkits/ak-vault/issues/51)). Devices that
-      witnessed newer state refused the restored vault (a CI test for a log regrown
-      past the witnessed position is
+      witnessed newer state refused the restored vault (a log regrown past the
+      witnessed position is covered by protocol vectors and TS and Go tests,
+      `removal-fence.json` `restored_regrown_*`; the agentkit client test is open on
       [#76](https://github.com/bestagentkits/ak-vault/issues/76)); v1 has no automatic
       re-convergence (an [ADR 0001 open item](../adr/0001-opt-in-zero-knowledge-sync.md#open-items)).
 - [x] Cost measured on a lab Worker running the staging commit and configuration,

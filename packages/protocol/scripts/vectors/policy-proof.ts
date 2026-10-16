@@ -28,6 +28,8 @@ export function policyVectors(): Record<string, unknown> {
         'normal',
       ),
       ok('empty_allow_list_denies_all_projects', { allowed_projects: [] }, 'normal'),
+      // Project ids are device-local: a policy naming only projects another device or vault grants adds none here.
+      ok('foreign_project_ids_grant_nothing', { allowed_projects: ['proj_other_device', 'proj_other_vault'] }, 'normal'),
       ok('policy_requires_approval', { require_approval: true, allowed_purposes: ['test'] }, 'normal'),
     ],
     invalid: [

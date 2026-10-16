@@ -46,7 +46,7 @@ export function checkpointVectors(): Record<string, unknown> {
   return {
     version: 1,
     description:
-      'Checkpoints (spec §6). state_digest_cases: digest = b64 sha256(cjson([[item_id,revision,head]...] sorted by item_id)), rows with revision 0 excluded. checkpoint: signed with akv1/checkpoint by a current device of membership_events; verify MUST succeed; invalid_checkpoints MUST fail with expect_error. rollback: checkRollback(witnessed, incoming) MUST accept `accept` cases and reject `reject` cases with expect_error.',
+      'Checkpoints (spec §6). state_digest_cases: digest = b64 sha256(cjson([[item_id,revision,head]...] sorted by item_id)), rows with revision 0 excluded. checkpoint: signed with akv1/checkpoint by a current device of membership_events; verify MUST succeed; invalid_checkpoints MUST fail with expect_error. rollback: checkRollback(witnessed, incoming) MUST accept `accept` cases and reject `reject` cases with expect_error. It compares checkpoints only: a log restored below the witnessed log_seq and regrown past it is accepted here (regrown_past_witnessed_passes_checkpoint_comparison_alone) and refused by verifyChangeLog against the head the client kept at the witnessed position (removal-fence.json restored_regrown_*), plus the state digest at that position for a peer checkpoint.',
     membership_events: events,
     state_digest_cases: [
       { rows: rows.map((r) => [r.item_id, r.revision, r.head]), digest },
@@ -66,6 +66,8 @@ export function checkpointVectors(): Record<string, unknown> {
         ok('same_state', view),
         ok('newer_log', { ...view, log_seq: 12, state_digest: other }),
         ok('newer_membership', { ...view, membership_seq: 9, membership_head: other, log_seq: 12, state_digest: other, key_epoch: 4 }),
+        // A log restored below the witnessed log_seq and regrown past it looks exactly like newer_log here.
+        ok('regrown_past_witnessed_passes_checkpoint_comparison_alone', { ...view, log_seq: view.log_seq + 1, state_digest: other }),
       ],
       reject: [
         rb('membership_seq_lower', 'rollback', { ...view, membership_seq: 2, membership_head: membershipEventHash(events[2]!) }),

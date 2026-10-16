@@ -107,6 +107,24 @@
       "expect_error": "decrypt_failed"
     },
     {
+      "name": "moved_to_other_vault",
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+      "key_epoch": 1,
+      "author": "HuCy7tB5ixWPisxMZQdTTA",
+      "item_id": "7FgswvJ31EsVRXXdSPAq2w",
+      "base_revision": 0,
+      "tombstone": false,
+      "env": {
+        "v": 1,
+        "alg": "xc20p",
+        "kid": "e1",
+        "n": "wjcvwUmBLEy-l2fyoyx0Ubj8MmVqnzeJ",
+        "ct": "IfNlKIrwsF2hlnQ-3R2dhFwTX40bEP6-J0vFQrMBHS7iGiAoZFMlAEcnXLOLZFvRYtKGr4WYqXn2dTD3JSLn-zOhCK-fz01jNwtTvQKJwIn5QkgbonoU2a2f_so80HmFNlimdAPl3FO2_9rXl8wXr7aKh0AxOcmevNswvedimhJI8v8e9NrqgqDnz8ueKEaaFkEy99SVnhdDf0NUGbzRwE1x"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
       "name": "base_revision_changed",
       "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
       "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",

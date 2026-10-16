@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Removal fence (spec §5, §6). chains: membership.json chains (shared = chains[0], personal = chains[1]); state = verifyMembershipChain(chain); state.removals lists each removal with the removed sign_pub, the key_epoch current at removal and the signed log_fence and log_head of the removing event. verifyLoggedRecord(record, state, log_seq): record parses; same vault; log_seq >= 1 (bad_request); the author is a current device, or a removed device whose record key_epoch is not newer than the key_epoch of its last removal (forbidden); the signature verifies under that device key (invalid_signature); for every removal of the author with removal.key_epoch >= record.key_epoch, log_seq > removal.log_fence is forbidden. cases MUST pass; invalid MUST fail with expect_error. change_logs: the honest change log of each chain, entries {log_seq, conflict_id (null = applied record), record}; heads[n] is the log head at position n: heads[0] = \"\", heads[n] = b64 sha256(utf8(\"akv1/log-head\\n\") || cjson({\"conflict_id\", \"log_seq\": n, \"prev\": heads[n-1], \"record\": b64 sha256(record signing input)})). verifyChangeLog(entries, state, {from, complete}): from is a valid position (log_head \"\" exactly at 0, else 32 bytes; bad_request); per entry: exact keys {log_seq, conflict_id, record}, conflict_id null or an ID (bad_request); log_seq = previous + 1 (rollback); verifyLoggedRecord; the head advances; every removal whose log_fence equals the from position or an entry position MUST carry the head computed there (rollback); every removal whose log_fence lies in 1..from.log_seq-1 needs a head in kept_heads (keyed by decimal position; missing: bad_request) equal to its log_head (rollback); with complete, a removal log_fence beyond the last position is rollback. log_cases MUST pass and yield head; log_invalid MUST fail with expect_error.",
+  "description": "Removal fence (spec §5, §6). chains: membership.json chains (shared = chains[0], personal = chains[1]); state = verifyMembershipChain(chain); state.removals lists each removal with the removed sign_pub, the key_epoch current at removal and the signed log_fence and log_head of the removing event. verifyLoggedRecord(record, state, log_seq): record parses; same vault; log_seq >= 1 (bad_request); the author is a current device, or a removed device whose record key_epoch is not newer than the key_epoch of its last removal (forbidden); the signature verifies under that device key (invalid_signature); for every removal of the author with removal.key_epoch >= record.key_epoch, log_seq > removal.log_fence is forbidden. cases MUST pass; invalid MUST fail with expect_error. change_logs: the honest change log of each chain, entries {log_seq, conflict_id (null = applied record), record}; heads[n] is the log head at position n: heads[0] = \"\", heads[n] = b64 sha256(utf8(\"akv1/log-head\\n\") || cjson({\"conflict_id\", \"log_seq\": n, \"prev\": heads[n-1], \"record\": b64 sha256(record signing input)})). verifyChangeLog(entries, state, {from, complete}): from is a valid position (log_head \"\" exactly at 0, else 32 bytes; bad_request); per entry: exact keys {log_seq, conflict_id, record}, conflict_id null or an ID (bad_request); log_seq = previous + 1 (rollback); verifyLoggedRecord; the head advances; every removal whose log_fence equals the from position or an entry position MUST carry the head computed there (rollback); every removal whose log_fence lies in 1..from.log_seq-1 needs a head in kept_heads (keyed by decimal position; missing: bad_request) equal to its log_head (rollback); every kept head at the from position or an entry position MUST equal the head computed there (rollback); with complete, a removal log_fence or a kept head beyond the last position is rollback. A client passes at least the head it kept at its highest witnessed checkpoint, so a log restored below that position and regrown past it is refused (restored_regrown_*): checkRollback on checkpoints alone accepts it. log_cases MUST pass and yield head; log_invalid MUST fail with expect_error.",
   "chains": {
     "shared": [
       {
@@ -1980,6 +1980,627 @@
       "head": {
         "log_seq": 7,
         "log_head": "OBGVCw3xkEZ-TI4pQ2rtxKcmAccb0yOvRAZ1Fm0rSX8"
+      }
+    },
+    {
+      "name": "shared_reread_with_every_kept_head",
+      "chain": "shared",
+      "from": {
+        "log_seq": 0,
+        "log_head": ""
+      },
+      "kept_heads": {
+        "0": "",
+        "1": "9PHYsdfULOsR0b0cTK-uOi7C5ZHPMLVvDZhX9RYDjTE",
+        "2": "aZX24HxUjhDl8Ig3DcErpCwWPEvXdKZlR00Ml0PWptE",
+        "3": "mWi_nyayvq-FDRNoyrcf88TlO8-QLtYvYdIZ6cZEKg8",
+        "4": "VWwmeemWDSoykxUrp4MbdzlNMfwL7GtpIh13b9ulKRk",
+        "5": "yp4tEG9uZ0iEKj1YeeWWqGUeijCphg6oIgxPgVeev-U",
+        "6": "CxAUmLnJICSNGLMMttzky9O02YIKppJv0pb9oLAC3Ag",
+        "7": "WekwrFZS0qMyUFmfWlyrHivE1FOg4MsfzDoBDA4iT0o",
+        "8": "cSaU1YYtW-KsxzlPKpsjkcp5FNzTbPAAQ8n1GMNFmsM"
+      },
+      "entries": [
+        {
+          "log_seq": 1,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "HuCy7tB5ixWPisxMZQdTTA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "Pu0ANk8HCZ-8MgHMISYOlhc6P6DNMGEt",
+              "ct": "KjLXXnFYVgU-bw3ZsMKw6jKcXu9T5VB6Z7TLSCNXIi2Mgr39PyS9IxST3wZ869hpI07BgCkljUra7yyhuuX1IdLb9NcHxurmetFhiWeQsHsbKlUipAJ_1XIhPsbm5swi"
+            },
+            "sig": "at690DQUpPzAcN3YTRdcbDTaVJcRI0wwE43WNZ3XFKv1Gy7H06gFZIKeDmF3NGndtcCJjnt0DSJu43FbM7CoBA"
+          }
+        },
+        {
+          "log_seq": 2,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "l1DjD4XnQeIQAKbeCLxQ5tEb5RvxwcSZ",
+              "ct": "KhMknyfD8SE2nM5FpjcqdwssR64tnBh6j5-vPOD6fYGCI1cC220C8wkBIQ6dkEpjwbFVDL1divSOqanUX2N1VTe3NlLbAUbuwx57hAjVAtTNbCWgClJzfxKA2NVmnzsi"
+            },
+            "sig": "65U8MCxCWKKEQrnC08Lr2Bamyky1xITgzqdibEwObP16HE2h8I6_n40sO8dKSoRimLn_AiqgCgfbIEfm-OScCQ"
+          }
+        },
+        {
+          "log_seq": 3,
+          "conflict_id": "6aSMWyOWGYUsNUU0BSYClw",
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "cIR1RW3bAGC3N_sdvcjtQ9qcTnHDmfee",
+              "ct": "2S4MWZ6qO3NKIatAapKHPlVkebLe7wcYRlSNnACk9RWbSomBO2BRhf-Ue86oDq7eNn-xt0UWei2iLBCWkuwtyrjwp4suVjqpvgC_juBPcoDRjNjx8AtuTvukdxaHjAxL"
+            },
+            "sig": "aL2-ust2KWe3X0dzwRE2dyyBa2bDVELnO9-rPfdX9YsApFiXlSiqnRZADEvdV7K2nd-IQhRL0obvgjpqAez9BA"
+          }
+        },
+        {
+          "log_seq": 4,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 1,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [
+              "6aSMWyOWGYUsNUU0BSYClw"
+            ],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "v0a6mogzmg-CmKPOaeQVuoDHfWyb5YY0",
+              "ct": "offVNfpg8FW_v8vmczKNx6wFh_2mhhZpSJwQ0mtsJDXD7Rc2bT-CtDUEOClbVyZ8jbkqufV-y_KuVXpAmePgQoEIe_BcSqhtokzjvAMUPMqk72AqdkFwK4wrb5psypTA"
+            },
+            "sig": "lTpQ_jrcN6mcPhaH3PRmiPTF0zKs5UqyjJPUhlpe8Spwh1siFHXiGkukwyI-iueWtqZNNvkiwYvZdtwShoHmBQ"
+          }
+        },
+        {
+          "log_seq": 5,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 0,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "5fiLxiz113J7F3g2N9PldG0eAKjTz-kX",
+              "ct": "Kk1NvUmmaSqQyJT_NkQ0Z0sF54xnGCfQ_d4O_HZ7rl71W_fgNW56M4HdGWhekx3MPcza0991sMbAXclVLCuUF645q8hZiSSvhkXh8gBcyJCcSfQZQlxK-U5wuAEyka4t"
+            },
+            "sig": "-tw5M8irvBNrS5dVZddJc9TeGQDBwcMff6dOCGKeN-PpVtIVcDwcNGrLgWcnXTnTSX_D3KvXuSwF-sVeEVT4AA"
+          }
+        },
+        {
+          "log_seq": 6,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "2x5NVYQsmxkw9YIRyxbV6Q7o5Uxm-EKW",
+              "ct": "XcutUxZaoE0uzjwPwm-rm76ouKOng5cxvu9xKVJ8FxLAe29oMojQ6u4DNzKFm5-SJciYh9FtISCUz-Ce0OTIRmnQ---mQj8CA50bPUjuMhfCVyPfrRbAlT_iPkPTT4mY"
+            },
+            "sig": "2FjhA82rki_8vsLVFIpkYXVGhtHJ9xRDRlVZKe7QKb9_VIUXQCMw2Of3I2zwcvrOFKFsvkdHn0dqmnbHmBf8Cg"
+          }
+        },
+        {
+          "log_seq": 7,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "1pAKK1W3MyLmdP19B2xpZdPHWeIXNdnD",
+              "ct": "o9HBU_aGejAkJSCWYaofdWREUD7wfrrBoMDTmaxjVurcn4cZISwFQbGZRoQe-hHz8EqKf3qDBgpYZ7I0q51m0s6pyG6gfze9VXCfWsCaO27UOw-ZuBYu0D8vQDkOP9Ne"
+            },
+            "sig": "jbkn7JYrBMowaBs0psJCSyk9vGi-qkPlnEekZmSdlNsUNhirDFjkvqgUVXzuYvM8hRlr4nHzciIAGnUqsk6iAA"
+          }
+        },
+        {
+          "log_seq": 8,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "XTHurH3NkiMmvZRKBd-Srg",
+            "base_revision": 0,
+            "key_epoch": 3,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e3",
+              "n": "_djOf33nY5eLvuAfwfx0o8d1ojtGRJuH",
+              "ct": "8BvhHUjZfRQawfFTmicVrCJ7F-hzuposax5sJkQaQ8Bh9safbxwBBsqM3sC6ii9PfyNviO2BeAlUa2ZYWFCOamPYJ8kNm1ssLwB3oM5tCn4o1cokzfTsUr3ID5H91keP"
+            },
+            "sig": "qDwb9jw1k6cqGnsosLnBbau8LEmGtUnq6vZim-c8P-TzbAU4x-e94AM3rmdVN9Oi0h0RYvKN_QwWXhordFEjAw"
+          }
+        }
+      ],
+      "complete": true,
+      "head": {
+        "log_seq": 8,
+        "log_head": "cSaU1YYtW-KsxzlPKpsjkcp5FNzTbPAAQ8n1GMNFmsM"
+      }
+    },
+    {
+      "name": "restored_regrown_log_without_kept_head",
+      "chain": "shared",
+      "from": {
+        "log_seq": 0,
+        "log_head": ""
+      },
+      "kept_heads": {
+        "4": "VWwmeemWDSoykxUrp4MbdzlNMfwL7GtpIh13b9ulKRk",
+        "7": "WekwrFZS0qMyUFmfWlyrHivE1FOg4MsfzDoBDA4iT0o"
+      },
+      "entries": [
+        {
+          "log_seq": 1,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "HuCy7tB5ixWPisxMZQdTTA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "Pu0ANk8HCZ-8MgHMISYOlhc6P6DNMGEt",
+              "ct": "KjLXXnFYVgU-bw3ZsMKw6jKcXu9T5VB6Z7TLSCNXIi2Mgr39PyS9IxST3wZ869hpI07BgCkljUra7yyhuuX1IdLb9NcHxurmetFhiWeQsHsbKlUipAJ_1XIhPsbm5swi"
+            },
+            "sig": "at690DQUpPzAcN3YTRdcbDTaVJcRI0wwE43WNZ3XFKv1Gy7H06gFZIKeDmF3NGndtcCJjnt0DSJu43FbM7CoBA"
+          }
+        },
+        {
+          "log_seq": 2,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "l1DjD4XnQeIQAKbeCLxQ5tEb5RvxwcSZ",
+              "ct": "KhMknyfD8SE2nM5FpjcqdwssR64tnBh6j5-vPOD6fYGCI1cC220C8wkBIQ6dkEpjwbFVDL1divSOqanUX2N1VTe3NlLbAUbuwx57hAjVAtTNbCWgClJzfxKA2NVmnzsi"
+            },
+            "sig": "65U8MCxCWKKEQrnC08Lr2Bamyky1xITgzqdibEwObP16HE2h8I6_n40sO8dKSoRimLn_AiqgCgfbIEfm-OScCQ"
+          }
+        },
+        {
+          "log_seq": 3,
+          "conflict_id": "6aSMWyOWGYUsNUU0BSYClw",
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "cIR1RW3bAGC3N_sdvcjtQ9qcTnHDmfee",
+              "ct": "2S4MWZ6qO3NKIatAapKHPlVkebLe7wcYRlSNnACk9RWbSomBO2BRhf-Ue86oDq7eNn-xt0UWei2iLBCWkuwtyrjwp4suVjqpvgC_juBPcoDRjNjx8AtuTvukdxaHjAxL"
+            },
+            "sig": "aL2-ust2KWe3X0dzwRE2dyyBa2bDVELnO9-rPfdX9YsApFiXlSiqnRZADEvdV7K2nd-IQhRL0obvgjpqAez9BA"
+          }
+        },
+        {
+          "log_seq": 4,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 1,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [
+              "6aSMWyOWGYUsNUU0BSYClw"
+            ],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "v0a6mogzmg-CmKPOaeQVuoDHfWyb5YY0",
+              "ct": "offVNfpg8FW_v8vmczKNx6wFh_2mhhZpSJwQ0mtsJDXD7Rc2bT-CtDUEOClbVyZ8jbkqufV-y_KuVXpAmePgQoEIe_BcSqhtokzjvAMUPMqk72AqdkFwK4wrb5psypTA"
+            },
+            "sig": "lTpQ_jrcN6mcPhaH3PRmiPTF0zKs5UqyjJPUhlpe8Spwh1siFHXiGkukwyI-iueWtqZNNvkiwYvZdtwShoHmBQ"
+          }
+        },
+        {
+          "log_seq": 5,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 0,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "5fiLxiz113J7F3g2N9PldG0eAKjTz-kX",
+              "ct": "Kk1NvUmmaSqQyJT_NkQ0Z0sF54xnGCfQ_d4O_HZ7rl71W_fgNW56M4HdGWhekx3MPcza0991sMbAXclVLCuUF645q8hZiSSvhkXh8gBcyJCcSfQZQlxK-U5wuAEyka4t"
+            },
+            "sig": "-tw5M8irvBNrS5dVZddJc9TeGQDBwcMff6dOCGKeN-PpVtIVcDwcNGrLgWcnXTnTSX_D3KvXuSwF-sVeEVT4AA"
+          }
+        },
+        {
+          "log_seq": 6,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "2x5NVYQsmxkw9YIRyxbV6Q7o5Uxm-EKW",
+              "ct": "XcutUxZaoE0uzjwPwm-rm76ouKOng5cxvu9xKVJ8FxLAe29oMojQ6u4DNzKFm5-SJciYh9FtISCUz-Ce0OTIRmnQ---mQj8CA50bPUjuMhfCVyPfrRbAlT_iPkPTT4mY"
+            },
+            "sig": "2FjhA82rki_8vsLVFIpkYXVGhtHJ9xRDRlVZKe7QKb9_VIUXQCMw2Of3I2zwcvrOFKFsvkdHn0dqmnbHmBf8Cg"
+          }
+        },
+        {
+          "log_seq": 7,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "1pAKK1W3MyLmdP19B2xpZdPHWeIXNdnD",
+              "ct": "o9HBU_aGejAkJSCWYaofdWREUD7wfrrBoMDTmaxjVurcn4cZISwFQbGZRoQe-hHz8EqKf3qDBgpYZ7I0q51m0s6pyG6gfze9VXCfWsCaO27UOw-ZuBYu0D8vQDkOP9Ne"
+            },
+            "sig": "jbkn7JYrBMowaBs0psJCSyk9vGi-qkPlnEekZmSdlNsUNhirDFjkvqgUVXzuYvM8hRlr4nHzciIAGnUqsk6iAA"
+          }
+        },
+        {
+          "log_seq": 8,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "XTHurH3NkiMmvZRKBd-Srg",
+            "base_revision": 0,
+            "key_epoch": 3,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e3",
+              "n": "5EfB9PSF6VMzs73Ik7R8UcsbA1tZrXHc",
+              "ct": "_5-7myNKJ-i0z5QmLWRLOA-teWR5ZXYyAQ_egnDIO3wiyVxQFQhLI0L8QwBqDykrZCScAE2oJhggGRASj2XxTunTcA5caDY7wjzezBcUgeBwzZu6XwnJLxnsGQmhoWxigsH-NlQMgxs"
+            },
+            "sig": "CL5H48d--SkDo5murury0Jt5vHRS3VWWc3t2uDFZ6wgtZLxxZAfb72wsdvxPKxS-wLqfYuBcCATyURviTF5oAg"
+          }
+        },
+        {
+          "log_seq": 9,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "L85y0t_8biwRh67a-gOcuQ",
+            "base_revision": 0,
+            "key_epoch": 3,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e3",
+              "n": "rvl7fLRDs8pfHglh1NxAp0AQsTIbJRwP",
+              "ct": "bicApyt0F1RdeFOmT-hPDfB9nyLYYspqUJGXKnfYSoZq5vP_hHxhY7zsgtrC7eMHxgR-9V30ziXgTzEHaulT8tTIhe7LRINMmlK1L5mrnRwxIhTIhdt2r7-U00GMyEy1ZHCEg5Zg9CI"
+            },
+            "sig": "uQTmUxA0Vk1ldgIZAS9xfJtLU29rJIlwVEwwC-QFFTSlc1eO029ax_jHmpX0Cf4NctCqhIFoWuRCVVuEd5rQBw"
+          }
+        }
+      ],
+      "complete": true,
+      "head": {
+        "log_seq": 9,
+        "log_head": "ndgTwvHsiDgzd7BjNJaD7Me5M2EvYAsuxfQx9ysRNf0"
+      }
+    },
+    {
+      "name": "page_below_kept_head",
+      "chain": "shared",
+      "from": {
+        "log_seq": 0,
+        "log_head": ""
+      },
+      "kept_heads": {
+        "8": "cSaU1YYtW-KsxzlPKpsjkcp5FNzTbPAAQ8n1GMNFmsM"
+      },
+      "entries": [
+        {
+          "log_seq": 1,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "HuCy7tB5ixWPisxMZQdTTA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "Pu0ANk8HCZ-8MgHMISYOlhc6P6DNMGEt",
+              "ct": "KjLXXnFYVgU-bw3ZsMKw6jKcXu9T5VB6Z7TLSCNXIi2Mgr39PyS9IxST3wZ869hpI07BgCkljUra7yyhuuX1IdLb9NcHxurmetFhiWeQsHsbKlUipAJ_1XIhPsbm5swi"
+            },
+            "sig": "at690DQUpPzAcN3YTRdcbDTaVJcRI0wwE43WNZ3XFKv1Gy7H06gFZIKeDmF3NGndtcCJjnt0DSJu43FbM7CoBA"
+          }
+        },
+        {
+          "log_seq": 2,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "l1DjD4XnQeIQAKbeCLxQ5tEb5RvxwcSZ",
+              "ct": "KhMknyfD8SE2nM5FpjcqdwssR64tnBh6j5-vPOD6fYGCI1cC220C8wkBIQ6dkEpjwbFVDL1divSOqanUX2N1VTe3NlLbAUbuwx57hAjVAtTNbCWgClJzfxKA2NVmnzsi"
+            },
+            "sig": "65U8MCxCWKKEQrnC08Lr2Bamyky1xITgzqdibEwObP16HE2h8I6_n40sO8dKSoRimLn_AiqgCgfbIEfm-OScCQ"
+          }
+        },
+        {
+          "log_seq": 3,
+          "conflict_id": "6aSMWyOWGYUsNUU0BSYClw",
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "cIR1RW3bAGC3N_sdvcjtQ9qcTnHDmfee",
+              "ct": "2S4MWZ6qO3NKIatAapKHPlVkebLe7wcYRlSNnACk9RWbSomBO2BRhf-Ue86oDq7eNn-xt0UWei2iLBCWkuwtyrjwp4suVjqpvgC_juBPcoDRjNjx8AtuTvukdxaHjAxL"
+            },
+            "sig": "aL2-ust2KWe3X0dzwRE2dyyBa2bDVELnO9-rPfdX9YsApFiXlSiqnRZADEvdV7K2nd-IQhRL0obvgjpqAez9BA"
+          }
+        },
+        {
+          "log_seq": 4,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 1,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [
+              "6aSMWyOWGYUsNUU0BSYClw"
+            ],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "v0a6mogzmg-CmKPOaeQVuoDHfWyb5YY0",
+              "ct": "offVNfpg8FW_v8vmczKNx6wFh_2mhhZpSJwQ0mtsJDXD7Rc2bT-CtDUEOClbVyZ8jbkqufV-y_KuVXpAmePgQoEIe_BcSqhtokzjvAMUPMqk72AqdkFwK4wrb5psypTA"
+            },
+            "sig": "lTpQ_jrcN6mcPhaH3PRmiPTF0zKs5UqyjJPUhlpe8Spwh1siFHXiGkukwyI-iueWtqZNNvkiwYvZdtwShoHmBQ"
+          }
+        },
+        {
+          "log_seq": 5,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 0,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "5fiLxiz113J7F3g2N9PldG0eAKjTz-kX",
+              "ct": "Kk1NvUmmaSqQyJT_NkQ0Z0sF54xnGCfQ_d4O_HZ7rl71W_fgNW56M4HdGWhekx3MPcza0991sMbAXclVLCuUF645q8hZiSSvhkXh8gBcyJCcSfQZQlxK-U5wuAEyka4t"
+            },
+            "sig": "-tw5M8irvBNrS5dVZddJc9TeGQDBwcMff6dOCGKeN-PpVtIVcDwcNGrLgWcnXTnTSX_D3KvXuSwF-sVeEVT4AA"
+          }
+        },
+        {
+          "log_seq": 6,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "2x5NVYQsmxkw9YIRyxbV6Q7o5Uxm-EKW",
+              "ct": "XcutUxZaoE0uzjwPwm-rm76ouKOng5cxvu9xKVJ8FxLAe29oMojQ6u4DNzKFm5-SJciYh9FtISCUz-Ce0OTIRmnQ---mQj8CA50bPUjuMhfCVyPfrRbAlT_iPkPTT4mY"
+            },
+            "sig": "2FjhA82rki_8vsLVFIpkYXVGhtHJ9xRDRlVZKe7QKb9_VIUXQCMw2Of3I2zwcvrOFKFsvkdHn0dqmnbHmBf8Cg"
+          }
+        },
+        {
+          "log_seq": 7,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "1pAKK1W3MyLmdP19B2xpZdPHWeIXNdnD",
+              "ct": "o9HBU_aGejAkJSCWYaofdWREUD7wfrrBoMDTmaxjVurcn4cZISwFQbGZRoQe-hHz8EqKf3qDBgpYZ7I0q51m0s6pyG6gfze9VXCfWsCaO27UOw-ZuBYu0D8vQDkOP9Ne"
+            },
+            "sig": "jbkn7JYrBMowaBs0psJCSyk9vGi-qkPlnEekZmSdlNsUNhirDFjkvqgUVXzuYvM8hRlr4nHzciIAGnUqsk6iAA"
+          }
+        }
+      ],
+      "complete": false,
+      "head": {
+        "log_seq": 7,
+        "log_head": "WekwrFZS0qMyUFmfWlyrHivE1FOg4MsfzDoBDA4iT0o"
       }
     }
   ],
@@ -5022,6 +5643,688 @@
       ],
       "complete": true,
       "expect_error": "bad_request"
+    },
+    {
+      "name": "restored_regrown_past_kept_head",
+      "chain": "shared",
+      "from": {
+        "log_seq": 0,
+        "log_head": ""
+      },
+      "kept_heads": {
+        "8": "cSaU1YYtW-KsxzlPKpsjkcp5FNzTbPAAQ8n1GMNFmsM"
+      },
+      "entries": [
+        {
+          "log_seq": 1,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "HuCy7tB5ixWPisxMZQdTTA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "Pu0ANk8HCZ-8MgHMISYOlhc6P6DNMGEt",
+              "ct": "KjLXXnFYVgU-bw3ZsMKw6jKcXu9T5VB6Z7TLSCNXIi2Mgr39PyS9IxST3wZ869hpI07BgCkljUra7yyhuuX1IdLb9NcHxurmetFhiWeQsHsbKlUipAJ_1XIhPsbm5swi"
+            },
+            "sig": "at690DQUpPzAcN3YTRdcbDTaVJcRI0wwE43WNZ3XFKv1Gy7H06gFZIKeDmF3NGndtcCJjnt0DSJu43FbM7CoBA"
+          }
+        },
+        {
+          "log_seq": 2,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "l1DjD4XnQeIQAKbeCLxQ5tEb5RvxwcSZ",
+              "ct": "KhMknyfD8SE2nM5FpjcqdwssR64tnBh6j5-vPOD6fYGCI1cC220C8wkBIQ6dkEpjwbFVDL1divSOqanUX2N1VTe3NlLbAUbuwx57hAjVAtTNbCWgClJzfxKA2NVmnzsi"
+            },
+            "sig": "65U8MCxCWKKEQrnC08Lr2Bamyky1xITgzqdibEwObP16HE2h8I6_n40sO8dKSoRimLn_AiqgCgfbIEfm-OScCQ"
+          }
+        },
+        {
+          "log_seq": 3,
+          "conflict_id": "6aSMWyOWGYUsNUU0BSYClw",
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "cIR1RW3bAGC3N_sdvcjtQ9qcTnHDmfee",
+              "ct": "2S4MWZ6qO3NKIatAapKHPlVkebLe7wcYRlSNnACk9RWbSomBO2BRhf-Ue86oDq7eNn-xt0UWei2iLBCWkuwtyrjwp4suVjqpvgC_juBPcoDRjNjx8AtuTvukdxaHjAxL"
+            },
+            "sig": "aL2-ust2KWe3X0dzwRE2dyyBa2bDVELnO9-rPfdX9YsApFiXlSiqnRZADEvdV7K2nd-IQhRL0obvgjpqAez9BA"
+          }
+        },
+        {
+          "log_seq": 4,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 1,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [
+              "6aSMWyOWGYUsNUU0BSYClw"
+            ],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "v0a6mogzmg-CmKPOaeQVuoDHfWyb5YY0",
+              "ct": "offVNfpg8FW_v8vmczKNx6wFh_2mhhZpSJwQ0mtsJDXD7Rc2bT-CtDUEOClbVyZ8jbkqufV-y_KuVXpAmePgQoEIe_BcSqhtokzjvAMUPMqk72AqdkFwK4wrb5psypTA"
+            },
+            "sig": "lTpQ_jrcN6mcPhaH3PRmiPTF0zKs5UqyjJPUhlpe8Spwh1siFHXiGkukwyI-iueWtqZNNvkiwYvZdtwShoHmBQ"
+          }
+        },
+        {
+          "log_seq": 5,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 0,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "5fiLxiz113J7F3g2N9PldG0eAKjTz-kX",
+              "ct": "Kk1NvUmmaSqQyJT_NkQ0Z0sF54xnGCfQ_d4O_HZ7rl71W_fgNW56M4HdGWhekx3MPcza0991sMbAXclVLCuUF645q8hZiSSvhkXh8gBcyJCcSfQZQlxK-U5wuAEyka4t"
+            },
+            "sig": "-tw5M8irvBNrS5dVZddJc9TeGQDBwcMff6dOCGKeN-PpVtIVcDwcNGrLgWcnXTnTSX_D3KvXuSwF-sVeEVT4AA"
+          }
+        },
+        {
+          "log_seq": 6,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "2x5NVYQsmxkw9YIRyxbV6Q7o5Uxm-EKW",
+              "ct": "XcutUxZaoE0uzjwPwm-rm76ouKOng5cxvu9xKVJ8FxLAe29oMojQ6u4DNzKFm5-SJciYh9FtISCUz-Ce0OTIRmnQ---mQj8CA50bPUjuMhfCVyPfrRbAlT_iPkPTT4mY"
+            },
+            "sig": "2FjhA82rki_8vsLVFIpkYXVGhtHJ9xRDRlVZKe7QKb9_VIUXQCMw2Of3I2zwcvrOFKFsvkdHn0dqmnbHmBf8Cg"
+          }
+        },
+        {
+          "log_seq": 7,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "1pAKK1W3MyLmdP19B2xpZdPHWeIXNdnD",
+              "ct": "o9HBU_aGejAkJSCWYaofdWREUD7wfrrBoMDTmaxjVurcn4cZISwFQbGZRoQe-hHz8EqKf3qDBgpYZ7I0q51m0s6pyG6gfze9VXCfWsCaO27UOw-ZuBYu0D8vQDkOP9Ne"
+            },
+            "sig": "jbkn7JYrBMowaBs0psJCSyk9vGi-qkPlnEekZmSdlNsUNhirDFjkvqgUVXzuYvM8hRlr4nHzciIAGnUqsk6iAA"
+          }
+        },
+        {
+          "log_seq": 8,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "XTHurH3NkiMmvZRKBd-Srg",
+            "base_revision": 0,
+            "key_epoch": 3,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e3",
+              "n": "5EfB9PSF6VMzs73Ik7R8UcsbA1tZrXHc",
+              "ct": "_5-7myNKJ-i0z5QmLWRLOA-teWR5ZXYyAQ_egnDIO3wiyVxQFQhLI0L8QwBqDykrZCScAE2oJhggGRASj2XxTunTcA5caDY7wjzezBcUgeBwzZu6XwnJLxnsGQmhoWxigsH-NlQMgxs"
+            },
+            "sig": "CL5H48d--SkDo5murury0Jt5vHRS3VWWc3t2uDFZ6wgtZLxxZAfb72wsdvxPKxS-wLqfYuBcCATyURviTF5oAg"
+          }
+        },
+        {
+          "log_seq": 9,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "L85y0t_8biwRh67a-gOcuQ",
+            "base_revision": 0,
+            "key_epoch": 3,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e3",
+              "n": "rvl7fLRDs8pfHglh1NxAp0AQsTIbJRwP",
+              "ct": "bicApyt0F1RdeFOmT-hPDfB9nyLYYspqUJGXKnfYSoZq5vP_hHxhY7zsgtrC7eMHxgR-9V30ziXgTzEHaulT8tTIhe7LRINMmlK1L5mrnRwxIhTIhdt2r7-U00GMyEy1ZHCEg5Zg9CI"
+            },
+            "sig": "uQTmUxA0Vk1ldgIZAS9xfJtLU29rJIlwVEwwC-QFFTSlc1eO029ax_jHmpX0Cf4NctCqhIFoWuRCVVuEd5rQBw"
+          }
+        }
+      ],
+      "complete": true,
+      "expect_error": "rollback"
+    },
+    {
+      "name": "restored_regrown_resumed_below_kept_head",
+      "chain": "shared",
+      "from": {
+        "log_seq": 7,
+        "log_head": "WekwrFZS0qMyUFmfWlyrHivE1FOg4MsfzDoBDA4iT0o"
+      },
+      "kept_heads": {
+        "4": "VWwmeemWDSoykxUrp4MbdzlNMfwL7GtpIh13b9ulKRk",
+        "7": "WekwrFZS0qMyUFmfWlyrHivE1FOg4MsfzDoBDA4iT0o",
+        "8": "cSaU1YYtW-KsxzlPKpsjkcp5FNzTbPAAQ8n1GMNFmsM"
+      },
+      "entries": [
+        {
+          "log_seq": 8,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "XTHurH3NkiMmvZRKBd-Srg",
+            "base_revision": 0,
+            "key_epoch": 3,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e3",
+              "n": "5EfB9PSF6VMzs73Ik7R8UcsbA1tZrXHc",
+              "ct": "_5-7myNKJ-i0z5QmLWRLOA-teWR5ZXYyAQ_egnDIO3wiyVxQFQhLI0L8QwBqDykrZCScAE2oJhggGRASj2XxTunTcA5caDY7wjzezBcUgeBwzZu6XwnJLxnsGQmhoWxigsH-NlQMgxs"
+            },
+            "sig": "CL5H48d--SkDo5murury0Jt5vHRS3VWWc3t2uDFZ6wgtZLxxZAfb72wsdvxPKxS-wLqfYuBcCATyURviTF5oAg"
+          }
+        },
+        {
+          "log_seq": 9,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "L85y0t_8biwRh67a-gOcuQ",
+            "base_revision": 0,
+            "key_epoch": 3,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e3",
+              "n": "rvl7fLRDs8pfHglh1NxAp0AQsTIbJRwP",
+              "ct": "bicApyt0F1RdeFOmT-hPDfB9nyLYYspqUJGXKnfYSoZq5vP_hHxhY7zsgtrC7eMHxgR-9V30ziXgTzEHaulT8tTIhe7LRINMmlK1L5mrnRwxIhTIhdt2r7-U00GMyEy1ZHCEg5Zg9CI"
+            },
+            "sig": "uQTmUxA0Vk1ldgIZAS9xfJtLU29rJIlwVEwwC-QFFTSlc1eO029ax_jHmpX0Cf4NctCqhIFoWuRCVVuEd5rQBw"
+          }
+        }
+      ],
+      "complete": true,
+      "expect_error": "rollback"
+    },
+    {
+      "name": "restored_regrown_first_page_past_kept_head",
+      "chain": "shared",
+      "from": {
+        "log_seq": 0,
+        "log_head": ""
+      },
+      "kept_heads": {
+        "8": "cSaU1YYtW-KsxzlPKpsjkcp5FNzTbPAAQ8n1GMNFmsM"
+      },
+      "entries": [
+        {
+          "log_seq": 1,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "HuCy7tB5ixWPisxMZQdTTA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "Pu0ANk8HCZ-8MgHMISYOlhc6P6DNMGEt",
+              "ct": "KjLXXnFYVgU-bw3ZsMKw6jKcXu9T5VB6Z7TLSCNXIi2Mgr39PyS9IxST3wZ869hpI07BgCkljUra7yyhuuX1IdLb9NcHxurmetFhiWeQsHsbKlUipAJ_1XIhPsbm5swi"
+            },
+            "sig": "at690DQUpPzAcN3YTRdcbDTaVJcRI0wwE43WNZ3XFKv1Gy7H06gFZIKeDmF3NGndtcCJjnt0DSJu43FbM7CoBA"
+          }
+        },
+        {
+          "log_seq": 2,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "l1DjD4XnQeIQAKbeCLxQ5tEb5RvxwcSZ",
+              "ct": "KhMknyfD8SE2nM5FpjcqdwssR64tnBh6j5-vPOD6fYGCI1cC220C8wkBIQ6dkEpjwbFVDL1divSOqanUX2N1VTe3NlLbAUbuwx57hAjVAtTNbCWgClJzfxKA2NVmnzsi"
+            },
+            "sig": "65U8MCxCWKKEQrnC08Lr2Bamyky1xITgzqdibEwObP16HE2h8I6_n40sO8dKSoRimLn_AiqgCgfbIEfm-OScCQ"
+          }
+        },
+        {
+          "log_seq": 3,
+          "conflict_id": "6aSMWyOWGYUsNUU0BSYClw",
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "cIR1RW3bAGC3N_sdvcjtQ9qcTnHDmfee",
+              "ct": "2S4MWZ6qO3NKIatAapKHPlVkebLe7wcYRlSNnACk9RWbSomBO2BRhf-Ue86oDq7eNn-xt0UWei2iLBCWkuwtyrjwp4suVjqpvgC_juBPcoDRjNjx8AtuTvukdxaHjAxL"
+            },
+            "sig": "aL2-ust2KWe3X0dzwRE2dyyBa2bDVELnO9-rPfdX9YsApFiXlSiqnRZADEvdV7K2nd-IQhRL0obvgjpqAez9BA"
+          }
+        },
+        {
+          "log_seq": 4,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 1,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [
+              "6aSMWyOWGYUsNUU0BSYClw"
+            ],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "v0a6mogzmg-CmKPOaeQVuoDHfWyb5YY0",
+              "ct": "offVNfpg8FW_v8vmczKNx6wFh_2mhhZpSJwQ0mtsJDXD7Rc2bT-CtDUEOClbVyZ8jbkqufV-y_KuVXpAmePgQoEIe_BcSqhtokzjvAMUPMqk72AqdkFwK4wrb5psypTA"
+            },
+            "sig": "lTpQ_jrcN6mcPhaH3PRmiPTF0zKs5UqyjJPUhlpe8Spwh1siFHXiGkukwyI-iueWtqZNNvkiwYvZdtwShoHmBQ"
+          }
+        },
+        {
+          "log_seq": 5,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 0,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "5fiLxiz113J7F3g2N9PldG0eAKjTz-kX",
+              "ct": "Kk1NvUmmaSqQyJT_NkQ0Z0sF54xnGCfQ_d4O_HZ7rl71W_fgNW56M4HdGWhekx3MPcza0991sMbAXclVLCuUF645q8hZiSSvhkXh8gBcyJCcSfQZQlxK-U5wuAEyka4t"
+            },
+            "sig": "-tw5M8irvBNrS5dVZddJc9TeGQDBwcMff6dOCGKeN-PpVtIVcDwcNGrLgWcnXTnTSX_D3KvXuSwF-sVeEVT4AA"
+          }
+        },
+        {
+          "log_seq": 6,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "2x5NVYQsmxkw9YIRyxbV6Q7o5Uxm-EKW",
+              "ct": "XcutUxZaoE0uzjwPwm-rm76ouKOng5cxvu9xKVJ8FxLAe29oMojQ6u4DNzKFm5-SJciYh9FtISCUz-Ce0OTIRmnQ---mQj8CA50bPUjuMhfCVyPfrRbAlT_iPkPTT4mY"
+            },
+            "sig": "2FjhA82rki_8vsLVFIpkYXVGhtHJ9xRDRlVZKe7QKb9_VIUXQCMw2Of3I2zwcvrOFKFsvkdHn0dqmnbHmBf8Cg"
+          }
+        },
+        {
+          "log_seq": 7,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "1pAKK1W3MyLmdP19B2xpZdPHWeIXNdnD",
+              "ct": "o9HBU_aGejAkJSCWYaofdWREUD7wfrrBoMDTmaxjVurcn4cZISwFQbGZRoQe-hHz8EqKf3qDBgpYZ7I0q51m0s6pyG6gfze9VXCfWsCaO27UOw-ZuBYu0D8vQDkOP9Ne"
+            },
+            "sig": "jbkn7JYrBMowaBs0psJCSyk9vGi-qkPlnEekZmSdlNsUNhirDFjkvqgUVXzuYvM8hRlr4nHzciIAGnUqsk6iAA"
+          }
+        },
+        {
+          "log_seq": 8,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "XTHurH3NkiMmvZRKBd-Srg",
+            "base_revision": 0,
+            "key_epoch": 3,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e3",
+              "n": "5EfB9PSF6VMzs73Ik7R8UcsbA1tZrXHc",
+              "ct": "_5-7myNKJ-i0z5QmLWRLOA-teWR5ZXYyAQ_egnDIO3wiyVxQFQhLI0L8QwBqDykrZCScAE2oJhggGRASj2XxTunTcA5caDY7wjzezBcUgeBwzZu6XwnJLxnsGQmhoWxigsH-NlQMgxs"
+            },
+            "sig": "CL5H48d--SkDo5murury0Jt5vHRS3VWWc3t2uDFZ6wgtZLxxZAfb72wsdvxPKxS-wLqfYuBcCATyURviTF5oAg"
+          }
+        }
+      ],
+      "complete": false,
+      "expect_error": "rollback"
+    },
+    {
+      "name": "restored_log_behind_kept_head",
+      "chain": "shared",
+      "from": {
+        "log_seq": 0,
+        "log_head": ""
+      },
+      "kept_heads": {
+        "8": "cSaU1YYtW-KsxzlPKpsjkcp5FNzTbPAAQ8n1GMNFmsM"
+      },
+      "entries": [
+        {
+          "log_seq": 1,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "HuCy7tB5ixWPisxMZQdTTA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "Pu0ANk8HCZ-8MgHMISYOlhc6P6DNMGEt",
+              "ct": "KjLXXnFYVgU-bw3ZsMKw6jKcXu9T5VB6Z7TLSCNXIi2Mgr39PyS9IxST3wZ869hpI07BgCkljUra7yyhuuX1IdLb9NcHxurmetFhiWeQsHsbKlUipAJ_1XIhPsbm5swi"
+            },
+            "sig": "at690DQUpPzAcN3YTRdcbDTaVJcRI0wwE43WNZ3XFKv1Gy7H06gFZIKeDmF3NGndtcCJjnt0DSJu43FbM7CoBA"
+          }
+        },
+        {
+          "log_seq": 2,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "l1DjD4XnQeIQAKbeCLxQ5tEb5RvxwcSZ",
+              "ct": "KhMknyfD8SE2nM5FpjcqdwssR64tnBh6j5-vPOD6fYGCI1cC220C8wkBIQ6dkEpjwbFVDL1divSOqanUX2N1VTe3NlLbAUbuwx57hAjVAtTNbCWgClJzfxKA2NVmnzsi"
+            },
+            "sig": "65U8MCxCWKKEQrnC08Lr2Bamyky1xITgzqdibEwObP16HE2h8I6_n40sO8dKSoRimLn_AiqgCgfbIEfm-OScCQ"
+          }
+        },
+        {
+          "log_seq": 3,
+          "conflict_id": "6aSMWyOWGYUsNUU0BSYClw",
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 0,
+            "key_epoch": 1,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "cIR1RW3bAGC3N_sdvcjtQ9qcTnHDmfee",
+              "ct": "2S4MWZ6qO3NKIatAapKHPlVkebLe7wcYRlSNnACk9RWbSomBO2BRhf-Ue86oDq7eNn-xt0UWei2iLBCWkuwtyrjwp4suVjqpvgC_juBPcoDRjNjx8AtuTvukdxaHjAxL"
+            },
+            "sig": "aL2-ust2KWe3X0dzwRE2dyyBa2bDVELnO9-rPfdX9YsApFiXlSiqnRZADEvdV7K2nd-IQhRL0obvgjpqAez9BA"
+          }
+        },
+        {
+          "log_seq": 4,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "4VH0gCAEtaQmIV1pEXGmPQ",
+            "base_revision": 1,
+            "key_epoch": 1,
+            "author": "mPcGN24XundmA61ifDsv_A",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [
+              "6aSMWyOWGYUsNUU0BSYClw"
+            ],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e1",
+              "n": "v0a6mogzmg-CmKPOaeQVuoDHfWyb5YY0",
+              "ct": "offVNfpg8FW_v8vmczKNx6wFh_2mhhZpSJwQ0mtsJDXD7Rc2bT-CtDUEOClbVyZ8jbkqufV-y_KuVXpAmePgQoEIe_BcSqhtokzjvAMUPMqk72AqdkFwK4wrb5psypTA"
+            },
+            "sig": "lTpQ_jrcN6mcPhaH3PRmiPTF0zKs5UqyjJPUhlpe8Spwh1siFHXiGkukwyI-iueWtqZNNvkiwYvZdtwShoHmBQ"
+          }
+        },
+        {
+          "log_seq": 5,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 0,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "5fiLxiz113J7F3g2N9PldG0eAKjTz-kX",
+              "ct": "Kk1NvUmmaSqQyJT_NkQ0Z0sF54xnGCfQ_d4O_HZ7rl71W_fgNW56M4HdGWhekx3MPcza0991sMbAXclVLCuUF645q8hZiSSvhkXh8gBcyJCcSfQZQlxK-U5wuAEyka4t"
+            },
+            "sig": "-tw5M8irvBNrS5dVZddJc9TeGQDBwcMff6dOCGKeN-PpVtIVcDwcNGrLgWcnXTnTSX_D3KvXuSwF-sVeEVT4AA"
+          }
+        },
+        {
+          "log_seq": 6,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "EoDQecemXYbpGaoDqt42OA",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "VnU8BMAC7zPBg_J4WIZmkA",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "2x5NVYQsmxkw9YIRyxbV6Q7o5Uxm-EKW",
+              "ct": "XcutUxZaoE0uzjwPwm-rm76ouKOng5cxvu9xKVJ8FxLAe29oMojQ6u4DNzKFm5-SJciYh9FtISCUz-Ce0OTIRmnQ---mQj8CA50bPUjuMhfCVyPfrRbAlT_iPkPTT4mY"
+            },
+            "sig": "2FjhA82rki_8vsLVFIpkYXVGhtHJ9xRDRlVZKe7QKb9_VIUXQCMw2Of3I2zwcvrOFKFsvkdHn0dqmnbHmBf8Cg"
+          }
+        },
+        {
+          "log_seq": 7,
+          "conflict_id": null,
+          "record": {
+            "v": 1,
+            "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+            "item_id": "p_6IZeCglNQzdWA_pmhE6w",
+            "base_revision": 1,
+            "key_epoch": 2,
+            "author": "Y4CBEh--AKj7ERA_HtNgNQ",
+            "tombstone": false,
+            "ts": 1767225600000,
+            "resolves": [],
+            "env": {
+              "v": 1,
+              "alg": "xc20p",
+              "kid": "e2",
+              "n": "1pAKK1W3MyLmdP19B2xpZdPHWeIXNdnD",
+              "ct": "o9HBU_aGejAkJSCWYaofdWREUD7wfrrBoMDTmaxjVurcn4cZISwFQbGZRoQe-hHz8EqKf3qDBgpYZ7I0q51m0s6pyG6gfze9VXCfWsCaO27UOw-ZuBYu0D8vQDkOP9Ne"
+            },
+            "sig": "jbkn7JYrBMowaBs0psJCSyk9vGi-qkPlnEekZmSdlNsUNhirDFjkvqgUVXzuYvM8hRlr4nHzciIAGnUqsk6iAA"
+          }
+        }
+      ],
+      "complete": true,
+      "expect_error": "rollback"
+    },
+    {
+      "name": "resume_cursor_differs_from_kept_head",
+      "chain": "shared",
+      "from": {
+        "log_seq": 8,
+        "log_head": "cSaU1YYtW-KsxzlPKpsjkcp5FNzTbPAAQ8n1GMNFmsM"
+      },
+      "kept_heads": {
+        "4": "VWwmeemWDSoykxUrp4MbdzlNMfwL7GtpIh13b9ulKRk",
+        "7": "WekwrFZS0qMyUFmfWlyrHivE1FOg4MsfzDoBDA4iT0o",
+        "8": "5ygmU_uX_STWWs4UGmJNlMGTccxUNAxARKQ3lzjMkSA"
+      },
+      "entries": [],
+      "complete": true,
+      "expect_error": "rollback"
     }
   ]
 }

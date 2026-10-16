@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Checkpoints (spec §6). state_digest_cases: digest = b64 sha256(cjson([[item_id,revision,head]...] sorted by item_id)), rows with revision 0 excluded. checkpoint: signed with akv1/checkpoint by a current device of membership_events; verify MUST succeed; invalid_checkpoints MUST fail with expect_error. rollback: checkRollback(witnessed, incoming) MUST accept `accept` cases and reject `reject` cases with expect_error.",
+  "description": "Checkpoints (spec §6). state_digest_cases: digest = b64 sha256(cjson([[item_id,revision,head]...] sorted by item_id)), rows with revision 0 excluded. checkpoint: signed with akv1/checkpoint by a current device of membership_events; verify MUST succeed; invalid_checkpoints MUST fail with expect_error. rollback: checkRollback(witnessed, incoming) MUST accept `accept` cases and reject `reject` cases with expect_error. It compares checkpoints only: a log restored below the witnessed log_seq and regrown past it is accepted here (regrown_past_witnessed_passes_checkpoint_comparison_alone) and refused by verifyChangeLog against the head the client kept at the witnessed position (removal-fence.json restored_regrown_*), plus the state digest at that position for a peer checkpoint.",
   "membership_events": [
     {
       "v": 1,
@@ -368,6 +368,17 @@
           "log_seq": 12,
           "state_digest": "Z0hvHQK6GI1uuOjEHMXU-O9gXCQvFw2Csn6rD-4-x6I",
           "key_epoch": 4
+        }
+      },
+      {
+        "name": "regrown_past_witnessed_passes_checkpoint_comparison_alone",
+        "incoming": {
+          "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+          "membership_seq": 8,
+          "membership_head": "GfzDKH1MqbRt_xurIKVUNtZimbE2vaaEjzZVB3KUvpQ",
+          "log_seq": 10,
+          "state_digest": "Z0hvHQK6GI1uuOjEHMXU-O9gXCQvFw2Csn6rD-4-x6I",
+          "key_epoch": 3
         }
       }
     ],

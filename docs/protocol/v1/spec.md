@@ -324,9 +324,12 @@ client computed earlier, by position; missing: `bad_request`) equal to its `log_
 `log_seq` an integer ≥ 1, `conflict_id` `null` or an ID (`bad_request`); `log_seq` is the
 previous position + 1 (`rollback`: gap, repeat or reorder); `verifyLoggedRecord`; the
 head advances. Every removal whose `log_fence` is an entry's position MUST carry the
-head computed there (`rollback`). With `complete` (the entries
-reach the current head), a `log_fence` beyond the last position is `rollback`. It
-returns the new cursor and the verified records.
+head computed there (`rollback`), and every head in `keptHeads` at the `from` position
+or an entry's position MUST equal the head computed there (`rollback`: a different
+record at a position the client already holds). With `complete` (the entries
+reach the current head), a `log_fence` or a `keptHeads` position beyond the last
+position is `rollback`. It returns the new cursor and the verified records. A kept head
+the entries do not reach is not an error; only fences below `from` require one.
 
 ## 6. Checkpoints (anti-rollback)
 
@@ -346,7 +349,18 @@ and MUST raise the alarm on every device that witnessed newer state. Clients nev
 accept it silently. That includes a restored log that has since grown past the
 witnessed `log_seq`: the change-log head at that position differs from the one the
 client computed (§5) and the state there no longer matches the witnessed
-`state_digest`. `checkRollback` on checkpoints alone does not catch that case. A
+`state_digest`. `checkRollback` on checkpoints alone does not catch that case: a
+client that reads those positions again passes the head it computed at its highest
+witnessed `log_seq` in `keptHeads` (§5), and compares its own `state_digest` at the
+`log_seq` of a peer's checkpoint, which carries no head (vectors: `checkpoints.json`
+`regrown_past_witnessed_passes_checkpoint_comparison_alone`, `removal-fence.json`
+`restored_regrown_*`). A client that resumes from its own cursor does not read those
+positions again, so the log alone does not show it the restore. Comparing the
+served current head with its own catches an operational restore, not a server that
+serves the head the client expects. Such a client keeps the records it holds: a
+re-served older revision is a replay (`applyRecord`: `conflict`), while records
+current members wrote on the restored line still apply or branch by
+compare-and-swap. A
 device that never witnessed newer state cannot tell and accepts the restored state
 (the limitation below). v1 defines no client re-seed or other
 automatic re-convergence: a device that raised the alarm stops syncing and keeps
@@ -401,6 +415,14 @@ Effective grant = local grant ∩ portable policy. A policy can only narrow; a m
 field means "no extra restriction", never "allow". `sensitivity:"high"` always
 requires fresh operator approval. Policy text, URLs, `when_to_use` and descriptions
 are untrusted, author-attributed data and are never interpreted as instructions.
+Project IDs have no vault or device namespace on the wire: a project named only in
+`allowed_projects` and absent from the device-local grant grants nothing
+(`policy.json` `foreign_project_ids_grant_nothing`), and a policy item moved to
+another vault fails to open (item AAD and item-key salt bind `vault_id`, §3.2;
+`item.json` `moved_to_other_vault`). A device that holds a newer policy revision
+refuses an older one the server re-serves, as a replay (`applyRecord`: `conflict`) or
+as a rollback against its witnessed checkpoint and kept head (§5, §6); a device that
+never saw the newer revision is subject to the withholding limitation (§6).
 
 ## 9. Transport authentication (Worker)
 
