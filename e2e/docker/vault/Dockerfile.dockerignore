@@ -1,0 +1,14 @@
+# Only what the Worker, its protocol package and the scanner need.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!packages/protocol/package.json
+!packages/protocol/src/
+!worker/
+!e2e/docker/vault/
+!e2e/docker/scanner/
+**/node_modules
+**/.wrangler
+**/.env*
+**/.dev.vars*

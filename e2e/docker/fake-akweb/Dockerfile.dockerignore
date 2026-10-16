@@ -1,0 +1,6 @@
+# Only the akv1 Go module and this service enter the build context.
+*
+!go/
+!e2e/docker/fake-akweb/
+**/.env*
+**/.dev.vars*
