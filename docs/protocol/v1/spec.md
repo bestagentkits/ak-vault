@@ -353,10 +353,10 @@ witnessed `log_seq`: the change-log head at that position differs from the one t
 client computed (§5) and the state there no longer matches the witnessed
 `state_digest`. `checkRollback` on checkpoints alone does not catch that case: a
 client that reads positions at or below its highest witnessed `log_seq` again MUST
-pass the head it computed there in `keptHeads` (§5), and MUST compare its own
-`state_digest` at the `log_seq` of a peer's checkpoint, which carries no head (vectors: `checkpoints.json`
+pass the head it computed there in `keptHeads` (§5) (vectors: `checkpoints.json`
 `regrown_past_witnessed_passes_checkpoint_comparison_alone`, `removal-fence.json`
-`restored_regrown_*`). A client that resumes from its own cursor does not read those
+`restored_regrown_*`). Every client that verifies a peer's checkpoint, which carries
+no head, MUST compare the `state_digest` it computed at that checkpoint's `log_seq`. A client that resumes from its own cursor does not read those
 positions again, so the log alone does not show it the restore. Comparing the
 served current head with its own catches an operational restore, not a server that
 serves the head the client expects. Such a client keeps the records it holds: a

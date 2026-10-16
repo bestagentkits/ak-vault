@@ -123,8 +123,9 @@ These are accepted and must be stated wherever the guarantees are described:
   restore, not a server that serves the head the device expects. The device keeps
   the records it holds (a re-served older revision is refused as a replay), but
   records members wrote on the restored line still apply by compare-and-swap.
-  Reading the log again with the kept head at the witnessed position, or another
-  device's checkpoint, detects it ([spec §6](../protocol/v1/spec.md#6-checkpoints-anti-rollback)).
+  Reading the log again with the kept head at the witnessed position, or comparing
+  its own state digest with another device's checkpoint at that checkpoint's
+  position, detects it ([spec §6](../protocol/v1/spec.md#6-checkpoints-anti-rollback)).
 - **Vault-wide key.** Any member device can decrypt every item in the vault. Roles
   do not create per-secret read boundaries.
 - **No clawback.** Values already decrypted by a removed member or a lost device
