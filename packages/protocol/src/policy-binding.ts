@@ -68,12 +68,13 @@ export function isPolicyPayload(payload: ItemPayload): boolean {
 }
 
 /**
- * Validate the policy-item layout of a live payload whose `meta.kind` is
- * `"policy"` (`bad_request` otherwise): `value` is `""`, `meta` has exactly
- * `kind`, `item_ids` (1..1024 unique IDs, never the policy's own `itemId`) and
- * `policy` (parsed by `parsePolicy`).
+ * Validate the binding of a live payload whose `meta.kind` is `"policy"`
+ * (`bad_request` otherwise): `value` is `""`, `meta` has exactly `kind`,
+ * `item_ids` and `policy`, and `item_ids` is 1..1024 unique IDs that never
+ * include the policy's own `itemId`. Returns the governed item IDs; the
+ * `policy` body is not parsed.
  */
-export function parsePolicyItem(itemId: string, payload: ItemPayload): PolicyItem {
+export function parsePolicyBinding(itemId: string, payload: ItemPayload): string[] {
   asId(itemId, 'item_id');
   if (!isPolicyPayload(payload)) fail('bad_request', 'item is not a policy item');
   if (payload.value !== '') fail('bad_request', 'policy item value must be empty');
@@ -81,6 +82,16 @@ export function parsePolicyItem(itemId: string, payload: ItemPayload): PolicyIte
   const itemIds = asIdList(payload.meta['item_ids'], 'policy item meta.item_ids', MAX_POLICY_ITEM_IDS);
   if (itemIds.length === 0) fail('bad_request', 'policy item governs no item');
   if (itemIds.includes(itemId)) fail('bad_request', 'policy item names itself');
+  return itemIds;
+}
+
+/**
+ * Validate a whole policy item: its binding (`parsePolicyBinding`), then its
+ * `policy` body (`parsePolicy`). Writers check a policy item with this before
+ * sealing it.
+ */
+export function parsePolicyItem(itemId: string, payload: ItemPayload): PolicyItem {
+  const itemIds = parsePolicyBinding(itemId, payload);
   return { item_ids: itemIds, policy: parsePolicy(payload.meta['policy']) };
 }
 
@@ -153,13 +164,17 @@ function combine(policies: PortablePolicy[]): PolicyRules {
  * 2. any entry with `payload: null` (the device could not open it, so it may be
  *    a policy governing the target) → `decrypt_failed`;
  * 3. every payload parses as an item payload for its `tombstone` flag (`bad_request`);
- * 4. every live policy payload parses as a policy item (`bad_request`);
+ * 4. every live policy payload, head or branch, has a valid binding
+ *    (`parsePolicyBinding`, `bad_request`);
  * 5. the target is present, its head is live, and neither its head nor any
  *    branch is a policy item (`bad_request`);
  * 6. an item with unresolved conflict branches whose head or any branch is a
- *    live policy naming the target → `conflict`.
- * Then every other item whose live head is a policy naming the target governs
- * it, combined by intersection in `item_id` byte order.
+ *    live policy naming the target → `conflict`;
+ * 7. the `policy` body of every governing policy parses (`parsePolicy`,
+ *    `bad_request`), taken in `item_id` order.
+ * The governing policies are the live heads, on items without conflict
+ * branches, that name the target; they combine by intersection in the byte
+ * order of their base64url `item_id` strings.
  */
 export function resolveItemPolicy(targetItemId: string, items: unknown): ResolvedItemPolicy {
   const target = asId(targetItemId, 'target item_id');
@@ -167,16 +182,14 @@ export function resolveItemPolicy(targetItemId: string, items: unknown): Resolve
   for (const item of list) {
     for (const entry of [item.head, ...item.branches]) if (entry.payload === null) fail('decrypt_failed', 'an item could not be opened');
   }
-  const parsed = list.map((item) => {
-    const open = (e: Entry): ItemPayload | null => {
-      const payload = parseItemPayload(e.payload, e.tombstone);
-      return 'deleted' in payload ? null : payload;
-    };
-    return { item_id: item.item_id, head: open(item.head), branches: item.branches.map(open), hasBranches: item.branches.length > 0 };
-  });
+  const open = (e: Entry): ItemPayload | null => {
+    const payload = parseItemPayload(e.payload, e.tombstone);
+    return 'deleted' in payload ? null : payload;
+  };
+  const parsed = list.map((item) => ({ item_id: item.item_id, head: open(item.head), branches: item.branches.map(open) }));
   const bindings = parsed.map((item) => {
-    const bind = (p: ItemPayload | null) => (p !== null && isPolicyPayload(p) ? { payload: p, binding: parsePolicyItem(item.item_id, p) } : null);
-    return { ...item, headPolicy: bind(item.head), branchPolicies: item.branches.map(bind) };
+    const bind = (p: ItemPayload | null) => (p !== null && isPolicyPayload(p) ? { payload: p, item_ids: parsePolicyBinding(item.item_id, p) } : null);
+    return { item_id: item.item_id, head: item.head, branches: item.branches, headPolicy: bind(item.head), branchPolicies: item.branches.map(bind) };
   });
 
   const own = bindings.find((x) => x.item_id === target);
@@ -185,17 +198,19 @@ export function resolveItemPolicy(targetItemId: string, items: unknown): Resolve
   const live = [own.head, ...own.branches].filter((p): p is ItemPayload => p !== null);
   let sensitivity: Sensitivity = live.some((p) => p.sensitivity === 'high') ? 'high' : 'normal';
 
-  const governing: PortablePolicy[] = [];
+  type Bound = (typeof bindings)[number]['headPolicy'];
+  const names = (b: Bound) => b !== null && b.item_ids.includes(target);
   const others = bindings.filter((x) => x.item_id !== target).sort((a, b) => (a.item_id < b.item_id ? -1 : a.item_id > b.item_id ? 1 : 0));
   for (const item of others) {
-    const names = (b: typeof item.headPolicy) => b !== null && b.binding.item_ids.includes(target);
-    if (item.hasBranches) {
-      if (names(item.headPolicy) || item.branchPolicies.some(names)) fail('conflict', 'a policy governing the item has an unresolved conflict');
-      continue;
+    if (item.branches.length > 0 && (names(item.headPolicy) || item.branchPolicies.some(names))) {
+      fail('conflict', 'a policy governing the item has an unresolved conflict');
     }
+  }
+  const governing: PortablePolicy[] = [];
+  for (const item of others) {
     const head = item.headPolicy;
-    if (head === null || !names(head)) continue;
-    governing.push(head.binding.policy);
+    if (item.branches.length > 0 || head === null || !names(head)) continue;
+    governing.push(parsePolicy(head.payload.meta['policy']));
     if (head.payload.sensitivity === 'high') sensitivity = 'high';
   }
   return { policy: governing.length === 0 ? null : combine(governing), sensitivity };

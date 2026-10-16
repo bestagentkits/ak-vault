@@ -439,11 +439,16 @@ Its live payload (§3.2) is exactly:
 - `meta` has exactly the keys `kind`, `item_ids` and `policy`; `value` is `""`.
 - `item_ids`: 1–1024 unique opaque item IDs (§2) of the items this policy governs,
   never the policy item's own ID. Names are never used: an ID is unique in the vault
-  and survives a rename.
+  and survives a rename. A policy governs exactly the items it lists: an item written
+  later, or a secret deleted and re-created under a new ID, is ungoverned until a
+  member edits the policy. v1 has no vault-wide default policy.
 - `policy`: the §8 policy object, parsed as in §11 ("Portable policy").
 - The payload `sensitivity` is the minimum sensitivity the policy imposes on every
   governed item: `"high"` makes every governed item `high`; `"normal"` never lowers one.
 - `name` is an inert label (untrusted text).
+
+Writers check a policy item with `parsePolicyItem(item_id, payload)` (binding, then
+body) before sealing it; `sealItem` itself does not.
 
 The binding, the rules and the sensitivity are inside the item ciphertext, which
 the author's record signature and the item AAD cover (§3.2, §5). The server sees only
@@ -465,26 +470,34 @@ result:
    policy governing the target, so the device refuses every item of the vault until
    it can open it;
 3. every payload parses as an item payload for its `tombstone` flag (§11; `bad_request`);
-4. every live payload with `meta.kind` `"policy"`, head or branch, parses as a policy
-   item (`bad_request`), whichever item it names;
+4. every live payload with `meta.kind` `"policy"`, head or branch, has a valid
+   binding (`parsePolicyBinding`: `value`, the exact `meta` keys and `item_ids`;
+   `bad_request`), whichever item it names. An unknown `meta` key, such as a later
+   scope field, therefore refuses every item rather than being ignored;
 5. the target is present, its head is live, and neither its head nor a branch is a
    policy item (`bad_request`);
 6. an item that has unresolved conflict branches, and whose head or any branch is a
-   live policy naming the target, is `conflict` (resolve the conflict first).
+   live policy naming the target, is `conflict` (resolve the conflict first);
+7. the `policy` body of every governing policy parses (`parsePolicy`, `bad_request`).
+   The body of a policy that does not name the target is not parsed, so it affects
+   only the items it governs.
 
-Every other item whose live head is a policy naming the target governs it. The
-result is `{"policy","sensitivity"}`: `policy` is `null` when nothing governs the
-target, else the intersection of the governing policies, taken in `item_id` byte
-order: `max_ttl_s` is the minimum, `require_approval` the OR, each `allowed_*` list
-the intersection, `deny_agents` the union, each present only if some governing
-policy has it, lists in first-occurrence order without duplicates and free text
-dropped. `sensitivity` is `"high"` when any live record of the target (head or
+The governing policies are the live heads, on items without conflict branches, that
+name the target. The result is `{"policy","sensitivity"}`: `policy` is `null` when
+nothing governs the target, else the intersection of the governing policies, taken
+in the byte order of their base64url `item_id` strings: `max_ttl_s` is the minimum,
+`require_approval` the OR, each `allowed_*` list the intersection, `deny_agents` the
+union, each present only if some governing policy has it, lists in first-occurrence
+order without duplicates and free text dropped. `sensitivity` is `"high"` when any live record of the target (head or
 branch) or any governing policy item is `"high"`. The client then releases at most
 `effectiveGrant(local, policy, sensitivity)`.
 
 Any failure is a refusal to release: the client MUST NOT fall back to the local
-grant alone, and nothing here can widen a local grant. A tombstoned policy governs
-nothing; an ID in `item_ids` that names no live non-policy item has no effect. A
+grant alone, and nothing here can widen a local grant. Steps 2 and 4 refuse every
+item of the vault, because the device cannot tell which items an unopened record or
+an unreadable binding governs; items outside the vault are unaffected. A device that
+lacks an older epoch's key (§4) therefore refuses the vault until those items are
+rotated forward. A tombstoned policy governs nothing; an ID in `item_ids` that names no live non-policy item has no effect. A
 policy moved from another vault does not open (§3.2) and so refuses at step 2; an
 older policy revision the server re-serves never becomes the head (§5, §6). A
 device that never received a policy item is subject to the withholding limitation
@@ -643,8 +656,10 @@ These resolve points the sections above leave open; the vectors in
   `unauthorized`.
 - **Portable policy:** unknown fields or wrong types are `bad_request` (the caller
   denies). `description`, `when_to_use` and `urls` are carried as inert text.
-  A policy item's layout and the binding rules are in §8.1; a payload whose
-  `meta.kind` is `"policy"` in any other layout is `bad_request`.
+  A policy item's layout and the binding rules are in §8.1; `parsePolicyBinding`,
+  `parsePolicyItem` and `resolveItemPolicy` reject a payload whose `meta.kind` is
+  `"policy"` in any other layout (`bad_request`). `openItem` and `sealItem` do not
+  check the layout.
 - **Recovery bundle** (vectors: `recovery-bundle.json`).
   - Plaintext `P = cjson({"v":1,"vault_id","bundle_seq","vk":{"<epoch>":b64 32B},"owner_sign_pub":b64 32B,"recovery_sign_sk":b64 32B seed,"checkpoint":<signed checkpoint>})`.
     `bundle_seq` ≥ 1 and MUST increase each time the bundle is replaced. `vk` keys are

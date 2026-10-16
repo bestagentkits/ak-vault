@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Policy binding (spec §8). A policy item is a live item payload with meta.kind \"policy\", value \"\" and meta exactly {kind, item_ids, policy}: item_ids (1..1024 unique item IDs, never its own) names the items it governs, policy is the §8 policy object, and the payload sensitivity is the minimum sensitivity it imposes. expected = resolveItemPolicy(target, items): policy is the intersection of every governing policy (max_ttl_s min, require_approval OR, allowed_* intersected, deny_agents united, text dropped; lists keep first-occurrence order, policies taken in item_id byte order) or null; sensitivity is high when any live record of the target or any governing policy item is high; grant = effectiveGrant(local, policy, sensitivity). items lists every item the device holds: its head and unresolved conflict branches, each {tombstone, payload} with payload null when the device could not open the record. invalid: the device MUST refuse release with expect_error, never fall back to the local grant alone: an unopenable record anywhere is decrypt_failed (a policy moved from another vault, item.json moved_to_other_vault, lands here); a malformed policy anywhere is bad_request; a policy naming the target on an item with unresolved conflict branches is conflict. A replayed older policy revision never reaches items (records.json replayed_older_revision).",
+  "description": "Policy binding (spec §8). A policy item is a live item payload with meta.kind \"policy\", value \"\" and meta exactly {kind, item_ids, policy}: item_ids (1..1024 unique item IDs, never its own) names the items it governs, policy is the §8 policy object, and the payload sensitivity is the minimum sensitivity it imposes. expected = resolveItemPolicy(target, items): policy is the intersection of every governing policy (max_ttl_s min, require_approval OR, allowed_* intersected, deny_agents united, text dropped; lists keep first-occurrence order, policies taken in the byte order of their base64url item_id strings) or null; sensitivity is high when any live record of the target or any governing policy item is high; grant = effectiveGrant(local, policy, sensitivity). items lists every item the device holds: its head and unresolved conflict branches, each {tombstone, payload} with payload null when the device could not open the record. invalid: the device MUST refuse release with expect_error, never fall back to the local grant alone. Checks run in spec §8.1 order: shape (bad_request); an unopenable record anywhere is decrypt_failed (a policy moved from another vault, item.json moved_to_other_vault, lands here); payloads (bad_request); the binding (value, meta keys, item_ids) of every policy anywhere (bad_request); the target (bad_request); a policy naming the target on an item with unresolved conflict branches is conflict; the policy body of every governing policy (bad_request). The body of a policy that does not name the target is not checked. A replayed older policy revision never reaches items (records.json replayed_older_revision).",
   "cases": [
     {
       "name": "no_policy_items",
@@ -927,6 +927,182 @@
       }
     },
     {
+      "name": "two_allow_lists_intersect_to_empty",
+      "target": "EUuw5CoaZa4W8uahPB9EaQ",
+      "items": [
+        {
+          "item_id": "EUuw5CoaZa4W8uahPB9EaQ",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "SYNTHETIC_SECRET",
+              "value": "synthetic-value",
+              "meta": {},
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        },
+        {
+          "item_id": "iNdJXeO50wvcDQXxPu4ing",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "synthetic policy",
+              "value": "",
+              "meta": {
+                "kind": "policy",
+                "item_ids": [
+                  "EUuw5CoaZa4W8uahPB9EaQ"
+                ],
+                "policy": {
+                  "allowed_projects": [
+                    "proj_a"
+                  ]
+                }
+              },
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        },
+        {
+          "item_id": "jwZgLRPKgGfZWXfDj028lQ",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "synthetic policy",
+              "value": "",
+              "meta": {
+                "kind": "policy",
+                "item_ids": [
+                  "EUuw5CoaZa4W8uahPB9EaQ"
+                ],
+                "policy": {
+                  "allowed_projects": [
+                    "proj_b"
+                  ]
+                }
+              },
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        }
+      ],
+      "local": {
+        "ttl_s": 3600,
+        "require_approval": false,
+        "projects": [
+          "proj_a",
+          "proj_b"
+        ],
+        "purposes": [
+          "deploy",
+          "test"
+        ],
+        "agents": [
+          "claude",
+          "codex"
+        ]
+      },
+      "expected": {
+        "policy": {
+          "allowed_projects": []
+        },
+        "sensitivity": "normal",
+        "grant": {
+          "ttl_s": 3600,
+          "require_approval": false,
+          "projects": [],
+          "purposes": [
+            "deploy",
+            "test"
+          ],
+          "agents": [
+            "claude",
+            "codex"
+          ]
+        }
+      }
+    },
+    {
+      "name": "malformed_body_of_policy_for_another_item_is_ignored",
+      "target": "EUuw5CoaZa4W8uahPB9EaQ",
+      "items": [
+        {
+          "item_id": "EUuw5CoaZa4W8uahPB9EaQ",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "SYNTHETIC_SECRET",
+              "value": "synthetic-value",
+              "meta": {},
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        },
+        {
+          "item_id": "iNdJXeO50wvcDQXxPu4ing",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "synthetic policy",
+              "value": "",
+              "meta": {
+                "kind": "policy",
+                "item_ids": [
+                  "DFKRvTBZYkvfUCg36R6fVg"
+                ],
+                "policy": {
+                  "grant_all": true
+                }
+              },
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        }
+      ],
+      "local": {
+        "ttl_s": 3600,
+        "require_approval": false,
+        "projects": [
+          "proj_a",
+          "proj_b"
+        ],
+        "purposes": [
+          "deploy",
+          "test"
+        ],
+        "agents": [
+          "claude",
+          "codex"
+        ]
+      },
+      "expected": {
+        "policy": null,
+        "sensitivity": "normal",
+        "grant": {
+          "ttl_s": 3600,
+          "require_approval": false,
+          "projects": [
+            "proj_a",
+            "proj_b"
+          ],
+          "purposes": [
+            "deploy",
+            "test"
+          ],
+          "agents": [
+            "claude",
+            "codex"
+          ]
+        }
+      }
+    },
+    {
       "name": "conflicted_policy_for_another_item_is_ignored",
       "target": "EUuw5CoaZa4W8uahPB9EaQ",
       "items": [
@@ -1302,7 +1478,7 @@
       "expect_error": "bad_request"
     },
     {
-      "name": "policy_unknown_meta_field",
+      "name": "policy_unknown_meta_field_refuses_every_item",
       "target": "EUuw5CoaZa4W8uahPB9EaQ",
       "items": [
         {
@@ -1328,10 +1504,10 @@
               "meta": {
                 "kind": "policy",
                 "item_ids": [
-                  "EUuw5CoaZa4W8uahPB9EaQ"
+                  "DFKRvTBZYkvfUCg36R6fVg"
                 ],
                 "policy": {},
-                "schema": "x"
+                "scope": "vault"
               },
               "sensitivity": "normal"
             }
@@ -1419,7 +1595,7 @@
       "expect_error": "bad_request"
     },
     {
-      "name": "unparseable_policy_for_another_item_refuses",
+      "name": "malformed_body_of_governing_policy",
       "target": "EUuw5CoaZa4W8uahPB9EaQ",
       "items": [
         {
@@ -1445,7 +1621,7 @@
               "meta": {
                 "kind": "policy",
                 "item_ids": [
-                  "DFKRvTBZYkvfUCg36R6fVg"
+                  "EUuw5CoaZa4W8uahPB9EaQ"
                 ],
                 "policy": {
                   "grant_all": true
@@ -1460,7 +1636,60 @@
       "expect_error": "bad_request"
     },
     {
-      "name": "unparseable_policy_in_conflict_branch",
+      "name": "malformed_binding_in_conflict_branch",
+      "target": "EUuw5CoaZa4W8uahPB9EaQ",
+      "items": [
+        {
+          "item_id": "EUuw5CoaZa4W8uahPB9EaQ",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "SYNTHETIC_SECRET",
+              "value": "synthetic-value",
+              "meta": {},
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        },
+        {
+          "item_id": "iNdJXeO50wvcDQXxPu4ing",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "synthetic policy",
+              "value": "",
+              "meta": {
+                "kind": "policy",
+                "item_ids": [
+                  "EUuw5CoaZa4W8uahPB9EaQ"
+                ],
+                "policy": {}
+              },
+              "sensitivity": "normal"
+            }
+          },
+          "branches": [
+            {
+              "tombstone": false,
+              "payload": {
+                "name": "synthetic policy",
+                "value": "",
+                "meta": {
+                  "kind": "policy",
+                  "item_ids": "not-a-list",
+                  "policy": {}
+                },
+                "sensitivity": "normal"
+              }
+            }
+          ]
+        }
+      ],
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "malformed_body_in_conflict_branch_is_conflict",
       "target": "EUuw5CoaZa4W8uahPB9EaQ",
       "items": [
         {
@@ -1514,7 +1743,7 @@
           ]
         }
       ],
-      "expect_error": "bad_request"
+      "expect_error": "conflict"
     },
     {
       "name": "policy_conflict_branch_names_target",
@@ -1827,6 +2056,314 @@
         }
       ],
       "expect_error": "bad_request"
+    },
+    {
+      "name": "order_shape_before_unopened",
+      "target": "EUuw5CoaZa4W8uahPB9EaQ",
+      "items": [
+        {
+          "item_id": "EUuw5CoaZa4W8uahPB9EaQ",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "SYNTHETIC_SECRET",
+              "value": "synthetic-value",
+              "meta": {},
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        },
+        {
+          "item_id": "DFKRvTBZYkvfUCg36R6fVg",
+          "head": {
+            "tombstone": false,
+            "payload": null
+          },
+          "branches": []
+        },
+        {
+          "item_id": "DFKRvTBZYkvfUCg36R6fVg",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "SYNTHETIC_SECRET",
+              "value": "synthetic-value",
+              "meta": {},
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        }
+      ],
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "order_unopened_before_malformed_binding",
+      "target": "EUuw5CoaZa4W8uahPB9EaQ",
+      "items": [
+        {
+          "item_id": "EUuw5CoaZa4W8uahPB9EaQ",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "SYNTHETIC_SECRET",
+              "value": "synthetic-value",
+              "meta": {},
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        },
+        {
+          "item_id": "DFKRvTBZYkvfUCg36R6fVg",
+          "head": {
+            "tombstone": false,
+            "payload": null
+          },
+          "branches": []
+        },
+        {
+          "item_id": "iNdJXeO50wvcDQXxPu4ing",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "synthetic policy",
+              "value": "",
+              "meta": {
+                "kind": "policy",
+                "item_ids": [],
+                "policy": {}
+              },
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        }
+      ],
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "order_unopened_before_conflict",
+      "target": "EUuw5CoaZa4W8uahPB9EaQ",
+      "items": [
+        {
+          "item_id": "EUuw5CoaZa4W8uahPB9EaQ",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "SYNTHETIC_SECRET",
+              "value": "synthetic-value",
+              "meta": {},
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        },
+        {
+          "item_id": "DFKRvTBZYkvfUCg36R6fVg",
+          "head": {
+            "tombstone": false,
+            "payload": null
+          },
+          "branches": []
+        },
+        {
+          "item_id": "iNdJXeO50wvcDQXxPu4ing",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "synthetic policy",
+              "value": "",
+              "meta": {
+                "kind": "policy",
+                "item_ids": [
+                  "EUuw5CoaZa4W8uahPB9EaQ"
+                ],
+                "policy": {}
+              },
+              "sensitivity": "normal"
+            }
+          },
+          "branches": [
+            {
+              "tombstone": false,
+              "payload": {
+                "name": "SYNTHETIC_SECRET",
+                "value": "synthetic-value",
+                "meta": {},
+                "sensitivity": "normal"
+              }
+            }
+          ]
+        }
+      ],
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "order_malformed_binding_before_target",
+      "target": "EUuw5CoaZa4W8uahPB9EaQ",
+      "items": [
+        {
+          "item_id": "DFKRvTBZYkvfUCg36R6fVg",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "SYNTHETIC_SECRET",
+              "value": "synthetic-value",
+              "meta": {},
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        },
+        {
+          "item_id": "iNdJXeO50wvcDQXxPu4ing",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "synthetic policy",
+              "value": "",
+              "meta": {
+                "kind": "policy",
+                "item_ids": [
+                  "EUuw5CoaZa4W8uahPB9EaQ",
+                  "EUuw5CoaZa4W8uahPB9EaQ"
+                ],
+                "policy": {}
+              },
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        }
+      ],
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "order_target_before_conflict",
+      "target": "EUuw5CoaZa4W8uahPB9EaQ",
+      "items": [
+        {
+          "item_id": "EUuw5CoaZa4W8uahPB9EaQ",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "synthetic policy",
+              "value": "",
+              "meta": {
+                "kind": "policy",
+                "item_ids": [
+                  "DFKRvTBZYkvfUCg36R6fVg"
+                ],
+                "policy": {}
+              },
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        },
+        {
+          "item_id": "iNdJXeO50wvcDQXxPu4ing",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "synthetic policy",
+              "value": "",
+              "meta": {
+                "kind": "policy",
+                "item_ids": [
+                  "EUuw5CoaZa4W8uahPB9EaQ"
+                ],
+                "policy": {}
+              },
+              "sensitivity": "normal"
+            }
+          },
+          "branches": [
+            {
+              "tombstone": false,
+              "payload": {
+                "name": "SYNTHETIC_SECRET",
+                "value": "synthetic-value",
+                "meta": {},
+                "sensitivity": "normal"
+              }
+            }
+          ]
+        }
+      ],
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "order_conflict_before_malformed_body",
+      "target": "EUuw5CoaZa4W8uahPB9EaQ",
+      "items": [
+        {
+          "item_id": "EUuw5CoaZa4W8uahPB9EaQ",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "SYNTHETIC_SECRET",
+              "value": "synthetic-value",
+              "meta": {},
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        },
+        {
+          "item_id": "iNdJXeO50wvcDQXxPu4ing",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "synthetic policy",
+              "value": "",
+              "meta": {
+                "kind": "policy",
+                "item_ids": [
+                  "EUuw5CoaZa4W8uahPB9EaQ"
+                ],
+                "policy": {
+                  "grant_all": true
+                }
+              },
+              "sensitivity": "normal"
+            }
+          },
+          "branches": []
+        },
+        {
+          "item_id": "jwZgLRPKgGfZWXfDj028lQ",
+          "head": {
+            "tombstone": false,
+            "payload": {
+              "name": "synthetic policy",
+              "value": "",
+              "meta": {
+                "kind": "policy",
+                "item_ids": [
+                  "EUuw5CoaZa4W8uahPB9EaQ"
+                ],
+                "policy": {}
+              },
+              "sensitivity": "normal"
+            }
+          },
+          "branches": [
+            {
+              "tombstone": false,
+              "payload": {
+                "name": "SYNTHETIC_SECRET",
+                "value": "synthetic-value",
+                "meta": {},
+                "sensitivity": "normal"
+              }
+            }
+          ]
+        }
+      ],
+      "expect_error": "conflict"
     },
     {
       "name": "entry_unknown_field",

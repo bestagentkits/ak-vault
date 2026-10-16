@@ -55,7 +55,7 @@
  *
  * Policy (§8) — `parsePolicy`, `effectiveGrant(localGrant, policy, sensitivity): LocalGrant`;
  * `resolveItemPolicy(targetItemId, items): {policy, sensitivity}` combines the policy items that
- * govern an item (binding by `meta.item_ids`), `parsePolicyItem`, `isPolicyPayload`.
+ * govern an item (binding by `meta.item_ids`), `parsePolicyBinding`, `parsePolicyItem`, `isPolicyPayload`.
  *
  * Transport (§9) — `buildProof(args): string`, `decodeProof`, `verifyProof(header, opts): TransportProof`.
  *
@@ -208,6 +208,7 @@ export {
   MAX_RESOLVE_ITEMS,
   POLICY_ITEM_KIND,
   isPolicyPayload,
+  parsePolicyBinding,
   parsePolicyItem,
   resolveItemPolicy,
   type PolicyItem,

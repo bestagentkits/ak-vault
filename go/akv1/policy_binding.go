@@ -22,9 +22,10 @@ const (
 )
 
 // PolicyResolutionEntry is one decrypted record of an item: its head or an
-// unresolved conflict branch. Payload is the decrypted payload object (an
-// ItemPayload or its JSONValue) and nil when the device could not open the
-// record.
+// unresolved conflict branch. Payload is the decrypted payload as OpenItem
+// returns it (an ItemPayload) or in the value model of ParseJSON, and nil
+// when the device could not open the record. Values decoded with
+// encoding/json (float64, json.Number) are refused as CodeBadRequest.
 type PolicyResolutionEntry struct {
 	Tombstone bool
 	Payload   any
@@ -67,32 +68,44 @@ func IsPolicyPayload(p ItemPayload) bool {
 	return !p.Deleted && ok && kind == PolicyItemKind
 }
 
-// ParsePolicyItem validates the policy-item layout of a live payload whose
-// meta.kind is "policy" (CodeBadRequest otherwise): value is "", meta has
-// exactly kind, item_ids (1..1024 unique IDs, never the policy's own itemID)
-// and policy (parsed by ParsePolicy).
-func ParsePolicyItem(itemID string, p ItemPayload) (PolicyItem, error) {
+// ParsePolicyBinding validates the binding of a live payload whose meta.kind
+// is "policy" (CodeBadRequest otherwise): value is "", meta has exactly kind,
+// item_ids and policy, and item_ids is 1..1024 unique IDs that never include
+// the policy's own itemID. It returns the governed item IDs and does not parse
+// the policy body.
+func ParsePolicyBinding(itemID string, p ItemPayload) ([]string, error) {
 	if _, err := asID(itemID, "item_id"); err != nil {
-		return PolicyItem{}, err
+		return nil, err
 	}
 	if !IsPolicyPayload(p) {
-		return PolicyItem{}, badRequest("item is not a policy item")
+		return nil, badRequest("item is not a policy item")
 	}
 	if p.Value != "" {
-		return PolicyItem{}, badRequest("policy item value must be empty")
+		return nil, badRequest("policy item value must be empty")
 	}
 	if err := exactKeys(p.Meta, []string{"kind", "item_ids", "policy"}, "policy item meta"); err != nil {
-		return PolicyItem{}, err
+		return nil, err
 	}
 	ids, err := asIDList(p.Meta["item_ids"], "policy item meta.item_ids", MaxPolicyItemIDs)
 	if err != nil {
-		return PolicyItem{}, err
+		return nil, err
 	}
 	if len(ids) == 0 {
-		return PolicyItem{}, badRequest("policy item governs no item")
+		return nil, badRequest("policy item governs no item")
 	}
 	if contains(ids, itemID) {
-		return PolicyItem{}, badRequest("policy item names itself")
+		return nil, badRequest("policy item names itself")
+	}
+	return ids, nil
+}
+
+// ParsePolicyItem validates a whole policy item: its binding
+// (ParsePolicyBinding), then its policy body (ParsePolicy). Writers check a
+// policy item with it before sealing.
+func ParsePolicyItem(itemID string, p ItemPayload) (PolicyItem, error) {
+	ids, err := ParsePolicyBinding(itemID, p)
+	if err != nil {
+		return PolicyItem{}, err
 	}
 	policy, err := ParsePolicy(p.Meta["policy"])
 	if err != nil {
@@ -103,12 +116,12 @@ func ParsePolicyItem(itemID string, p ItemPayload) (PolicyItem, error) {
 
 type boundEntry struct {
 	payload *ItemPayload // nil for a tombstone
-	policy  *PolicyItem  // nil unless a live policy item
+	itemIDs []string     // governed item IDs; nil unless a live policy item
 }
 
-func (b boundEntry) names(target string) bool {
-	return b.policy != nil && contains(b.policy.ItemIDs, target)
-}
+func (b boundEntry) isPolicy() bool { return b.itemIDs != nil }
+
+func (b boundEntry) names(target string) bool { return contains(b.itemIDs, target) }
 
 // ResolveItemPolicy resolves the policies that govern target from every item
 // the device holds. Checks, in order (the first failure is the result):
@@ -117,15 +130,19 @@ func (b boundEntry) names(target string) bool {
 //  2. any entry with a nil payload (the device could not open it, so it may be
 //     a policy governing target) is CodeDecryptFailed;
 //  3. every payload parses as an item payload for its Tombstone flag (CodeBadRequest);
-//  4. every live policy payload parses as a policy item (CodeBadRequest);
+//  4. every live policy payload, head or branch, has a valid binding
+//     (ParsePolicyBinding, CodeBadRequest);
 //  5. target is present, its head is live, and neither its head nor any branch
 //     is a policy item (CodeBadRequest);
 //  6. an item with unresolved conflict branches whose head or any branch is a
-//     live policy naming target is CodeConflict.
+//     live policy naming target is CodeConflict;
+//  7. the policy body of every governing policy parses (ParsePolicy,
+//     CodeBadRequest), in item_id order.
 //
-// Then every other item whose live head is a policy naming target governs it,
-// combined by intersection in item_id byte order. Callers refuse release on
-// any error and never fall back to the local grant alone.
+// The governing policies are the live heads, on items without conflict
+// branches, that name target; they combine by intersection in the byte order
+// of their base64url item_id strings. Callers refuse release on any error and
+// never fall back to the local grant alone.
 func ResolveItemPolicy(target string, items []PolicyResolutionItem) (ResolvedItemPolicy, error) {
 	if _, err := asID(target, "target item_id"); err != nil {
 		return ResolvedItemPolicy{}, err
@@ -201,11 +218,11 @@ func ResolveItemPolicy(target string, items []PolicyResolutionItem) (ResolvedIte
 		if e.payload == nil || !IsPolicyPayload(*e.payload) {
 			return nil
 		}
-		pi, err := ParsePolicyItem(id, *e.payload)
+		ids, err := ParsePolicyBinding(id, *e.payload)
 		if err != nil {
 			return err
 		}
-		e.policy = &pi
+		e.itemIDs = ids
 		return nil
 	}
 	for i := range parsed {
@@ -233,7 +250,7 @@ func ResolveItemPolicy(target string, items []PolicyResolutionItem) (ResolvedIte
 	}
 	sensitivity := SensitivityNormal
 	for _, e := range append([]boundEntry{own.head}, own.branches...) {
-		if e.policy != nil {
+		if e.isPolicy() {
 			return ResolvedItemPolicy{}, badRequest("target item is a policy item")
 		}
 	}
@@ -244,23 +261,26 @@ func ResolveItemPolicy(target string, items []PolicyResolutionItem) (ResolvedIte
 	}
 
 	sort.Slice(others, func(a, b int) bool { return others[a].id < others[b].id })
-	var governing []PortablePolicy
 	for _, it := range others {
-		if len(it.branches) > 0 {
-			if it.head.names(target) {
+		if len(it.branches) == 0 {
+			continue
+		}
+		for _, e := range append([]boundEntry{it.head}, it.branches...) {
+			if e.names(target) {
 				return ResolvedItemPolicy{}, newErr(CodeConflict, "a policy governing the item has an unresolved conflict")
 			}
-			for _, b := range it.branches {
-				if b.names(target) {
-					return ResolvedItemPolicy{}, newErr(CodeConflict, "a policy governing the item has an unresolved conflict")
-				}
-			}
+		}
+	}
+	var governing []PortablePolicy
+	for _, it := range others {
+		if len(it.branches) > 0 || !it.head.names(target) {
 			continue
 		}
-		if !it.head.names(target) {
-			continue
+		policy, err := ParsePolicy(it.head.payload.Meta["policy"])
+		if err != nil {
+			return ResolvedItemPolicy{}, err
 		}
-		governing = append(governing, it.head.policy.Policy)
+		governing = append(governing, policy)
 		if it.head.payload.Sensitivity == SensitivityHigh {
 			sensitivity = SensitivityHigh
 		}
