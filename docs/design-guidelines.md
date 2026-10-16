@@ -61,7 +61,7 @@ links.
   - `ak login` exists for the AgentKit account; the preview sync commands use it.
   - Preview (hidden in `v3.0.0-beta.30`): `ak secrets sync enable`, SAS device enrollment,
     device removal and recovery, against the production sync API, which is live before
-    the external review. Say so wherever they appear.
+    the review. Say so wherever they appear.
   - Planned: `ak secrets search|describe|request|run`.
   - AgentKit is in closed beta, so the site links to agentkit.best instead of printing an
     install command.

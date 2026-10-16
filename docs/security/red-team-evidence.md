@@ -137,4 +137,4 @@ analytics counted, and one attempt was repeated because tail never connected.
   Logpush or other account-level sinks, and tail is best effort.
 - **Client policy and discovery** (scenario 13), until the feature exists.
 - **External review.** This run is the owner's agents testing their own code; it does
-  not satisfy the [external review](./release-gates.md#external-review) gate.
+  not satisfy the [review](./release-gates.md#review-by-the-owner) gate.

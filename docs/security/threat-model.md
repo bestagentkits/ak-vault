@@ -166,10 +166,15 @@ These are accepted and must be stated wherever the guarantees are described:
   redacted. Accepted by owner waiver as account-operator access
   ([data classification](./data-classification.md#handling-rules),
   [#61](https://github.com/bestagentkits/ak-vault/issues/61)).
-- **Production sync runs before the external review.** By owner decision on
+- **No independent third-party review.** By owner decision on 2026-10-16
+  ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235)) the review gate is a review by the project owner, who
+  directs the implementing agents. No reviewer outside the project has reviewed the
+  protocol or the Worker, and none is required for GA
+  ([release gates](./release-gates.md#review-by-the-owner)).
+- **Production sync runs before the review.** By owner decision on
   [#8](https://github.com/bestagentkits/ak-vault/issues/8) (2026-10-16) production
   sync is live, with ak-web minting production vault tokens, before the
-  independent cryptographic review and with other release gates open
+  owner's review and with other release gates open
   ([release gates](./release-gates.md#owner-waivers)). It is pre-release and not
   yet recommended for production credentials. The latest released client
   (`v3.0.0-beta.30`) also predates the removal-fence client: its removals and

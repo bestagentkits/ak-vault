@@ -64,7 +64,7 @@
           "name": "Is there a date for general availability?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No date is promised. Sync ships when every item in the release gates is met at the release commit, including the external review. Progress is tracked on the epic."
+            "text": "No date is promised. Sync ships when every item in the release gates is met at the release commit, including the owner's review. Progress is tracked on the epic."
           }
         },
         {
@@ -290,7 +290,7 @@
           <div class="faq">
             <details><summary>Can I use cloud sync today?</summary><div><p>Only as a preview. Protocol v1 is proposed and in security review on <a href="https://github.com/bestagentkits/ak-vault/issues/8">issue #8</a>, and cloud sync is not generally available. By owner decision the production sync API is live before that review as a pre-release preview: if you are signed in and run the preview <code>ak secrets sync</code> commands, your device syncs with it. It is not yet recommended for production credentials. The local <code>ak secrets</code> vault works today.</p></div></details>
             <details><summary>What works right now?</summary><div><p>The local vault in the AgentKit CLI: importing a <code>.env</code> file, setting, rotating and inspecting secrets, <code>${secret:NAME}</code> references, agent grants and approvals, and the access audit. See <a href="/guide/#local">Part 1 of the guide</a>.</p></div></details>
-            <details><summary>Is there a date for general availability?</summary><div><p>No date is promised. Sync ships when every item in the <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/release-gates.md">release gates</a> is met at the release commit, including the external review. Progress is tracked on <a href="https://github.com/bestagentkits/ak-vault/issues/1">the epic</a>.</p></div></details>
+            <details><summary>Is there a date for general availability?</summary><div><p>No date is promised. Sync ships when every item in the <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/release-gates.md">release gates</a> is met at the release commit, including the owner's review. Progress is tracked on <a href="https://github.com/bestagentkits/ak-vault/issues/1">the epic</a>.</p></div></details>
             <details><summary>Is the server code open?</summary><div><p>Yes. The Worker, the TypeScript and Go protocol implementations and the cross-language test vectors are in the <a href="https://github.com/bestagentkits/ak-vault">public repository</a> under the MIT license.</p></div></details>
           </div>
         </div>

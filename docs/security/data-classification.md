@@ -76,8 +76,10 @@ so it carries no free text.
   production Worker's account only to the operators who need it (the production
   deploy token has none). The formerly shared token, still held by the `staging`
   environment and the operator, stays in scope: Cloudflare cannot scope it to one
-  Worker. The owner's confirmation is an open item in the
-  [release gates](./release-gates.md#production-deploy-control). Do not attach a Tail Worker or Logpush job
+  Worker. The owner confirmed on 2026-10-16 that Workers Tail access on production
+  is restricted ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235)); agents did not inspect the account, so this
+  rests on the owner's statement
+  ([release gates](./release-gates.md#production-deploy-control)). Do not attach a Tail Worker or Logpush job
   that stores request headers. Renaming the headers so the platform
   redacts them remains open as hardening
   ([#61](https://github.com/bestagentkits/ak-vault/issues/61)).

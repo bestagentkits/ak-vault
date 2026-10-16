@@ -12,7 +12,7 @@ Who ak-vault defends against, how protocol v1 does it, and what remains your ris
 
 The assets are your secret values and everything that describes them: names, descriptions, tags, profiles, portable policy and the audit trail. All of them are encrypted on your devices before upload. The server keeps ciphertext, wrapped vault keys and the operational metadata it needs to order and authorize writes.
 
-> **Status:** protocol v1 is *proposed*. It is not approved for production credentials until the security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) records an external review sign-off. The owner made the production sync API live before that review (an owner waiver, not a sign-off): anyone signed in who runs the preview `ak secrets sync` commands can use it. It is pre-release and not yet recommended for production credentials.
+> **Status:** protocol v1 is *proposed*. It is not approved for production credentials until the security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) records the owner's review sign-off, which is not an independent third-party review. The owner made the production sync API live before that review (an owner waiver, not a sign-off): anyone signed in who runs the preview `ak secrets sync` commands can use it. It is pre-release and not yet recommended for production credentials.
 
 Out of scope by design: decryption in a web browser, server-held vault keys or KMS, and taking back plaintext that has already been disclosed.
 
@@ -107,7 +107,7 @@ Gate items; status and evidence are in the release gates:
 - With sync off, ak makes zero HTTP requests and `resolve` works with the Worker unreachable.
 - Red-team scenarios executed (13 waits for the feature it attacks), a two-device end-to-end run with real clients, and backup, restore and rollback rehearsed on staging.
 - The removal fence binds the change-log contents, not only a position.
-- An independent reviewer with cryptographic expertise signs off. This cannot be self-attested.
+- The project owner reviews and signs off on #8 personally. This is not an independent third-party review, and agents cannot post or attest it.
 
 ## 6. Sources and disclosure
 

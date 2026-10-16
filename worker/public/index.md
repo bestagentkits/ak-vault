@@ -45,7 +45,7 @@ One synced secret, seen from each side (protocol v1, proposed; values illustrati
 
 ## 4. Every promise comes with its fine print
 
-These are design properties of protocol v1 as proposed. They hold only after the implementation passes the security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) and an external review signs off.
+These are design properties of protocol v1 as proposed. They hold only after the implementation passes the security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) and the owner's review signs off (not an independent third-party review).
 
 | Design property | Limitation |
 |---|---|
@@ -54,7 +54,7 @@ These are design properties of protocol v1 as proposed. They hold only after the
 | **Rollback detection.** Devices keep signed checkpoints and refuse server state older than one they already witnessed (spec §6). | **Withheld updates.** A malicious server can hide updates a new or long-offline device has never seen. Detecting that needs a second channel. |
 | **Live revocation.** Device-bound tokens plus a per-request device signature; revoked devices and sessions are refused on every request, and lookup errors fail closed (spec §9). | **No claw-back.** Anything a device already decrypted stays exposed, so affected secrets are marked to rotate. |
 | **Local-first and opt-in.** `resolve` never waits on the Worker; with sync off, secrets make zero network requests. | **Plaintext reaches the child process.** `ak secrets run` (planned) hands the value to the process you approved. |
-| **No silent overwrites.** Revision compare-and-swap; a stale write gets `409` and is kept as a conflict branch; deleted stays deleted (spec §5). | **Not yet reviewed.** Treat every property as a design target until the external review signs off. |
+| **No silent overwrites.** Revision compare-and-swap; a stale write gets `409` and is kept as a conflict branch; deleted stays deleted (spec §5). | **Not yet reviewed.** Treat every property as a design target until the owner's review signs off. |
 | **Recovery without trusting the server.** The encrypted recovery bundle carries the owner's public trust anchor, the recovery signing key and the newest witnessed checkpoint (spec §3.4). | **Lose every key, lose the vault.** Without an enrolled device, your master password or your recovery key, nobody can decrypt the vault, including AgentKit. |
 
 Full threat model: [Security model](https://vault.agentkit.best/security/index.md).
@@ -86,9 +86,9 @@ Work is tracked in the [epic, issue #1](https://github.com/bestagentkits/ak-vaul
 
 - **Local vault: available.** Keychain or age-encrypted file vault, agent grants, approvals and an audit ledger in the AgentKit CLI.
 - **Protocol v1 and test vectors: in review.** Spec, TypeScript reference and a Go implementation that reproduce every vector ([#2](https://github.com/bestagentkits/ak-vault/issues/2)).
-- **Worker and storage: preview.** Cloudflare Worker with a SQLite Durable Object per vault, including shared-vault membership. The production sync API is live as a pre-release preview, before the external review ([#4](https://github.com/bestagentkits/ak-vault/issues/4), [#5](https://github.com/bestagentkits/ak-vault/issues/5)).
+- **Worker and storage: preview.** Cloudflare Worker with a SQLite Durable Object per vault, including shared-vault membership. The production sync API is live as a pre-release preview, before the review ([#4](https://github.com/bestagentkits/ak-vault/issues/4), [#5](https://github.com/bestagentkits/ak-vault/issues/5)).
 - **Client sync in the CLI: preview.** The sync commands ship hidden in the released `ak` beta (`v3.0.0-beta.30`); a release with the removal-fence client is pending.
-- **Security gate: required for GA.** Red team, a two-device end-to-end run with real clients, rollback rehearsal and an independent review ([#8](https://github.com/bestagentkits/ak-vault/issues/8)).
+- **Security gate: required for GA.** Red team, a two-device end-to-end run with real clients, rollback rehearsal and a review by the owner (not independent) ([#8](https://github.com/bestagentkits/ak-vault/issues/8)).
 - After personal sync: read-only CI identities ([#6](https://github.com/bestagentkits/ak-vault/issues/6)) and portable policy with encrypted audit ([#7](https://github.com/bestagentkits/ak-vault/issues/7)).
 
 ## 7. Questions

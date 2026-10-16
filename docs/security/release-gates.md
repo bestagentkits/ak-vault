@@ -15,11 +15,13 @@ review sign-off: production sync is pre-release, not externally reviewed and not
 recommended for production credentials. It was enabled while these remain open:
 every red-team scenario executed (scenario 13), the staging restore (since
 rehearsed), the staging cost measurement (since met by a lab-Worker measurement of
-the staging build, accepted by the owner), the external review and ADR 0001
-approval (since accepted by the owner, P0 gates below). Also open while
+the staging build, accepted by the owner), the review (by the owner since
+2026-10-16, not an independent third-party review; [below](#review-by-the-owner))
+and ADR 0001 approval (since accepted by the owner, P0 gates below). Also open while
 production is live: confirming that the staging and production JWKS share no key
-material ([staging soak](#staging-soak)), and the owner confirming on #8 that
-Workers Tail access on production is limited, the complement to the tail waiver.
+material ([staging soak](#staging-soak)). The complement to the tail waiver, Workers
+Tail access on production restricted, was confirmed by the owner on 2026-10-16
+([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235)).
 The owner's decisions on #8 enabled production sync with these items open; they still gate GA. The waivers recorded on
 #8 are listed [below](#owner-waivers); nothing else is waived, and sync is not GA.
 
@@ -65,7 +67,7 @@ page and docs, and its own CI run is linked from its pull request.
       recipient, reader and machine write denial.
       Evidence: the CI TypeScript job (above) runs [`worker/test/`](../../worker/test/)
       in workerd; the cases are mapped in the [red-team evidence](./red-team-evidence.md).
-- [x] Disclosure scan, **ticked by owner waiver for live tail; the waiver's complement (Workers Tail access limited) is open**: a full Durable Object dump, Worker logs, traces, metrics and
+- [x] Disclosure scan, **ticked by owner waiver for live tail; the waiver's complement (Workers Tail access restricted on production) confirmed by the owner on 2026-10-16**: a full Durable Object dump, Worker logs, traces, metrics and
       every error response from a run seeded with known plaintext values and names
       contain none of them ([data classification](./data-classification.md)).
       Platform logs, traces and analytics were scanned with seeded traffic on a
@@ -78,8 +80,11 @@ page and docs, and its own CI run is linked from its pull request.
       Object dump, Worker console lines and every response are scanned in workerd by
       red-team scenario 15. The owner waived the tail exposure on 2026-10-16
       ([owner waivers](#owner-waivers)); it is recorded as an exception in
-      [data classification](./data-classification.md#handling-rules). #61 stays open
-      as later hardening (rename the headers).
+      [data classification](./data-classification.md#handling-rules). The owner
+      confirmed the complement, Workers Tail access on production restricted, on
+      2026-10-16 ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235)); agents did not inspect the account, so it
+      rests on the owner's statement. #61 stays open as later hardening (rename the
+      headers).
 - [x] Revocation: a revoked session or device is refused on its next request even
       with an unexpired token; revocation-registry failure returns `503`.
       Evidence: [`revocation.test.ts`](../../worker/test/revocation.test.ts) in the
@@ -146,7 +151,8 @@ page and docs, and its own CI run is linked from its pull request.
       `pnpm cost:measure` on the release commit before GA.
       The dominant cost at scale is still rows written by every pull; reducing it is
       [#63](https://github.com/bestagentkits/ak-vault/issues/63).
-- [ ] External review signed off (below). **Not signed off.** Production sync was
+- [ ] Review by the owner signed off ([below](#review-by-the-owner)). **Not signed
+      off.** This is not an independent third-party review. Production sync was
       enabled before it under the owner waiver of 2026-10-16
       ([owner waivers](#owner-waivers)).
 - [x] The removal fence binds the change-log contents, not only a position
@@ -169,7 +175,7 @@ propagation latency and a disclosure scan. Its results are on #8; the e2e README
 how to repeat it. This supersedes the 2026-10-14 decision to skip only the multi-day
 soak.
 
-**Residual risk, for the external reviewer to weigh.** The integration with ak-web
+**Residual risk, for the reviewer to weigh.** The integration with ak-web
 staging's real issuer and JWKS, the delivery of its revocation webhook and the
 Cloudflare edge are verified by configuration and by the lab Worker rehearsal
 ([#54](https://github.com/bestagentkits/ak-vault/pull/54),
@@ -184,7 +190,7 @@ coordinates, not only their `kid`s).
 ## Owner waivers
 
 Recorded on #8 by the owner. A waiver accepts a stated risk; it is not evidence and
-does not satisfy the external review.
+does not satisfy the [review](#review-by-the-owner).
 
 | Date | Waiver | Record |
 |---|---|---|
@@ -192,6 +198,7 @@ does not satisfy the external review.
 | 2026-10-16 | The Docker two-device e2e replaces the staging two-device round trip and the staging soak; no authenticated staging session is used. Residual risk is stated under [staging soak](#staging-soak). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6207406980) |
 | 2026-10-16 | The external-review gate is waived for enabling `VAULT_SYNC_ENABLED=true` on the production Worker. The external review stays open on #8. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248) |
 | 2026-10-16 | Production sync is fully live: ak-web production mints vault tokens together with the Worker flag, so any logged-in user running the preview `ak secrets sync` commands can sync to production before the external review. Docs say it is pre-release, not externally reviewed and not yet recommended for production credentials. This supersedes the earlier statement that minting stays off. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209425010) |
+| 2026-10-16 | The review gate is a review by the owner, not an independent third-party review: the owner posts the result on #8 personally, and agents never post, attest or tick it. The gate stays open until then. Residual risk: no reviewer outside the project ([review by the owner](#review-by-the-owner)). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235) |
 | 2026-10-16 | ADR 0001 is accepted with restore reconciliation still an open item, so the ADR gate no longer requires its open items resolved. The staging backup/restore and staging cost gates are not waived. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210567772) |
 | 2026-10-16 | The owner approves the deploy that enables production sync while the shared-Cloudflare-token bootstrap exception stays an open item ([production deploy control](#production-deploy-control)). Superseded by the next row. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209176887) |
 | 2026-10-16 | Staging keeps a Cloudflare token that can reach the production Worker, because Cloudflare cannot scope a Workers token to one script. The exception closes under owner code review of `.github/` and `worker/wrangler.jsonc`, in effect since 2026-10-16 ([production deploy control](#production-deploy-control)). Residual risk: agents act as the owner's GitHub account. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210230956) |
@@ -266,14 +273,20 @@ Landing page and health endpoints are not affected by the flag.
   enabled on the repository (enabled 2026-10-13; re-check the security settings
   before GA rather than assuming), and no token, key or personal data is committed.
 
-## External review
+## Review by the owner
 
-An independent reviewer with cryptographic expertise, who did not implement the
-protocol, reviews the ADR, spec, vectors, Worker auth path and these gates. The
-reviewer's sign-off, scope and the reviewed commit are recorded on #8. This gate
-cannot be self-attested by the owner's agents or closed by a checklist alone, and the
-owner's 2026-10-16 waiver for enabling production sync does not close it; until the
-sign-off exists, #8 stays `blocked` and sync is not GA.
+By owner decision on 2026-10-16 ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235)) the reviewer is the project
+owner, who reviews the ADR, spec, vectors, Worker auth path and these gates. **This is
+not an independent third-party review**: the owner directs the agents that
+implemented the protocol, and no reviewer outside the project has signed off. The
+owner posts the review result, its scope and the reviewed commit on #8 personally.
+Agents act through the owner's GitHub account, so an agent never posts, attests or
+ticks that result, and a checklist alone cannot close the gate. The owner's
+2026-10-16 waiver for enabling production sync does not close it either; until the
+owner's sign-off exists, #8 stays `blocked` and sync is not GA.
+
+This replaces the earlier requirement of an independent reviewer with cryptographic
+expertise who did not implement the protocol.
 
 ## Performance targets
 

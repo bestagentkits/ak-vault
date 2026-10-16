@@ -158,3 +158,8 @@ GA is blocked until an independent cryptographic and security reviewer, who is n
 an implementing agent, has reviewed this ADR, the spec, the vectors and the Worker,
 and the sign-off is recorded on #8. The checklist is in
 [release gates](../security/release-gates.md).
+
+**Changed 2026-10-16 by owner decision** ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235)): the reviewer is the
+project owner, not an independent third party. The owner posts the result on #8
+personally; agents never post or attest it. The gate is now
+[review by the owner](../security/release-gates.md#review-by-the-owner).
