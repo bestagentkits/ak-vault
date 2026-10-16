@@ -32,7 +32,7 @@ the color of the "sealed" state.
 | `/` | The story: hero stage, problem, sync stepper, two views of one secret, promises with fine print, quick start, status, top questions | `index.md` |
 | `/how-it-works/` | Deep dive with diagrams: keys, SAS enrollment, conflicts, tombstones and checkpoints, architecture, data classification | `how-it-works/index.md` |
 | `/security/` | Threat map, adversary cards, guarantees and limitations, release gate, disclosure | `security/index.md` |
-| `/guide/` | Step-by-step guide; available and planned steps are badged | `guide/index.md` |
+| `/guide/` | Step-by-step guide; available, preview and planned steps are badged | `guide/index.md` |
 | `/faq/` | Grouped FAQ with a sticky group index on desktop, native `<details>` and FAQPage JSON-LD | `faq/index.md` |
 | `/404.html` | Not-found page, `noindex` | none |
 
@@ -50,14 +50,19 @@ links.
 
 - **No invented facts.** Do not invent metrics, customers, testimonials, logos, pricing, dates
   or benchmarks. Always call the "about a minute" sync figure a design target.
-- **Mark every unreleased command as planned.** Use the blue `badge-planned` and a `# PLANNED`
-  comment in terminals.
+- **Mark every command that is not a supported release.** Unreleased commands are *planned*
+  (blue `badge-planned`, `# PLANNED` comment in terminals). Commands that ship hidden in a
+  released CLI but are not a supported workflow are *preview*: the same blue
+  `badge-planned` / `li.is-planned` styling with the label "preview" and a `# PREVIEW`
+  comment. Reusing the planned style is intentional; the label carries the difference.
   - Available today in the AgentKit CLI: the local `ak secrets` vault (`set`, `get`, `list`,
     `rotate`, `import-env`, `grant`, `grants`, `approve`, `revoke`, `audit`) and
     `${secret:NAME}` references.
-  - `ak login` exists for the AgentKit account; using it for sync is planned.
-  - Planned: `ak secrets sync enable`, SAS device enrollment, and
-    `ak secrets search|describe|request|run`.
+  - `ak login` exists for the AgentKit account; the preview sync commands use it.
+  - Preview (hidden in `v3.0.0-beta.30`): `ak secrets sync enable`, SAS device enrollment,
+    device removal and recovery, against the production sync API, which is live before
+    the external review. Say so wherever they appear.
+  - Planned: `ak secrets search|describe|request|run`.
   - AgentKit is in closed beta, so the site links to agentkit.best instead of printing an
     install command.
 - **Call guarantees "design properties of protocol v1 as proposed"** until issue #8 signs off.

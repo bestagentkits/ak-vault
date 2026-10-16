@@ -8,7 +8,7 @@ status: "Protocol v1 proposed, in security review. Cloud sync not generally avai
 
 ak-vault is the opt-in, end-to-end encrypted sync layer for AgentKit's `ak secrets`. Secrets are sealed on your device before they leave it, agents keep reading from the local vault, and with sync off nothing touches the network.
 
-> **Status: Protocol v1 · in security review.** Cloud sync is not generally available. The production sync API stays switched off until an independent security review signs off. Do not put production credentials in it yet. The local `ak secrets` vault works today without it.
+> **Status: Protocol v1 · in security review.** Cloud sync is not generally available. The production sync API is live as a pre-release preview, by owner decision, before the independent security review: anyone signed in to AgentKit who runs the preview `ak secrets sync` commands can use it. Do not put production credentials in it yet. The local `ak secrets` vault works today without it.
 
 ## 1. The problem
 
@@ -61,7 +61,7 @@ Full threat model: [Security model](https://vault.agentkit.best/security/index.m
 
 ## 5. Start local today
 
-The local vault ships in the AgentKit CLI now. Sync and agent-discovery commands are planned and not available yet.
+The local vault ships in the AgentKit CLI now. Sync commands are a hidden, unsupported preview in the released CLI; agent-discovery commands are planned and not available yet.
 
 1. **Import your `.env`** (available). Delete the plaintext file once you have checked the import.
    ```sh
@@ -72,9 +72,9 @@ The local vault ships in the AgentKit CLI now. Sync and agent-discovery commands
    ```
    OPENAI_API_KEY=${secret:OPENAI_API_KEY}
    ```
-3. **Sync a second device** (planned, not available yet; syntax may change). Opt in, then enroll another device by comparing a six-digit code on both screens.
+3. **Sync a second device** (preview: hidden in the released CLI, not a supported workflow; syntax may change). Opt in, then enroll another device by comparing a six-digit code on both screens.
    ```sh
-   # PLANNED: not available yet
+   # PREVIEW: hidden in the released CLI, unsupported, syntax may change
    ak secrets sync enable
    ```
 
@@ -86,14 +86,14 @@ Work is tracked in the [epic, issue #1](https://github.com/bestagentkits/ak-vaul
 
 - **Local vault: available.** Keychain or age-encrypted file vault, agent grants, approvals and an audit ledger in the AgentKit CLI.
 - **Protocol v1 and test vectors: in review.** Spec, TypeScript reference and a Go implementation that reproduce every vector ([#2](https://github.com/bestagentkits/ak-vault/issues/2)).
-- **Worker and storage: staging only.** Cloudflare Worker with a SQLite Durable Object per vault, including shared-vault membership. Production sync is switched off ([#4](https://github.com/bestagentkits/ak-vault/issues/4), [#5](https://github.com/bestagentkits/ak-vault/issues/5)).
-- **Client sync in the CLI: in development.** The sync commands in `ak` are not released yet.
-- **Security gate: required for GA.** Red team, staging soak, rollback rehearsal and an independent review ([#8](https://github.com/bestagentkits/ak-vault/issues/8)).
+- **Worker and storage: preview.** Cloudflare Worker with a SQLite Durable Object per vault, including shared-vault membership. The production sync API is live as a pre-release preview, before the external review ([#4](https://github.com/bestagentkits/ak-vault/issues/4), [#5](https://github.com/bestagentkits/ak-vault/issues/5)).
+- **Client sync in the CLI: preview.** The sync commands ship hidden in the released `ak` beta (`v3.0.0-beta.30`); a release with the removal-fence client is pending.
+- **Security gate: required for GA.** Red team, a two-device end-to-end run with real clients, rollback rehearsal and an independent review ([#8](https://github.com/bestagentkits/ak-vault/issues/8)).
 - After personal sync: read-only CI identities ([#6](https://github.com/bestagentkits/ak-vault/issues/6)) and portable policy with encrypted audit ([#7](https://github.com/bestagentkits/ak-vault/issues/7)).
 
 ## 7. Questions
 
-- **Can I use cloud sync today?** No. Protocol v1 is proposed and in security review, and the production sync API stays switched off until an independent review signs off. The local `ak secrets` vault works today.
+- **Can I use cloud sync today?** Only as a preview. Protocol v1 is proposed and in security review, and cloud sync is not generally available. By owner decision the production sync API is live before that review as a pre-release preview: if you are signed in and run the preview `ak secrets sync` commands, your device syncs with it. It is not yet recommended for production credentials. The local `ak secrets` vault works today.
 - **Can AgentKit read my secrets?** The design says no: the server stores ciphertext and wrapped keys only. It can see the metadata in the table above. Treat this as a design claim until the review completes.
 - **What happens if the server is down?** Nothing changes for running agents. `resolve` reads the local vault. Offline changes sync on the next successful connection, and conflicting edits are kept for you to resolve.
 - **Can I give a teammate access to just one secret?** Not within one vault. Put shared secrets in a separate shared vault.

@@ -120,8 +120,12 @@ inside the included 25 billion and storage is minor.
   recorded where it is made.
 - Revocation checks double Durable Object requests, and they all go to one global
   registry object (`worker/src/revocation/`). One object's throughput therefore
-  caps total API throughput; measure it in the soak and cache or shard revocation
-  state before that ceiling matters.
+  caps total API throughput. The lab Worker measured about 110 ms of active time
+  per check ([#10](https://github.com/bestagentkits/ak-vault/issues/10)), which
+  suggests a ceiling of roughly 10 checks a second for the whole service; beyond it
+  requests queue and then fail closed with `503`. Production sync is live, so watch the
+  registry's request rate and cache or shard revocation state before it nears that
+  ceiling.
 - The Worker runs before static assets (`run_worker_first` in the Wrangler config)
   so the landing page gets the same security headers. Landing traffic is therefore
   billed as Worker requests, not free asset requests; this is small next to API
@@ -134,7 +138,11 @@ inside the included 25 billion and storage is minor.
 ## Replacing estimates with measurements
 
 Per-call inputs are measured above. Still open: devices per vault, writes per
-vault-day and the pull rate a real sync service uses. Measure those during a
-two-device staging soak with real clients, by route, from the analytics datasets
-above (vault and registry namespaces of the staging Worker), and note the date and
-workload. Re-measure the per-call inputs after any change to the request path.
+vault-day and the pull rate a real sync service uses. The owner replaced the
+two-device staging soak with the [Docker two-device e2e](../../e2e/docker/README.md)
+([release gates](../security/release-gates.md#staging-soak)), which runs the real
+sync service under `wrangler dev` and so has no Cloudflare analytics. Measure these
+inputs from the production Worker's analytics datasets above (vault and registry
+namespaces), by route, now that ak-web production issues vault tokens, as real
+clients sync, and note the date and workload. Re-measure the per-call inputs after any
+change to the request path.

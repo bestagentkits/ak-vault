@@ -39,6 +39,15 @@ with the `sync_disabled` error code; the landing page, `/healthz` and `/v1/meta`
 stay up. Any value other than exactly `true` disables sync (fail closed). Exact
 route behavior is owned by the Worker source and its tests.
 
+Production runs with sync **on** (`"true"` in the top-level `vars` of the Worker
+configuration) since the owner's 2026-10-16 decision on
+[#8](https://github.com/bestagentkits/ak-vault/issues/8), so every deploy from `main`
+ships sync enabled unless that value is changed. Turning it off is the first
+containment step. Agents may run the [emergency kill switch](#emergency-kill-switch)
+without asking first (owner decision on
+[#53](https://github.com/bestagentkits/ak-vault/issues/53)); record it on the
+incident issue and notify the owner at once.
+
 - To disable: set the variable to `false` for the production environment in the
   Worker configuration and deploy through the gated workflow. That path is a pull
   request, CI on it and on the merge (about 1 minute each in October 2026), the
@@ -46,7 +55,9 @@ route behavior is owned by the Worker source and its tests.
   for minutes, not seconds. When that is too slow, use the
   [emergency kill switch](#emergency-kill-switch).
 - To re-enable: only after the incident issue records the cause and fix, and the
-  [release gates](../security/release-gates.md) relevant to the cause are green.
+  [release gates](../security/release-gates.md) relevant to the cause are green,
+  through a reviewed pull request that sets `"true"` again and the gated Deploy
+  workflow, approved by the owner.
 - Verify from outside: `GET /healthz` reports `sync_enabled`, and any `/v1/vaults/...`
   request answers `503 sync_disabled` instead of `401`. Edge propagation is not
   atomic: in the rehearsal, requests still reached the previous version up to 12 s
@@ -83,7 +94,16 @@ the pull request and the production reviewer (owner decision on
 stop faster than the gated path allows. It needs an operator holding production
 Cloudflare credentials outside GitHub: the GitHub Environment secrets used by CI
 cannot be read back, so make sure such credentials exist before relying on this
-path. Load them as `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` without
+path. Holder (owner decision on #53): the operator's local Cloudflare token outside
+GitHub, which is the token staging and production shared during bootstrap. Since
+2026-10-16 the production CI deploy uses its own production-only token, so the
+local token is no longer used by production CI; staging CI still deploys with it
+until staging gets its own token (see the
+[release gates](../security/release-gates.md#production-deploy-control)). Reading the production deployment status
+(step 3) shows the token is live, not that it may deploy; its permissions should be
+recorded on #53 by the owner, and a narrow kill-switch token is recommended. Replace
+it before it is revoked: without it, turning sync off needs a pull request and the
+owner's approval. Load them as `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` without
 echoing them, and only after `pnpm install` (as CI does).
 
 - **Never use this path to enable sync**, or to ship code or any other config
@@ -123,8 +143,10 @@ echoing them, and only after `pnpm install` (as CI does).
 6. **The same day**, open a pull request that sets `VAULT_SYNC_ENABLED` to `"false"`
    in the top-level (production) `vars` of `worker/wrangler.jsonc`, linking the
    incident issue. If `main` already has `"false"` there, record that on the
-   incident issue instead. A Deploy run after the merge refuses at the gate because
-   of the freeze; that is expected.
+   incident issue instead. Until that pull request merges, `main` still says
+   `"true"`, so any deploy from `main` would turn sync back on; that is why the
+   freeze stays set. A Deploy run after the merge refuses at the gate because of
+   the freeze; that is expected.
 7. **Unfreeze only after that pull request merges.** Repeat the in-flight check
    from step 2 and cancel any Deploy run still waiting for review (it carries an
    older commit), then delete the variable and run the Deploy workflow
@@ -214,8 +236,10 @@ names, HTTP statuses and stable error codes.
 **Protocol revisions without a version bump.** A revision listed under "Revisions" in
 the [spec](../protocol/v1/spec.md#revisions) changes wire bodies, so a vault created
 before it may no longer verify. Such vaults exist only on staging (production sync
-is disabled until the [release gates](../security/release-gates.md) are met) and hold
-synthetic data; abandon them and create fresh vaults rather than migrating. How a
+was off until 2026-10-16, after every revision listed so far) and hold synthetic
+data; abandon them and create fresh vaults rather than migrating. A future revision
+that changes stored data also reaches production vaults, which hold real users'
+data: plan a migration for it instead. How a
 stale vault shows up depends on the revision:
 
 - Vaults from before the signed-wrap-set / removal-fence revision: the Worker

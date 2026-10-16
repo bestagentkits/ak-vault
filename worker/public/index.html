@@ -99,7 +99,7 @@
           <a class="btn btn-primary btn-lg magnetic" href="#how">See how it works<svg class="nudge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
           <a class="btn btn-ghost btn-lg" href="/guide/">Start with the local vault</a>
         </div>
-        <div class="callout hero-status reveal" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><p><strong>Cloud sync is not generally available.</strong> The production sync API stays switched off until an independent security review signs off. Do not put production credentials in it yet. The local <code>ak secrets</code> vault works today without it.</p></div>
+        <div class="callout hero-status reveal" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><p><strong>Cloud sync is not generally available.</strong> The production sync API is live as a pre-release preview, by owner decision, before the independent security review: anyone signed in to AgentKit who runs the preview <code>ak secrets sync</code> commands can use it. Do not put production credentials in it yet. The local <code>ak secrets</code> vault works today without it.</p></div>
 
         <figure class="stage reveal" aria-labelledby="stage-caption">
           <div class="stage-bar">
@@ -348,8 +348,8 @@
       <div class="container">
         <div class="section-head reveal">
           <span class="eyebrow">Start</span>
-          <h2 id="quick-title">Start local today. Turn on sync when it ships.</h2>
-          <p>The local vault ships in the AgentKit CLI now. Sync and agent-discovery commands are planned and not available yet.</p>
+          <h2 id="quick-title">Start local today.</h2>
+          <p>The local vault ships in the AgentKit CLI now. Sync commands are a hidden, unsupported preview in the released CLI; agent-discovery commands are planned and not available yet.</p>
         </div>
         <div class="quick-grid" data-stagger>
           <div class="card spot quick-card reveal">
@@ -370,11 +370,11 @@
             </div>
           </div>
           <div class="card spot quick-card reveal">
-            <span class="num">03 <span class="badge badge-planned">planned</span></span>
+            <span class="num">03 <span class="badge badge-planned">preview</span></span>
             <h3>Sync a second device</h3>
             <p>Opt in, then enroll another device by comparing a six-digit code on both screens. Syntax may change.</p>
-            <div class="terminal"><div class="terminal-bar"><span class="title">shell · planned</span><button class="copy-btn" type="button" data-copy-target="#cmd-sync" aria-label="Copy the planned sync command"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
-<pre tabindex="0"><code id="cmd-sync"><span class="c"># PLANNED: not available yet</span>
+            <div class="terminal"><div class="terminal-bar"><span class="title">shell · preview</span><button class="copy-btn" type="button" data-copy-target="#cmd-sync" aria-label="Copy the preview sync command"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
+<pre tabindex="0"><code id="cmd-sync"><span class="c"># PREVIEW: hidden in the released CLI, unsupported, syntax may change</span>
 <span class="p">$ </span>ak secrets sync enable</code></pre>
             </div>
           </div>
@@ -396,9 +396,9 @@
         <ol class="track reveal">
           <li class="is-done"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><h3>Local vault</h3><div class="meta"><span class="badge badge-ok">available</span></div><p>Ships in the AgentKit CLI: keychain or age-encrypted file vault, agent grants, approvals and an audit ledger.</p></li>
           <li class="is-done"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><h3>Protocol v1 and test vectors</h3><div class="meta"><span class="badge badge-review">in review</span></div><p>Spec, TypeScript reference and a Go implementation that reproduce every vector. <a href="https://github.com/bestagentkits/ak-vault/issues/2">#2</a></p></li>
-          <li class="is-done"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><h3>Worker and storage</h3><div class="meta"><span class="badge">staging only</span></div><p>Cloudflare Worker with a SQLite Durable Object per vault, including shared-vault membership. Production sync is switched off. <a href="https://github.com/bestagentkits/ak-vault/issues/4">#4</a>, <a href="https://github.com/bestagentkits/ak-vault/issues/5">#5</a></p></li>
-          <li class="is-now"><span class="mark" aria-hidden="true"></span><h3>Client sync in the CLI</h3><div class="meta"><span class="badge badge-planned">in development</span></div><p>The sync commands in <code>ak</code> are not released yet.</p></li>
-          <li class="is-next"><span class="mark" aria-hidden="true"></span><h3>Security gate</h3><div class="meta"><span class="badge badge-review">required for GA</span></div><p>Red team, staging soak, rollback rehearsal and an independent review. <a href="https://github.com/bestagentkits/ak-vault/issues/8">#8</a></p></li>
+          <li class="is-done"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><h3>Worker and storage</h3><div class="meta"><span class="badge">preview</span></div><p>Cloudflare Worker with a SQLite Durable Object per vault, including shared-vault membership. The production sync API is live as a pre-release preview, before the external review. <a href="https://github.com/bestagentkits/ak-vault/issues/4">#4</a>, <a href="https://github.com/bestagentkits/ak-vault/issues/5">#5</a></p></li>
+          <li class="is-now"><span class="mark" aria-hidden="true"></span><h3>Client sync in the CLI</h3><div class="meta"><span class="badge badge-planned">preview</span></div><p>The sync commands ship hidden in the released <code>ak</code> beta (<code>v3.0.0-beta.30</code>); a release with the removal-fence client is pending.</p></li>
+          <li class="is-next"><span class="mark" aria-hidden="true"></span><h3>Security gate</h3><div class="meta"><span class="badge badge-review">required for GA</span></div><p>Red team, a two-device end-to-end run with real clients, rollback rehearsal and an independent review. <a href="https://github.com/bestagentkits/ak-vault/issues/8">#8</a></p></li>
         </ol>
         <p class="note reveal">After personal sync: read-only CI identities (<a href="https://github.com/bestagentkits/ak-vault/issues/6">#6</a>) and portable policy with encrypted audit (<a href="https://github.com/bestagentkits/ak-vault/issues/7">#7</a>).</p>
       </div>
@@ -412,7 +412,7 @@
           <h2 id="faq-title">Questions worth asking a secrets product.</h2>
         </div>
         <div class="faq reveal">
-          <details><summary>Can I use cloud sync today?</summary><div><p>No. Protocol v1 is proposed and in security review, and the production sync API stays switched off until an independent review signs off (<a href="https://github.com/bestagentkits/ak-vault/issues/8">#8</a>). The local <code>ak secrets</code> vault works today.</p></div></details>
+          <details><summary>Can I use cloud sync today?</summary><div><p>Only as a preview. Protocol v1 is proposed and in security review (<a href="https://github.com/bestagentkits/ak-vault/issues/8">#8</a>), and cloud sync is not generally available. By owner decision the production sync API is live before that review as a pre-release preview: if you are signed in and run the preview <code>ak secrets sync</code> commands, your device syncs with it. It is not yet recommended for production credentials. The local <code>ak secrets</code> vault works today.</p></div></details>
           <details><summary>Can AgentKit read my secrets?</summary><div><p>The design says no: the server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed under <a href="#server-view">two views of one secret</a>. Treat this as a design claim until the review completes.</p></div></details>
           <details><summary>What happens if the server is down?</summary><div><p>Nothing changes for running agents. <code>resolve</code> reads the local vault and never waits on the network. Changes made while offline sync on the next successful connection, and conflicting edits are kept for you to resolve.</p></div></details>
           <details><summary>Can I give a teammate access to just one secret?</summary><div><p>Not within one vault. A vault key decrypts every item in the vault, so v1 makes no per-secret access claim. Put the secrets you want to share in a separate shared vault.</p></div></details>

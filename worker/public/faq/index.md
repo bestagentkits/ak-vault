@@ -12,7 +12,7 @@ Straight answers about status, privacy, everyday use, teams, agents and recovery
 
 ### Can I use cloud sync today?
 
-No. Protocol v1 is proposed and in security review, and the production sync API stays switched off until an independent review signs off on [issue #8](https://github.com/bestagentkits/ak-vault/issues/8). The local `ak secrets` vault works today.
+Only as a preview. Protocol v1 is proposed and in security review on [issue #8](https://github.com/bestagentkits/ak-vault/issues/8), and cloud sync is not generally available. By owner decision the production sync API is live before that review as a pre-release preview: if you are signed in and run the preview `ak secrets sync` commands, your device syncs with it. It is not yet recommended for production credentials. The local `ak secrets` vault works today.
 
 ### What works right now?
 

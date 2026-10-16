@@ -29,7 +29,7 @@ The server relays enrollment messages, so it could try to slip in a key of its o
 3. **You compare, then approve.** If the codes match, the owner device signs a `device_add` event that commits to the enrollment transcript and to the vault key wrapped for the new device. If they differ, enrollment aborts.
 4. **The new device verifies first.** It checks the signed member list and wrap set against the owner's signature before it unwraps anything.
 
-The protocol defines this flow; the enrollment experience in `ak` is **planned**. If every device is lost, a fresh device can enroll itself with your password or recovery key through the encrypted recovery bundle.
+The protocol defines this flow; the enrollment experience in `ak` is a hidden **preview** in the released CLI, not yet a supported workflow. If every device is lost, a fresh device can enroll itself with your password or recovery key through the encrypted recovery bundle.
 
 ## 3. Conflicts: two edits, one secret, neither lost
 
@@ -54,7 +54,7 @@ With last-writer-wins, one of these edits would have silently replaced the other
 All encryption, decryption and signing of vault data happens in clients, using audited libraries. The server verifies tokens and request signatures, orders writes and stores ciphertext. There is no custom cryptography anywhere.
 
 - **Clients (agentkit CLI and Desktop):** device signing and exchange keys; encrypt, sign, verify, decrypt; the local vault stays authoritative.
-- **Cloudflare Worker (this project):** token, device proof and revocation checks; versioned protocol and test vectors; production sync switched off until review.
+- **Cloudflare Worker (this project):** token, device proof and revocation checks; versioned protocol and test vectors; production sync live as a pre-release preview, before the external review.
 - **Durable Object per vault (storage):** SQLite-backed, one per vault; revisions, conflicts, tombstones; ciphertext and minimal metadata.
 - **ak-web (accounts):** issues device-bound ES256 tokens and feeds revocations to the Worker; the browser never decrypts vault data.
 

@@ -13,8 +13,11 @@ Landing page: https://vault.agentkit.best
 - **Security review: pending.** Tracked on
   [#8](https://github.com/bestagentkits/ak-vault/issues/8).
 - **Sync is not generally available.** Do not store production credentials in it.
-  The production sync API is disabled until the
-  [release gates](./docs/security/release-gates.md) pass.
+  By owner decision on #8 the production sync API is live as a pre-release
+  preview before the external review: any logged-in user running the preview
+  `ak secrets sync` commands can sync to it. It is not externally reviewed and not
+  yet recommended for production credentials. Open items are in the
+  [release gates](./docs/security/release-gates.md).
 
 AgentKit's local vault works without this service and without a network
 connection. Sync is off unless you turn it on.

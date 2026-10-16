@@ -179,7 +179,7 @@
             <li><div class="step-head"><h3>You compare, then approve</h3></div><div class="step-body"><p>If the codes match, the owner device signs a <code>device_add</code> event that commits to the enrollment transcript and to the vault key wrapped for the new device. If they differ, enrollment aborts.</p></div></li>
             <li><div class="step-head"><h3>The new device verifies first</h3></div><div class="step-body"><p>It checks the signed member list and wrap set against the owner's signature before it unwraps anything.</p></div></li>
           </ol>
-          <div class="callout is-info mt-5" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><p>The protocol defines this flow; the enrollment experience in <code>ak</code> is <strong>planned</strong>. If every device is lost, a fresh device can enroll itself with your password or recovery key through the encrypted recovery bundle.</p></div>
+          <div class="callout is-info mt-5" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><p>The protocol defines this flow; the enrollment experience in <code>ak</code> is a hidden <strong>preview</strong> in the released CLI, not yet a supported workflow. If every device is lost, a fresh device can enroll itself with your password or recovery key through the encrypted recovery bundle.</p></div>
         </div>
       </div>
     </section>
@@ -257,7 +257,7 @@
           <div class="arch">
             <div class="arch-node"><span class="repo">agentkit · CLI and Desktop</span><h3>Clients</h3><ul><li>Device signing and exchange keys</li><li>Encrypt, sign, verify, decrypt</li><li>Local vault stays authoritative</li></ul></div>
             <div class="arch-link" aria-hidden="true"><span></span></div>
-            <div class="arch-node is-here"><span class="repo">ak-vault · this project</span><h3>Cloudflare Worker</h3><ul><li>Token, device proof and revocation checks</li><li>Versioned protocol and test vectors</li><li>Production sync switched off until review</li></ul></div>
+            <div class="arch-node is-here"><span class="repo">ak-vault · this project</span><h3>Cloudflare Worker</h3><ul><li>Token, device proof and revocation checks</li><li>Versioned protocol and test vectors</li><li>Production sync live as a pre-release preview, before the external review</li></ul></div>
             <div class="arch-link" aria-hidden="true"><span></span></div>
             <div class="arch-node is-here"><span class="repo">ak-vault · storage</span><h3>Durable Object per vault</h3><ul><li>SQLite-backed, one per vault</li><li>Revisions, conflicts, tombstones</li><li>Ciphertext and minimal metadata</li></ul></div>
           </div>
