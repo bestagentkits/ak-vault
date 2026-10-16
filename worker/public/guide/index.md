@@ -75,7 +75,7 @@ Planned commands that let an agent find and request secrets without ever seeing 
 
 Some of this works today on the local vault; the device-removal and recovery steps are in preview.
 
-1. **Revoke the lost device** (preview). A removed device is checked on every request, so it is refused even with an unexpired token. Removal also moves the vault to a new key epoch before new writes. The released beta (`v3.0.0-beta.30`) cannot remove a device or recover yet: the service refuses them until a release with the removal-fence client. Until then, revoke the lost device in your AgentKit account, which the service enforces on its next request.
+1. **Revoke the lost device** (preview). A removed device is checked on every request, so it is refused even with an unexpired token. Removal also moves the vault to a new key epoch before new writes. Removal and recovery need `v3.0.0-beta.31` or later, which includes the removal-fence client; the service refuses them from older releases. On an older release, upgrade or revoke the lost device in your AgentKit account, which the service enforces on its next request.
 2. **Rotate what it could read** (available). Revocation cannot take back values the device already decrypted. Rotate sensitive credentials at the provider, then store the new value.
    ```sh
    ak secrets rotate OPENAI_API_KEY
