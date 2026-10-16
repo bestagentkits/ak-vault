@@ -1,0 +1,5 @@
+# Changes to the deploy pipeline and Worker deploy config need the owner's review.
+# Staging deploys automatically from main with a Cloudflare token that can also
+# reach production, so these paths are the path to production.
+/.github/ @mrgoonie
+/worker/wrangler.jsonc @mrgoonie
