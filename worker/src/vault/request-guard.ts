@@ -1,11 +1,13 @@
 /**
  * Per-vault request checks that need vault state: rate limit, proof of
  * possession with single-use `jti`, membership of `sub`/`did`, token scope and
- * role. Order (after the vault-exists check): membership -> proof -> scope ->
- * role, then the rate limit, all before any item, wrap, audit or recovery data
- * is read or written. The rate limit is charged after authorization so a request
- * refused there (for example a stolen token without the device key) spends a
- * separate budget and cannot exhaust the budget of the device it names.
+ * role. Order (after the vault-exists check): read-only check of the device's
+ * `authorized` budget -> Idempotency-Key format -> membership -> proof -> scope
+ * -> role -> charge the `authorized` budget, all before any item, wrap, audit or
+ * recovery data is read or written. A request refused before or during
+ * authorization (for example a stolen token without the device key) is charged
+ * to the separate `refused` budget, so it cannot exhaust the budget of the
+ * device it names.
  */
 import { isAkvError, verifyProof, type DeviceRecord, type MembershipState } from '@ak-vault/protocol';
 import type { Scope } from '../auth/jwt-verify.js';

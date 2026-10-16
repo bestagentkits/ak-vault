@@ -48,6 +48,8 @@ describe('non-existent vaults', () => {
       [victim.owner, `/v1/vaults/${victim.vaultId}`, victim.genesisBody(), { proofSecret: intruder.owner.keys.signSecret }],
       // A read-only token.
       [victim.owner, `/v1/vaults/${victim.vaultId}`, victim.genesisBody(), { scope: 'vault:read' }],
+      // A valid genesis with a malformed Idempotency-Key.
+      [victim.owner, `/v1/vaults/${victim.vaultId}`, victim.genesisBody(), { idempotencyKey: 'k'.repeat(200) }],
     ];
     for (const [device, path, body, opts] of cases) {
       const res = await call(device, 'PUT', path, body, opts);

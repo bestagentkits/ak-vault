@@ -1,10 +1,11 @@
 /**
  * One SQLite-backed Durable Object per vault: the serialization point for every
- * mutation. `handle` runs vault-exists check -> authorization (membership,
- * proof, scope, role) -> rate limit -> idempotency -> one `transactionSync` per
- * mutation. A request refused at authorization is counted against the device's
- * separate `refused` budget, never its `authorized` one. Errors leave as stable
- * codes with fixed messages.
+ * mutation. `handle` runs vault-exists check -> read-only check of the device's
+ * `authorized` rate budget -> Idempotency-Key format -> authorization
+ * (membership, proof, scope, role) -> charge the `authorized` budget ->
+ * idempotency replay -> one `transactionSync` per mutation. A request refused
+ * before or during authorization is charged to the device's separate `refused`
+ * budget instead. Errors leave as stable codes with fixed messages.
  *
  * No storage is written for a vault that does not exist: every op other than
  * genesis answers 404 before the rate counter or proof `jti` tables are touched,
@@ -73,7 +74,11 @@ export class VaultDurableObject extends DurableObject<Env> {
     try {
       this.refuseWhileRestorePending();
       if (req.op === 'genesis') {
-        if (!this.schemaReady) preflightGenesis(req);
+        if (!this.schemaReady) {
+          // Everything checkable without storage runs before the schema is created.
+          preflightGenesis(req);
+          validateIdempotencyKey(req.idempotencyKey);
+        }
         this.ensureSchema();
       } else if (!this.vaultExists()) throw new ApiError('not_found');
       const auth = this.authorizeAndCharge(req);

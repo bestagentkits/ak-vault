@@ -91,4 +91,13 @@ describe('rate limit', () => {
     expect((await fx.get(reader, '/recovery')).status).toBe(429);
     expect((await fx.get(reader, '/membership')).status).toBe(200);
   });
+
+  it('a device that is not a member spends only its own refused budget', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Math.floor(Date.now() / 60_000) * 60_000 + 10_000 });
+    const fx = await VaultFixture.create();
+    const outsider = fx.newDevice({ account: `acct-${randomId()}` });
+    for (let i = 0; i < 120; i++) expect((await fx.get(outsider, '/changes')).status).toBe(403);
+    expect((await fx.get(outsider, '/changes')).status).toBe(429);
+    expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
+  });
 });
