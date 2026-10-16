@@ -3,6 +3,8 @@
  *   GET /healthz, GET /v1/meta       public, always on
  *   /v1/vaults/...                    sync API (kill switch VAULT_SYNC_ENABLED)
  *   POST /internal/v1/revocations     HMAC-authenticated ak-web revocation feed
+ *   POST /internal/v1/operator        HMAC-authenticated operator restore of one
+ *                                     vault (404 unless its secret is set)
  *   everything else                   landing site from ./public
  * Every response carries the security headers; every API request emits exactly
  * one operational log line (route template, status, code, latency, vault tag).
@@ -15,6 +17,7 @@ import { serveAsset } from './http/static-assets.js';
 import { handleApi, type RouteInfo } from './routes/api-handler.js';
 import { healthz } from './routes/meta-routes.js';
 import { handleRevocationWebhook } from './routes/revocation-webhook.js';
+import { handleOperatorRequest, OPERATOR_PATH } from './routes/operator-restore.js';
 import { ApiError } from './http/errors.js';
 
 export { VaultDurableObject } from './vault/vault-durable-object.js';
@@ -30,6 +33,10 @@ async function route(request: Request, env: Env, info: RouteInfo): Promise<ApiRe
   if (pathname === '/internal/v1/revocations') {
     info.template = 'POST /internal/v1/revocations';
     return handleRevocationWebhook(request, env);
+  }
+  if (pathname === OPERATOR_PATH) {
+    info.template = 'POST /internal/v1/operator';
+    return handleOperatorRequest(request, env, info);
   }
   if (pathname.startsWith('/internal/')) throw new ApiError('not_found');
   return handleApi(request, env, info);

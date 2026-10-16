@@ -10,8 +10,9 @@
  * author/owner, scope, proof signature) passes. Only a valid genesis creates state.
  */
 import { DurableObject } from 'cloudflare:workers';
+import { randomId } from '@ak-vault/protocol';
 import type { Env } from '../env.js';
-import { ApiError, errorResult, toApiError, type ApiResult } from '../http/errors.js';
+import { ApiError, errorResult, okResult, toApiError, type ApiResult } from '../http/errors.js';
 import { appendAudit, readAudit } from './audit-store.js';
 import { backfillLogHeads } from './change-log-heads.js';
 import { getChanges } from './changes-feed.js';
@@ -20,6 +21,7 @@ import { lookupIdempotent, storeIdempotent, validateIdempotencyKey } from './ide
 import { getItem, putRecord } from './item-store.js';
 import { handleGenesis, handleMembershipGet, handleMembershipPost, handleWrapsGet } from './membership-handlers.js';
 import { MembershipStore } from './membership-store.js';
+import { bookmarkForTime, currentBookmark, scheduleRestore } from './point-in-time-restore.js';
 import { getRecovery, putRecovery } from './recovery-store.js';
 import { enforceRateLimit } from './request-guard.js';
 import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
@@ -31,6 +33,14 @@ export class VaultDurableObject extends DurableObject<Env> {
   private readonly membership: MembershipStore;
   /** Whether the vault tables exist (created by the first genesis attempt). */
   private schemaReady: boolean;
+  /** Random per start; the operator route reads it to confirm a restart. */
+  private readonly instanceId = randomId();
+  /**
+   * Set once an operator restore is scheduled. In memory only, so the restart that
+   * applies the restore clears it; until then every request is refused, so nothing
+   * is acknowledged that the restore would discard.
+   */
+  private restorePending = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -59,6 +69,7 @@ export class VaultDurableObject extends DurableObject<Env> {
 
   async handle(req: VaultRequest): Promise<ApiResult> {
     try {
+      this.refuseWhileRestorePending();
       if (req.op === 'genesis') {
         if (!this.schemaReady) preflightGenesis(req);
         this.ensureSchema();
@@ -82,6 +93,53 @@ export class VaultDurableObject extends DurableObject<Env> {
     } catch (err) {
       return errorResult(toApiError(err));
     }
+  }
+
+  private refuseWhileRestorePending(): void {
+    if (this.restorePending) throw new ApiError('internal', { status: 503, message: 'vault restore in progress', headers: { 'Retry-After': '5' } });
+  }
+
+  /**
+   * Operator point-in-time recovery (RPC from the operator route only; the sync
+   * API never reaches it). These also run for an object without a vault, so a
+   * restore to before genesis can be undone. Results are plain objects so errors
+   * cross RPC as data.
+   */
+  async operatorBookmark(atMs: number | null, nowMs: number): Promise<ApiResult> {
+    try {
+      this.refuseWhileRestorePending();
+      const storage = this.ctx.storage;
+      const bookmark = atMs === null ? await currentBookmark(storage) : await bookmarkForTime(storage, atMs, nowMs);
+      return okResult({ bookmark, vault_exists: this.vaultExists() });
+    } catch (err) {
+      return errorResult(toApiError(err));
+    }
+  }
+
+  /**
+   * Schedule a restore (compare-and-swap on the current bookmark). Returns the undo
+   * bookmark; from here until the restart every request is refused.
+   */
+  async operatorScheduleRestore(target: string, expectedCurrent: string): Promise<ApiResult> {
+    try {
+      this.refuseWhileRestorePending();
+      const undo = await scheduleRestore(this.ctx.storage, target, expectedCurrent, () => {
+        this.restorePending = true;
+      });
+      return okResult({ restored_to: target, undo_bookmark: undo });
+    } catch (err) {
+      return errorResult(toApiError(err));
+    }
+  }
+
+  /** Restart the object so a scheduled restore takes effect. The calling RPC receives an error by design. */
+  operatorRestart(): void {
+    this.ctx.abort('operator point-in-time restore');
+  }
+
+  /** This start's instance ID and whether a restore is pending (confirms a restart). */
+  operatorInstance(): { instance: string; restorePending: boolean } {
+    return { instance: this.instanceId, restorePending: this.restorePending };
   }
 
   private read(req: VaultRequest, auth: Authorized): ApiResult {

@@ -18,6 +18,11 @@ export interface Env {
   REVOCATION_WEBHOOK_SECRET?: string;
   /** Previous HMAC key, accepted only during a rotation overlap (secret). */
   REVOCATION_WEBHOOK_SECRET_PREVIOUS?: string;
+  /**
+   * HMAC key for the operator restore route (secret, never in config). Unset by
+   * default: the route then answers 404. Set only for a restore, then delete.
+   */
+  VAULT_OPERATOR_SECRET?: string;
 }
 
 type WorkerEnv = Env;

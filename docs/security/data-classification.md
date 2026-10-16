@@ -31,6 +31,7 @@ rules. Rationale is in [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md).
 | Timestamps and ciphertext sizes | Inherent to storage; sizes leak approximate value length |
 | Token claims: `sub`, `sid`, `did`, `scope`, `jti` | Authentication, authorization and revocation |
 | Quota and rate-limit counters | Abuse protection |
+| Durable Object point-in-time bookmarks (operator restore route only) | Positions in a vault object's storage history; they carry no vault contents |
 | Client IP and TLS metadata at the Cloudflare edge | Inherent to the platform |
 
 `device_remove.reason` is a closed set (`lost`, `stolen`, `retired`,
@@ -43,6 +44,8 @@ so it carries no free text.
 
 - Never record request or response bodies, ciphertext, wrap material, tokens,
   proofs, idempotency keys, recovery bundles, or any field from the encrypted table.
+  The operator restore route's signature and the `VAULT_OPERATOR_SECRET` it is keyed
+  with are secrets. Its bookmarks go on the incident issue, not into logs.
 - Allowed fields: route template, status, stable error code, vault ID, device ID,
   latency, sizes. Item IDs appear only where the request path already carries them.
 - Client IPs are not written to application logs. If a rate limiter keys on them,
