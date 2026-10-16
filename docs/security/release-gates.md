@@ -1,20 +1,29 @@
 # Release gates
 
 The go/no-go contract for issue
-[#8](https://github.com/bestagentkits/ak-vault/issues/8). Production sync carries
-real credentials only after every gate below is satisfied **at the exact commit
-being released** and the evidence is linked on #8. A checked box without linked
+[#8](https://github.com/bestagentkits/ak-vault/issues/8). Sync becomes GA, and
+recommended for real credentials, only after every gate below is satisfied **at the
+exact commit being released** and the evidence is linked on #8. A checked box without linked
 evidence does not count.
 
-**Production sync is enabled before this list is complete.** On 2026-10-16 the owner
-waived the external-review gate for turning `VAULT_SYNC_ENABLED` on in production
-([owner waivers](#owner-waivers)). That is an owner waiver, not a review sign-off.
-Production sync was enabled under that decision while ADR 0001 approval, the staging
+**Production sync is live before this list is complete.** On 2026-10-16 the owner
+waived the external-review gate for turning `VAULT_SYNC_ENABLED` on in production and
+decided that production sync is fully live, with ak-web production minting vault
+tokens ([owner waivers](#owner-waivers)). Any logged-in user running the preview
+`ak secrets sync` commands can sync to production. That is an owner waiver, not a
+review sign-off: production sync is pre-release, not externally reviewed and not yet
+recommended for production credentials. It was enabled while these remain open:
+ADR 0001 approval, every red-team scenario executed (scenario 13), the staging
 restore, the staging cost measurement, the external review and the shared Cloudflare
-token exception ([below](#production-deploy-control)) remain open; no other waiver
-is recorded on #8, and sync is not GA. Clients cannot sync with
-production yet, because ak-web production does not mint vault tokens until the owner
-enables it.
+token ([below](#production-deploy-control)). The waivers recorded on #8 are listed
+[below](#owner-waivers); nothing else is waived, and sync is not GA.
+
+**Released client lags the Worker.** The latest agentkit release with the preview
+sync commands, `v3.0.0-beta.30`, predates the removal-fence client (agentkit `dev`
+`67ff8e6`). Against the production Worker its device and member removals fail closed
+(`400 bad_request`, no signed `log_head`), and it does not verify change-log contents
+against removal fences. A release that includes the fence client is tracked in
+[agentkit#2469](https://github.com/bestagentkits/agentkit/issues/2469).
 
 CI evidence cited below is the `main` run at `b25c2bb`
 ([CI run](https://github.com/bestagentkits/ak-vault/actions/runs/38858206218)); the
@@ -59,19 +68,23 @@ page and docs, and its own CI run is linked from its pull request.
       unchanged. Evidence: agentkit
       [#2425](https://github.com/bestagentkits/agentkit/pull/2425) (merged to `dev`
       at `0944157`): the sync-off sweep over every `ak secrets` leaf in
-      `commands/secretscmd/sync_gates_test.go` and `no_network_test.go`.
+      `apps/cli/internal/commands/secretscmd/sync_gates_test.go` and
+      `apps/cli/internal/commands/secretscmd/no_network_test.go`.
 - [x] `resolve` keeps working with the Worker unreachable (agentkit#2298).
       Evidence: agentkit [#2425](https://github.com/bestagentkits/agentkit/pull/2425):
-      `commands/secretscmd/sync_gates_offline_resolve_test.go` (hung origin, closed
-      port) and `runtime/secretsync/lock_across_http_test.go`.
-- [x] Every scenario in the [red-team list](#red-team-scenarios) executed, findings
+      `apps/cli/internal/commands/secretscmd/sync_gates_offline_resolve_test.go`
+      (hung origin, closed port) and
+      `apps/cli/internal/runtime/secretsync/lock_across_http_test.go`.
+- [ ] Every scenario in the [red-team list](#red-team-scenarios) executed, findings
       triaged on GitHub.
-      Evidence: [red-team evidence](./red-team-evidence.md) (PR
+      Latest run: [red-team evidence](./red-team-evidence.md) (PR
       [#46](https://github.com/bestagentkits/ak-vault/pull/46), signed removal
-      `log_head` in [#49](https://github.com/bestagentkits/ak-vault/pull/49)), with
-      findings filed as issues. Scenario 13 is N/A because the attacked feature is
-      not built; re-run it when [#7](https://github.com/bestagentkits/ak-vault/issues/7)
-      or agentkit#2299 lands.
+      `log_head` in [#49](https://github.com/bestagentkits/ak-vault/pull/49)):
+      scenarios 1 to 12, 14 and 15 executed, findings filed as issues (open
+      include [#41](https://github.com/bestagentkits/ak-vault/issues/41) and
+      [#42](https://github.com/bestagentkits/ak-vault/issues/42)). **Open:**
+      scenario 13 has not run because the attacked feature is not built; run it when
+      [#7](https://github.com/bestagentkits/ak-vault/issues/7) or agentkit#2299 lands.
 - [x] Two-device round trip and soak (below): replaced by the
       [Docker two-device e2e](../../e2e/docker/README.md)
       ([#55](https://github.com/bestagentkits/ak-vault/pull/55)) by owner decision
@@ -80,9 +93,10 @@ page and docs, and its own CI run is linked from its pull request.
       at `a4f5656`. `worker/`, `packages/`, `go/`, `protocol/` and `pnpm-lock.yaml`
       were unchanged from that commit to the change that ticked this box; re-run it
       if any of them changes before the release commit. Residual risk stated below.
-      Re-run at the commit that enabled production sync, since `worker/` had changed:
-      [run on #8](https://github.com/bestagentkits/ak-vault/issues/8) (linked from its
-      pull request).
+      Re-run at `26a5cdd`, the change that enabled production sync, since `worker/`
+      had changed: 11/11 with a 10-minute soak, agentkit `dev` with the fence client
+      ([run on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209513849)).
+      Later commits of that change touched only `worker/public/` and docs.
 - [ ] Backup/restore and rollback rehearsed on staging using the
       [runbooks](../operations/runbooks.md).
       Latest run: [rehearsal log](../operations/rehearsal-2026-10.md) (rollback and
@@ -126,8 +140,8 @@ Cloudflare edge are verified by configuration and by the lab Worker rehearsal
 traffic. Platform logs, traces and analytics were scanned with seeded traffic on a
 lab Worker instead (disclosure-scan gate above). Staging trusts ak-web staging's
 issuer and JWKS; keeping staging's signing keys separate from production's is
-ak-web's responsibility, so before GA
-confirm the two JWKS endpoints share no key material (compare the keys' `x`/`y`
+ak-web's responsibility; production sync is live, so confirm as soon as both
+endpoints answer that the two JWKS share no key material (compare the keys' `x`/`y`
 coordinates, not only their `kid`s).
 
 ## Owner waivers
@@ -138,12 +152,15 @@ does not satisfy the external review.
 | Date | Waiver | Record |
 |---|---|---|
 | 2026-10-16 | Live `wrangler tail` shows `AKV-Proof` and `AKV-Webhook-Signature` values to account members with tail access. Accepted as account-operator access: proofs are single-use, bound to token hash, method, URL and body within a ±60 s window; webhook signatures cover one timestamped body with a single-use `event_id`. Complement: restrict Workers Tail permission on production. The header rename stays open as hardening. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248), [#61](https://github.com/bestagentkits/ak-vault/issues/61#issuecomment-6209133562); scan evidence [#62](https://github.com/bestagentkits/ak-vault/pull/62) |
-| 2026-10-16 | The external-review gate is waived for enabling `VAULT_SYNC_ENABLED=true` on the production Worker. The external review stays open on #8. ak-web production vault-token minting stays off until the owner enables it. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248) |
+| 2026-10-16 | The Docker two-device e2e replaces the staging two-device round trip and the staging soak; no authenticated staging session is used. Residual risk is stated under [staging soak](#staging-soak). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6207406980) |
+| 2026-10-16 | The external-review gate is waived for enabling `VAULT_SYNC_ENABLED=true` on the production Worker. The external review stays open on #8. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248) |
+| 2026-10-16 | Agent approval of production deploys ends; the shared staging/production Cloudflare token stays while production sync is enabled, although the bootstrap rule required removing it first. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209176887) |
+| 2026-10-16 | Production sync is fully live: ak-web production mints vault tokens together with the Worker flag, so any logged-in user running the preview `ak secrets sync` commands can sync to production before the external review. Docs say it is pre-release, not externally reviewed and not yet recommended for production credentials. This supersedes the earlier statement that minting stays off. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209425010) |
 
 ## Feature flag and kill switch
 
 `VAULT_SYNC_ENABLED` gates the sync API. It is `true` in production since the
-2026-10-16 owner waiver above, while the open gates stay open. Returning it to
+2026-10-16 owner decisions above, while the open gates stay open. Returning it to
 `false` is the first incident response step: the
 [emergency kill switch](../operations/runbooks.md#emergency-kill-switch) when
 minutes matter, otherwise the [gated path](../operations/runbooks.md#kill-switch).
@@ -169,11 +186,12 @@ Landing page and health endpoints are not affected by the flag.
   The Worker never receives ak-web's CLI HS256 signing key.
 - **Bootstrap exceptions (owner decision, 2026-10-13):** an agent could approve the
   production deployment, and staging and production share one Cloudflare API token
-  (stored separately in each GitHub Environment). On 2026-10-16
+  (stored separately in each GitHub Environment); both were to be removed before
+  enabling production sync. On 2026-10-16
   ([decision on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209176887))
   the owner ended the first: only the owner approves production deployments,
-  including the one that enabled production sync. **Open:** the shared token
-  remains until the owner creates a production-only token. Worker secrets stay
+  including the one that enabled production sync. **Open, waived for enabling
+  sync:** the shared token remains until the owner creates a production-only token. Worker secrets stay
   separate per environment.
 - GitHub secret scanning, push protection and private vulnerability reporting stay
   enabled on the repository (enabled 2026-10-13; re-check the security settings

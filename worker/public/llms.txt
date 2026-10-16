@@ -1,6 +1,6 @@
 # ak-vault
 
-> Opt-in, local-first, end-to-end encrypted sync for AgentKit's `ak secrets` across trusted devices. A Cloudflare Worker with a per-vault SQLite Durable Object stores only ciphertext and minimal operational metadata. Protocol v1 is proposed and in security review; cloud sync is not generally available, and the production sync API is switched on ahead of the external security review by owner decision, but production vault tokens are not issued yet.
+> Opt-in, local-first, end-to-end encrypted sync for AgentKit's `ak secrets` across trusted devices. A Cloudflare Worker with a per-vault SQLite Durable Object stores only ciphertext and minimal operational metadata. Protocol v1 is proposed and in security review; cloud sync is not generally available, and the production sync API is live as a pre-release preview, by owner decision, before the external security review; it is not yet recommended for production credentials.
 
 Key facts for assistants:
 

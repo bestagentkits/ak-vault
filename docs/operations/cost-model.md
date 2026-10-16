@@ -120,9 +120,12 @@ inside the included 25 billion and storage is minor.
   recorded where it is made.
 - Revocation checks double Durable Object requests, and they all go to one global
   registry object (`worker/src/revocation/`). One object's throughput therefore
-  caps total API throughput: about 10 checks a second as measured on the lab Worker
-  ([#10](https://github.com/bestagentkits/ak-vault/issues/10)). Cache or shard
-  revocation state before that ceiling matters.
+  caps total API throughput. The lab Worker measured about 110 ms of active time
+  per check ([#10](https://github.com/bestagentkits/ak-vault/issues/10)), which
+  suggests a ceiling of roughly 10 checks a second for the whole service; beyond it
+  requests queue and then fail closed with `503`. Production sync is live, so watch the
+  registry's request rate and cache or shard revocation state before it nears that
+  ceiling.
 - The Worker runs before static assets (`run_worker_first` in the Wrangler config)
   so the landing page gets the same security headers. Landing traffic is therefore
   billed as Worker requests, not free asset requests; this is small next to API

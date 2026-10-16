@@ -154,10 +154,21 @@ These are accepted and must be stated wherever the guarantees are described:
   start.
 - **Live tail shows proofs and webhook signatures.** Account members with Workers
   Tail permission see `AKV-Proof` and `AKV-Webhook-Signature` values in
-  `wrangler tail`; tokens and other headers are redacted. Accepted by owner waiver
-  as account-operator access
+  `wrangler tail`, along with URLs, client IPs and other headers; only header names
+  the platform recognises (`Authorization`, `Idempotency-Key`, `AKV-Device-Key`) are
+  redacted. Accepted by owner waiver as account-operator access
   ([data classification](./data-classification.md#handling-rules),
   [#61](https://github.com/bestagentkits/ak-vault/issues/61)).
+- **Production sync runs before the external review.** By owner decision on
+  [#8](https://github.com/bestagentkits/ak-vault/issues/8) (2026-10-16) production
+  sync is live, with ak-web minting production vault tokens, before the
+  independent cryptographic review and with other release gates open
+  ([release gates](./release-gates.md#owner-waivers)). It is pre-release and not
+  yet recommended for production credentials. The latest released client
+  (`v3.0.0-beta.30`) also predates the removal-fence client: its removals are
+  refused and it does not check change-log contents against removal fences, so the
+  fence guarantee above holds only for clients that include it
+  ([agentkit#2469](https://github.com/bestagentkits/agentkit/issues/2469)).
 - **A live device can stall its own removal.** The fence must equal the current
   log head, so a device that keeps writing keeps the fence stale. Revoke it first;
   live revocation stops its requests.

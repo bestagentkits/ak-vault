@@ -114,10 +114,12 @@ Issues are the coordination surface. Labels: `in progress`, `blocked`, `in revie
 
 ## Release gate
 
-Sync is not GA. Production sync is enabled (`VAULT_SYNC_ENABLED=true`) under the
-owner's 2026-10-16 waiver of the external-review gate, recorded on
-[#8](https://github.com/bestagentkits/ak-vault/issues/8). That is a waiver, not a
-review: the external review is still pending on #8, and the other open items are
+Sync is not GA. Production sync is live (`VAULT_SYNC_ENABLED=true`, with ak-web
+production minting vault tokens) under the owner's 2026-10-16 decisions recorded on
+[#8](https://github.com/bestagentkits/ak-vault/issues/8), which waive the
+external-review gate for it. That is a waiver, not a review: production sync is
+pre-release and not yet recommended for production credentials, the external review
+is still pending on #8, and the other open items are
 listed in [release gates](./docs/security/release-gates.md). No agent may
 self-attest the external review or describe the waiver as a sign-off.
 
