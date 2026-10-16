@@ -1,16 +1,18 @@
 /**
  * One SQLite-backed Durable Object per vault: the serialization point for every
- * mutation. `handle` runs vault-exists check -> read-only check of the device's
- * `authorized` rate budget -> Idempotency-Key format -> authorization
+ * mutation. For an existing vault `handle` runs read-only check of the device's
+ * `authorized` rate budget -> Idempotency-Key format (mutations) -> authorization
  * (membership, proof, scope, role) -> charge the `authorized` budget ->
- * idempotency replay -> one `transactionSync` per mutation. A request refused
- * before or during authorization is charged to the device's separate `refused`
- * budget instead. Errors leave as stable codes with fixed messages.
+ * idempotency replay -> one `transactionSync` per mutation. A refusal by the
+ * Idempotency-Key check or authorization is charged to the device's separate
+ * `refused` budget instead; a 429 from the pre-check charges nothing. A missing
+ * vault answers 404 and a fresh-vault genesis runs its storage-free checks
+ * first; neither charges a budget. Errors leave as stable codes with fixed messages.
  *
  * No storage is written for a vault that does not exist: every op other than
  * genesis answers 404 before the rate counter or proof `jti` tables are touched,
  * and genesis creates the schema only after a storage-free preflight (event,
- * author/owner, scope, proof signature) passes. Only a valid genesis creates state.
+ * author/owner, scope, proof signature, Idempotency-Key) passes. Only a valid genesis creates state.
  */
 import { DurableObject } from 'cloudflare:workers';
 import { randomId } from '@ak-vault/protocol';

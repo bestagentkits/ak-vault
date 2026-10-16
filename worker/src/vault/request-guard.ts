@@ -1,10 +1,10 @@
 /**
  * Per-vault request checks that need vault state: rate limit, proof of
  * possession with single-use `jti`, membership of `sub`/`did`, token scope and
- * role. Order (after the vault-exists check): read-only check of the device's
- * `authorized` budget -> Idempotency-Key format -> membership -> proof -> scope
- * -> role -> charge the `authorized` budget, all before any item, wrap, audit or
- * recovery data is read or written. A request refused before or during
+ * role. Order for an existing vault: read-only check of the device's `authorized`
+ * budget -> Idempotency-Key format (mutations) -> membership -> proof -> scope ->
+ * role -> charge the `authorized` budget, all before any item, wrap, audit or
+ * recovery data is read or written. A refusal by the Idempotency-Key check or
  * authorization (for example a stolen token without the device key) is charged
  * to the separate `refused` budget, so it cannot exhaust the budget of the
  * device it names.

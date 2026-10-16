@@ -54,6 +54,7 @@ describe('non-existent vaults', () => {
     for (const [device, path, body, opts] of cases) {
       const res = await call(device, 'PUT', path, body, opts);
       expect(res.status).toBeGreaterThanOrEqual(400);
+      if (opts.idempotencyKey) expect(res.json.error.code).toBe('bad_request');
       const vid = path.split('/')[3]!;
       const dump = await dumpDurableObject(stubFor(vid));
       expect(dump.tables).toEqual([]);

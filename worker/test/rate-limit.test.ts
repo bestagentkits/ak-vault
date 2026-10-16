@@ -97,7 +97,14 @@ describe('rate limit', () => {
     const fx = await VaultFixture.create();
     const outsider = fx.newDevice({ account: `acct-${randomId()}` });
     for (let i = 0; i < 120; i++) expect((await fx.get(outsider, '/changes')).status).toBe(403);
-    expect((await fx.get(outsider, '/changes')).status).toBe(429);
-    expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
+    const limited = await fx.get(outsider, '/changes');
+    expect(limited.status).toBe(429);
+    expect(limited.json.error.code).toBe('rate_limited');
+    const rows = await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) => ({
+      refused: state.storage.sql.exec('SELECT count FROM refused_rate_counters WHERE did = ?', outsider.keys.record.device_id).toArray(),
+      authorized: state.storage.sql.exec('SELECT 1 FROM rate_counters WHERE did = ?', outsider.keys.record.device_id).toArray().length,
+    }));
+    expect(rows.refused).toEqual([{ count: 121 }]);
+    expect(rows.authorized).toBe(0);
   });
 });
