@@ -171,6 +171,7 @@ does not satisfy the external review.
 | 2026-10-16 | The Docker two-device e2e replaces the staging two-device round trip and the staging soak; no authenticated staging session is used. Residual risk is stated under [staging soak](#staging-soak). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6207406980) |
 | 2026-10-16 | The external-review gate is waived for enabling `VAULT_SYNC_ENABLED=true` on the production Worker. The external review stays open on #8. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248) |
 | 2026-10-16 | Production sync is fully live: ak-web production mints vault tokens together with the Worker flag, so any logged-in user running the preview `ak secrets sync` commands can sync to production before the external review. Docs say it is pre-release, not externally reviewed and not yet recommended for production credentials. This supersedes the earlier statement that minting stays off. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209425010) |
+| 2026-10-16 | The owner approves the deploy that enables production sync while the shared-Cloudflare-token bootstrap exception stays an open item ([production deploy control](#production-deploy-control)). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209176887) |
 
 ## Feature flag and kill switch
 
@@ -202,15 +203,20 @@ Landing page and health endpoints are not affected by the flag.
   The Worker never receives ak-web's CLI HS256 signing key.
 - **Bootstrap exceptions (owner decision, 2026-10-13):** an agent could approve the
   production deployment, and staging and production shared one Cloudflare API token
-  (stored separately in each GitHub Environment); both were to be removed before
-  enabling production sync. On 2026-10-16
+  (stored separately in each GitHub Environment); both were meant to end before
+  enabling production sync, and the owner allowed enabling it with the token item
+  still open ([waivers](#owner-waivers)). On 2026-10-16
   ([decision on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209176887))
   the owner ended the first: only the owner approves production deployments,
   including the one that enabled production sync. The second ended the same day
   ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209542641)):
   production deploys use a production-only Cloudflare token without Workers Tail
-  permission, set as the `production` environment secret; the next production
-  deploy proves its scope. **Open:** the `staging` environment secret was not
+  permission, set as the `production` environment secret. That record covers only
+  the `production` secret: the `staging` environment secret is unchanged since
+  2026-10-13, although the record says staging keeps its own secret, so the owner
+  should correct the record or replace the staging secret. The next production
+  deploy shows the new token can deploy; that it lacks Workers Tail rests on the
+  owner's record. **Open:** the `staging` environment secret was not
   replaced, so staging, whose deploys run from `main` without a reviewer, still
   holds the formerly shared token with production scope, and the operator's
   emergency kill-switch token is that same token. Close this when staging gets a
