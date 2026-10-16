@@ -7,8 +7,8 @@
  * A restore is compare-and-swap on the object's current bookmark: the operator
  * names the bookmark it read just before, and any write since (or an earlier
  * restore, which moves the history forward) refuses it with `conflict`. That
- * is meant to make a replayed restore request a refusal; that a restore moves the
- * current bookmark is to be checked on staging, not locally (local workerd has no history).
+ * makes a replayed restore request a refusal: on staging storage a restore and its
+ * undo each moved the current bookmark forward (local workerd has no history).
  *
  * Platform errors carry text from the storage layer; they are mapped to fixed
  * messages and never echoed.

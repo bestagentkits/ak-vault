@@ -13,9 +13,9 @@ tokens ([owner waivers](#owner-waivers)). Any logged-in user running the preview
 `ak secrets sync` commands can sync to production. That is an owner waiver, not a
 review sign-off: production sync is pre-release, not externally reviewed and not yet
 recommended for production credentials. It was enabled while these remain open:
-every red-team scenario executed (scenario 13), the staging restore, the staging
-cost measurement, the external review and ADR 0001 approval (since accepted by the
-owner, P0 gates below). Also open while
+every red-team scenario executed (scenario 13), the staging restore (since
+rehearsed), the staging cost measurement, the external review and ADR 0001 approval
+(since accepted by the owner, P0 gates below). Also open while
 production is live: confirming that the staging and production JWKS share no key
 material ([staging soak](#staging-soak)), and the owner confirming on #8 that
 Workers Tail access on production is limited, the complement to the tail waiver.
@@ -52,7 +52,7 @@ page and docs, and its own CI run is linked from its pull request.
       ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210567772)). The owner accepted it with restore reconciliation
       still an [open item](../adr/0001-opt-in-zero-knowledge-sync.md#open-items) of
       the ADR, so this gate no longer requires that item resolved; the staging
-      restore gate below stays open. Acceptance is not the external review.
+      restore gate below was met separately. Acceptance is not the external review.
 - [x] Go and TypeScript reproduce every vector in `protocol/v1/vectors/` byte for
       byte, including every rejection vector (tamper, wrong AAD, duplicate nonce,
       invalid signature, injected recipient, replay, rollback, unsupported version).
@@ -116,12 +116,17 @@ page and docs, and its own CI run is linked from its pull request.
       had changed: 11/11 with a 10-minute soak, agentkit `dev` with the fence client
       ([run on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209513849)).
       Later commits of that change touched only `worker/public/` and docs.
-- [ ] Backup/restore and rollback rehearsed on staging using the
+- [x] Backup/restore and rollback rehearsed on staging using the
       [runbooks](../operations/runbooks.md).
-      Latest run: [rehearsal log](../operations/rehearsal-2026-10.md) (rollback and
-      kill switch on staging; restore on a lab Worker until
-      [#51](https://github.com/bestagentkits/ak-vault/issues/51)). **Open:** the
-      restore has not run on staging.
+      Evidence: [rehearsal log](../operations/rehearsal-2026-10.md): rollback and
+      kill switch on staging (2026-10-15); backup, restore, undo and client
+      reconciliation on staging through the operator restore route
+      ([2026-10-16](../operations/rehearsal-2026-10.md#staging-restore-2026-10-16),
+      [#51](https://github.com/bestagentkits/ak-vault/issues/51)). Devices that
+      witnessed newer state refused the restored vault (a CI test for a log regrown
+      past the witnessed position is
+      [#76](https://github.com/bestagentkits/ak-vault/issues/76)); v1 has no automatic
+      re-convergence (an [ADR 0001 open item](../adr/0001-opt-in-zero-knowledge-sync.md#open-items)).
 - [ ] Cost measured on staging and compared with the
       [cost model](../operations/cost-model.md).
       Latest run: 2026-10-16, a lab Worker built from the staging commit (`b49865c`)
