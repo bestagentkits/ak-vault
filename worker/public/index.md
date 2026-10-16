@@ -45,7 +45,7 @@ One synced secret, seen from each side (protocol v1, proposed; values illustrati
 
 ## 4. Every promise comes with its fine print
 
-These are design properties of protocol v1 as proposed. They hold only after the implementation passes the security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) and the owner's review signs off (not an independent third-party review).
+These are design properties of protocol v1 as proposed. They hold only after the implementation passes every security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8). The owner accepted the review gate on 2026-10-16 with no written findings; no independent third party has reviewed it.
 
 | Design property | Limitation |
 |---|---|
@@ -54,7 +54,7 @@ These are design properties of protocol v1 as proposed. They hold only after the
 | **Rollback detection.** Devices keep signed checkpoints and refuse server state older than one they already witnessed (spec §6). | **Withheld updates.** A malicious server can hide updates a new or long-offline device has never seen. Detecting that needs a second channel. |
 | **Live revocation.** Device-bound tokens plus a per-request device signature; revoked devices and sessions are refused on every request, and lookup errors fail closed (spec §9). | **No claw-back.** Anything a device already decrypted stays exposed, so affected secrets are marked to rotate. |
 | **Local-first and opt-in.** `resolve` never waits on the Worker; with sync off, secrets make zero network requests. | **Plaintext reaches the child process.** `ak secrets run` (planned) hands the value to the process you approved. |
-| **No silent overwrites.** Revision compare-and-swap; a stale write gets `409` and is kept as a conflict branch; deleted stays deleted (spec §5). | **Not yet reviewed.** Treat every property as a design target until the owner's review signs off. |
+| **No silent overwrites.** Revision compare-and-swap; a stale write gets `409` and is kept as a conflict branch; deleted stays deleted (spec §5). | **Not independently reviewed.** The owner accepted the review gate with no written findings. Treat every property as a design target until every release gate is met. |
 | **Recovery without trusting the server.** The encrypted recovery bundle carries the owner's public trust anchor, the recovery signing key and the newest witnessed checkpoint (spec §3.4). | **Lose every key, lose the vault.** Without an enrolled device, your master password or your recovery key, nobody can decrypt the vault, including AgentKit. |
 
 Full threat model: [Security model](https://vault.agentkit.best/security/index.md).
@@ -94,7 +94,7 @@ Work is tracked in the [epic, issue #1](https://github.com/bestagentkits/ak-vaul
 ## 7. Questions
 
 - **Can I use cloud sync today?** Only as a preview. Protocol v1 is proposed and in security review, and cloud sync is not generally available. By owner decision the production sync API is live before that review as a pre-release preview: if you are signed in and run the preview `ak secrets sync` commands, your device syncs with it. It is not yet recommended for production credentials. The local `ak secrets` vault works today.
-- **Can AgentKit read my secrets?** The design says no: the server stores ciphertext and wrapped keys only. It can see the metadata in the table above. Treat this as a design claim until the review completes.
+- **Can AgentKit read my secrets?** The design says no: the server stores ciphertext and wrapped keys only. It can see the metadata in the table above. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met.
 - **What happens if the server is down?** Nothing changes for running agents. `resolve` reads the local vault. Offline changes sync on the next successful connection, and conflicting edits are kept for you to resolve.
 - **Can I give a teammate access to just one secret?** Not within one vault. Put shared secrets in a separate shared vault.
 - **What if I lose my laptop?** Revoke the device. Anything it already decrypted cannot be clawed back, so rotate sensitive credentials at the provider.

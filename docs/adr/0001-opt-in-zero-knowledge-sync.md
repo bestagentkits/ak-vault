@@ -6,11 +6,11 @@
   ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210567772)). The first draft required
   the owner's approval **and** an external cryptographic review before acceptance;
   the owner accepted the design ahead of that review. Acceptance is the owner's
-  design decision, not a review sign-off: the review is still pending on #8 and
-  still blocks GA ([external review milestone](#external-review-milestone)); since
-  2026-10-16 the reviewer is the owner, not an independent third party.
-  Neither the owner's approval nor the review can be self-attested by an
-  implementing agent.
+  design decision, not a review sign-off ([external review milestone](#external-review-milestone)).
+  Since 2026-10-16 the reviewer is the owner, not an independent third party; the
+  review gate was accepted by the owner on 2026-10-16 (owner instruction recorded
+  by an agent, no written findings, [record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212706397)). Neither the owner's
+  approval nor the review can be self-attested by an implementing agent.
 - **Tracking:** epic [#1](https://github.com/bestagentkits/ak-vault/issues/1),
   protocol issue [#2](https://github.com/bestagentkits/ak-vault/issues/2)
 - **Wire contract:** [protocol v1 spec](../protocol/v1/spec.md). This ADR records
@@ -90,7 +90,7 @@ ADR adds an **opt-in** layer next to v1; it does not reinterpret v1:
 11. **Kill switch.** `VAULT_SYNC_ENABLED` gates the sync API on the Worker. When
     off, the sync API refuses with `sync_disabled`; local AgentKit use is
     unaffected. Production has run with it on since the owner's 2026-10-16 waiver,
-    as a pre-release preview before the review
+    as a pre-release preview, enabled before the owner's review
     ([release gates](../security/release-gates.md#feature-flag-and-kill-switch));
     turning it off is the first incident response step. The server-side flag does
     not make sync opt-out for users: each user still enables sync explicitly.
@@ -161,6 +161,8 @@ and the sign-off is recorded on #8. The checklist is in
 [release gates](../security/release-gates.md).
 
 **Changed 2026-10-16 by owner decision** ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235)): the reviewer is the
-project owner, not an independent third party. The owner posts the result on #8
-personally; agents never post or attest it. The gate is now
-[review by the owner](../security/release-gates.md#review-by-the-owner).
+project owner, not an independent third party. The gate is now
+[review by the owner](../security/release-gates.md#review-by-the-owner). The owner
+first said they would post the result personally; on 2026-10-16 the owner instead
+told an agent in chat to record it as accepted ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212706397)), with no
+written findings. GA still waits for the remaining release gates.

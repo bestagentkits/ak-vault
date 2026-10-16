@@ -65,7 +65,7 @@ links.
   - Planned: `ak secrets search|describe|request|run`.
   - AgentKit is in closed beta, so the site links to agentkit.best instead of printing an
     install command.
-- **Call guarantees "design properties of protocol v1 as proposed"** until issue #8 signs off.
+- **Call guarantees "design properties of protocol v1 as proposed"** until every gate in issue #8 is met.
 - **Every guarantee sits next to its limitation:** the vault-wide key, withheld updates (freeze
   attack), plaintext released to the child process on `run`, no claw-back, and visible
   metadata.

@@ -1,11 +1,12 @@
 # ak-vault protocol v1 (`akv1`) — normative wire specification
 
-Status: **Proposed**; review pending on #8 (by the owner, not an independent
-third-party review). The design rationale,
+Status: **Proposed**; the review gate on #8 was accepted by the owner on 2026-10-16
+(owner instruction recorded by an agent, no written findings,
+[record](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212706397)); that is the owner's review, not an independent third-party review.
+The design rationale,
 [ADR 0001](../../adr/0001-opt-in-zero-knowledge-sync.md), was accepted by the owner on
-2026-10-16; that acceptance is not the review.
-Not approved for production credentials until the security gate in issue #8 records
-the owner's review sign-off.
+2026-10-16. Not approved for production credentials until every security gate in
+issue #8 is met.
 
 The key words MUST, MUST NOT, SHOULD and MAY are normative. Every implementation
 (TypeScript reference in `packages/protocol`, Go in `go/akv1`, the Worker in `worker/`)

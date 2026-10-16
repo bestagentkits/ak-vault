@@ -29,8 +29,9 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["VaultDurableObject", "RevocationRegistry"] }],
   "vars": {
-    // Kill switch: production sync is on by owner decision (2026-10-16, issue #8)
-    // ahead of the external review; see docs/security/release-gates.md. Turn it off
+    // Kill switch: production sync is on by owner decision (2026-10-16, issue #8),
+    // enabled before the owner's review (accepted 2026-10-16; not an independent
+    // review) and still pre-release; see docs/security/release-gates.md. Turn it off
     // with the kill switch in docs/operations/runbooks.md.
     "VAULT_SYNC_ENABLED": "true",
     "VAULT_ISSUER": "https://agentkit.best",
