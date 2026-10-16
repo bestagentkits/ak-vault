@@ -160,10 +160,12 @@ bundle or the signed membership log (`GET /v1/vaults/{vid}/membership`, read-onl
 fresh device when all of these hold: the token `sub` is the vault's `owner_account`; the token `did` is
 neither a current nor a removed device; the request carries
 `AKV-Device-Key: <b64 Ed25519 sign_pub>` with `kid(sign_pub) == did`; and `AKV-Proof`
-verifies against that key; and the token's session kind (§9.1) is `email_otp`. A device whose
-session kind is `api_key_device` or `machine` is refused (`403`) on this path, on `GET /recovery`,
-on `GET /membership` and on recovery enrollment, so a leaked API key or a CI runner cannot
-collect recovery bundles. Every other route answers such a device `forbidden`;
+verifies against that key; and the token's session kind (§9.1) is `email_otp`. A device outside
+membership whose session kind is `api_key_device` or `machine` is refused (`403`) on this
+path (the bundle and membership reads) and on recovery enrollment, so a leaked API key or a CI
+runner cannot collect recovery bundles by itself. Once an owner device approves such a
+device with a signed `device_add`, it is a current member and its role decides: an owner-role
+device may read and replace the bundle and rotate the recovery key. Every other route answers such a device `forbidden`;
 without the `AKV-Device-Key` header, a membership read by a non-member is `forbidden`
 as before. The membership log is metadata already visible to the server (§4,
 [data classification](../../security/data-classification.md)); reading it lets the

@@ -121,21 +121,27 @@ describe('recovery identity is for human email-OTP sessions only', () => {
     expect((await created.get(created.owner, '/membership', { sessionKind: 'api_key_device' })).status).toBe(200);
   });
 
-  it('refuses recovery enrollment by an api_key_device session, and accepts it for email_otp', async () => {
+  it.each(['api_key_device', 'machine'])('refuses recovery enrollment by a %s session', async (kind) => {
     const recoverer = { id: fx.state.recovery_author, secret: fx.recovery.secretKey };
     const seqBefore = (await fx.get(fx.owner, '/membership')).json.membership.seq;
     const blocked = createDevice(fx.owner.account, 'owner');
     const attempt = fx.enrollEvent(blocked, [1], recoverer);
-    expect((await fx.append(attempt.event, attempt.wraps, blocked, { sessionKind: 'api_key_device' })).status).toBe(403);
+    expect((await fx.append(attempt.event, attempt.wraps, blocked, { sessionKind: kind })).status).toBe(403);
     expect((await fx.get(fx.owner, '/membership')).json.membership.seq).toBe(seqBefore);
+  });
+
+  it('accepts recovery enrollment by an email_otp session', async () => {
+    const recoverer = { id: fx.state.recovery_author, secret: fx.recovery.secretKey };
 
     const human = createDevice(fx.owner.account, 'owner');
     const ok = fx.enrollEvent(human, [1], recoverer);
     expect((await fx.append(ok.event, ok.wraps, human, { sessionKind: 'email_otp' })).status).toBe(201);
   });
 
-  it('a member-signed device_add approves an api_key_device, which then reads as a member', async () => {
+  it('a member-signed device_add approves an api_key_device, which then acts as a member under its role', async () => {
     const approved = await fx.addDevice({ account: fx.owner.account });
-    expect((await fx.get(approved, '/items/missing', { sessionKind: 'api_key_device' })).status).not.toBe(403);
+    expect((await fx.get(approved, `/items/${randomId()}`, { sessionKind: 'api_key_device' })).status).toBe(404);
+    // Pinned: an approved owner-role device is a member and may read the bundle.
+    expect((await fetchBundle(approved, { sessionKind: 'api_key_device' })).status).toBe(200);
   });
 });

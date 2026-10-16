@@ -167,8 +167,10 @@ path next to email OTP; it does not change the cryptographic design.
   webhook; a device is revoked as today.
 - The Worker refuses the recovery identity and recovery enrollment for
   `api_key_device` and `machine` sessions and fails closed on an unknown kind, so a
-  leaked key cannot collect recovery bundles. Joining an existing vault requires a
-  `device_add` signed by an existing owner device; creating a vault is allowed.
+  leaked key alone cannot collect recovery bundles. Joining an existing vault requires a
+  `device_add` signed by an existing owner device; creating a vault is allowed. Once an
+  owner approves a device it is a member under its role, including recovery-bundle
+  rights if it is an owner device.
 - ak-web enforces opt-in per API key (off by default, existing keys included), at
   most 5 devices per key and an email notice on every new API-key device
   ([ak-web#583](https://github.com/bestagentkits/ak-web/issues/583)); the CLI enrols

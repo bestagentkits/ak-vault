@@ -16,7 +16,7 @@
  *    `AKV-Device-Key`; the token `did` must equal `kid(sign_pub)` and the proof
  *    must verify against that key. Only an `email_otp` session may take this path
  *    and recovery enrollment; `api_key_device` and `machine` sessions are refused
- *    (spec §9.4), so a leaked API key cannot collect bundles. Exposure: any holder of an owner-account token
+ *    (spec §9.4), so a leaked API key alone cannot collect bundles. Exposure: any holder of an owner-account token
  *    plus a key it generates can fetch the bundle and attempt offline guessing of
  *    the bundle password, and can read membership metadata (accounts, roles,
  *    device public keys).
