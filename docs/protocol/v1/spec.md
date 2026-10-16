@@ -411,7 +411,7 @@ is separate and never contains item names or values.
 
 ## 8. Portable policy (restrictive only)
 
-Encrypted item with `meta.kind = "policy"`. Fields are maxima only:
+Encrypted item with `meta.kind = "policy"` (payload layout and binding: §8.1). Fields are maxima only:
 `{"max_ttl_s","require_approval","allowed_projects":[…],"allowed_purposes":[…],"deny_agents":[…]}`.
 Effective grant = local grant ∩ portable policy. A policy can only narrow; a missing
 field means "no extra restriction", never "allow". `sensitivity:"high"` always
@@ -425,6 +425,72 @@ another vault fails to open (item AAD and item-key salt bind `vault_id`, §3.2;
 refuses an older one the server re-serves, as a replay (`applyRecord`: `conflict`) or
 as a rollback against its witnessed checkpoint and kept head (§5, §6); a device that
 never saw the newer revision is subject to the withholding limitation (§6).
+
+### 8.1 Policy binding
+
+A policy item names the items it governs by item ID, inside its own ciphertext.
+Its live payload (§3.2) is exactly:
+
+```json
+{"name":"<label>","value":"","meta":{"kind":"policy","item_ids":[item_id…],"policy":{…}},"sensitivity":"normal"|"high"}
+```
+
+- `meta.kind` is the string `"policy"`; every other item is not a policy item.
+- `meta` has exactly the keys `kind`, `item_ids` and `policy`; `value` is `""`.
+- `item_ids`: 1–1024 unique opaque item IDs (§2) of the items this policy governs,
+  never the policy item's own ID. Names are never used: an ID is unique in the vault
+  and survives a rename.
+- `policy`: the §8 policy object, parsed as in §11 ("Portable policy").
+- The payload `sensitivity` is the minimum sensitivity the policy imposes on every
+  governed item: `"high"` makes every governed item `high`; `"normal"` never lowers one.
+- `name` is an inert label (untrusted text).
+
+The binding, the rules and the sensitivity are inside the item ciphertext, which
+the author's record signature and the item AAD cover (§3.2, §5). The server sees only
+that an item exists, never which items a policy governs. Nothing on the governed
+item points back to the policy.
+
+**Resolution.** Before releasing an item, a client calls
+`resolveItemPolicy(target, items)` (vectors: `policy-binding.json`). `items` is every
+item the device holds for the vault, each `{"item_id","head","branches"}`: the
+current head and every unresolved conflict branch (§5), each
+`{"tombstone":bool,"payload":<decrypted payload object>|null}`, where `null` means
+the device could not open that record. Checks, in order, the first failure being the
+result:
+
+1. shape: `target` and every `item_id` are IDs, `item_id`s are unique, every entry
+   has exactly `tombstone` and `payload`, a payload is an object or `null`, at most
+   1 000 000 items and 4096 branches per item (`bad_request`);
+2. any entry with a `null` payload → `decrypt_failed`: an unopened record could be a
+   policy governing the target, so the device refuses every item of the vault until
+   it can open it;
+3. every payload parses as an item payload for its `tombstone` flag (§11; `bad_request`);
+4. every live payload with `meta.kind` `"policy"`, head or branch, parses as a policy
+   item (`bad_request`), whichever item it names;
+5. the target is present, its head is live, and neither its head nor a branch is a
+   policy item (`bad_request`);
+6. an item that has unresolved conflict branches, and whose head or any branch is a
+   live policy naming the target, is `conflict` (resolve the conflict first).
+
+Every other item whose live head is a policy naming the target governs it. The
+result is `{"policy","sensitivity"}`: `policy` is `null` when nothing governs the
+target, else the intersection of the governing policies, taken in `item_id` byte
+order: `max_ttl_s` is the minimum, `require_approval` the OR, each `allowed_*` list
+the intersection, `deny_agents` the union, each present only if some governing
+policy has it, lists in first-occurrence order without duplicates and free text
+dropped. `sensitivity` is `"high"` when any live record of the target (head or
+branch) or any governing policy item is `"high"`. The client then releases at most
+`effectiveGrant(local, policy, sensitivity)`.
+
+Any failure is a refusal to release: the client MUST NOT fall back to the local
+grant alone, and nothing here can widen a local grant. A tombstoned policy governs
+nothing; an ID in `item_ids` that names no live non-policy item has no effect. A
+policy moved from another vault does not open (§3.2) and so refuses at step 2; an
+older policy revision the server re-serves never becomes the head (§5, §6). A
+device that never received a policy item is subject to the withholding limitation
+(§6), and any member who can write the vault can edit or delete a policy, as it can
+any item: a policy caps the release path of devices that honor it, not what a
+vault member can decrypt (§3).
 
 ## 9. Transport authentication (Worker)
 
@@ -577,6 +643,8 @@ These resolve points the sections above leave open; the vectors in
   `unauthorized`.
 - **Portable policy:** unknown fields or wrong types are `bad_request` (the caller
   denies). `description`, `when_to_use` and `urls` are carried as inert text.
+  A policy item's layout and the binding rules are in §8.1; a payload whose
+  `meta.kind` is `"policy"` in any other layout is `bad_request`.
 - **Recovery bundle** (vectors: `recovery-bundle.json`).
   - Plaintext `P = cjson({"v":1,"vault_id","bundle_seq","vk":{"<epoch>":b64 32B},"owner_sign_pub":b64 32B,"recovery_sign_sk":b64 32B seed,"checkpoint":<signed checkpoint>})`.
     `bundle_seq` ≥ 1 and MUST increase each time the bundle is replaced. `vk` keys are
@@ -644,3 +712,7 @@ under an earlier revision does not verify and is reset rather than migrated.
   `log_fence`, and clients replay the head chain against it (`verifyChangeLog`); the
   change feed publishes per-entry and current heads; a recovery-authored `device_add`
   MUST deliver the current key epoch like every other device-adding event.
+- **2026-10 (issue #7):** policy binding (§8.1): a policy item's payload layout,
+  `meta.item_ids` naming the governed items, the payload `sensitivity` as a minimum,
+  and `resolveItemPolicy`. Earlier revisions defined no policy-item layout and no
+  client applied policy items, so no existing data changes meaning.

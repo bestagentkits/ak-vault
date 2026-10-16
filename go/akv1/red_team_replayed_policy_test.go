@@ -8,7 +8,8 @@ package akv1
 // device kept there. Documented limit: a device resuming from its own cursor
 // does not see the restore in the log and keeps its newer policy. Mirrors
 // packages/protocol/test/red-team-replayed-policy.test.ts. Holding the policy
-// as JSON in the item value is this test's layout only.
+// as JSON in the item value is this test's layout only; the normative
+// policy-item layout is spec §8.1 (policy-binding.json).
 
 import (
 	"encoding/json"

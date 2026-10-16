@@ -5,6 +5,7 @@ import { membershipVectors } from './membership.js';
 import { recordVectors } from './records.js';
 import { auditVectors, checkpointVectors } from './checkpoints-audit.js';
 import { policyVectors, proofVectors } from './policy-proof.js';
+import { policyBindingVectors } from './policy-binding.js';
 import { recoveryBundleVectors, rekeyWrapsVectors } from './bundle-rekey.js';
 import { edgeCaseVectors } from './edge-cases.js';
 import { deviceAddWrapsVectors } from './device-add-wraps.js';
@@ -23,6 +24,7 @@ const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'checkpoints.json': checkpointVectors,
   'audit.json': auditVectors,
   'policy.json': policyVectors,
+  'policy-binding.json': policyBindingVectors,
   'proof.json': proofVectors,
   'recovery-bundle.json': recoveryBundleVectors,
   'rekey-wraps.json': rekeyWrapsVectors,

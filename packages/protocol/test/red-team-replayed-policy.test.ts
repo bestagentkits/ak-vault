@@ -12,7 +12,8 @@
  *   the restored positions, so the log alone does not show the restore; it keeps
  *   its newer policy. Mirrors go/akv1/red_team_replayed_policy_test.go.
  *
- * Holding the policy as JSON in the item `value` is this test's layout only.
+ * Holding the policy as JSON in the item `value` is this test's layout only; the
+ * normative policy-item layout is spec §8.1 (`policy-binding.json`).
  */
 import { describe, expect, it } from 'vitest';
 import {
