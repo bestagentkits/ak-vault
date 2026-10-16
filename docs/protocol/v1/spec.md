@@ -347,8 +347,10 @@ accept it silently. That includes a restored log that has since grown past the
 witnessed `log_seq`: the change-log head at that position differs from the one the
 client computed (§5) and the state there no longer matches the witnessed
 `state_digest`. `checkRollback` on checkpoints alone does not catch that case, so a
-client also runs `checkWitnessedHistory` (Go `CheckWitnessedHistory`) on the history it
-replayed: the state digest and change-log head at the witnessed `log_seq`. The
+client MUST also compare the state digest and change-log head it computed at the
+witnessed `log_seq` with the witnessed ones, and so keeps the witnessed change-log head
+next to the checkpoint. `checkWitnessedHistory` (Go `CheckWitnessedHistory`) is the
+reference check. The
 `witnessed_history` vectors in `checkpoints.json` pin both. A
 device that never witnessed newer state cannot tell and accepts the restored state
 (the limitation below). v1 defines no client re-seed or other

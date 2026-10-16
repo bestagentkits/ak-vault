@@ -96,6 +96,7 @@ export interface ReplayedHistory {
  */
 export function checkWitnessedHistory(witnessed: CheckpointView, witnessedLogHead: string, history: ReplayedHistory): void {
   const at = witnessed.log_seq;
+  if (!Number.isSafeInteger(at) || at < 0) fail('rollback', 'witnessed log_seq is not a position');
   if (history.heads.length <= at || history.digests.length <= at) fail('rollback', 'history is shorter than the witnessed checkpoint');
   if (history.digests[at] !== witnessed.state_digest) fail('rollback', 'state at the witnessed position differs from the witnessed checkpoint');
   if (history.heads[at] !== witnessedLogHead) fail('rollback', 'change-log head at the witnessed position differs from the witnessed head');
