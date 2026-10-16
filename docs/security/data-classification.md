@@ -61,6 +61,19 @@ so it carries no free text.
   is a live view for account members with tail access and stores nothing. A Tail
   Worker, which this project does not configure, could store what it receives and
   can read headers unredacted.
+- **Exception to the rule above (owner waiver, 2026-10-16):** proofs (`AKV-Proof`)
+  and revocation webhook signatures (`AKV-Webhook-Signature`) are visible in the live
+  tail to account operators with Workers Tail permission. This is accepted as
+  account-operator access because each proof is single-use (`jti`) and bound to the
+  token hash, method, URL and body within a ±60 s window, and each webhook signature
+  covers one timestamped body with a single-use `event_id`
+  ([decision on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248)).
+  Persisted logs, traces, analytics and the Durable Object dump showed none of them.
+  **Recommendation:** grant Workers Tail permission on the production Worker's
+  account only to the operators who need it, and do not attach a Tail Worker or
+  Logpush job that stores request headers. Renaming the headers so the platform
+  redacts them remains open as hardening
+  ([#61](https://github.com/bestagentkits/ak-vault/issues/61)).
 
 **Errors**
 

@@ -12,7 +12,7 @@ Who ak-vault defends against, how protocol v1 does it, and what remains your ris
 
 The assets are your secret values and everything that describes them: names, descriptions, tags, profiles, portable policy and the audit trail. All of them are encrypted on your devices before upload. The server keeps ciphertext, wrapped vault keys and the operational metadata it needs to order and authorize writes.
 
-> **Status:** protocol v1 is *proposed*. It is not approved for production credentials until the security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) records an external review sign-off. Until then the production sync API stays switched off.
+> **Status:** protocol v1 is *proposed*. It is not approved for production credentials until the security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) records an external review sign-off. The owner switched the production sync API on ahead of that review (an owner waiver, not a sign-off), but AgentKit's account service does not issue production vault tokens yet, so no client can sync with it.
 
 Out of scope by design: decryption in a web browser, server-held vault keys or KMS, and taking back plaintext that has already been disclosed.
 
@@ -96,13 +96,13 @@ These are design properties of protocol v1 as proposed, not reviewed results.
 A box counts only when its evidence is linked on [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) for the exact commit being released. The full list lives in the [release gates](https://github.com/bestagentkits/ak-vault/blob/main/docs/security/release-gates.md).
 
 - [ ] ADR 0001 approved by the owner, with its open items resolved.
-- [ ] Go and TypeScript reproduce every test vector byte for byte, including every rejection vector.
-- [ ] The Worker integration suite is green: conflicts, tombstones, idempotency, cross-tenant denial, replayed proofs, revoked devices and stale membership.
-- [ ] Disclosure scan: storage dumps, logs, traces, metrics and error responses from a seeded run contain no planted plaintext values or names.
-- [ ] A revoked session or device is refused on its next request, even with an unexpired token.
-- [ ] With sync off, ak makes zero HTTP requests and `resolve` works with the Worker unreachable.
-- [ ] Red-team scenarios executed, a staging soak with two or more devices, and backup, restore and rollback rehearsed.
-- [ ] The removal fence binds the change-log contents, not only a position.
+- [x] Go and TypeScript reproduce every test vector byte for byte, including every rejection vector.
+- [x] The Worker integration suite is green: conflicts, tombstones, idempotency, cross-tenant denial, replayed proofs, revoked devices and stale membership.
+- [x] Disclosure scan: storage dumps, logs, traces, metrics and error responses from a seeded run contain no planted plaintext values or names. The live log tail shows request proofs to account operators; the owner accepted that ([#61](https://github.com/bestagentkits/ak-vault/issues/61)).
+- [x] A revoked session or device is refused on its next request, even with an unexpired token.
+- [x] With sync off, ak makes zero HTTP requests and `resolve` works with the Worker unreachable.
+- [ ] Red-team scenarios executed (done), a two-device end-to-end run with real clients (done), and backup, restore and rollback rehearsed on staging (restore still open).
+- [x] The removal fence binds the change-log contents, not only a position.
 - [ ] An independent reviewer with cryptographic expertise signs off. This cannot be self-attested.
 
 ## 6. Sources and disclosure

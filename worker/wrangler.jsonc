@@ -29,8 +29,10 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["VaultDurableObject", "RevocationRegistry"] }],
   "vars": {
-    // Kill switch: production sync stays off until docs/security/release-gates.md is met.
-    "VAULT_SYNC_ENABLED": "false",
+    // Kill switch: production sync is on by owner decision (2026-10-16, issue #8)
+    // ahead of the external review; see docs/security/release-gates.md. Turn it off
+    // with the kill switch in docs/operations/runbooks.md.
+    "VAULT_SYNC_ENABLED": "true",
     "VAULT_ISSUER": "https://agentkit.best",
     "VAULT_AUDIENCE": "https://vault.agentkit.best",
     // ak-web's OAuth server JWKS (jwks_uri in /.well-known/oauth-authorization-server).

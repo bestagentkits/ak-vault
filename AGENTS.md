@@ -114,11 +114,23 @@ Issues are the coordination surface. Labels: `in progress`, `blocked`, `in revie
 
 ## Release gate
 
-Sync is not GA. Production sync stays behind `VAULT_SYNC_ENABLED=false` until every
-item in [release gates](./docs/security/release-gates.md) is met at the release
-commit, including an external review recorded on
-[#8](https://github.com/bestagentkits/ak-vault/issues/8). No agent may self-attest
-that review.
+Sync is not GA. Production sync is enabled (`VAULT_SYNC_ENABLED=true`) under the
+owner's 2026-10-16 waiver of the external-review gate, recorded on
+[#8](https://github.com/bestagentkits/ak-vault/issues/8). That is a waiver, not a
+review: the external review is still pending on #8, and the other open items are
+listed in [release gates](./docs/security/release-gates.md). No agent may
+self-attest the external review or describe the waiver as a sign-off.
+
+- Only the owner approves production deployments. Agents never approve the
+  `production` environment.
+- Turning sync off goes through the
+  [emergency kill switch](./docs/operations/runbooks.md#emergency-kill-switch). Agents
+  may run it (sync off only, never on) without asking first, per the owner decision
+  on [#53](https://github.com/bestagentkits/ak-vault/issues/53): record each use on an
+  incident issue, notify the owner immediately, and follow the runbook (freeze,
+  same-day config PR, unfreeze).
+- Turning sync back on happens only through a reviewed pull request and the gated
+  Deploy workflow.
 
 ## Operations
 
