@@ -26,7 +26,7 @@ import { fetchRetrying } from './fetch-retrying.js';
 import { credentialsFromEnv, durableObjectNamespaces, redactAccount, scriptExists, workersDevSubdomain, type CloudflareCredentials } from './cloudflare-api.js';
 import { LabClient, LabIssuer } from './lab-client.js';
 import { runLabTraffic, type StepResult } from './lab-traffic.js';
-import { WORKER_DIR, countTailEvents, labObservability, startTail, stopTail, writeLabConfig, wrangler, type TailCapture } from './lab-worker-lifecycle.js';
+import { WORKER_DIR, countTailEvents, labObservability, startTail, stopAllWrangler, stopTail, writeLabConfig, wrangler, type TailCapture } from './lab-worker-lifecycle.js';
 import { NeedleSet, selfTestNeedleScan } from './needle-scan.js';
 import { scanOptions } from './scan-options.js';
 import { concludeScan, say, type SourceResult } from './scan-report.js';
@@ -36,17 +36,31 @@ import { pullAnalytics, pullTelemetry, sleep, waitFor } from './telemetry-pollin
 let redact = (text: string) => text;
 /** Deletes the lab and the private directory; set once there is something to clean up. */
 let cleanupOnInterrupt: (() => Promise<unknown>) | undefined;
+/** Set by a signal or uncaught error: `main` stops at its next phase and the run cannot pass. */
+let interrupted = false;
+const unlessInterrupted = () => {
+  if (interrupted) throw new Error('interrupted');
+};
 
-/** Delete the lab (again, if a deploy finished after the first attempt) until it and its namespaces are gone. */
+/**
+ * Delete the lab until it and its namespaces are gone, then check again after a
+ * pause: a deploy cut short by an interrupt can still complete on Cloudflare's
+ * side after the first check, and is then deleted on the second pass.
+ */
 async function deleteLab(creds: CloudflareCredentials, name: string, cwd: string, log: string): Promise<{ scriptGone: boolean; namespacesLeft: number }> {
   let namespacesLeft = -1;
   let scriptGone = false;
-  await waitFor('lab deletion', 120_000, 5_000, async () => {
-    if (await scriptExists(creds, name)) await wrangler(['delete', '--name', name, '--force'], cwd, log, redact);
-    scriptGone = !(await scriptExists(creds, name));
-    namespacesLeft = (await durableObjectNamespaces(creds, name)).length;
-    return scriptGone && namespacesLeft === 0;
-  }).catch(() => undefined);
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass > 0) await sleep(20_000);
+    scriptGone = false;
+    await waitFor('lab deletion', 120_000, 5_000, async () => {
+      if (await scriptExists(creds, name)) await wrangler(['delete', '--name', name, '--force'], cwd, log, redact);
+      scriptGone = !(await scriptExists(creds, name));
+      namespacesLeft = (await durableObjectNamespaces(creds, name)).length;
+      return scriptGone && namespacesLeft === 0;
+    }).catch(() => undefined);
+    if (!scriptGone || namespacesLeft !== 0) break;
+  }
   return { scriptGone, namespacesLeft };
 }
 
@@ -61,8 +75,7 @@ async function main(): Promise<number> {
   const subdomain = await workersDevSubdomain(creds);
   redact = (text) => redactAccount(text, creds, subdomain);
   const origin = `https://${name}.${subdomain}.workers.dev`;
-  const priv = mkdtempSync(join(tmpdir(), 'akvault-logscan-'));
-  const log = join(priv, 'wrangler.log');
+  let priv: string | undefined;
   const needles = new NeedleSet();
   let tail: TailCapture | undefined;
   let deployed = false;
@@ -82,19 +95,24 @@ async function main(): Promise<number> {
     (cleaning ??= (async () => {
       await stopTail(tail).catch((err: Error) => cleanupProblems.push(`tail did not stop cleanly: ${redact(err.message)}`));
       tail = undefined;
-      if (deployed) {
+      // A deploy cut short must have exited before the lab's absence means anything.
+      await stopAllWrangler();
+      if (deployed && priv) {
         say('deleting the lab Worker');
-        cleanup = await deleteLab(creds, name, priv, log).catch((err: Error) => {
+        cleanup = await deleteLab(creds, name, priv, join(priv, 'wrangler.log')).catch((err: Error) => {
           cleanupProblems.push(`lab deletion failed: ${redact(err.message)}`);
           return cleanup;
         });
         if (!cleanup.scriptGone) cleanupProblems.push(`the lab Worker ${name} still exists: delete it by hand`);
         if (cleanup.namespacesLeft !== 0) cleanupProblems.push(`lab Durable Object namespaces not confirmed gone (${cleanup.namespacesLeft})`);
       }
-      rmSync(priv, { recursive: true, force: true });
+      if (priv) rmSync(priv, { recursive: true, force: true });
       for (const p of cleanupProblems) say(`cleanup problem: ${p}`);
     })());
   cleanupOnInterrupt = cleanUp;
+  unlessInterrupted();
+  priv = mkdtempSync(join(tmpdir(), 'akvault-logscan-'));
+  const log = join(priv, 'wrangler.log');
 
   say(`lab ${name} at ${commit}${dirty ? ' (uncommitted changes)' : ''}`);
   try {
@@ -108,6 +126,7 @@ async function main(): Promise<number> {
     const config = writeLabConfig(priv, name, { issuer: issuer.issuer, audience: origin, jwks: issuer.publicJwks });
 
     say('deploying the lab Worker');
+    unlessInterrupted();
     deployed = true;
     await wrangler(['deploy', '--config', config.path, '--secrets-file', secretsFile], priv, log, redact);
     rmSync(secretsFile);
@@ -115,6 +134,7 @@ async function main(): Promise<number> {
     await waitFor('the lab Worker', 180_000, 3_000, async () => (await fetch(`${origin}/healthz`, { signal: AbortSignal.timeout(10_000) })).status === 200);
 
     const tailFile = join(priv, 'tail.jsonl');
+    unlessInterrupted();
     tail = startTail(name, priv, tailFile);
     const from = Date.now() - 60_000;
     await waitFor('wrangler tail to capture', 120_000, 3_000, async () => {
@@ -123,6 +143,7 @@ async function main(): Promise<number> {
       return readFileSync(tailFile, 'utf8').includes('"outcome"');
     });
 
+    unlessInterrupted();
     say('running seeded traffic');
     const traffic = await runLabTraffic(client, needles, webhookSecret);
     steps = traffic.steps;
@@ -131,6 +152,7 @@ async function main(): Promise<number> {
     say(`  ${steps.length} steps, ${client.requests} requests, ${failed.length} unexpected status(es)`);
     for (const s of failed) problems.push(`step "${s.step}": expected ${s.expected}, got ${s.got}`);
     await sleep(15_000);
+    if (tail.child.exitCode !== null || tail.child.signalCode !== null) problems.push('wrangler tail exited before the traffic ended');
     await stopTail(tail);
     tail = undefined;
     // The window closes before the dump request, which is lab-only harness traffic.
@@ -145,6 +167,7 @@ async function main(): Promise<number> {
     const vaultTables = new Set(Object.values(dump.vaults).flatMap((v) => v.tables));
     for (const t of ['records', 'audit_entries', 'recovery_blob', 'idempotency', 'proof_jti']) if (!vaultTables.has(t)) problems.push(`vault dump lacks table ${t}`);
 
+    unlessInterrupted();
     say('pulling platform telemetry (ingestion can take minutes)');
     const telemetry = await pullTelemetry(creds, name, from, to, client.requests);
     const analytics = await pullAnalytics(creds, name, from, to, client.requests);
@@ -171,6 +194,7 @@ async function main(): Promise<number> {
   } finally {
     await cleanUp();
   }
+  if (interrupted) problems.push('the run was interrupted');
 
   const ok = concludeScan(
     {
@@ -193,14 +217,16 @@ async function main(): Promise<number> {
   return ok ? 0 : 1;
 }
 
-// An interrupted or crashed run still deletes the lab; a second signal exits at once.
+// An interrupted or crashed run still deletes the lab; any second signal or error exits at once.
 const abort = (why: string, code: number) => {
-  process.stderr.write(`platform log scan stopped (${why}); cleaning up\n`);
+  if (interrupted) process.exit(code);
+  interrupted = true;
+  process.stderr.write(`platform log scan stopped (${redact(why)}); cleaning up\n`);
   void (cleanupOnInterrupt?.() ?? Promise.resolve()).finally(() => process.exit(code));
 };
-process.once('SIGINT', () => abort('SIGINT', 130));
-process.once('SIGTERM', () => abort('SIGTERM', 143));
-process.once('uncaughtException', (err) => abort(`uncaught ${err.name}`, 2));
+process.on('SIGINT', () => abort('SIGINT', 130));
+process.on('SIGTERM', () => abort('SIGTERM', 143));
+process.on('uncaughtException', (err) => abort(`uncaught ${err.name}: ${err.message}`, 2));
 
 main().then(
   (code) => process.exit(code),

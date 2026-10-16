@@ -4,7 +4,7 @@
  * synthetic credentials and canaries) must be written outside the repository.
  */
 import { existsSync, realpathSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { LAB_NAME_PATTERN, WORKER_DIR } from './lab-worker-lifecycle.js';
 
@@ -14,15 +14,31 @@ export interface ScanOptions {
   keepCapture?: string;
 }
 
-/** Captures and reports hold synthetic credentials and canaries: never let them land in the repository. */
-function outsideRepository(path: string, flag: string): string {
-  const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: WORKER_DIR, encoding: 'utf8' }).trim();
+/** The real path of `path`, resolving symlinks through its nearest existing ancestor. */
+function realPathOf(path: string): string {
   const abs = resolve(path);
-  for (const root of new Set([top, realpathSync(top)])) {
-    const rel = relative(root, abs);
-    if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) throw new Error(`${flag} must be outside the repository`);
-  }
-  return abs;
+  if (existsSync(abs)) return realpathSync(abs);
+  const parent = dirname(abs);
+  return parent === abs ? abs : join(realPathOf(parent), basename(abs));
+}
+
+/** True when `path` is `root` or inside it (case-insensitively on macOS, whose default volumes are). */
+function within(root: string, path: string): boolean {
+  const fold = (p: string) => (process.platform === 'darwin' ? p.toLowerCase() : p);
+  const rel = relative(fold(root), fold(path));
+  return rel === '' || !(rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel));
+}
+
+/** Captures and reports hold synthetic credentials and canaries: never let them land in this repository or any of its worktrees. */
+function outsideRepository(path: string, flag: string): string {
+  const target = realPathOf(path);
+  const worktrees = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: WORKER_DIR, encoding: 'utf8' })
+    .split('\n')
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => realPathOf(line.slice('worktree '.length)));
+  if (worktrees.length === 0) throw new Error('could not list the repository worktrees');
+  if (worktrees.some((root) => within(root, target))) throw new Error(`${flag} must be outside the repository`);
+  return target;
 }
 
 /** Parse `--name`, `--report` and `--keep-capture`; refuses lab names outside the lab namespace and output inside the repository. */

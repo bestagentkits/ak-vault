@@ -21,6 +21,22 @@ const LAB_ENTRY = join(HERE, 'lab-worker/lab-worker-entry.ts');
 /** Lab names are namespaced so a typo can never target the real Workers. */
 export const LAB_NAME_PATTERN = /^ak-vault-lab-[a-z0-9-]{4,40}$/;
 
+/** Every wrangler process this run started and that has not exited yet. */
+const liveChildren = new Set<ChildProcess>();
+
+function spawnWrangler(args: string[], cwd: string): ChildProcess & { stdout: NonNullable<ChildProcess['stdout']>; stderr: NonNullable<ChildProcess['stderr']> } {
+  const child = spawn(WRANGLER, args, { cwd, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  liveChildren.add(child);
+  child.once('close', () => liveChildren.delete(child));
+  child.once('error', () => liveChildren.delete(child));
+  return child;
+}
+
+/** Stop every wrangler process still running (a deploy or tail cut short by an interrupt) and wait for each to exit. */
+export async function stopAllWrangler(): Promise<void> {
+  await Promise.all([...liveChildren].map((child) => stopProcess(child)));
+}
+
 export interface LabVars {
   issuer: string;
   audience: string;
@@ -65,7 +81,7 @@ export function wrangler(args: string[], cwd: string, logFile: string, redact: (
     const out = createWriteStream(logFile, { flags: 'a', mode: 0o600 });
     out.on('error', (err) => reject(new Error(`wrangler log could not be written: ${err.name}`)));
     const chunks: string[] = [];
-    const child = spawn(WRANGLER, args, { cwd, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnWrangler(args, cwd);
     const collect = (b: Buffer) => {
       out.write(b);
       chunks.push(b.toString('utf8'));
@@ -97,7 +113,7 @@ export interface TailCapture {
 /** `wrangler tail --format json` into `file` until stopped with `stopTail`. */
 export function startTail(name: string, cwd: string, file: string): TailCapture {
   const out = createWriteStream(file, { mode: 0o600 });
-  const child = spawn(WRANGLER, ['tail', name, '--format', 'json'], { cwd, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawnWrangler(['tail', name, '--format', 'json'], cwd);
   // stderr carries wrangler's own status lines; keep them with the capture so they are scanned too.
   const write = (b: Buffer) => out.write(b);
   child.stdout.on('data', write);

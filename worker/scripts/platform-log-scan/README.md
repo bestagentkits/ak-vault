@@ -17,7 +17,8 @@ staging and production are never touched.
 1. Deploys a lab Worker named `ak-vault-lab-…` on `workers.dev`. Its entry,
    [`lab-worker/lab-worker-entry.ts`](./lab-worker/lab-worker-entry.ts), serves every
    request with the real Worker and Durable Object classes and adds only a
-   secret-gated dump route (a refused dump request is served by the real Worker). The config is generated from the production top level of
+   secret-gated dump route (a refused dump request is served by the real Worker).
+   The config is generated from the production top level of
    [`wrangler.jsonc`](../../wrangler.jsonc) by
    [`lab-worker-lifecycle.ts`](./lab-worker-lifecycle.ts): same observability block,
    plus traces (off in production), with sync on and a synthetic issuer's inline JWKS.
@@ -37,7 +38,9 @@ staging and production are never touched.
    byte alignments), and prints hit counts per source and category.
 5. Deletes the lab Worker and checks that it and its Durable Object namespaces are
    gone, also when an earlier step failed or the run is interrupted (`SIGINT`,
-   `SIGTERM`); a second signal exits without cleaning up.
+   `SIGTERM`): running wrangler processes are stopped first, and the lab must stay
+   absent on a second check 20 seconds later, so a deploy cut short is still
+   caught. A second signal exits without cleaning up.
 
 Gating categories (any hit fails): secret names and values, recovery material,
 tokens, proofs, keys, idempotency keys, webhook material, and canaries in refused
@@ -59,7 +62,7 @@ pnpm scan:platform-logs -- --report /path/outside/repo/report.json
 Options: `--name ak-vault-lab-<suffix>` (default: a Saigon timestamp) and
 `--keep-capture DIR`, which keeps the raw captures to locate a hit. The captures
 hold the run's synthetic tokens and canaries; delete them afterwards. The report
-and captures are refused inside the repository. Output redacts the token, account
+and captures are refused inside the repository or any of its worktrees. Output redacts the token, account
 id and workers.dev subdomain. A full run
 takes about 10 to 20 minutes, most of it waiting for telemetry ingestion.
 
