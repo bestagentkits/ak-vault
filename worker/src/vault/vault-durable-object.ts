@@ -11,7 +11,7 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env.js';
-import { ApiError, errorResult, toApiError, type ApiResult } from '../http/errors.js';
+import { ApiError, errorResult, okResult, toApiError, type ApiResult } from '../http/errors.js';
 import { appendAudit, readAudit } from './audit-store.js';
 import { backfillLogHeads } from './change-log-heads.js';
 import { getChanges } from './changes-feed.js';
@@ -20,6 +20,7 @@ import { lookupIdempotent, storeIdempotent, validateIdempotencyKey } from './ide
 import { getItem, putRecord } from './item-store.js';
 import { handleGenesis, handleMembershipGet, handleMembershipPost, handleWrapsGet } from './membership-handlers.js';
 import { MembershipStore } from './membership-store.js';
+import { bookmarkForTime, currentBookmark, scheduleRestore } from './point-in-time-restore.js';
 import { getRecovery, putRecovery } from './recovery-store.js';
 import { enforceRateLimit } from './request-guard.js';
 import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
@@ -82,6 +83,38 @@ export class VaultDurableObject extends DurableObject<Env> {
     } catch (err) {
       return errorResult(toApiError(err));
     }
+  }
+
+  /**
+   * Operator point-in-time recovery (RPC from the operator route only; the sync
+   * API never reaches it). Each call refuses a vault that does not exist, without
+   * creating storage. Results are plain objects so errors cross RPC as data.
+   */
+  async operatorBookmark(atMs: number | null, nowMs: number): Promise<ApiResult> {
+    try {
+      if (!this.vaultExists()) throw new ApiError('not_found');
+      const storage = this.ctx.storage;
+      const bookmark = atMs === null ? await currentBookmark(storage) : await bookmarkForTime(storage, atMs, nowMs);
+      return okResult({ bookmark });
+    } catch (err) {
+      return errorResult(toApiError(err));
+    }
+  }
+
+  /** Schedule a restore (compare-and-swap on the current bookmark); returns the undo bookmark. */
+  async operatorScheduleRestore(target: string, expectedCurrent: string): Promise<ApiResult> {
+    try {
+      if (!this.vaultExists()) throw new ApiError('not_found');
+      const undo = await scheduleRestore(this.ctx.storage, target, expectedCurrent);
+      return okResult({ restored_to: target, undo_bookmark: undo });
+    } catch (err) {
+      return errorResult(toApiError(err));
+    }
+  }
+
+  /** Restart the object so a scheduled restore takes effect. The calling RPC receives an error by design. */
+  operatorRestart(): void {
+    this.ctx.abort('operator point-in-time restore');
   }
 
   private read(req: VaultRequest, auth: Authorized): ApiResult {

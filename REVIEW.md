@@ -28,7 +28,7 @@ contract in the [spec](./docs/protocol/v1/spec.md); attacks and their tests in t
 | A plaintext value, secret name, token, proof or key reaches a log, metric, trace, error message, fixture or dump | Log route, status, stable code, opaque IDs and sizes only |
 | Any last-writer-wins or silent overwrite path | CAS on `base_revision`; `409` with a preserved branch |
 | Custom or hand-rolled cryptography, or a primitive outside the spec | Spec primitives from `@noble/*` or Go `crypto`/`x/crypto` |
-| A new endpoint without token, proof, live revocation and membership checks | Route through the shared auth path; only `/healthz`, `/v1/meta` and static assets are public, and the ak-web revocation webhook is HMAC-authenticated |
+| A new endpoint without token, proof, live revocation and membership checks | Route through the shared auth path; only `/healthz`, `/v1/meta` and static assets are public; the ak-web revocation webhook and the operator restore route (404 unless its secret is set) are HMAC-authenticated |
 | A doc or comment widens a guarantee without vectors or tests | Add the vector/test first, or narrow the claim |
 | Synced policy, profile or metadata can create or widen a grant | Policy is a maximum intersected with local grants |
 | Any server-side decryption, server-held vault key, or web decryption | Client-side crypto only |

@@ -17,7 +17,7 @@ AgentKit (agentkit#2298/#2299). Decisions and rationale are in
 | Owner trust anchor and witnessed checkpoints | Each device; inside the encrypted recovery bundle |
 | Portable policy and encrypted audit | Encrypted items / audit stream |
 | Vault-resource tokens and session/device IDs | ak-web issuer, client, Worker in transit |
-| Worker operational secrets (webhook HMAC key) | Worker secret store only |
+| Worker operational secrets (webhook HMAC key; operator restore HMAC key, set only for a restore) | Worker secret store; the operator key also on the operator's machine for the restore |
 | Availability of local `resolve` | Local client; must not depend on this service |
 
 ## Actors
@@ -45,6 +45,11 @@ AgentKit (agentkit#2298/#2299). Decisions and rationale are in
    approval gate release; `run` crosses this boundary with plaintext by design.
 5. **Repository / CI ↔ production.** Production deploy is gated by a protected
    GitHub Environment reviewer; forked PRs get no secrets.
+6. **Operator ↔ Worker.** The operator restore route (`POST /internal/v1/operator`)
+   answers 404 unless `VAULT_OPERATOR_SECRET` is set for that environment; it is set
+   only for a restore and deleted afterwards. Its holder can return one vault object
+   to an earlier point. That is no more than the "malicious server" actor above
+   already has, and it is detected the same way (T5).
 
 ## Invariants
 
@@ -86,6 +91,7 @@ directories themselves are the authority for exact file names.
 | T3 | Resurrection of deleted/revoked secret | Stale offline device | Tombstones; stale writes refused and not preserved | `worker/test/` tombstone replay, offline rejoin |
 | T4 | Duplicate side effects on retry | Network | Idempotency keys; mismatched body → `422` | `worker/test/` duplicate request, idempotency mismatch |
 | T5 | Rollback or fork of vault state | Server | Client-signed checkpoints; rollback/fork alarm | Vectors: rollback, fork; `worker/test/` stale membership |
+| T8 | Misuse of the operator restore route (forged, replayed or cross-environment restore, restoring the revocation registry) | Network attacker, holder of a captured request, operator mistake | Off (404) without its secret; HMAC-SHA256 over a context-separated request carried in the body, not a header, so live tail does not show it; origin and ±60 s time bound; compare-and-swap on the vault's current bookmark, so a replay is refused; one vault object per request, never the registry; platform errors never echoed. A restore by the secret holder is a rollback detected as T5, not prevented | `worker/test/operator-restore.test.ts`; the staging rehearsal in [rehearsal log](../operations/rehearsal-2026-10.md) |
 | T6 | Nonce reuse | Buggy client | Random 24-byte nonces from the platform CSPRNG; only vectors inject fixed nonces | Vectors: duplicate nonce |
 | T7 | Weak password parameters downgrade | Server | Argon2id minimums enforced by verifiers; re-wrap upgrade | Vectors: below-minimum parameters |
 | R1 | Undetected audit drop/reorder, or audit entries forged by a removed device | Server, removed device | Hash-chained encrypted audit + audit checkpoints; a per-epoch audit key derived from `VK[e]`, so a removed device cannot write entries at an epoch it never held; epochs never decrease along the chain; the Worker accepts only the current epoch; the rekeying device MUST append at the new epoch; verifiers require the current epoch's key ([spec §7](../protocol/v1/spec.md#7-encrypted-audit-stream)) | Vectors: `audit.json` reorder/drop/relabel across a rekey, refusal without the current key; `worker/test/checkpoints-audit.test.ts` |

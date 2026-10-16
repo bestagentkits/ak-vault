@@ -265,29 +265,43 @@ below), and rolling back the Worker needs the version ID.
 SQLite-backed Durable Objects support point-in-time recovery to any point in the
 past 30 days through the storage API
 ([Cloudflare SQLite storage API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)).
-It is not available in local development. The Worker exposes no restore or export
-route (routing is in `worker/src/index.ts`), so a restore needs a reviewed code
-change ([#51](https://github.com/bestagentkits/ak-vault/issues/51)); until one exists
-the procedure below was rehearsed on a separate lab Worker (see the
-[rehearsal log](./rehearsal-2026-10.md)).
+Local development has no history: there, bookmarks are placeholders and a restore
+does nothing. The Worker reaches it through the operator restore route,
+`POST /internal/v1/operator` (contract in the header of
+`worker/src/routes/operator-restore.ts`), which acts on one vault object and never on
+the revocation registry. The route answers 404 unless the environment has the
+`VAULT_OPERATOR_SECRET` Worker secret. `worker/scripts/operator-restore.ts` signs and
+sends its requests; its header documents the arguments.
 
 **Backup.** History is kept automatically; nothing has to run beforehand. For a
-planned change, also take `getCurrentBookmark()` on each affected vault object and
-record it: it is exact, while a time lookup is not (below).
+planned change, also record each affected vault's current bookmark with the
+operator script's `bookmark` action: it is exact, while a time lookup is not (below).
 
-**Restore**, inside the vault's Durable Object, one vault at a time:
+**Restore**, one vault at a time:
 
-1. Get the bookmark: the one recorded before the change, or
-   `getBookmarkForTime(t)`.
-2. `onNextSessionRestoreBookmark(bookmark)`. It returns the **undo bookmark** (the
-   moment just before the restore). Record it on the incident issue before going
-   on; nothing else returns it.
-3. `ctx.abort()` restarts the object (the call that aborts receives an error; that
-   is expected). The next request sees the restored state; in the rehearsal that
-   took 2 to 4 s.
-4. Verify with a client pull: the membership chain and the change log verify, and
+1. Open the incident issue first; for production, the owner decides on the restore
+   there.
+2. Enable the route: generate a random secret of at least 32 characters into a
+   `0600` file outside the repository, and set it without echoing it:
+   `wrangler secret put VAULT_OPERATOR_SECRET --env staging` from `worker/`, reading
+   the file on standard input. For production, use the top-level environment, and
+   only on the owner's decision. `secret put` and `secret delete` each deploy a new
+   version of the current Worker code with the secret changed; no code deploy is needed.
+3. Get the target bookmark: the one recorded before the change, or a `bookmark`
+   with a time (unix ms).
+4. Make the vault quiet, for example with the [kill switch](#kill-switch), because
+   every client request moves the bookmark. Read the current bookmark (`bookmark`
+   without a time), then `restore <vault_id> <target> <current>` straight away. A
+   `409` means the vault changed in between; read the current bookmark again.
+5. The response holds the target and the **undo bookmark** (the moment just before
+   the restore). Record both on the incident issue before going on; nothing else
+   keeps them. The route restarts the vault object; the next request sees the
+   restored state.
+6. Verify with a client pull: the membership chain and the change log verify, and
    the head matches the intended point.
-5. To undo, repeat steps 2 and 3 with the undo bookmark.
+7. To undo, read the current bookmark and restore to the undo bookmark the same way.
+8. Delete the secret (`wrangler secret delete VAULT_OPERATOR_SECRET` with the same
+   environment) and the local file. The route answers 404 again.
 
 What the rehearsal showed about `getBookmarkForTime`:
 
@@ -309,8 +323,9 @@ Restoring a vault is **an incident in itself**:
   `400 bad_request` (ahead of the stored state). `jti` entries burned after the
   restore point are forgotten, so a captured token and proof could be replayed once
   within the `jti` window (`worker/src/limits.ts`) after the restore.
-- Revocations live in the separate revocation registry object. Never restore that
-  object to before a revocation: it would un-revoke sessions and devices.
+- Revocations live in the separate revocation registry object, which the operator
+  route cannot reach. Never restore it to before a revocation by any other means: it
+  would un-revoke sessions and devices.
 - How clients re-converge after a deliberate restore is not yet specified
   ([ADR 0001 open items](../adr/0001-opt-in-zero-knowledge-sync.md#open-items)).
   Until it is, restore only to recover from server-side corruption, one vault at a
