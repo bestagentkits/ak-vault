@@ -25,7 +25,7 @@ import { handleGenesis, handleMembershipGet, handleMembershipPost, handleWrapsGe
 import { MembershipStore } from './membership-store.js';
 import { bookmarkForTime, currentBookmark, scheduleRestore } from './point-in-time-restore.js';
 import { getRecovery, putRecovery } from './recovery-store.js';
-import { enforceRateLimit } from './request-guard.js';
+import { enforceRateLimit, requireRateBudget } from './request-guard.js';
 import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
 import { isMutation, type VaultRequest } from './vault-request.js';
 import { VAULT_SCHEMA } from './vault-schema.js';
@@ -99,8 +99,11 @@ export class VaultDurableObject extends DurableObject<Env> {
    * Authorize, then charge the device's `authorized` budget. A refusal charges the
    * `refused` budget instead (answering `rate_limited` once that is spent), so a
    * caller that cannot prove the device key cannot exhaust the device's budget.
+   * The refused budget is shared by everyone presenting the device's token: during a
+   * flood the device's own refusals also answer `rate_limited`.
    */
   private authorizeAndCharge(req: VaultRequest): Authorized {
+    requireRateBudget(this.sql, 'authorized', req.claims.did, req.nowMs);
     let auth: Authorized;
     try {
       if (isMutation(req.op)) validateIdempotencyKey(req.idempotencyKey);

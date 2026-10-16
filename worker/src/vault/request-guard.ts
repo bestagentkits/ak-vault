@@ -28,17 +28,44 @@ const RATE_TABLES: Record<RateBucket, string> = {
   refused: 'refused_rate_counters',
 };
 
-export function enforceRateLimit(sql: SqlStorage, bucket: RateBucket, did: string, nowMs: number): void {
+interface RateWindow {
+  table: string;
+  windowStart: number;
+  /** Requests already counted in the current window. */
+  used: number;
+  /** Seconds until the current window ends (at least 1). */
+  retryAfter: number;
+}
+
+function rateWindow(sql: SqlStorage, bucket: RateBucket, did: string, nowMs: number): RateWindow {
   const table = RATE_TABLES[bucket];
   const windowMs = LIMITS.rate_window_seconds * 1000;
   const windowStart = Math.floor(nowMs / windowMs) * windowMs;
   const row = sql.exec<{ window_start: number; count: number }>(`SELECT window_start, count FROM ${table} WHERE did = ?`, did).toArray()[0];
-  const count = row && row.window_start === windowStart ? row.count + 1 : 1;
-  sql.exec(`INSERT INTO ${table} (did, window_start, count) VALUES (?, ?, ?) ON CONFLICT (did) DO UPDATE SET window_start = excluded.window_start, count = excluded.count`, did, windowStart, count);
-  if (count > LIMITS.rate_requests_per_window) {
-    const retryAfter = Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000));
-    throw new ApiError('rate_limited', { headers: { 'Retry-After': String(retryAfter) } });
-  }
+  const used = row && row.window_start === windowStart ? row.count : 0;
+  return { table, windowStart, used, retryAfter: Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000)) };
+}
+
+function rateLimited(retryAfter: number): ApiError {
+  return new ApiError('rate_limited', { headers: { 'Retry-After': String(retryAfter) } });
+}
+
+/** Count one request against `bucket`; `rate_limited` once the window's budget is spent. */
+export function enforceRateLimit(sql: SqlStorage, bucket: RateBucket, did: string, nowMs: number): void {
+  const w = rateWindow(sql, bucket, did, nowMs);
+  const count = w.used + 1;
+  sql.exec(`INSERT INTO ${w.table} (did, window_start, count) VALUES (?, ?, ?) ON CONFLICT (did) DO UPDATE SET window_start = excluded.window_start, count = excluded.count`, did, w.windowStart, count);
+  if (count > LIMITS.rate_requests_per_window) throw rateLimited(w.retryAfter);
+}
+
+/**
+ * Read-only: `rate_limited` if `bucket` is already spent this window. Used on the
+ * `authorized` budget before authorization, so a device over its own budget is
+ * refused without verification work; only the key holder can have spent it.
+ */
+export function requireRateBudget(sql: SqlStorage, bucket: RateBucket, did: string, nowMs: number): void {
+  const w = rateWindow(sql, bucket, did, nowMs);
+  if (w.used >= LIMITS.rate_requests_per_window) throw rateLimited(w.retryAfter);
 }
 
 /**
