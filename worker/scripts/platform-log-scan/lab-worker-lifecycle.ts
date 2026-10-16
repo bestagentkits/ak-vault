@@ -12,6 +12,8 @@ import { createWriteStream, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { unstable_readConfig } from 'wrangler';
+import { durableObjectNamespaces, scriptExists, type CloudflareCredentials } from './cloudflare-api.js';
+import { sleep, waitFor } from './telemetry-polling.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const WORKER_DIR = resolve(HERE, '../..');
@@ -169,4 +171,27 @@ export function countTailEvents(text: string): { events: number; fetches: number
     buffer = [];
   }
   return { events, fetches };
+}
+
+/**
+ * Delete the lab until it and its namespaces are gone, then check again after a
+ * pause: a deploy cut short by an interrupt can still complete on Cloudflare's
+ * side after the first check, and is then deleted on the second pass.
+ */
+export async function deleteLab(creds: CloudflareCredentials, name: string, cwd: string, log: string, redact: (text: string) => string): Promise<{ scriptGone: boolean; namespacesLeft: number }> {
+  if (!LAB_NAME_PATTERN.test(name)) throw new Error('refusing to delete a Worker outside the lab namespace');
+  let namespacesLeft = -1;
+  let scriptGone = false;
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass > 0) await sleep(20_000);
+    scriptGone = false;
+    await waitFor('lab deletion', 120_000, 5_000, async () => {
+      if (await scriptExists(creds, name)) await wrangler(['delete', '--name', name, '--force'], cwd, log, redact);
+      scriptGone = !(await scriptExists(creds, name));
+      namespacesLeft = (await durableObjectNamespaces(creds, name)).length;
+      return scriptGone && namespacesLeft === 0;
+    }).catch(() => undefined);
+    if (!scriptGone || namespacesLeft !== 0) break;
+  }
+  return { scriptGone, namespacesLeft };
 }

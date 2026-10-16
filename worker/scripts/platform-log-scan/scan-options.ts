@@ -30,7 +30,7 @@ function within(root: string, path: string): boolean {
 }
 
 /** Captures and reports hold synthetic credentials and canaries: never let them land in this repository or any of its worktrees. */
-function outsideRepository(path: string, flag: string): string {
+export function outsideRepository(path: string, flag: string): string {
   const target = realPathOf(path);
   const worktrees = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: WORKER_DIR, encoding: 'utf8' })
     .split('\n')
@@ -41,14 +41,18 @@ function outsideRepository(path: string, flag: string): string {
   return target;
 }
 
+/** Current time in Asia/Saigon as digits (yyyymmddhhmmss), for default lab names. */
+export function saigonStamp(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Saigon', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    .format(new Date())
+    .replace(/[^0-9]/g, '');
+}
+
 /** Parse `--name`, `--report` and `--keep-capture`; refuses lab names outside the lab namespace and output inside the repository. */
 export function scanOptions(rawArgv: string[]): ScanOptions {
   // `pnpm scan:platform-logs -- …` forwards the separator itself.
   const argv = rawArgv[0] === '--' ? rawArgv.slice(1) : rawArgv;
-  const stamp = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Saigon', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-    .format(new Date())
-    .replace(/[^0-9]/g, '');
-  let name = `ak-vault-lab-logscan-${stamp}`;
+  let name = `ak-vault-lab-logscan-${saigonStamp()}`;
   let report: string | undefined;
   let keepCapture: string | undefined;
   for (let i = 0; i < argv.length; i++) {

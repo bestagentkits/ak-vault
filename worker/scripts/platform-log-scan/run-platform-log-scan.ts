@@ -23,10 +23,10 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { b64encode, randomBytes } from '@ak-vault/protocol';
 import { fetchRetrying } from './fetch-retrying.js';
-import { credentialsFromEnv, durableObjectNamespaces, redactAccount, scriptExists, workersDevSubdomain, type CloudflareCredentials } from './cloudflare-api.js';
+import { credentialsFromEnv, redactAccount, scriptExists, workersDevSubdomain } from './cloudflare-api.js';
 import { LabClient, LabIssuer } from './lab-client.js';
 import { runLabTraffic, type StepResult } from './lab-traffic.js';
-import { WORKER_DIR, countTailEvents, labObservability, startTail, stopAllWrangler, stopTail, writeLabConfig, wrangler, type TailCapture } from './lab-worker-lifecycle.js';
+import { WORKER_DIR, countTailEvents, deleteLab, labObservability, startTail, stopAllWrangler, stopTail, writeLabConfig, wrangler, type TailCapture } from './lab-worker-lifecycle.js';
 import { NeedleSet, selfTestNeedleScan } from './needle-scan.js';
 import { scanOptions } from './scan-options.js';
 import { concludeScan, say, type SourceResult } from './scan-report.js';
@@ -41,28 +41,6 @@ let interrupted = false;
 const unlessInterrupted = () => {
   if (interrupted) throw new Error('interrupted');
 };
-
-/**
- * Delete the lab until it and its namespaces are gone, then check again after a
- * pause: a deploy cut short by an interrupt can still complete on Cloudflare's
- * side after the first check, and is then deleted on the second pass.
- */
-async function deleteLab(creds: CloudflareCredentials, name: string, cwd: string, log: string): Promise<{ scriptGone: boolean; namespacesLeft: number }> {
-  let namespacesLeft = -1;
-  let scriptGone = false;
-  for (let pass = 0; pass < 2; pass++) {
-    if (pass > 0) await sleep(20_000);
-    scriptGone = false;
-    await waitFor('lab deletion', 120_000, 5_000, async () => {
-      if (await scriptExists(creds, name)) await wrangler(['delete', '--name', name, '--force'], cwd, log, redact);
-      scriptGone = !(await scriptExists(creds, name));
-      namespacesLeft = (await durableObjectNamespaces(creds, name)).length;
-      return scriptGone && namespacesLeft === 0;
-    }).catch(() => undefined);
-    if (!scriptGone || namespacesLeft !== 0) break;
-  }
-  return { scriptGone, namespacesLeft };
-}
 
 async function main(): Promise<number> {
   selfTestNeedleScan();
@@ -99,7 +77,7 @@ async function main(): Promise<number> {
       await stopAllWrangler();
       if (deployed && priv) {
         say('deleting the lab Worker');
-        cleanup = await deleteLab(creds, name, priv, join(priv, 'wrangler.log')).catch((err: Error) => {
+        cleanup = await deleteLab(creds, name, priv, join(priv, 'wrangler.log'), redact).catch((err: Error) => {
           cleanupProblems.push(`lab deletion failed: ${redact(err.message)}`);
           return cleanup;
         });
