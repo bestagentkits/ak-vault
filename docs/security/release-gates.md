@@ -20,6 +20,9 @@ evidence does not count.
 - [ ] Disclosure scan: a full Durable Object dump, Worker logs, traces, metrics and
       every error response from a run seeded with known plaintext values and names
       contain none of them ([data classification](./data-classification.md)).
+      Platform Workers Logs and traces are not covered by the Docker e2e (see
+      [staging soak](#staging-soak)): they need a seeded run on a deployed Worker (a
+      lab Worker is acceptable) or an explicit owner waiver on #8.
 - [ ] Revocation: a revoked session or device is refused on its next request even
       with an unexpired token; revocation-registry failure returns `503`.
 - [ ] Sync-off regression (agentkit#2298): zero HTTP requests; vault v1 behavior
@@ -33,8 +36,9 @@ evidence does not count.
       ([#55](https://github.com/bestagentkits/ak-vault/pull/55)) by owner decision
       on 2026-10-16. Evidence: the
       [run on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6206840562)
-      at `a4f5656`; `worker/`, `packages/` and `go/` are unchanged since then, so
-      re-run it if they change before the release commit. Residual risk stated below.
+      at `a4f5656`. `worker/`, `packages/`, `go/`, `protocol/` and `pnpm-lock.yaml`
+      were unchanged from that commit to the change that ticked this box; re-run it
+      if any of them changes before the release commit. Residual risk stated below.
 - [ ] Backup/restore and rollback rehearsed on staging using the
       [runbooks](../operations/runbooks.md).
       Latest run: [rehearsal log](../operations/rehearsal-2026-10.md) (rollback and

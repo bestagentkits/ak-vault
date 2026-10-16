@@ -108,8 +108,11 @@ jobs:
         run: |
           case "${DEPLOY_FREEZE}" in
             ""|false) ;;
+            true)
+              echo "::error::DEPLOY_FREEZE is true: deploys are frozen for an incident; refusing to deploy production (see docs/operations/runbooks.md#deploy-freeze)"
+              exit 1 ;;
             *)
-              echo "::error::DEPLOY_FREEZE is set (not false): deploys are frozen; refusing to deploy production (see docs/operations/runbooks.md#deploy-freeze)"
+              echo "::error::DEPLOY_FREEZE has an unrecognised value; expected true, false or unset; refusing to deploy production"
               exit 1 ;;
           esac
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

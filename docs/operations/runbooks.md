@@ -80,9 +80,11 @@ Evidence: [rehearsal log](./rehearsal-2026-10.md).
 A direct production deploy that **only** sets `VAULT_SYNC_ENABLED=false`, skipping
 the pull request and the production reviewer (owner decision on
 [#53](https://github.com/bestagentkits/ak-vault/issues/53)). Use it when sync must
-stop faster than the gated path allows. It needs an operator with the production
-Cloudflare credentials from the approved secret store, loaded into the shell as
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` without echoing them.
+stop faster than the gated path allows. It needs an operator holding production
+Cloudflare credentials outside GitHub: the GitHub Environment secrets used by CI
+cannot be read back, so make sure such credentials exist before relying on this
+path. Load them as `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` without
+echoing them, and only after `pnpm install` (as CI does).
 
 - **Never use this path to enable sync**, or to ship code or any other config
   change. `--var` takes only `VAULT_SYNC_ENABLED:false`. Sync comes back only
@@ -92,28 +94,40 @@ Cloudflare credentials from the approved secret store, loaded into the shell as
 
 1. Open the incident issue (no sensitive values).
 2. **Set `DEPLOY_FREEZE=true` first** (see [deploy freeze](#deploy-freeze)), so no
-   automatic or pending deploy replaces the kill-switch version. Do not approve a
-   production deployment that is waiting for review.
+   automatic or pending deploy replaces the kill-switch version. The freeze stops
+   only jobs that have not started, so also clear Deploy runs already in flight:
+   list them with
+   `gh run list -R bestagentkits/ak-vault --workflow deploy.yml --status in_progress`
+   (and again with `--status waiting`) and cancel each with `gh run cancel <run-id>`.
+   If a production deploy step is already running, let it finish before step 4.
+   Never approve a production deployment that is waiting for review.
 3. Find the commit production runs: the latest Deploy workflow run whose
-   `production` job succeeded. Check it out clean and run
-   `pnpm install --frozen-lockfile`. Deploying that commit keeps the code and every
-   other var unchanged: without `--keep-vars`, Wrangler replaces all vars with the
+   `production` job succeeded. Its Deploy step log shows the version it created
+   ("Current Version ID"). From `worker/` in the main checkout, run
+   `pnpm exec wrangler deployments status --env=""` and compare. If the live version
+   differs (a rollback or an earlier emergency deploy is in effect), stop: do not
+   deploy a commit you cannot match to the live version; escalate on the incident
+   issue. Otherwise check that commit out clean and run
+   `pnpm install --frozen-lockfile`. Deploying it keeps the code and every other var
+   unchanged: without `--keep-vars`, Wrangler replaces all vars with the
    checked-out config plus `--var`.
-4. Deploy, targeting production explicitly (`--env=""` selects the top-level
-   Wrangler config, which is production):
+4. From `worker/` in that checkout, deploy, targeting production explicitly
+   (`--env=""` selects the top-level Wrangler config, which is production):
 
    ```sh
-   pnpm --filter <worker package> exec wrangler deployments status --env=""   # note the current version ID
-   pnpm --filter <worker package> exec wrangler deploy --env="" --var VAULT_SYNC_ENABLED:false --message "<incident issue URL>"
+   pnpm exec wrangler deploy --env="" --var VAULT_SYNC_ENABLED:false --message "<incident issue URL>"
    ```
 
 5. Verify from outside as described [above](#kill-switch) until several
    consecutive probes agree, and record the result on the incident issue.
 6. **The same day**, open a pull request that sets `VAULT_SYNC_ENABLED` to `"false"`
    in the top-level (production) `vars` of `worker/wrangler.jsonc`, linking the
-   incident issue. Its Deploy run after merge refuses at the gate because of the
-   freeze; that is expected.
-7. **Unfreeze only after that pull request merges**, then run the Deploy workflow
+   incident issue. If `main` already has `"false"` there, record that on the
+   incident issue instead. A Deploy run after the merge refuses at the gate because
+   of the freeze; that is expected.
+7. **Unfreeze only after that pull request merges.** Repeat the in-flight check
+   from step 2 and cancel any Deploy run still waiting for review (it carries an
+   older commit), then delete the variable and run the Deploy workflow
    (`gh workflow run deploy.yml -R bestagentkits/ak-vault --ref main`) so production
    runs `main` again through the gated path, now with sync off in the config.
 
