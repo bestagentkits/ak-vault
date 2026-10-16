@@ -12,7 +12,7 @@ Who ak-vault defends against, how protocol v1 does it, and what remains your ris
 
 The assets are your secret values and everything that describes them: names, descriptions, tags, profiles, portable policy and the audit trail. All of them are encrypted on your devices before upload. The server keeps ciphertext, wrapped vault keys and the operational metadata it needs to order and authorize writes.
 
-> **Status:** protocol v1 is *proposed*. It is not approved for production credentials until the security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) records an external review sign-off. The owner made the production sync API live before that review (an owner waiver, not a sign-off): anyone signed in who runs the preview `ak secrets sync` commands can use it. It is pre-release and not yet recommended for production credentials.
+> **Status:** protocol v1 is *proposed*. It is not approved for production credentials until the security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) records the owner's review sign-off, which is not an independent third-party review. The owner made the production sync API live before that review (an owner waiver, not a sign-off): anyone signed in who runs the preview `ak secrets sync` commands can use it. It is pre-release and not yet recommended for production credentials.
 
 Out of scope by design: decryption in a web browser, server-held vault keys or KMS, and taking back plaintext that has already been disclosed.
 
@@ -90,6 +90,7 @@ These are design properties of protocol v1 as proposed, not reviewed results.
 - **Removal fence binds the log its remover verified.** A device that reads the log later detects records substituted at or below the fence, but records the removed device wrote before its removal stay valid. A device that keeps writing can stall its own removal, so revoke it first. (spec §5)
 - **Released beta lacks the removal fence.** The released `ak` beta (`v3.0.0-beta.30`) neither signs nor checks removal fences, so it cannot remove a device or recover, and it does not get the fence check above. Revoke a lost device in your AgentKit account until a release with the fence client ([agentkit#2469](https://github.com/bestagentkits/agentkit/issues/2469)).
 - **Operators can see proofs in the live log tail.** Account members with Workers Tail access see request proofs and webhook signatures in the live tail. Each is single-use and bound to one request; tokens are redacted ([#61](https://github.com/bestagentkits/ak-vault/issues/61)).
+- **No independent third-party review.** By owner decision the GA security review is performed by the project owner and is still pending; the owner directs the agents that built ak-vault. No reviewer outside the project has reviewed it ([#8](https://github.com/bestagentkits/ak-vault/issues/8)).
 - **Recovery bundle can be guessed offline.** Anyone with a live owner-account session can download the encrypted bundle and guess a weak password offline. Revoke your sessions after a loss. (spec §3.4)
 - **Trust on first use at genesis.** The owner's key is pinned on first use unless it arrives through the recovery bundle or a SAS-verified pairing. (spec §4)
 
@@ -107,7 +108,7 @@ Gate items; status and evidence are in the release gates:
 - With sync off, ak makes zero HTTP requests and `resolve` works with the Worker unreachable.
 - Red-team scenarios executed (13 waits for the feature it attacks), a two-device end-to-end run with real clients, and backup, restore and rollback rehearsed on staging.
 - The removal fence binds the change-log contents, not only a position.
-- An independent reviewer with cryptographic expertise signs off. This cannot be self-attested.
+- The project owner reviews and signs off on #8 personally. This is not an independent third-party review, and agents cannot post or attest it.
 
 ## 6. Sources and disclosure
 

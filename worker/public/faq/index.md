@@ -20,7 +20,7 @@ The local vault in the AgentKit CLI: importing a `.env` file, setting, rotating 
 
 ### Is there a date for general availability?
 
-No date is promised. Sync ships when every item in the [release gates](https://github.com/bestagentkits/ak-vault/blob/main/docs/security/release-gates.md) is met at the release commit, including the external review. Progress is tracked on [the epic](https://github.com/bestagentkits/ak-vault/issues/1).
+No date is promised. Sync ships when every item in the [release gates](https://github.com/bestagentkits/ak-vault/blob/main/docs/security/release-gates.md) is met at the release commit, including the owner's review. Progress is tracked on [the epic](https://github.com/bestagentkits/ak-vault/issues/1).
 
 ### Is the server code open?
 

@@ -1,10 +1,11 @@
 # ak-vault protocol v1 (`akv1`) — normative wire specification
 
-Status: **Proposed**; external review pending on #8. The design rationale,
+Status: **Proposed**; review pending on #8 (by the owner, not an independent
+third-party review). The design rationale,
 [ADR 0001](../../adr/0001-opt-in-zero-knowledge-sync.md), was accepted by the owner on
-2026-10-16; that acceptance is not the external review.
+2026-10-16; that acceptance is not the review.
 Not approved for production credentials until the security gate in issue #8 records
-an external review sign-off.
+the owner's review sign-off.
 
 The key words MUST, MUST NOT, SHOULD and MAY are normative. Every implementation
 (TypeScript reference in `packages/protocol`, Go in `go/akv1`, the Worker in `worker/`)

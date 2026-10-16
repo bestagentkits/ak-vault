@@ -136,5 +136,5 @@ analytics counted, and one attempt was repeated because tail never connected.
   observability settings plus traces. It does not cover invocation logs turned on,
   Logpush or other account-level sinks, and tail is best effort.
 - **Client policy and discovery** (scenario 13), until the feature exists.
-- **External review.** This run is the owner's agents testing their own code; it does
-  not satisfy the [external review](./release-gates.md#external-review) gate.
+- **Review.** This run is the owner's agents testing their own code; it does
+  not satisfy the [review](./release-gates.md#review-by-the-owner) gate.

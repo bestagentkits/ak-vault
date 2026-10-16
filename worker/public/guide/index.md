@@ -8,7 +8,7 @@ status: "Local vault available. Sync commands in preview; agent-discovery comman
 
 Part 1 works today with the AgentKit CLI. Part 2 describes the preview sync commands and Part 3 the planned agent commands; each step is marked and its syntax may change before release.
 
-**Legend:** *available* works in the current `ak` CLI. *preview* ships hidden in the released CLI but is not a supported workflow; syntax may change. *planned* is designed but not released; do not script against it yet. Sync is not generally available: the production sync API is live as a pre-release preview, not yet externally reviewed.
+**Legend:** *available* works in the current `ak` CLI. *preview* ships hidden in the released CLI but is not a supported workflow; syntax may change. *planned* is designed but not released; do not script against it yet. Sync is not generally available: the production sync API is live as a pre-release preview, not yet reviewed. The GA review is by the owner, not an independent third party.
 
 ## Part 1: Keep secrets in the local vault (available)
 

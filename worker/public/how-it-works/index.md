@@ -54,7 +54,7 @@ With last-writer-wins, one of these edits would have silently replaced the other
 All encryption, decryption and signing of vault data happens in clients, using audited libraries. The server verifies tokens and request signatures, orders writes and stores ciphertext. There is no custom cryptography anywhere.
 
 - **Clients (agentkit CLI and Desktop):** device signing and exchange keys; encrypt, sign, verify, decrypt; the local vault stays authoritative.
-- **Cloudflare Worker (this project):** token, device proof and revocation checks; versioned protocol and test vectors; production sync live as a pre-release preview, before the external review.
+- **Cloudflare Worker (this project):** token, device proof and revocation checks; versioned protocol and test vectors; production sync live as a pre-release preview, before the review.
 - **Durable Object per vault (storage):** SQLite-backed, one per vault; revisions, conflicts, tombstones; ciphertext and minimal metadata.
 - **ak-web (accounts):** issues device-bound ES256 tokens and feeds revocations to the Worker; the browser never decrypts vault data.
 
