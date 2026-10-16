@@ -447,8 +447,8 @@ Its live payload (§3.2) is exactly:
   governed item: `"high"` makes every governed item `high`; `"normal"` never lowers one.
 - `name` is an inert label (untrusted text).
 
-Writers check a policy item with `parsePolicyItem(item_id, payload)` (binding, then
-body) before sealing it; `sealItem` itself does not.
+A writer MUST check a policy item with `parsePolicyItem(item_id, payload)` (binding,
+then body) before sealing it; `sealItem` itself does not check the layout.
 
 The binding, the rules and the sensitivity are inside the item ciphertext, which
 the author's record signature and the item AAD cover (§3.2, §5). The server sees only
@@ -488,22 +488,22 @@ nothing governs the target, else the intersection of the governing policies, tak
 in the byte order of their base64url `item_id` strings: `max_ttl_s` is the minimum,
 `require_approval` the OR, each `allowed_*` list the intersection, `deny_agents` the
 union, each present only if some governing policy has it, lists in first-occurrence
-order without duplicates and free text dropped. `sensitivity` is `"high"` when any live record of the target (head or
-branch) or any governing policy item is `"high"`. The client then releases at most
-`effectiveGrant(local, policy, sensitivity)`.
+order without duplicates and free text dropped. `sensitivity` is `"high"` when any
+live record of the target (head or branch) or any governing policy item is
+`"high"`. The client then releases at most `effectiveGrant(local, policy, sensitivity)`.
 
 Any failure is a refusal to release: the client MUST NOT fall back to the local
 grant alone, and nothing here can widen a local grant. Steps 2 and 4 refuse every
 item of the vault, because the device cannot tell which items an unopened record or
 an unreadable binding governs; items outside the vault are unaffected. A device that
 lacks an older epoch's key (§4) therefore refuses the vault until those items are
-rotated forward. A tombstoned policy governs nothing; an ID in `item_ids` that names no live non-policy item has no effect. A
-policy moved from another vault does not open (§3.2) and so refuses at step 2; an
-older policy revision the server re-serves never becomes the head (§5, §6). A
-device that never received a policy item is subject to the withholding limitation
-(§6), and any member who can write the vault can edit or delete a policy, as it can
-any item: a policy caps the release path of devices that honor it, not what a
-vault member can decrypt (§3).
+rotated forward. A tombstoned policy governs nothing; an ID in `item_ids` that names
+no live non-policy item has no effect. A policy moved from another vault does not
+open (§3.2) and so refuses at step 2; an older policy revision the server re-serves
+never becomes the head (§5, §6). A device that never received a policy item is
+subject to the withholding limitation (§6), and any member who can write the vault
+can edit or delete a policy, as it can any item: a policy caps the release path of
+devices that honor it, not what a vault member can decrypt (§3).
 
 ## 9. Transport authentication (Worker)
 
