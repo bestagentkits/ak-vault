@@ -73,7 +73,8 @@ rather than an enforced setting (#45).
 
 Run on 2026-10-16 with [`worker/scripts/platform-log-scan/`](../../worker/scripts/platform-log-scan/README.md)
 as merged, on Worker source, protocol library and `wrangler.jsonc` identical to
-`main` at `d097c41`; an earlier run with the pre-review script gave the same result.
+`main` at `d097c41`; two earlier runs with pre-review revisions of the script gave
+the same result.
 A throwaway lab Worker on `workers.dev` ran the real Worker and Durable Object classes
 with a synthetic issuer and sync on, and was deleted afterwards together with its
 Durable Object namespaces (checked through the API). Counts and
@@ -103,24 +104,25 @@ metadata.
 
 | Source | Rows | Gating hits |
 |---|---|---|
-| Workers Observability events (operational log lines and trace spans) | 1,466 | 0 |
+| Workers Observability events (operational log lines and trace spans) | 1,414 | 0 |
 | Workers Observability traces | 73 | 0 |
 | Workers Observability invocations | 73 | 0 |
 | GraphQL Workers and Durable Object analytics | n/a | 0 |
 | Durable Object dump (vault and revocation registry, every table) | 120 | 0 |
 | Responses (status, headers, body) | 70 | 0 |
-| `wrangler tail` | 137 events | 130 needle-form matches: 127 of `AKV-Proof` values (a proof is searched whole and per segment, in several encodings) and 3 of `AKV-Webhook-Signature` values |
+| `wrangler tail` | 59 events | 77 needle-form matches: 75 of `AKV-Proof` values (a proof is searched whole and per segment, in several encodings) and 2 of `AKV-Webhook-Signature` values |
 
 In tail, Cloudflare replaced `Authorization`, `Idempotency-Key` and `AKV-Device-Key`
 with `REDACTED`, because it redacts by header name
 ([#61](https://github.com/bestagentkits/ak-vault/issues/61)). Tail also carries the
 request URL, with long ID-like segments redacted heuristically, and the client IP.
-Workers Observability recorded only the `accept*` request headers, and replaced most
-ID-like path segments with `REDACTED` but not all; some item IDs remain, which the
+Workers Observability recorded only the `accept*` request headers, and replaced
+ID-like path segments with `REDACTED`, though not always (the earlier runs kept some
+item IDs), which the
 [data classification](./data-classification.md#visible-operational-metadata-unavoidable)
 already lists as visible. Trace spans record SQL statement text with placeholders,
-never bound values. Tail is best effort: it delivered 50 of the 73 requests that
-analytics counted.
+never bound values. Tail is best effort: it delivered 31 of the 74 requests that
+analytics counted, and one attempt was repeated because tail never connected.
 
 ## What this run does not cover
 
