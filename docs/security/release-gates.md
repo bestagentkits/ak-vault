@@ -20,9 +20,14 @@ evidence does not count.
 - [ ] Disclosure scan: a full Durable Object dump, Worker logs, traces, metrics and
       every error response from a run seeded with known plaintext values and names
       contain none of them ([data classification](./data-classification.md)).
-      Platform Workers Logs and traces are not covered by the Docker e2e (see
-      [staging soak](#staging-soak)): they need a seeded run on a deployed Worker (a
-      lab Worker is acceptable) or an explicit owner waiver on #8.
+      Platform logs, traces and analytics were scanned with seeded traffic on a
+      deployed lab Worker on 2026-10-16, Worker source as `main` at `d097c41`
+      ([platform log scan](./red-team-evidence.md#platform-log-scan);
+      [run on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6208699925)):
+      zero hits everywhere except `wrangler tail`, which shows `AKV-Proof` and
+      `AKV-Webhook-Signature` header values
+      ([#61](https://github.com/bestagentkits/ak-vault/issues/61)). This box stays
+      open until #61 is fixed or the owner waives it on #8.
 - [ ] Revocation: a revoked session or device is refused on its next request even
       with an unexpired token; revocation-registry failure returns `503`.
 - [ ] Sync-off regression (agentkit#2298): zero HTTP requests; vault v1 behavior
@@ -73,9 +78,10 @@ staging's real issuer and JWKS, the delivery of its revocation webhook and the
 Cloudflare edge are verified by configuration and by the lab Worker rehearsal
 ([#54](https://github.com/bestagentkits/ak-vault/pull/54),
 [rehearsal log](../operations/rehearsal-2026-10.md)), not by authenticated staging
-traffic. Platform Workers Logs and traces are therefore not scanned with seeded
-traffic either. Staging trusts ak-web staging's issuer and JWKS; keeping staging's
-signing keys separate from production's is ak-web's responsibility, so before GA
+traffic. Platform logs, traces and analytics were scanned with seeded traffic on a
+lab Worker instead (disclosure-scan gate above). Staging trusts ak-web staging's
+issuer and JWKS; keeping staging's signing keys separate from production's is
+ak-web's responsibility, so before GA
 confirm the two JWKS endpoints share no key material (compare the keys' `x`/`y`
 coordinates, not only their `kid`s).
 

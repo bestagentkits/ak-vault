@@ -26,6 +26,7 @@ Executable owners:
 - Go implementation: `go/`
 - Worker, Durable Object, limits and tests: `worker/src/`, `worker/test/`
 - Two-device Docker e2e (real `ak`, fake ak-web, local Worker): `e2e/docker/`
+- Platform log disclosure scan on a throwaway lab Worker: `worker/scripts/platform-log-scan/`
 - Landing page: `worker/public/`
 - CI/CD: `.github/workflows/`
 

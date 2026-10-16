@@ -42,7 +42,7 @@ not exist yet.
 | 12 | Cross-tenant read with a valid token | `authorization.test.ts`: "another tenant's device cannot touch a vault it does not belong to", "a device presenting another account's sub is refused"; `auth-token.test.ts`: "a token whose did names a non-member device is forbidden"; [`recovery-fetch.test.ts`](../../worker/test/recovery-fetch.test.ts): "refuses another account"; new `red-team-tenant-and-role-isolation.test.ts`: another tenant's token and proof refused on every read and write route and on a genesis for the victim's vault ID, state unchanged | Pass | |
 | 13 | Hostile shared profile or policy text widens a grant or runs a command | The attacked feature is not built: portable policy ([#7](https://github.com/bestagentkits/ak-vault/issues/7)) and agent discovery ([agentkit#2299](https://github.com/bestagentkits/agentkit/issues/2299)) are open. Existing guards: `policy.json` `malicious_policy_cannot_elevate`, `instruction_text_is_inert`, `unknown_field_grant_all` (TS and Go); client `TestLocalFromPayloadFailsClosed` (synced `policy` and `profile` kinds are never applied), `TestSpoofingNamesStayLocalAndAreNotApplied` | N/A | Re-run when #7 / agentkit#2299 land |
 | 14 | Forked PR reads secrets or triggers a deploy | Configuration review of [`.github/workflows/`](../../.github/workflows/) and repository settings, below | Pass, findings | Hardening: [#43](https://github.com/bestagentkits/ak-vault/issues/43), [#44](https://github.com/bestagentkits/ak-vault/issues/44), [#45](https://github.com/bestagentkits/ak-vault/issues/45) |
-| 15 | Planted plaintext and names in dumps, logs, metrics and errors | [`disclosure-scan.test.ts`](../../worker/test/disclosure-scan.test.ts): canaries in item names and values, audit, recovery password and keys, scanned across every Durable Object table, console line and response; new [`red-team-disclosure-scan.test.ts`](../../worker/test/red-team-disclosure-scan.test.ts): canaries in query strings, path segments, proof, idempotency and bearer headers, a device-key header on the recovery-identity path, webhook bodies and refused or oversize bodies, scanned across response bodies and headers, logs and both Durable Object dumps. agentkit e2e `checkLogRedaction` scans the `wrangler dev` log of the full e2e run (all nine scenarios passed against this head) for synthetic names, values, passwords, recovery keys and JWTs; a manual grep of that log also found no bearer, proof, idempotency-key, bundle or ciphertext fields. Client: `TestNoSecretInSyncState`, `akvhttp` `TestDoErrorsCarryNoSecretsOrPaths` | Pass (local) | Staging Workers Logs are not scanned with seeded traffic: the owner replaced the [staging soak](./release-gates.md#staging-soak) with the Docker e2e, whose scan found no hits; residual risk stated there |
+| 15 | Planted plaintext and names in dumps, logs, metrics and errors | [`disclosure-scan.test.ts`](../../worker/test/disclosure-scan.test.ts): canaries in item names and values, audit, recovery password and keys, scanned across every Durable Object table, console line and response; new [`red-team-disclosure-scan.test.ts`](../../worker/test/red-team-disclosure-scan.test.ts): canaries in query strings, path segments, proof, idempotency and bearer headers, a device-key header on the recovery-identity path, webhook bodies and refused or oversize bodies, scanned across response bodies and headers, logs and both Durable Object dumps. agentkit e2e `checkLogRedaction` scans the `wrangler dev` log of the full e2e run (all nine scenarios passed against this head) for synthetic names, values, passwords, recovery keys and JWTs; a manual grep of that log also found no bearer, proof, idempotency-key, bundle or ciphertext fields. Client: `TestNoSecretInSyncState`, `akvhttp` `TestDoErrorsCarryNoSecretsOrPaths`. Deployed platform: the [platform log scan](#platform-log-scan) on a lab Worker | Pass (local); platform: finding | [#61](https://github.com/bestagentkits/ak-vault/issues/61): `wrangler tail` shows `AKV-Proof` and `AKV-Webhook-Signature` header values; Workers Observability logs and traces, analytics and the deployed dump had no hits |
 
 ## Scenario 14: workflow and settings review
 
@@ -69,17 +69,67 @@ secret is visible to this repository (#43), the `main` ruleset does not require 
 pull request although AGENTS.md says it does (#44), and SHA pinning is a convention
 rather than an enforced setting (#45).
 
+## Platform log scan
+
+Run on 2026-10-16 with [`worker/scripts/platform-log-scan/`](../../worker/scripts/platform-log-scan/README.md)
+as merged, on Worker source, protocol library and `wrangler.jsonc` identical to
+`main` at `d097c41`; two earlier runs with pre-review revisions of the script gave
+the same result.
+A throwaway lab Worker on `workers.dev` ran the real Worker and Durable Object classes
+with a synthetic issuer and sync on, and was deleted afterwards together with its
+Durable Object namespaces (checked through the API). Counts and
+settings are recorded [on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6208699925).
+
+**Settings scanned:** production's `observability` block as in
+[`wrangler.jsonc`](../../worker/wrangler.jsonc) (enabled, head sampling 1, invocation
+logs off) plus traces at head sampling 1, which production does not enable. Invocation
+logs stayed off.
+
+**Traffic:** 51 checked steps, 70 requests, all with the expected status. Two devices
+enroll, push, pull and verify, checkpoint, conflict and tombstone; audit; recovery
+bundle; a third device recovers with the recovery key, removes the lost device and
+rekeys; recovery-key rotation; webhook revocation of a session. Error paths: garbage,
+foreign-audience, expired and missing tokens; garbage, foreign-key and replayed proofs;
+a revoked session; a malformed device-key header; malformed, mis-shaped and oversize
+bodies; a reused idempotency key; bad-signature and malformed webhooks; canaries in a
+query string and path.
+
+**Planted values**, each searched as text, hex and base64/base64url at every
+alignment: secret names and values, audit plaintext, recovery passwords and keys,
+recovery signing keys, every bearer token and proof sent, device signing and
+key-exchange secrets, vault and audit keys, the issuer key, idempotency keys, the
+webhook secret and signatures, and canaries in refused bodies and headers. Opaque IDs
+and URL canaries were counted for context only, since request URLs are platform
+metadata.
+
+| Source | Rows | Gating hits |
+|---|---|---|
+| Workers Observability events (operational log lines and trace spans) | 1,414 | 0 |
+| Workers Observability traces | 73 | 0 |
+| Workers Observability invocations | 73 | 0 |
+| GraphQL Workers and Durable Object analytics | n/a | 0 |
+| Durable Object dump (vault and revocation registry, every table) | 120 | 0 |
+| Responses (status, headers, body) | 70 | 0 |
+| `wrangler tail` | 59 events | 77 needle-form matches: 75 of `AKV-Proof` values (a proof is searched whole and per segment, in several encodings) and 2 of `AKV-Webhook-Signature` values |
+
+In tail, Cloudflare replaced `Authorization`, `Idempotency-Key` and `AKV-Device-Key`
+with `REDACTED`, because it redacts by header name
+([#61](https://github.com/bestagentkits/ak-vault/issues/61)). Tail also carries the
+request URL, with long ID-like segments redacted heuristically, and the client IP.
+Workers Observability recorded only the `accept*` request headers, and replaced
+ID-like path segments with `REDACTED`, though not always (the earlier runs kept some
+item IDs), which the
+[data classification](./data-classification.md#visible-operational-metadata-unavoidable)
+already lists as visible. Trace spans record SQL statement text with placeholders,
+never bound values. Tail is best effort: it delivered 31 of the 74 requests that
+analytics counted, and one attempt was repeated because tail never connected.
+
 ## What this run does not cover
 
-- **Platform logs, traces and metrics.** The Worker emits no metrics and its only log
-  line comes from [`operational-logger.ts`](../../worker/src/http/operational-logger.ts);
-  Cloudflare invocation logs are disabled
-  ([data classification](./data-classification.md#handling-rules)). Locally,
-  `wrangler dev` prints its own request lines with full paths (vault and item IDs,
-  no bodies or headers), the counterpart of those disabled invocation logs. Workers
-  Logs and traces on the real platform are not reproducible locally, and the owner
-  replaced the staging soak with the Docker two-device e2e, so they stay unscanned;
-  see the residual risk under [staging soak](./release-gates.md#staging-soak).
+- **Platform sinks beyond the scan.** The [platform log scan](#platform-log-scan)
+  covers Workers Observability, `wrangler tail` and analytics with production's
+  observability settings plus traces. It does not cover invocation logs turned on,
+  Logpush or other account-level sinks, and tail is best effort.
 - **Client policy and discovery** (scenario 13), until the feature exists.
 - **External review.** This run is the owner's agents testing their own code; it does
   not satisfy the [external review](./release-gates.md#external-review) gate.
