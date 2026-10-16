@@ -261,6 +261,7 @@ var vectorHandlers = map[string]fileHandler{
 	"checkpoints.json":      checkCheckpoints,
 	"audit.json":            checkAudit,
 	"policy.json":           checkPolicy,
+	"policy-binding.json":   checkPolicyBinding,
 	"proof.json":            checkProof,
 	"recovery-bundle.json":  checkRecoveryBundle,
 	"rekey-wraps.json":      checkRekeyWraps,

@@ -53,7 +53,9 @@
  * Audit (§7) — `deriveAuditKey`, `appendAuditEntry`, `verifyAuditChain(entries, {vaultKeys, vaultId, keyEpoch, witnessed?})`,
  * `auditEntryHash`, `signAuditCheckpoint`, `verifyAuditCheckpoint`.
  *
- * Policy (§8) — `parsePolicy`, `effectiveGrant(localGrant, policy, sensitivity): LocalGrant`.
+ * Policy (§8) — `parsePolicy`, `effectiveGrant(localGrant, policy, sensitivity): LocalGrant`;
+ * `resolveItemPolicy(targetItemId, items): {policy, sensitivity}` combines the policy items that
+ * govern an item (binding by `meta.item_ids`), `parsePolicyBinding`, `parsePolicyItem`, `isPolicyPayload`.
  *
  * Transport (§9) — `buildProof(args): string`, `decodeProof`, `verifyProof(header, opts): TransportProof`.
  *
@@ -200,5 +202,20 @@ export {
   type AuditChainEntry,
 } from './audit.js';
 export { effectiveGrant, parsePolicy, type LocalGrant, type PortablePolicy } from './policy.js';
+export {
+  MAX_POLICY_ITEM_IDS,
+  MAX_RESOLVE_BRANCHES,
+  MAX_RESOLVE_ITEMS,
+  POLICY_ITEM_KIND,
+  isPolicyPayload,
+  parsePolicyBinding,
+  parsePolicyItem,
+  resolveItemPolicy,
+  type PolicyItem,
+  type PolicyResolutionEntry,
+  type PolicyResolutionItem,
+  type PolicyRules,
+  type ResolvedItemPolicy,
+} from './policy-binding.js';
 export { PROOF_JTI_TTL_MS, PROOF_MAX_SKEW_MS, buildProof, decodeProof, verifyProof, type BuildProofArgs, type TransportProof, type VerifyProofOptions } from './proof.js';
 export { createDeviceKeys, randomId, type CreateDeviceArgs, type DeviceKeys } from './device-keys.js';
