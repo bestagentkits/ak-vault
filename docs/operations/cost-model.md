@@ -95,7 +95,7 @@ Compared with the 2026-10-15 lab run (production configuration, `3f77991`):
 | Rows read per call | 6.9 | 6.6 per pull, 16.2 per write | |
 | Worker CPU per call | 3.3 ms | 1.9 ms per pull, 2.0 ms per write | Lower than the earlier run; about the 2 ms assumption |
 | DO active time per pull | vault 50 ms; registry about 110 ms | vault 90 ms; registry 117 ms | In this run both objects answered pulls more slowly (Worker wall time 229 ms p50) than writes (37 ms p50); not explained. Duration per pull doubles to 0.027 GB-s |
-| Registry checks per second one object can serve | about 10 | about 8.5 (1 / 117 ms) | [#10](https://github.com/bestagentkits/ak-vault/issues/10) |
+| Registry checks per second one object can serve | about 10 | about 8.5 (1 / 117 ms) | Derived, not measured, and wrong: the [ramp test](#revocation-registry-throughput) put the knee at about 1,000 a second |
 
 Staging itself, read-only from its analytics: in the 7 days to 2026-10-16 08:12 UTC
 1,779 Worker requests (0 errors, CPU 0.70 ms p50), 19 vault and 21 registry Durable
@@ -146,17 +146,90 @@ registry Durable Object requests, and 245,760 bytes stored in the vault namespac
 (45,056 in the registry). That traffic is too small to size anything; it is
 recorded as the baseline.
 
+## Revocation registry throughput
+
+Measured 2026-10-16 with [`pnpm registry:load`](../../worker/scripts/registry-load/README.md)
+on temporary lab Workers built from the `staging` environment of `wrangler.jsonc`.
+The Worker code was at `121c9b3`; since then, nothing on the measured path (token
+verification and the registry) has changed. Every lab was deleted afterwards. The registry was
+first seeded through the signed webhook with 10,000 revoked sids, 10,000 revoked dids
+and 10,000 per-`sub` minimum `iat`s. Each request then carried a fresh token for a
+seeded `sub` with a random sid and did. The registry therefore ran all three lookups
+(two misses and the `min_iat` hit; 1 row read per check in the analytics), and the
+Worker refused the request with `401` without touching a vault object (0 vault
+requests in every step). The arrival rate was open loop: a request left on schedule
+whether or not earlier ones had answered. Each step sent for 55 s from the start of a
+whole minute.
+
+Client latency is measured from one operator machine and includes its network path
+to the edge. It compares steps, but does not describe production clients. Requests
+that got no HTTP answer at all (a client timeout or connection failure) are counted
+apart. The registry's own wall time comes from Durable Object analytics, so it does
+not include that network.
+
+The main run (12:35 to 12:47 UTC) spread the schedule over up to 7 generator
+processes. Each step's analytics window runs to the first whole minute after its last
+answer. Every step kept its schedule: generator lag p99 was at most 60 ms.
+
+| Arrival rate (/s) | Sent | `401` | `503` | No answer | Client p50 / p99 | Registry wall p50 / p99 | Registry CPU per check |
+|---|---|---|---|---|---|---|---|
+| 5 | 275 | 270 | 0 | 5 | 393 / 3,695 ms | 74 / 240 ms | 0.29 ms |
+| 400 | 22,000 | 21,804 | 0 | 196 | 155 / 1,801 ms | 10 / 179 ms | 0.20 ms |
+| 500 | 27,500 | 27,227 | 0 | 273 | 174 / 2,245 ms | 37 / 177 ms | 0.20 ms |
+| 600 | 33,000 | 32,910 | 0 | 90 | 180 / 2,316 ms | 13 / 199 ms | 0.20 ms |
+| 800 | 44,000 | 43,853 | 0 | 146 | 239 / 2,369 ms | 49 / 314 ms | 0.21 ms |
+| 1,000 | 55,000 | 54,378 | 0 | 622 | **448** / 3,100 ms | **172 / 1,241 ms** | 0.23 ms |
+
+One `502` at 800 a second is not counted above. Registry wall time is from the
+sampled `durableObjectsInvocationsAdaptiveGroups`. CPU per check is
+`durableObjectsPeriodicGroups` CPU time divided by rows read (one per check). The
+registry reported 1 error, at 1,000 a second.
+
+Two earlier runs used a single generator process:
+- **First run** (11:31 to 11:40 UTC, steps 5, 10, 20, 40, 80, 160, 320 and 400 a second):
+  0 `503`, registry wall p99 110 to 234 ms, CPU 0.23 to 0.32 ms per check.
+- **Second run** (11:46 to 11:50 UTC): 400 a second was clean again. At 600 a second
+  the generator fell behind (lag p99 13 s) and sent in bursts, and the Worker answered
+  96 `503`s. The main run's clean 600 a second is consistent with the bursts or the
+  single generator process, not the rate, being the cause.
+
+What the runs show:
+- **Knee: about 1,000 checks a second** (the 1,000 step). There, registry wall p99
+  rose to 1.2 s from about 180 to 200 ms at 400 to 600 a second. Registry wall p50
+  rose to 172 ms and client p50 to 448 ms. CPU per check did not change, so this is
+  queueing in the one object, not costlier checks. 800 a second ran without that rise (wall p99 314 ms). No client saw a `503`
+  at any rate in the main run. The knee sits at Cloudflare's documented soft limit of
+  about 1,000 requests a second per object.
+- **The derived figure was wrong by about 100×.** CPU per check is 0.2 to 0.3 ms.
+  Registry active time stops growing with load from about 160 a second on, so
+  `1 / active time per check` measured how long the object stays awake, not what a
+  check costs.
+- **Alert threshold: 500 checks a second** sustained over 15 minutes (half the knee),
+  plus any sustained `503 unauthorized`. The query and response are in the
+  [runbook](./runbooks.md#revocation-registry-capacity-alert); a scheduled check is
+  not configured yet (it needs an analytics-read-only token, an owner decision).
+- **In devices, at one request per sync:** the knee is about 15,000 devices polling
+  every 15 s, 60,000 polling every 60 s, or 300,000 polling every 5 minutes. The alert
+  threshold is half of each. A sync that makes several requests divides these figures.
+- **One object is still a single point.** Whatever the throughput, it is one location
+  and one dependency for every request
+  ([#10](https://github.com/bestagentkits/ak-vault/issues/10)).
+
 ## Estimates (USD per month, including the $5 minimum)
 
 Same device count, write rate and pull rates as the [assumptions](#assumptions), with
 the 2026-10-16 per-operation inputs (steady-state pull and item write rows above) and
 126,976 stored bytes per vault, computed by
 [`cost-projection.ts`](../../worker/scripts/cost-measurement/cost-projection.ts).
-Registry duration is no longer capped at one object: beyond about 8.5 checks a second
-(roughly 170 vaults of 3 devices polling every 60 s) the single registry cannot keep
-up, so those rows assume a sharded or cached registry
-([#10](https://github.com/bestagentkits/ak-vault/issues/10)), and without one they
-do not run at all.
+Registry duration is not capped at one object. The single registry's
+[knee is about 1,000 checks a second](#revocation-registry-throughput), roughly 20,000
+vaults of 3 devices polling every 60 s. The 10,000-vault active row is about 500 checks
+a second, half the knee. The 100,000-vault active row (about 5,000 a second) assumes a
+replicated or sharded registry
+([#10](https://github.com/bestagentkits/ak-vault/issues/10)); without one it does not
+run at all. The registry duration in every row is an upper bound: it bills the measured
+registry active time per pull, but one object bills at most 0.125 GB-s a second (about
+324,000 GB-s, roughly $4, a month), so below the knee the registry line is smaller.
 
 | Vaults | Lazy pulls (50 a device-day) | per vault | Active polling every 60 s | per vault | per device |
 |---|---|---|---|---|---|
@@ -197,14 +270,15 @@ projections, not measurements; each lever is re-measured when it lands.
   recorded where it is made.
 - Revocation checks double Durable Object requests, and they all go to one global
   registry object (`worker/src/revocation/`). One object's throughput therefore
-  caps total API throughput. Lab Workers measured about 110 ms (2026-10-15) and
-  117 ms (2026-10-16) of active time per check
-  ([#10](https://github.com/bestagentkits/ak-vault/issues/10)), which suggests a
-  ceiling of roughly 8 to 10 checks a second for the whole service; beyond it
-  requests queue and then fail closed with `503`. Production sync is live, so watch the
-  registry's request rate (query, threshold and response in the
-  [runbook](./runbooks.md#revocation-registry-capacity-alert)) and replicate or shard
-  revocation state before it nears that ceiling.
+  caps total API throughput. A lab ramp test
+  [put the knee at about 1,000 checks a second](#revocation-registry-throughput).
+  Past it, requests queue, and on bursts they fail closed with `503`. The earlier
+  figure of 8 to 10 a second was derived from active time per check and was wrong.
+  Production sync is live, so watch the registry's request rate (query, threshold of
+  500 checks a second, half the knee, and response in the
+  [runbook](./runbooks.md#revocation-registry-capacity-alert)), and replicate or shard
+  revocation state before demand nears the knee
+  ([#10](https://github.com/bestagentkits/ak-vault/issues/10)).
 - The Worker runs before static assets (`run_worker_first` in the Wrangler config)
   so the landing page gets the same security headers. Landing traffic is therefore
   billed as Worker requests, not free asset requests; this is small next to API

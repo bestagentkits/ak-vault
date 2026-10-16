@@ -38,6 +38,17 @@ export class LabIssuer {
     return new LabIssuer(issuer, audience, kid, pair.privateKey, jwks);
   }
 
+  /** The private key as a JWK, for a load-generator child process of the same run: process memory and IPC only, never disk or output. */
+  async privateJwk(): Promise<JsonWebKey> {
+    return crypto.subtle.exportKey('jwk', this.key);
+  }
+
+  /** The same issuer in another process of the run, from `privateJwk`; it can sign but has no JWKS to publish. */
+  static async fromPrivateJwk(issuer: string, audience: string, kid: string, jwk: JsonWebKey): Promise<LabIssuer> {
+    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+    return new LabIssuer(issuer, audience, kid, key, '');
+  }
+
   /** Sign arbitrary header and claims (ES256, raw r||s). */
   async sign(header: Record<string, unknown>, claims: Record<string, unknown>): Promise<string> {
     const part = (v: unknown) => b64encode(utf8Encode(JSON.stringify(v)));

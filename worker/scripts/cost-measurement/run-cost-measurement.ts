@@ -24,7 +24,6 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { b64encode, randomBytes } from '@ak-vault/protocol';
-import { unstable_readConfig } from 'wrangler';
 import { credentialsFromEnv, redactAccount, scriptExists, workersDevSubdomain, type CloudflareCredentials } from '../platform-log-scan/cloudflare-api.js';
 import { LabClient, LabIssuer } from '../platform-log-scan/lab-client.js';
 import { LAB_NAME_PATTERN, WORKER_DIR, deleteLab, stopAllWrangler, wrangler } from '../platform-log-scan/lab-worker-lifecycle.js';
@@ -34,8 +33,8 @@ import { sleep, waitFor } from '../platform-log-scan/telemetry-polling.js';
 import { namespaceIds, storedBytes, windowUsage, type WindowUsage } from './cost-analytics.js';
 import { phaseWindows } from './cost-projection.js';
 import { DEFAULT_SHAPE, runCostWorkload, type PhaseRecord } from './cost-workload.js';
+import { STAGING_SCRIPT, writeStagingLabConfig } from './staging-lab-config.js';
 
-const STAGING_SCRIPT = 'ak-vault-staging';
 const say = (line: string) => process.stdout.write(`${line}\n`);
 
 let redact = (text: string) => text;
@@ -67,31 +66,6 @@ function options(rawArgv: string[]): Options {
   if (!LAB_NAME_PATTERN.test(out.name)) throw new Error(`lab name must match ${LAB_NAME_PATTERN}`);
   if (!Number.isInteger(out.baselineHours) || out.baselineHours < 1 || out.baselineHours > 24 * 30) throw new Error('--baseline-hours must be an integer from 1 to 720');
   return out;
-}
-
-/** Lab config: the staging environment of wrangler.jsonc with only name, routing, issuer and secrets changed. */
-function writeLabConfig(dir: string, name: string, vars: { issuer: string; audience: string; jwks: string }): string {
-  const staging = unstable_readConfig({ config: join(WORKER_DIR, 'wrangler.jsonc'), env: 'staging' }, {});
-  if (staging.name !== STAGING_SCRIPT) throw new Error('wrangler.jsonc staging environment not found');
-  if (!staging.main || !staging.migrations?.length || !staging.durable_objects.bindings.length) throw new Error('staging config lacks its entry, migrations or Durable Object bindings');
-  // The JWKS URL would be ignored next to the inline JWKS; leave it out so the lab trusts only the synthetic issuer.
-  const { VAULT_JWKS_URL: _unused, ...stagingVars } = staging.vars as Record<string, unknown>;
-  const config = {
-    name,
-    main: staging.main,
-    compatibility_date: staging.compatibility_date,
-    compatibility_flags: staging.compatibility_flags,
-    workers_dev: true,
-    preview_urls: false,
-    observability: staging.observability,
-    assets: { ...staging.assets, directory: join(WORKER_DIR, 'public') },
-    durable_objects: { bindings: staging.durable_objects.bindings.map((b: { name: string; class_name: string }) => ({ name: b.name, class_name: b.class_name })) },
-    migrations: staging.migrations,
-    vars: { ...stagingVars, VAULT_ISSUER: vars.issuer, VAULT_AUDIENCE: vars.audience, VAULT_JWKS_JSON: vars.jwks },
-  };
-  const path = join(dir, 'wrangler.cost-lab.json');
-  writeFileSync(path, JSON.stringify(config, null, 2), { mode: 0o600 });
-  return path;
 }
 
 const n = (x: number, digits = 2) => (Number.isFinite(x) ? x.toFixed(digits) : 'n/a');
@@ -188,7 +162,7 @@ async function main(): Promise<number> {
     const webhookSecret = b64encode(randomBytes(32));
     const secretsFile = join(priv, 'lab.secrets.json');
     writeFileSync(secretsFile, JSON.stringify({ REVOCATION_WEBHOOK_SECRET: webhookSecret }), { mode: 0o600 });
-    const config = writeLabConfig(priv, opts.name, { issuer: issuer.issuer, audience: origin, jwks: issuer.publicJwks });
+    const config = writeStagingLabConfig(priv, opts.name, { issuer: issuer.issuer, audience: origin, jwks: issuer.publicJwks });
     if (interrupted) throw new Error('interrupted');
     say('deploying the lab Worker');
     deployed = true;
