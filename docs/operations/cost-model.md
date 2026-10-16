@@ -53,7 +53,8 @@ Sources: [Workers pricing](https://developers.cloudflare.com/workers/platform/pr
 ## Measured 2026-10-16 (staging configuration)
 
 Method: [`pnpm cost:measure`](../../worker/scripts/cost-measurement/README.md) at
-`b49865c`, the commit staging runs. Staging accepts only ak-web staging tokens and the
+`b49865c`, the commit staging ran at the time (the next change to `worker/src`,
+`6851b0b`, adds only an in-memory check to the sync request path). Staging accepts only ak-web staging tokens and the
 owner decided no authenticated staging session is used
 ([#8](https://github.com/bestagentkits/ak-vault/issues/8)), so the workload ran on a
 temporary lab Worker deployed from the `staging` environment of `wrangler.jsonc`

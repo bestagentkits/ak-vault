@@ -20,9 +20,9 @@
  * account identifier, namespace ID, vault ID or synthetic value.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { b64encode, randomBytes } from '@ak-vault/protocol';
 import { unstable_readConfig } from 'wrangler';
 import { credentialsFromEnv, redactAccount, scriptExists, workersDevSubdomain, type CloudflareCredentials } from '../platform-log-scan/cloudflare-api.js';
@@ -55,7 +55,11 @@ function options(rawArgv: string[]): Options {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--name') out.name = argv[++i] ?? '';
-    else if (arg === '--report') out.report = outsideRepository(argv[++i] ?? '', '--report');
+    else if (arg === '--report') {
+      out.report = outsideRepository(argv[++i] ?? '', '--report');
+      // Fail now, not after the traffic: the report's directory must exist.
+      if (!existsSync(dirname(out.report))) throw new Error('--report directory does not exist');
+    }
     else if (arg === '--baseline-only') out.baselineOnly = true;
     else if (arg === '--baseline-hours') out.baselineHours = Number(argv[++i]);
     else throw new Error(`unknown argument ${arg}`);
@@ -141,8 +145,15 @@ async function main(): Promise<number> {
   let cleanup = { scriptGone: false, namespacesLeft: -1 };
   // Written after the workload (so an ingestion timeout keeps the phase records) and again after cleanup.
   const report: Record<string, unknown> = { commit, dirty, harnessDirty, configuration: 'staging', baseline, shape: DEFAULT_SHAPE };
-  const writeReport = () => {
-    if (opts.report) writeFileSync(opts.report, JSON.stringify(report, null, 2), { mode: 0o600 });
+  const writeReport = (): boolean => {
+    if (!opts.report) return true;
+    try {
+      writeFileSync(opts.report, JSON.stringify(report, null, 2), { mode: 0o600 });
+      return true;
+    } catch (err) {
+      say(`problem: the report could not be written (${(err as Error).name})`);
+      return false;
+    }
   };
 
   let cleaning: Promise<void> | undefined;
@@ -163,9 +174,9 @@ async function main(): Promise<number> {
       const labDeleted = !deployed || (cleanup.scriptGone && cleanup.namespacesLeft === 0);
       report['labDeleted'] = labDeleted;
       report['problems'] = problems;
-      writeReport();
       for (const p of problems) say(`problem: ${p}`);
       say(`lab deleted: ${deployed ? (labDeleted ? 'yes' : 'NO') : 'never deployed'}`);
+      if (!writeReport()) problems.push('the report could not be written');
     })());
   cleanupOnInterrupt = cleanUp;
   priv = mkdtempSync(join(tmpdir(), 'akvault-cost-'));
