@@ -97,8 +97,8 @@ cannot be read back, so make sure such credentials exist before relying on this
 path. Holder (owner decision on #53): the operator's local Cloudflare token outside
 GitHub, which is the token staging and production shared during bootstrap. Since
 2026-10-16 the production CI deploy uses its own production-only token, so the
-local token is no longer used by production CI; staging CI still deploys with it
-until staging gets its own token (see the
+local token is no longer used by production CI; staging CI still deploys with it,
+an owner-accepted risk mitigated by code-owner review since 2026-10-16 (see the
 [release gates](../security/release-gates.md#production-deploy-control)). Reading the production deployment status
 (step 3) shows the token is live, not that it may deploy; its permissions should be
 recorded on #53 by the owner, and a narrow kill-switch token is recommended. Replace
