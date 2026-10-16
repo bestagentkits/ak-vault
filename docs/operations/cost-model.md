@@ -202,8 +202,9 @@ projections, not measurements; each lever is re-measured when it lands.
   ([#10](https://github.com/bestagentkits/ak-vault/issues/10)), which suggests a
   ceiling of roughly 8 to 10 checks a second for the whole service; beyond it
   requests queue and then fail closed with `503`. Production sync is live, so watch the
-  registry's request rate and cache or shard revocation state before it nears that
-  ceiling.
+  registry's request rate (query, threshold and response in the
+  [runbook](./runbooks.md#revocation-registry-capacity-alert)) and replicate or shard
+  revocation state before it nears that ceiling.
 - The Worker runs before static assets (`run_worker_first` in the Wrangler config)
   so the landing page gets the same security headers. Landing traffic is therefore
   billed as Worker requests, not free asset requests; this is small next to API
