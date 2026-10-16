@@ -289,14 +289,20 @@ operator script's `bookmark` action: it is exact, while a time lookup is not (be
    version of the current Worker code with the secret changed; no code deploy is needed.
 3. Get the target bookmark: the one recorded before the change, or a `bookmark`
    with a time (unix ms).
-4. Make the vault quiet, for example with the [kill switch](#kill-switch), because
-   every client request moves the bookmark. Read the current bookmark (`bookmark`
-   without a time), then `restore <vault_id> <target> <current>` straight away. A
-   `409` means the vault changed in between; read the current bookmark again.
+4. Read the current bookmark (`bookmark` without a time), then run
+   `restore <vault_id> <target> <current>` straight away. Every client request
+   moves the bookmark, so a `409` means the vault changed in between: read it again.
+   On a busy vault, turn sync off first with the [kill switch](#kill-switch). A
+   time-based target on a young vault can land before its genesis: a `bookmark`
+   read afterwards then shows `vault_exists: false`, and the undo still works.
 5. The response holds the target and the **undo bookmark** (the moment just before
    the restore). Record both on the incident issue before going on; nothing else
-   keeps them. The route restarts the vault object; the next request sees the
-   restored state.
+   keeps them. From scheduling until the restart the vault refuses every request
+   with `503`, so no write is acknowledged and then discarded. The route restarts
+   the object and confirms it; the next request sees the restored state. `202` with
+   `restart_confirmed: false` means the restart was not confirmed: the vault keeps
+   answering `503` until the object restarts, and then the restore applies. Retry a
+   `bookmark` read until it answers.
 6. Verify with a client pull: the membership chain and the change log verify, and
    the head matches the intended point.
 7. To undo, read the current bookmark and restore to the undo bookmark the same way.
@@ -323,6 +329,11 @@ Restoring a vault is **an incident in itself**:
   `400 bad_request` (ahead of the stored state). `jti` entries burned after the
   restore point are forgotten, so a captured token and proof could be replayed once
   within the `jti` window (`worker/src/limits.ts`) after the restore.
+- Membership is restored too. A restore to before a `device_remove`,
+  `member_remove` or rekey makes the removed device a member again on the server
+  and puts the key epoch back. Compare the membership head before and after; if a
+  removal was undone, the owner removes the device again and rekeys at once.
+  Revocations in the registry still hold.
 - Revocations live in the separate revocation registry object, which the operator
   route cannot reach. Never restore it to before a revocation by any other means: it
   would un-revoke sessions and devices.

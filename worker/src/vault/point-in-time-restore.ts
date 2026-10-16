@@ -7,8 +7,8 @@
  * A restore is compare-and-swap on the object's current bookmark: the operator
  * names the bookmark it read just before, and any write since (or an earlier
  * restore, which moves the history forward) refuses it with `conflict`. That
- * also makes a replayed restore request a no-op refusal. Bookmarks are lexically
- * ordered, so the target must lie before the current point.
+ * is meant to make a replayed restore request a refusal; that a restore moves the
+ * current bookmark is verified on staging, not locally (local workerd has no history).
  *
  * Platform errors carry text from the storage layer; they are mapped to fixed
  * messages and never echoed.
@@ -64,12 +64,22 @@ export async function bookmarkForTime(storage: PointInTimeStorage, atMs: number,
 /**
  * Schedule a restore to `target` if the object is still at `expectedCurrent`.
  * Returns the undo bookmark (the point just before the restore). The restore
- * applies when the object next starts; the caller must restart it.
+ * applies when the object next starts; the caller must restart it, and
+ * `setPending(true)` runs before the restore is scheduled (and `false` if
+ * scheduling fails) so the caller can refuse every request in between.
  */
-export async function scheduleRestore(storage: PointInTimeStorage, target: string, expectedCurrent: string): Promise<string> {
+export async function scheduleRestore(storage: PointInTimeStorage, target: string, expectedCurrent: string, setPending: (pending: boolean) => void): Promise<string> {
   if (!isBookmark(target) || !isBookmark(expectedCurrent)) throw new ApiError('bad_request');
-  if (!(target < expectedCurrent)) throw new ApiError('bad_request', { message: 'the restore target must precede the current point' });
   const current = await currentBookmark(storage);
   if (current !== expectedCurrent) throw new ApiError('conflict', { message: 'the vault changed since the bookmark was read' });
-  return checkedBookmark(await pitr(() => storage.onNextSessionRestoreBookmark(target)));
+  setPending(true);
+  let undo: string;
+  try {
+    undo = await pitr(() => storage.onNextSessionRestoreBookmark(target));
+  } catch (err) {
+    setPending(false); // the platform refused: nothing is scheduled
+    throw err;
+  }
+  // Scheduled from here on, even if the returned value is malformed: stay pending.
+  return checkedBookmark(undo);
 }

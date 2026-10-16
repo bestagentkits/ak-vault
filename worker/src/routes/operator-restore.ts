@@ -16,11 +16,16 @@
  *   - "restore":            +"bookmark" (target), +"expected_current"
  * `origin` must equal this Worker's origin and `ts` (unix s) be within ±60 s.
  * Replay: a bookmark read is harmless; a restore is compare-and-swap on the
- * vault's current bookmark, which every write and every restore moves forward,
- * so a replayed restore is refused with `409`.
+ * vault's current bookmark, so a replay is refused with `409` once the bookmark
+ * has moved (every write moves it; that a restore does is checked on staging).
  *
- * A restore schedules the target, restarts the object, and returns the target
- * and the undo bookmark. Record both on the incident issue: nothing else keeps them.
+ * A restore schedules the target, refuses every request to that vault from then
+ * until the restart (so nothing is acknowledged that the restore discards),
+ * restarts the object, confirms the restart by a new instance ID and returns the
+ * target and the undo bookmark (`202` with `restart_confirmed: false` when the
+ * restart could not be confirmed). Record both bookmarks on the incident issue:
+ * nothing else keeps them. Logs record this route's template even when it is off;
+ * responses cannot tell it from an unknown path.
  */
 import { b64decode, parseJson, utf8Decode, utf8Encode, concatBytes, b64decodeLength } from '@ak-vault/protocol';
 import type { Env } from '../env.js';
@@ -56,7 +61,7 @@ function parseObject(text: string): Record<string, unknown> {
 
 function exactKeys(obj: Record<string, unknown>, keys: readonly string[]): void {
   const present = Object.keys(obj);
-  if (present.length !== keys.length || keys.some((k) => !(k in obj))) throw new ApiError('bad_request');
+  if (present.length !== keys.length || keys.some((k) => !Object.hasOwn(obj, k))) throw new ApiError('bad_request');
 }
 
 /** Constant-time HMAC check (subtle.verify). */
@@ -126,11 +131,38 @@ export async function handleOperatorRequest(request: Request, env: Env, info: Ro
 
   // RPC types `unknown` bodies as never; the value is a plain ApiResult.
   const scheduled: ApiResult = await stub().operatorScheduleRestore(op.bookmark, op.expectedCurrent);
+  const before = await instanceOf(stub);
+  // Nothing scheduled (a refusal before the platform call): return it as is.
+  if (before && !before.restorePending) return scheduled;
+  const restarted = await restartAndConfirm(stub, before?.instance ?? null);
   if (scheduled.status !== 200) return scheduled;
+  return restarted ? scheduled : { status: 202, body: { ...(scheduled.body as Record<string, unknown>), restart_confirmed: false } };
+}
+
+type VaultStub = ReturnType<Env['VAULT']['get']>;
+
+async function instanceOf(stub: () => VaultStub): Promise<{ instance: string; restorePending: boolean } | null> {
   try {
-    await stub().operatorRestart();
+    return await stub().operatorInstance();
   } catch {
-    // Expected: the restart aborts the call that requested it.
+    return null;
   }
-  return scheduled;
+}
+
+/**
+ * Restart the object and confirm it came back as a new instance (the restore
+ * applies at that start). Two attempts; unconfirmed means the object keeps
+ * refusing every request until it restarts on its own, when the restore applies.
+ */
+async function restartAndConfirm(stub: () => VaultStub, previous: string | null): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await stub().operatorRestart();
+    } catch {
+      // Expected: the restart aborts the call that requested it.
+    }
+    const now = await instanceOf(stub);
+    if (now && previous !== null && now.instance !== previous && !now.restorePending) return true;
+  }
+  return false;
 }

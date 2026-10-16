@@ -9,8 +9,11 @@
  * The real restore is rehearsed on staging (docs/operations/rehearsal-2026-10.md).
  */
 import { b64encode, concatBytes, randomBytes, randomId, utf8Encode } from '@ak-vault/protocol';
+import { env } from 'cloudflare:workers';
+import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import type { Env } from '../src/env.js';
+import type { VaultDurableObject } from '../src/vault/vault-durable-object.js';
 import { OPERATOR_SIGN_CONTEXT } from '../src/routes/operator-restore.js';
 import { bookmarkForTime, PITR_WINDOW_MS, scheduleRestore, type PointInTimeStorage } from '../src/vault/point-in-time-restore.js';
 import { BASE, fetchRaw } from './helpers/api-client.js';
@@ -82,22 +85,22 @@ describe('operator restore route: authentication and shape', () => {
     expect((await send(bookmarkOf(fx.vaultId), { raw: JSON.stringify({ request: '{}', sig: 'x', more: 1 }) })).status).toBe(400);
   });
 
-  it('reaches vault objects only: the revocation registry name is not a vault ID', async () => {
+  it('refuses a vault_id that is not a 16-byte ID (the route only has the VAULT binding; this checks input validation)', async () => {
     expect((await send(bookmarkOf('global'))).status).toBe(400);
   });
 
-  it('refuses a vault that does not exist without creating it', async () => {
+  it('serves an object without a vault, so a restore to before genesis can be undone', async () => {
     const missing = b64encode(randomBytes(16));
-    expect((await send(bookmarkOf(missing))).status).toBe(404);
-    expect((await send({ action: 'restore', vault_id: missing, bookmark: 'a', expected_current: 'b' })).status).toBe(404);
+    const res = await send(bookmarkOf(missing));
+    expect(res.status).toBe(200);
+    expect(res.json?.['vault_exists']).toBe(false);
   });
 
-  it('works with the sync kill switch off, and refuses a target that is not before the current point', async () => {
+  it('works with the sync kill switch off', async () => {
     const fx = await VaultFixture.create();
-    const off = { ...WITH_SECRET, VAULT_SYNC_ENABLED: 'false' };
-    const res = await send({ action: 'restore', vault_id: fx.vaultId, bookmark: 'b', expected_current: 'a' }, { env: off });
-    expect(res.status).toBe(400);
-    expect(res.json?.error?.message).toBe('the restore target must precede the current point');
+    const res = await send(bookmarkOf(fx.vaultId), { env: { ...WITH_SECRET, VAULT_SYNC_ENABLED: 'false' } });
+    expect(res.status).toBe(200);
+    expect(res.json?.['vault_exists']).toBe(true);
   });
 
   it('returns the current bookmark, refuses a future time, and refuses a stale restore without touching the vault', async () => {
@@ -120,11 +123,48 @@ describe('operator restore route: authentication and shape', () => {
   });
 });
 
+describe('operator restore: pending restore and restart', () => {
+  const stubOf = (vaultId: string) => env.VAULT.get(env.VAULT.idFromName(vaultId));
+
+  it('refuses every sync and operator request while a restore is pending', async () => {
+    const fx = await VaultFixture.create();
+    await runInDurableObject(stubOf(fx.vaultId), (instance: VaultDurableObject) => {
+      (instance as unknown as { restorePending: boolean }).restorePending = true;
+    });
+    const read = await fx.get(fx.owner, '/membership');
+    expect(read.status).toBe(503);
+    expect(read.json.error).toEqual({ code: 'internal', message: 'vault restore in progress' });
+    const write = await fx.write(fx.owner, randomId(), 0, { name: 'SYNTH_PENDING', value: 'synthetic' });
+    expect(write.status).toBe(503);
+    expect((await send(bookmarkOf(fx.vaultId))).status).toBe(503);
+    expect((await send({ action: 'restore', vault_id: fx.vaultId, bookmark: 'a', expected_current: 'b' })).status).toBe(503);
+  });
+
+  it('a restart starts a new instance that is no longer pending, and the vault serves again', async () => {
+    const fx = await VaultFixture.create();
+    const before = await stubOf(fx.vaultId).operatorInstance();
+    await runInDurableObject(stubOf(fx.vaultId), (instance: VaultDurableObject) => {
+      (instance as unknown as { restorePending: boolean }).restorePending = true;
+    });
+    await stubOf(fx.vaultId)
+      .operatorRestart()
+      .catch(() => undefined);
+    const after = await stubOf(fx.vaultId).operatorInstance();
+    expect(after.instance).not.toBe(before.instance);
+    expect(after.restorePending).toBe(false);
+    expect((await fx.get(fx.owner, '/membership')).status).toBe(200);
+  });
+});
+
 /** In-memory model of the PITR API: bookmarks are ordered, every restore moves history forward. */
 class FakePitr implements PointInTimeStorage {
   position = 10;
   restoredTo: string | null = null;
   failWith: Error | null = null;
+  pendingLog: boolean[] = [];
+  setPending = (pending: boolean): void => {
+    this.pendingLog.push(pending);
+  };
   bookmark(n: number): string {
     return `0000${n.toString(16).padStart(8, '0')}`;
   }
@@ -148,29 +188,24 @@ class FakePitr implements PointInTimeStorage {
 describe('point-in-time restore logic', () => {
   it('schedules a restore at the expected point and returns the undo bookmark', async () => {
     const pitr = new FakePitr();
-    const undo = await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10));
+    const undo = await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.setPending);
+    expect(pitr.pendingLog).toEqual([true]);
     expect(undo).toBe(pitr.bookmark(10));
     expect(pitr.restoredTo).toBe(pitr.bookmark(4));
   });
 
   it('refuses a stale expected point, so a replayed restore does nothing', async () => {
     const pitr = new FakePitr();
-    await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10));
+    await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.setPending);
     pitr.restoredTo = null;
-    await expect(scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10))).rejects.toMatchObject({ code: 'conflict', status: 409 });
-    expect(pitr.restoredTo).toBeNull();
-  });
-
-  it('refuses a target at or after the current point', async () => {
-    const pitr = new FakePitr();
-    await expect(scheduleRestore(pitr, pitr.bookmark(10), pitr.bookmark(10))).rejects.toMatchObject({ code: 'bad_request' });
+    await expect(scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.setPending)).rejects.toMatchObject({ code: 'conflict', status: 409 });
     expect(pitr.restoredTo).toBeNull();
   });
 
   it('maps platform errors to a fixed message that echoes nothing', async () => {
     const pitr = new FakePitr();
     pitr.failWith = new Error(PLATFORM_TEXT);
-    const err = await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10)).catch((e: unknown) => e);
+    const err = await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.setPending).catch((e: unknown) => e);
     expect(err).toMatchObject({ code: 'bad_request', message: 'point-in-time recovery refused the request' });
     expect(String((err as Error).message)).not.toContain(PLATFORM_TEXT);
   });
@@ -178,7 +213,22 @@ describe('point-in-time restore logic', () => {
   it('refuses a platform value that is not a bookmark', async () => {
     const pitr = new FakePitr();
     pitr.getCurrentBookmark = async () => 'not a bookmark';
-    await expect(scheduleRestore(pitr, '0001', '0002')).rejects.toMatchObject({ code: 'internal' });
+    await expect(scheduleRestore(pitr, '0001', '0002', pitr.setPending)).rejects.toMatchObject({ code: 'internal' });
+    expect(pitr.pendingLog).toEqual([]);
+  });
+
+  it('clears pending when the platform refuses, and stays pending once the restore is scheduled', async () => {
+    const refused = new FakePitr();
+    refused.onNextSessionRestoreBookmark = async () => {
+      throw new Error(PLATFORM_TEXT);
+    };
+    await expect(scheduleRestore(refused, refused.bookmark(4), refused.bookmark(10), refused.setPending)).rejects.toMatchObject({ code: 'bad_request' });
+    expect(refused.pendingLog).toEqual([true, false]);
+
+    const malformed = new FakePitr();
+    malformed.onNextSessionRestoreBookmark = async () => 'not a bookmark';
+    await expect(scheduleRestore(malformed, malformed.bookmark(4), malformed.bookmark(10), malformed.setPending)).rejects.toMatchObject({ code: 'internal' });
+    expect(malformed.pendingLog).toEqual([true]);
   });
 
   it('accepts time lookups only inside the 30-day window and not in the future', async () => {
