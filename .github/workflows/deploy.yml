@@ -6,6 +6,10 @@ name: Deploy
 # (human reviewer, deployment branch main). Cloudflare credentials are exposed
 # only to the deploy step, never to checkout, setup or `pnpm install` scripts.
 # Missing credentials fail the job instead of finishing green without a deploy.
+# The repository variable DEPLOY_FREEZE (unset or `false` = not frozen) stops
+# every deploy during an incident; the production job re-checks it after the
+# reviewer's approval, because a run can wait there for hours. Any other value
+# refuses (fail closed). Procedure: docs/operations/runbooks.md#deploy-freeze.
 on:
   workflow_run:
     workflows: [CI]
@@ -34,6 +38,19 @@ jobs:
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
     steps:
+      - name: Refuse while deploys are frozen
+        env:
+          DEPLOY_FREEZE: ${{ vars.DEPLOY_FREEZE }}
+        run: |
+          case "${DEPLOY_FREEZE}" in
+            ""|false) ;;
+            true)
+              echo "::error::DEPLOY_FREEZE is true: deploys are frozen for an incident; refusing to deploy (see docs/operations/runbooks.md#deploy-freeze)"
+              exit 1 ;;
+            *)
+              echo "::error::DEPLOY_FREEZE has an unrecognised value; expected true, false or unset; refusing to deploy"
+              exit 1 ;;
+          esac
       - id: sha
         env:
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -85,6 +102,19 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Refuse while deploys are frozen
+        env:
+          DEPLOY_FREEZE: ${{ vars.DEPLOY_FREEZE }}
+        run: |
+          case "${DEPLOY_FREEZE}" in
+            ""|false) ;;
+            true)
+              echo "::error::DEPLOY_FREEZE is true: deploys are frozen for an incident; refusing to deploy production (see docs/operations/runbooks.md#deploy-freeze)"
+              exit 1 ;;
+            *)
+              echo "::error::DEPLOY_FREEZE has an unrecognised value; expected true, false or unset; refusing to deploy production"
+              exit 1 ;;
+          esac
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.gate.outputs.sha }}

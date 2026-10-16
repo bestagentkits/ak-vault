@@ -52,7 +52,9 @@ Node 22+ and pnpm (version pinned in `package.json`) are required.
 - Never commit `.env`, `.dev.vars`, tokens, keys, account identifiers or personal
   data. Test data is synthetic.
 - The Worker never receives the ak-web CLI HS256 signing key.
-- Production deploys only through the protected `production` GitHub Environment.
+- Production deploys only through the protected `production` GitHub Environment,
+  except the emergency rollback and the emergency kill switch (which may only turn
+  sync off) in the [runbooks](./docs/operations/runbooks.md).
 
 ## Spec and vector changes
 
