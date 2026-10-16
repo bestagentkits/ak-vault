@@ -186,7 +186,7 @@ projections, not measurements; each lever is re-measured when it lands.
 - **Rows written per pull are the cost driver**, followed by polling frequency;
   storage is not. A pull that wrote no rows would bring the 10,000-vault active
   case to about $1,300 ([levers](#levers-63)). Reducing them is a Worker design decision
-  ([#50](https://github.com/bestagentkits/ak-vault/issues/50)).
+  ([#63](https://github.com/bestagentkits/ak-vault/issues/63)).
 - **Polling frequency multiplies everything.** Before GA, measure
   whether longer intervals, conditional pulls, or WebSocket hibernation (incoming
   messages billed at 20:1, idle hibernated objects not billed for duration) meet

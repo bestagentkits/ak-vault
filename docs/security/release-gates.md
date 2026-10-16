@@ -14,8 +14,9 @@ tokens ([owner waivers](#owner-waivers)). Any logged-in user running the preview
 review sign-off: production sync is pre-release, not externally reviewed and not yet
 recommended for production credentials. It was enabled while these remain open:
 every red-team scenario executed (scenario 13), the staging restore (since
-rehearsed), the staging cost measurement, the external review and ADR 0001 approval
-(since accepted by the owner, P0 gates below). Also open while
+rehearsed), the staging cost measurement (since met by a lab-Worker measurement of
+the staging build, accepted by the owner), the external review and ADR 0001
+approval (since accepted by the owner, P0 gates below). Also open while
 production is live: confirming that the staging and production JWKS share no key
 material ([staging soak](#staging-soak)), and the owner confirming on #8 that
 Workers Tail access on production is limited, the complement to the tail waiver.
@@ -127,17 +128,24 @@ page and docs, and its own CI run is linked from its pull request.
       past the witnessed position is
       [#76](https://github.com/bestagentkits/ak-vault/issues/76)); v1 has no automatic
       re-convergence (an [ADR 0001 open item](../adr/0001-opt-in-zero-knowledge-sync.md#open-items)).
-- [ ] Cost measured on staging and compared with the
-      [cost model](../operations/cost-model.md).
-      Latest run: 2026-10-16, a lab Worker built from the staging commit (`b49865c`)
-      and configuration, plus the staging idle baseline
+- [x] Cost measured on a lab Worker running the staging commit and configuration,
+      accepted by the owner in place of staging, and compared with the
+      [cost model](../operations/cost-model.md). The owner accepted this method as
+      meeting the gate on 2026-10-16, with no re-measurement on staging
+      ([decision on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212027109),
+      [options](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6211030336)).
+      Evidence: 2026-10-16, a lab Worker built from the staging commit (`b49865c`)
+      and configuration, plus the read-only staging idle baseline
       ([cost model](../operations/cost-model.md#measured-2026-10-16-staging-configuration),
-      repeatable with `pnpm cost:measure`). **Open:** not on the staging Worker itself,
-      which accepts only ak-web staging tokens, and the owner decided no authenticated
-      staging session is used. Whether this method meets the gate is the
-      [owner's decision on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6211030336).
-      The dominant cost at scale is still rows written by every pull
-      ([#50](https://github.com/bestagentkits/ak-vault/issues/50)).
+      [#75](https://github.com/bestagentkits/ak-vault/pull/75), repeatable with
+      `pnpm cost:measure`). It is a lab measurement of the staging build, not of
+      staging traffic: staging accepts only ak-web staging tokens and no
+      authenticated staging session is used, so the lab trusted a synthetic issuer,
+      and device counts and pull rates in the model are still assumptions. Pinned
+      to `b49865c`; `6851b0b` has since changed the request path, so re-run
+      `pnpm cost:measure` on the release commit before GA.
+      The dominant cost at scale is still rows written by every pull; reducing it is
+      [#63](https://github.com/bestagentkits/ak-vault/issues/63).
 - [ ] External review signed off (below). **Not signed off.** Production sync was
       enabled before it under the owner waiver of 2026-10-16
       ([owner waivers](#owner-waivers)).
