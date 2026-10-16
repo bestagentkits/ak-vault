@@ -18,9 +18,12 @@ rehearsed), the staging cost measurement (since met by a lab-Worker measurement 
 the staging build, accepted by the owner), the review (by the owner;
 accepted 2026-10-16, not an independent third-party review;
 [below](#review-by-the-owner))
-and ADR 0001 approval (since accepted by the owner, P0 gates below). Also open while
-production is live: confirming that the staging and production JWKS share no key
-material ([staging soak](#staging-soak)). The complement to the tail waiver, Workers
+and ADR 0001 approval (since accepted by the owner, P0 gates below). Also open when
+production went live, since confirmed on 2026-10-16: the staging and production JWKS
+share no key material, compared by the keys' `(crv, x, y)` coordinates
+([staging soak](#staging-soak),
+[evidence on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6213027838)).
+The complement to the tail waiver, Workers
 Tail access on production restricted, was confirmed by the owner on 2026-10-16
 ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235)).
 The owner's decisions on #8 enabled production sync with these items open; they still gate GA. The waivers recorded on
@@ -192,9 +195,13 @@ Cloudflare edge are verified by configuration and by the lab Worker rehearsal
 traffic. Platform logs, traces and analytics were scanned with seeded traffic on a
 lab Worker instead (disclosure-scan gate above). Staging trusts ak-web staging's
 issuer and JWKS; keeping staging's signing keys separate from production's is
-ak-web's responsibility; production sync is live, so confirm as soon as both
-endpoints answer that the two JWKS share no key material (compare the keys' `x`/`y`
-coordinates, not only their `kid`s).
+ak-web's responsibility. Confirmed on 2026-10-16 that the two JWKS share no key
+material: both published JWKS were fetched and every key compared by its
+`(crv, x, y)` coordinates, not only its `kid`; each endpoint published one key and
+none was shared
+([evidence on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6213027838)).
+This is a point-in-time check of the keys published that day; keeping keys separate
+across later rotations stays ak-web's responsibility.
 
 ## Owner waivers
 
