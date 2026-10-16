@@ -87,7 +87,7 @@ Work is tracked in the [epic, issue #1](https://github.com/bestagentkits/ak-vaul
 - **Local vault: available.** Keychain or age-encrypted file vault, agent grants, approvals and an audit ledger in the AgentKit CLI.
 - **Protocol v1 and test vectors: in review.** Spec, TypeScript reference and a Go implementation that reproduce every vector ([#2](https://github.com/bestagentkits/ak-vault/issues/2)).
 - **Worker and storage: preview.** Cloudflare Worker with a SQLite Durable Object per vault, including shared-vault membership. The production sync API is live as a pre-release preview, before the review ([#4](https://github.com/bestagentkits/ak-vault/issues/4), [#5](https://github.com/bestagentkits/ak-vault/issues/5)).
-- **Client sync in the CLI: preview.** The sync commands ship hidden in the released `ak` beta, which includes the removal-fence client since `v3.0.0-beta.31`.
+- **Client sync in the CLI: preview.** The sync commands ship hidden in the released `ak` beta; the removal-fence client is included since `v3.0.0-beta.31`.
 - **Security gate: required for GA.** Red team, a two-device end-to-end run with real clients, rollback rehearsal and a review by the owner (not independent) ([#8](https://github.com/bestagentkits/ak-vault/issues/8)).
 - After personal sync: read-only CI identities ([#6](https://github.com/bestagentkits/ak-vault/issues/6)) and portable policy with encrypted audit ([#7](https://github.com/bestagentkits/ak-vault/issues/7)).
 

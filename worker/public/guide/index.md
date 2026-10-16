@@ -85,7 +85,7 @@ Some of this works today on the local vault; the device-removal and recovery ste
    ak secrets revoke OPENAI_API_KEY --agent sha256:<fingerprint>
    ak secrets revoke --agent sha256:<fingerprint> --all
    ```
-4. **Lost every device? Recover with your password or recovery key** (preview; not yet on the released beta, see step 1). A fresh device can enroll itself through the encrypted recovery bundle, which also carries the owner's public trust anchor and the newest witnessed checkpoint so it does not have to trust the server.
+4. **Lost every device? Recover with your password or recovery key** (preview; needs `v3.0.0-beta.31` or later, see step 1). A fresh device can enroll itself through the encrypted recovery bundle, which also carries the owner's public trust anchor and the newest witnessed checkpoint so it does not have to trust the server.
 
 ## Keep reading
 
