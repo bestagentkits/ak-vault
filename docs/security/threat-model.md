@@ -99,7 +99,7 @@ directories themselves are the authority for exact file names.
 | E3 | Unsupported version accepted | Server, attacker | Closed identifier sets; fail closed | Vectors: unsupported version, unknown algorithm |
 | C1 | Forked PR reaches secrets or deploys | Forked PR | No secrets to fork workflows; production Environment reviewer | Workflow config in `.github/`; red-team scenario in [release gates](./release-gates.md) |
 | I4 | Offline guessing of the recovery bundle; recovery identity reading beyond its need | Holder of an owner-account token (stolen session) | Bundle and the read-only membership log are released only to the owner account with a device-key proof; every other route refuses the recovery identity; removed device IDs refused; Argon2id minimums and a 256-bit recovery key; owner revokes sessions after a loss | `worker/test/recovery-fetch.test.ts` wrong account, removed device, key/did mismatch; `worker/test/removal-fence-and-recovery-rotation.test.ts` route refusals |
-| C2 | Compromised CI runner reads beyond scope | CI runner | Dedicated CI vault, machine read-only identity, revocable; incomplete while a machine device on the owner account can take the recovery-identity path into other vaults of that account ([#42](https://github.com/bestagentkits/ak-vault/issues/42)) | #6 tests (post-MVP); `red-team-tenant-and-role-isolation.test.ts` pins the current #42 behaviour |
+| C2 | Compromised CI runner reads beyond scope | CI runner | Dedicated CI vault, machine read-only identity, revocable; incomplete while a machine device on the owner account can take the recovery-identity path into other vaults of that account ([#42](https://github.com/bestagentkits/ak-vault/issues/42); planned fix [ak-web#578](https://github.com/bestagentkits/ak-web/issues/578), required before #6 ships) | #6 tests (post-MVP); `red-team-tenant-and-role-isolation.test.ts` pins the current #42 behaviour |
 
 ## Explicit limitations
 
@@ -121,11 +121,18 @@ These are accepted and must be stated wherever the guarantees are described:
 - **Recovery bundle ciphertext.** Anyone holding a live owner-account session can
   download the encrypted recovery bundle and guess the password offline. A weak
   password is the residual exposure; revoking the owner's sessions after a loss
-  closes the path. Until [#42](https://github.com/bestagentkits/ak-vault/issues/42)
-  is resolved, a machine device on the owner account can also take this path on
-  any other vault of that account in which it is not enrolled, fetching that
-  vault's encrypted bundle and membership log. #42 is an open finding, not an
-  accepted limitation; whether to fix or accept it is the owner's decision.
+  closes the path. This includes **machine identities on the owner account**: a
+  machine or CI device signed in to the owner account can take the
+  recovery-identity path on any other vault of that account in which it is not
+  enrolled, fetching that vault's encrypted bundle and read-only membership log.
+  The owner decided to fix this rather than accept it
+  ([#42](https://github.com/bestagentkits/ak-vault/issues/42)). Planned, not yet
+  built: ak-web will mark machine and CI sessions with a vault-token claim
+  ([ak-web#578](https://github.com/bestagentkits/ak-web/issues/578)) and the Worker
+  will refuse the recovery-identity path for those sessions, failing closed on an
+  unknown claim value. The fix is a prerequisite for shipping machine identities
+  ([#6](https://github.com/bestagentkits/ak-vault/issues/6)). Until it lands, this
+  stays a stated limitation.
 - **Audit entries are not signed per author.** Any device that held `VK[e]` can
   write audit entries at epoch `e`, including a device removed later. With a
   colluding server it can keep doing so after the rekey until the first entry at a

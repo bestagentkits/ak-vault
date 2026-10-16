@@ -28,7 +28,13 @@ evidence does not count.
 - [ ] Every scenario in the [red-team list](#red-team-scenarios) executed, findings
       triaged on GitHub.
       Latest run: [red-team evidence](./red-team-evidence.md).
-- [ ] Staging soak complete (below).
+- [x] Two-device round trip and soak (below): replaced by the
+      [Docker two-device e2e](../../e2e/docker/README.md)
+      ([#55](https://github.com/bestagentkits/ak-vault/pull/55)) by owner decision
+      on 2026-10-16. Evidence: the
+      [run on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6206840562)
+      at `a4f5656`; `worker/`, `packages/` and `go/` are unchanged since then, so
+      re-run it if they change before the release commit. Residual risk stated below.
 - [ ] Backup/restore and rollback rehearsed on staging using the
       [runbooks](../operations/runbooks.md).
       Latest run: [rehearsal log](../operations/rehearsal-2026-10.md) (rollback and
@@ -38,20 +44,36 @@ evidence does not count.
       [cost model](../operations/cost-model.md).
       Latest run: [rehearsal log](../operations/rehearsal-2026-10.md#cost-measurement).
 - [ ] External review signed off (below).
-- [ ] The removal fence binds the change-log contents, not only a position
+- [x] The removal fence binds the change-log contents, not only a position
       ([#21](https://github.com/bestagentkits/ak-vault/issues/21)): a device that
       first reads the log after a removal can detect a record substituted at or
       below the fence, with vectors in TypeScript and Go and a Worker test.
+      Evidence: [#48](https://github.com/bestagentkits/ak-vault/pull/48),
+      `protocol/v1/vectors/removal-fence.json` and
+      `worker/test/removal-fence-binds-log.test.ts`.
 
 ## Staging soak
 
-Staging runs on `vault-staging.agentkit.best` and trusts ak-web staging's issuer and
-JWKS; its tokens are minted by ak-web staging for real CLI sessions. Keeping staging's
-signing keys separate from production's is ak-web's responsibility, so before the soak
+The owner decided on 2026-10-16
+([decision on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6207406980))
+that the [Docker two-device e2e](../../e2e/docker/README.md) replaces both the staging
+two-device round trip and the staging soak; no authenticated staging session is used.
+It runs the real `ak` on two devices with active sync services against this
+repository's Worker under `wrangler dev`, with a fake ak-web, and records error rates,
+propagation latency and a disclosure scan. Its results are on #8; the e2e README owns
+how to repeat it. This supersedes the 2026-10-14 decision to skip only the multi-day
+soak.
+
+**Residual risk, for the external reviewer to weigh.** The integration with ak-web
+staging's real issuer and JWKS, the delivery of its revocation webhook and the
+Cloudflare edge are verified by configuration and by the lab Worker rehearsal
+([#54](https://github.com/bestagentkits/ak-vault/pull/54),
+[rehearsal log](../operations/rehearsal-2026-10.md)), not by authenticated staging
+traffic. Platform Workers Logs and traces are therefore not scanned with seeded
+traffic either. Staging trusts ak-web staging's issuer and JWKS; keeping staging's
+signing keys separate from production's is ak-web's responsibility, so before GA
 confirm the two JWKS endpoints share no key material (compare the keys' `x`/`y`
-coordinates, not only their `kid`s). The soak uses at least two enrolled devices with active sync
-services, exercises the red-team scenarios and the runbook rehearsals, and records
-error rates and latency. The soak duration is an owner decision recorded on #8.
+coordinates, not only their `kid`s).
 
 ## Feature flag and kill switch
 
@@ -63,7 +85,14 @@ endpoints are not affected by the flag.
 ## Production deploy control
 
 - Production deploys run only through a GitHub Environment with a required human
-  reviewer; an agent cannot approve its own deploy.
+  reviewer; an agent cannot approve its own deploy. Two emergency paths bypass it,
+  each recorded on an incident issue: the
+  [Worker rollback](../operations/runbooks.md#worker-rollback), and the
+  [emergency kill switch](../operations/runbooks.md#emergency-kill-switch), a
+  direct deploy that may only set `VAULT_SYNC_ENABLED=false`, under a
+  [deploy freeze](../operations/runbooks.md#deploy-freeze) and followed the same
+  day by a reviewed pull request (owner decision on
+  [#53](https://github.com/bestagentkits/ak-vault/issues/53)).
 - The deploy workflow runs only for `main`, only after CI passed on the same commit,
   and both environments allow deployments from `main` only. Cloudflare credentials
   are scoped to the deploy step; actions are pinned by commit SHA. Missing
