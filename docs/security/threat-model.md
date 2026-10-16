@@ -106,7 +106,8 @@ directories themselves are the authority for exact file names.
 | E3 | Unsupported version accepted | Server, attacker | Closed identifier sets; fail closed | Vectors: unsupported version, unknown algorithm |
 | C1 | Forked PR reaches secrets or deploys | Forked PR | No secrets to fork workflows; production Environment reviewer | Workflow config in `.github/`; red-team scenario in [release gates](./release-gates.md) |
 | I4 | Offline guessing of the recovery bundle; recovery identity reading beyond its need | Holder of an owner-account token (stolen session) | Bundle and the read-only membership log are released only to the owner account with a device-key proof; every other route refuses the recovery identity; removed device IDs refused; Argon2id minimums and a 256-bit recovery key; owner revokes sessions after a loss | `worker/test/recovery-fetch.test.ts` wrong account, removed device, key/did mismatch; `worker/test/removal-fence-and-recovery-rotation.test.ts` route refusals |
-| C2 | Compromised CI runner reads beyond scope | CI runner | Dedicated CI vault, machine read-only identity, revocable; incomplete while a machine device on the owner account can take the recovery-identity path into other vaults of that account ([#42](https://github.com/bestagentkits/ak-vault/issues/42); planned fix [ak-web#578](https://github.com/bestagentkits/ak-web/issues/578), required before #6 ships) | #6 tests (post-MVP); `red-team-tenant-and-role-isolation.test.ts` pins the current #42 behaviour |
+| C2 | Compromised CI runner reads beyond scope | CI runner | Dedicated CI vault, machine read-only identity, revocable; the Worker refuses the recovery-identity path for `session_kind` `machine` ([#42](https://github.com/bestagentkits/ak-vault/issues/42)); incomplete until ak-web marks machine sessions with the claim ([ak-web#578](https://github.com/bestagentkits/ak-web/issues/578), required before #6 ships) | #6 tests (post-MVP); `red-team-tenant-and-role-isolation.test.ts` (marked machine refused, unmarked token still admitted) |
+| I5 | Stolen or leaked AgentKit API key used to sync ([#74](https://github.com/bestagentkits/ak-vault/issues/74)) | Holder of an API key | The key never mints vault tokens; it is exchanged for a revocable `api_key_device` session bound to a device key (ak-web). The Worker refuses that session on the recovery bundle, the membership read by a non-member and recovery enrollment, so the key alone cannot collect bundles for offline guessing. Joining an existing vault needs a `device_add` signed by an existing owner device; creating a new vault is allowed. Revoking the key revokes derived sessions through the revocation webhook. Per-key device cap (5), enrolment email notice and per-key opt-in are ak-web controls ([ak-web#583](https://github.com/bestagentkits/ak-web/issues/583)). Residual: a leaked key with opt-in can create vaults and devices up to the cap, and an owner who approves an unknown device enrols it, which as an owner-role device may read and replace the recovery bundle and rotate the recovery key (an open product question on [#74](https://github.com/bestagentkits/ak-vault/issues/74)). Revocation of derived sessions is an ak-web control; the Worker checks revoked `sid` per request | `worker/test/recovery-fetch.test.ts` "human email-OTP sessions only"; `worker/test/auth-token.test.ts` session kinds |
 
 ## Explicit limitations
 
@@ -133,13 +134,15 @@ These are accepted and must be stated wherever the guarantees are described:
   recovery-identity path on any other vault of that account in which it is not
   enrolled, fetching that vault's encrypted bundle and read-only membership log.
   The owner decided to fix this rather than accept it
-  ([#42](https://github.com/bestagentkits/ak-vault/issues/42)). Planned, not yet
-  built: ak-web will mark machine and CI sessions with a vault-token claim
-  ([ak-web#578](https://github.com/bestagentkits/ak-web/issues/578)) and the Worker
-  will refuse the recovery-identity path for those sessions, failing closed on an
-  unknown claim value. The fix is a prerequisite for shipping machine identities
-  ([#6](https://github.com/bestagentkits/ak-vault/issues/6)). Until it lands, this
-  stays a stated limitation.
+  ([#42](https://github.com/bestagentkits/ak-vault/issues/42)). The Worker now refuses
+  the recovery-identity path, and recovery enrollment, for sessions whose token carries
+  `session_kind` `machine` or `api_key_device`, and fails closed on an unknown value
+  ([spec §9.1](../protocol/v1/spec.md#9-transport-authentication-worker)). Remaining
+  until ak-web sets the claim ([ak-web#578](https://github.com/bestagentkits/ak-web/issues/578)):
+  a token without the claim is treated as `email_otp`, so a machine or API-key session
+  that ak-web mints unmarked still takes the path. That ak-web change is a prerequisite
+  for shipping machine identities ([#6](https://github.com/bestagentkits/ak-vault/issues/6))
+  and API-key device sessions ([#74](https://github.com/bestagentkits/ak-vault/issues/74)).
 - **Audit entries are not signed per author.** Any device that held `VK[e]` can
   write audit entries at epoch `e`, including a device removed later. With a
   colluding server it can keep doing so after the rekey until the first entry at a

@@ -160,7 +160,12 @@ bundle or the signed membership log (`GET /v1/vaults/{vid}/membership`, read-onl
 fresh device when all of these hold: the token `sub` is the vault's `owner_account`; the token `did` is
 neither a current nor a removed device; the request carries
 `AKV-Device-Key: <b64 Ed25519 sign_pub>` with `kid(sign_pub) == did`; and `AKV-Proof`
-verifies against that key. Every other route answers such a device `forbidden`;
+verifies against that key; and the token's session kind (§9.1) is `email_otp`. A device outside
+membership whose session kind is `api_key_device` or `machine` is refused (`403`) on this
+path (the bundle and membership reads) and on recovery enrollment, so a leaked API key or a CI
+runner cannot collect recovery bundles by itself. Once an owner device approves such a
+device with a signed `device_add`, it is a current member and its role decides: an owner-role
+device may read and replace the bundle and rotate the recovery key. Every other route answers such a device `forbidden`;
 without the `AKV-Device-Key` header, a membership read by a non-member is `forbidden`
 as before. The membership log is metadata already visible to the server (§4,
 [data classification](../../security/data-classification.md)); reading it lets the
@@ -402,7 +407,11 @@ are untrusted, author-attributed data and are never interpreted as instructions.
 1. `Authorization: Bearer <ES256 JWT>` from the configured issuer. Required claims:
    `iss` (exact), `aud` = the deployment's own origin (exact; production
    `https://vault.agentkit.best`, staging `https://vault-staging.agentkit.best`), `sub`, `exp`, `nbf`,
-   `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`. Header `alg`
+   `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`. Optional
+   `session_kind` ∈ {`email_otp`, `api_key_device`, `machine`}: how the session behind the
+   token signed in. An absent claim means `email_otp` (the only kind issued before the claim
+   existed); any other value, or a non-string, is `401 unauthorized`. ak-web sets it; the
+   Worker never infers it. Header `alg`
    MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. If the JWKS
    cannot be loaded the server fails closed (`503`) and backs off for 30 s before
    fetching again; it never serves expired keys.
@@ -424,7 +433,11 @@ are untrusted, author-attributed data and are never interpreted as instructions.
    audit entries or the recovery bundle. Scope never grants cross-vault access. The
    only requests from a device outside membership are the recovery bundle fetch, the
    read-only membership fetch (§3.5) and the recovery-signed `device_add` that
-   enrolls it.
+   enrolls it, and only for an `email_otp` session. A device of an `api_key_device`
+   session (an AgentKit API key exchanged for a revocable device session) may create a
+   new vault with genesis and, once enrolled, acts as a member under its role; it joins an
+   existing vault only through a `device_add` signed by an existing owner device, never
+   through the recovery identity.
 5. Wrap routes. Wraps are uploaded only inside `PUT /v1/vaults/{vid}` (genesis) and
    `POST /v1/vaults/{vid}/membership` (`{"event","wraps"?,"bundle"?}`); there is no
    separate wrap upload. `GET /v1/vaults/{vid}/wraps?membership_seq=n` returns the
