@@ -57,7 +57,7 @@
 // NextLogHead and ParseLogPosition (change-log replay: the head chain checked
 // against each removal's signed log_head).
 //
-// Checkpoints (§6): SignCheckpoint, VerifyCheckpoint, CheckRollback.
+// Checkpoints (§6): SignCheckpoint, VerifyCheckpoint, CheckRollback, CheckWitnessedHistory.
 //
 // Audit (§7): DeriveAuditKey (per key epoch), AppendAuditEntry,
 // VerifyAuditChain, SignAuditCheckpoint, VerifyAuditCheckpoint; ParseEpochTag

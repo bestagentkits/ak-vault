@@ -202,7 +202,9 @@ Findings:
 - `checkRollback` compares digests only at an equal `log_seq`, so a vault restored
   and then grown past a device's witnessed position passes it. Spec §6 now spells
   out that such a log must be refused; the §5 head rule and the §6 digest rule
-  already required it. No vector or CI test covers the case yet
+  already required it. `checkWitnessedHistory` (Go `CheckWitnessedHistory`) now makes
+  the position check, and the `witnessed_history` vectors in `checkpoints.json` cover
+  the restored-then-regrown case in both languages
   ([#76](https://github.com/bestagentkits/ak-vault/issues/76)).
 - `wrangler secret delete` has no `--force` flag (an unknown flag prints the help
   and deletes nothing). A non-interactive shell auto-confirms the prompt.

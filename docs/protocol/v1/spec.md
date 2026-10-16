@@ -346,7 +346,10 @@ and MUST raise the alarm on every device that witnessed newer state. Clients nev
 accept it silently. That includes a restored log that has since grown past the
 witnessed `log_seq`: the change-log head at that position differs from the one the
 client computed (§5) and the state there no longer matches the witnessed
-`state_digest`. `checkRollback` on checkpoints alone does not catch that case. A
+`state_digest`. `checkRollback` on checkpoints alone does not catch that case, so a
+client also runs `checkWitnessedHistory` (Go `CheckWitnessedHistory`) on the history it
+replayed: the state digest and change-log head at the witnessed `log_seq`. The
+`witnessed_history` vectors in `checkpoints.json` pin both. A
 device that never witnessed newer state cannot tell and accepts the restored state
 (the limitation below). v1 defines no client re-seed or other
 automatic re-convergence: a device that raised the alarm stops syncing and keeps

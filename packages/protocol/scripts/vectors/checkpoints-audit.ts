@@ -3,10 +3,12 @@ import {
   appendAuditEntry,
   auditAad,
   checkRollback,
+  checkWitnessedHistory,
   cjsonBytes,
   computeStateDigest,
   deriveAuditKey,
   membershipEventHash,
+  nextLogHead,
   sealEnvelope,
   signAuditCheckpoint,
   signCheckpoint,
@@ -46,7 +48,7 @@ export function checkpointVectors(): Record<string, unknown> {
   return {
     version: 1,
     description:
-      'Checkpoints (spec §6). state_digest_cases: digest = b64 sha256(cjson([[item_id,revision,head]...] sorted by item_id)), rows with revision 0 excluded. checkpoint: signed with akv1/checkpoint by a current device of membership_events; verify MUST succeed; invalid_checkpoints MUST fail with expect_error. rollback: checkRollback(witnessed, incoming) MUST accept `accept` cases and reject `reject` cases with expect_error.',
+      'Checkpoints (spec §6). state_digest_cases: digest = b64 sha256(cjson([[item_id,revision,head]...] sorted by item_id)), rows with revision 0 excluded. checkpoint: signed with akv1/checkpoint by a current device of membership_events; verify MUST succeed; invalid_checkpoints MUST fail with expect_error. rollback: checkRollback(witnessed, incoming) MUST accept `accept` cases and reject `reject` cases with expect_error. witnessed_history: checkRollback compares checkpoints only, so a client MUST also run checkWitnessedHistory(witnessed, witnessed_log_head, heads, digests) on the history it replayed (heads[i] and digests[i] are the change-log head and state digest after log_seq i, index 0 the empty log): it MUST accept `accept` cases and reject `reject` cases with expect_error. Every case is also accepted by checkRollback against `incoming`, which is what makes the check necessary.',
     membership_events: events,
     state_digest_cases: [
       { rows: rows.map((r) => [r.item_id, r.revision, r.head]), digest },
@@ -75,6 +77,7 @@ export function checkpointVectors(): Record<string, unknown> {
         rb('key_epoch_lower', 'rollback', { ...view, log_seq: 12, state_digest: other, key_epoch: 2 }),
       ],
     },
+    witnessed_history: witnessedHistoryVectors(view),
   };
 }
 
@@ -169,6 +172,56 @@ export function auditVectors(): Record<string, unknown> {
     invalid_checkpoints: [
       negative('bad_signature', 'invalid_signature', { checkpoint: { ...cp, sig: flipByte(cp.sig, 2) } }, () => verifyAuditCheckpoint({ ...cp, sig: flipByte(cp.sig, 2) }, state)),
       negative('tampered_seq', 'invalid_signature', { checkpoint: { ...cp, seq: 2 } }, () => verifyAuditCheckpoint({ ...cp, seq: 2 }, state)),
+    ],
+  };
+}
+
+/**
+ * A device witnessed log_seq 4. The vault was then restored to log_seq 2 and grew
+ * to 5 with different contents; checkRollback accepts that, only the history
+ * check refuses it.
+ */
+function witnessedHistoryVectors(base: CheckpointView): Record<string, unknown> {
+  const build = (writes: readonly (readonly [string, number])[]) => {
+    const heads = [''];
+    const digests = [computeStateDigest([])];
+    const items = new Map<string, { item_id: string; revision: number; head: string }>();
+    writes.forEach(([item, revision], i) => {
+      const record = b64(seed(`history/${item}/${revision}`));
+      heads.push(nextLogHead(heads[i]!, i + 1, null, record));
+      items.set(item, { item_id: item, revision, head: record });
+      digests.push(computeStateDigest(items.values()));
+    });
+    return { heads, digests };
+  };
+  const original = build([[id('item/A'), 1], [id('item/B'), 1], [id('item/A'), 2], [id('item/C'), 1]]);
+  const witnessed: CheckpointView = { ...base, log_seq: 4, state_digest: original.digests[4]! };
+  const witnessedLogHead = original.heads[4]!;
+  const grownHonestly = build([[id('item/A'), 1], [id('item/B'), 1], [id('item/A'), 2], [id('item/C'), 1], [id('item/D'), 1]]);
+  const regrown = build([[id('item/A'), 1], [id('item/B'), 1], [id('item/D'), 1], [id('item/B'), 2], [id('item/D'), 2]]);
+  const restored = build([[id('item/A'), 1], [id('item/B'), 1]]);
+  const incoming = (h: { heads: string[]; digests: string[] }): CheckpointView => {
+    const at = h.digests.length - 1;
+    return { ...witnessed, log_seq: at, state_digest: h.digests[at]! };
+  };
+  const ok = (name: string, h: { heads: string[]; digests: string[] }) => {
+    checkRollback(witnessed, incoming(h));
+    checkWitnessedHistory(witnessed, witnessedLogHead, h);
+    return { name, heads: h.heads, digests: h.digests };
+  };
+  const bad = (name: string, h: { heads: string[]; digests: string[] }, passesCheckRollback: boolean) => {
+    if (passesCheckRollback) checkRollback(witnessed, incoming(h));
+    return negative(name, 'rollback', { heads: h.heads, digests: h.digests, passes_check_rollback: passesCheckRollback }, () => checkWitnessedHistory(witnessed, witnessedLogHead, h));
+  };
+  return {
+    witnessed,
+    witnessed_log_head: witnessedLogHead,
+    accept: [ok('same_history', original), ok('grown_honestly_past_witnessed', grownHonestly)],
+    reject: [
+      bad('restored_then_regrown_past_witnessed', regrown, true),
+      bad('restored_and_not_regrown', restored, false),
+      bad('head_differs_at_witnessed_position', { heads: original.heads.map((h, i) => (i === 4 ? b64(seed('other-head')) : h)), digests: original.digests }, true),
+      bad('digest_differs_at_witnessed_position', { heads: original.heads, digests: original.digests.map((d, i) => (i === 4 ? b64(seed('other-digest')) : d)) }, false),
     ],
   };
 }

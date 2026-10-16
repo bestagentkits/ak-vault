@@ -28,6 +28,7 @@ import {
   buildGenesisEvent,
   buildProof,
   checkRollback,
+  checkWitnessedHistory,
   computeStateDigest,
   createDeviceKeys,
   isAkvError,
@@ -227,10 +228,7 @@ class Client {
     const w = this.witness;
     if (!w) return;
     checkRollback(w.checkpoint, this.incoming(view));
-    const at = w.checkpoint.log_seq;
-    if (view.digests[at] !== w.checkpoint.state_digest || view.heads[at] !== w.logHead) {
-      throw Object.assign(new Error('history at the witnessed position differs'), { code: 'rollback' });
-    }
+    checkWitnessedHistory(w.checkpoint, w.logHead, view);
   }
 
   private incoming(view: PullView) {

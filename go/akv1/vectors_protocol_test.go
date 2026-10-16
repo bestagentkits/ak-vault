@@ -254,6 +254,46 @@ func checkCheckpoints(t *testing.T, f *rec, n *counter) {
 		n.add(1)
 	}
 	rb.done()
+
+	wh := f.obj("witnessed_history")
+	whWitnessed := checkpointView(wh.obj("witnessed"))
+	whHead := wh.str("witnessed_log_head")
+	strs := func(c *rec, k string) []string {
+		var out []string
+		for _, x := range c.list(k) {
+			out = append(out, x.(string))
+		}
+		return out
+	}
+	incomingOf := func(digests []string) CheckpointView {
+		in := whWitnessed
+		in.LogSeq = int64(len(digests) - 1)
+		in.StateDigest = digests[len(digests)-1]
+		return in
+	}
+	for _, c := range wh.recs("accept") {
+		heads, digests := strs(c, "heads"), strs(c, "digests")
+		if err := CheckRollback(whWitnessed, incomingOf(digests)); err != nil {
+			t.Errorf("%s: CheckRollback: %v", c.path, err)
+		}
+		if err := CheckWitnessedHistory(whWitnessed, whHead, heads, digests); err != nil {
+			t.Errorf("%s: %v", c.path, err)
+		}
+		c.done()
+		n.add(1)
+	}
+	for _, c := range wh.recs("reject") {
+		heads, digests := strs(c, "heads"), strs(c, "digests")
+		if c.boolean("passes_check_rollback") {
+			if err := CheckRollback(whWitnessed, incomingOf(digests)); err != nil {
+				t.Errorf("%s: CheckRollback must accept this case: %v", c.path, err)
+			}
+		}
+		expectCode(t, c, CheckWitnessedHistory(whWitnessed, whHead, heads, digests))
+		c.done()
+		n.add(1)
+	}
+	wh.done()
 }
 
 func auditHead(t *testing.T, c *rec, k string) *AuditHead {

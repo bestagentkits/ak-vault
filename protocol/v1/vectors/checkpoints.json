@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Checkpoints (spec §6). state_digest_cases: digest = b64 sha256(cjson([[item_id,revision,head]...] sorted by item_id)), rows with revision 0 excluded. checkpoint: signed with akv1/checkpoint by a current device of membership_events; verify MUST succeed; invalid_checkpoints MUST fail with expect_error. rollback: checkRollback(witnessed, incoming) MUST accept `accept` cases and reject `reject` cases with expect_error.",
+  "description": "Checkpoints (spec §6). state_digest_cases: digest = b64 sha256(cjson([[item_id,revision,head]...] sorted by item_id)), rows with revision 0 excluded. checkpoint: signed with akv1/checkpoint by a current device of membership_events; verify MUST succeed; invalid_checkpoints MUST fail with expect_error. rollback: checkRollback(witnessed, incoming) MUST accept `accept` cases and reject `reject` cases with expect_error. witnessed_history: checkRollback compares checkpoints only, so a client MUST also run checkWitnessedHistory(witnessed, witnessed_log_head, heads, digests) on the history it replayed (heads[i] and digests[i] are the change-log head and state digest after log_seq i, index 0 the empty log): it MUST accept `accept` cases and reject `reject` cases with expect_error. Every case is also accepted by checkRollback against `incoming`, which is what makes the check necessary.",
   "membership_events": [
     {
       "v": 1,
@@ -430,6 +430,131 @@
           "state_digest": "Z0hvHQK6GI1uuOjEHMXU-O9gXCQvFw2Csn6rD-4-x6I",
           "key_epoch": 2
         },
+        "expect_error": "rollback"
+      }
+    ]
+  },
+  "witnessed_history": {
+    "witnessed": {
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "membership_seq": 8,
+      "membership_head": "GfzDKH1MqbRt_xurIKVUNtZimbE2vaaEjzZVB3KUvpQ",
+      "log_seq": 4,
+      "state_digest": "zjhF6609AuDMJI3XKVYcXAFcNjdHEVFWK4W7wni3vaE",
+      "key_epoch": 3
+    },
+    "witnessed_log_head": "-4iWkQA9XfdxWxoNUEXz7hKDhrJIKNqhFn70xuRaAi4",
+    "accept": [
+      {
+        "name": "same_history",
+        "heads": [
+          "",
+          "jHl54Jn01HDukBA7URCkYZ08_P_t_fckGfLWfFQIRHE",
+          "Oyxh7g6swqwBh5tA-L0tvxKhGldsrCsQiSW2C5EsEps",
+          "XQfzBcP2JwsZJCNvfzodkaMUi34xYP-ZB6sdby9vvkI",
+          "-4iWkQA9XfdxWxoNUEXz7hKDhrJIKNqhFn70xuRaAi4"
+        ],
+        "digests": [
+          "T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU",
+          "ItNkQF15ISAWh9knHRiounPtMkn4Vpztqd1paJJhao4",
+          "nLkC_34Gi_Ovi9mqzqOSzzBS95PLJZ95Dz3ltgjQuq8",
+          "h7_x7s4-I6TrlhRenZ2YGVg_Bbwx8Xo0g5PMGo-7u3Y",
+          "zjhF6609AuDMJI3XKVYcXAFcNjdHEVFWK4W7wni3vaE"
+        ]
+      },
+      {
+        "name": "grown_honestly_past_witnessed",
+        "heads": [
+          "",
+          "jHl54Jn01HDukBA7URCkYZ08_P_t_fckGfLWfFQIRHE",
+          "Oyxh7g6swqwBh5tA-L0tvxKhGldsrCsQiSW2C5EsEps",
+          "XQfzBcP2JwsZJCNvfzodkaMUi34xYP-ZB6sdby9vvkI",
+          "-4iWkQA9XfdxWxoNUEXz7hKDhrJIKNqhFn70xuRaAi4",
+          "XyLinHNzuwrP-tL3slBbG2KgscUTJz9dNiNLZ1oLKt8"
+        ],
+        "digests": [
+          "T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU",
+          "ItNkQF15ISAWh9knHRiounPtMkn4Vpztqd1paJJhao4",
+          "nLkC_34Gi_Ovi9mqzqOSzzBS95PLJZ95Dz3ltgjQuq8",
+          "h7_x7s4-I6TrlhRenZ2YGVg_Bbwx8Xo0g5PMGo-7u3Y",
+          "zjhF6609AuDMJI3XKVYcXAFcNjdHEVFWK4W7wni3vaE",
+          "X9iqVkMda_fKj_LZ-cS8oX2VEkh1wdCuuyKXqoS4mEQ"
+        ]
+      }
+    ],
+    "reject": [
+      {
+        "name": "restored_then_regrown_past_witnessed",
+        "heads": [
+          "",
+          "jHl54Jn01HDukBA7URCkYZ08_P_t_fckGfLWfFQIRHE",
+          "Oyxh7g6swqwBh5tA-L0tvxKhGldsrCsQiSW2C5EsEps",
+          "j5IIvBuIVmTNFyj67ApIxZ3_6HFrvCrgbSxE1LIdRRs",
+          "dIqP7eVUtrffAkIY287lsK1zXyI8SgVsgpTCo-Nznoc",
+          "WdjuLtLFm3eHooH_kFJqEdx-AvoWCJtXMlkDrieWDws"
+        ],
+        "digests": [
+          "T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU",
+          "ItNkQF15ISAWh9knHRiounPtMkn4Vpztqd1paJJhao4",
+          "nLkC_34Gi_Ovi9mqzqOSzzBS95PLJZ95Dz3ltgjQuq8",
+          "iCIVUPDukX2VuONznL_1Rg6f2fkMut8wE6Dvky8RWv4",
+          "hu4Eg2TQt-LhV9YL-tUgtTFpGSyPVME9dzjsnON7ESw",
+          "U9hEIR9Y18rN_WwY5TadCWGno0nUZU76IZRIPvKmhF8"
+        ],
+        "passes_check_rollback": true,
+        "expect_error": "rollback"
+      },
+      {
+        "name": "restored_and_not_regrown",
+        "heads": [
+          "",
+          "jHl54Jn01HDukBA7URCkYZ08_P_t_fckGfLWfFQIRHE",
+          "Oyxh7g6swqwBh5tA-L0tvxKhGldsrCsQiSW2C5EsEps"
+        ],
+        "digests": [
+          "T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU",
+          "ItNkQF15ISAWh9knHRiounPtMkn4Vpztqd1paJJhao4",
+          "nLkC_34Gi_Ovi9mqzqOSzzBS95PLJZ95Dz3ltgjQuq8"
+        ],
+        "passes_check_rollback": false,
+        "expect_error": "rollback"
+      },
+      {
+        "name": "head_differs_at_witnessed_position",
+        "heads": [
+          "",
+          "jHl54Jn01HDukBA7URCkYZ08_P_t_fckGfLWfFQIRHE",
+          "Oyxh7g6swqwBh5tA-L0tvxKhGldsrCsQiSW2C5EsEps",
+          "XQfzBcP2JwsZJCNvfzodkaMUi34xYP-ZB6sdby9vvkI",
+          "09P9mo3ff2VIRKQLBlJ5I-Jd2Yq9CJpwA4yM_3Qs_Ik"
+        ],
+        "digests": [
+          "T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU",
+          "ItNkQF15ISAWh9knHRiounPtMkn4Vpztqd1paJJhao4",
+          "nLkC_34Gi_Ovi9mqzqOSzzBS95PLJZ95Dz3ltgjQuq8",
+          "h7_x7s4-I6TrlhRenZ2YGVg_Bbwx8Xo0g5PMGo-7u3Y",
+          "zjhF6609AuDMJI3XKVYcXAFcNjdHEVFWK4W7wni3vaE"
+        ],
+        "passes_check_rollback": true,
+        "expect_error": "rollback"
+      },
+      {
+        "name": "digest_differs_at_witnessed_position",
+        "heads": [
+          "",
+          "jHl54Jn01HDukBA7URCkYZ08_P_t_fckGfLWfFQIRHE",
+          "Oyxh7g6swqwBh5tA-L0tvxKhGldsrCsQiSW2C5EsEps",
+          "XQfzBcP2JwsZJCNvfzodkaMUi34xYP-ZB6sdby9vvkI",
+          "-4iWkQA9XfdxWxoNUEXz7hKDhrJIKNqhFn70xuRaAi4"
+        ],
+        "digests": [
+          "T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU",
+          "ItNkQF15ISAWh9knHRiounPtMkn4Vpztqd1paJJhao4",
+          "nLkC_34Gi_Ovi9mqzqOSzzBS95PLJZ95Dz3ltgjQuq8",
+          "h7_x7s4-I6TrlhRenZ2YGVg_Bbwx8Xo0g5PMGo-7u3Y",
+          "JTArlsSJY_0TRHDEmR2BMj8ZMZNoKHQv-rz3odboPIs"
+        ],
+        "passes_check_rollback": false,
         "expect_error": "rollback"
       }
     ]

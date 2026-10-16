@@ -1,7 +1,7 @@
 /** Reproduce membership, records, checkpoints, audit, policy and proof vectors. */
 import { describe, expect, it } from 'vitest';
 import {
-  applyRecord, authorizeRecordWrite, b64decode, buildProof, checkRollback, computeStateDigest, deriveAuditKey, deviceIdFromSignPub, effectiveGrant,
+  applyRecord, authorizeRecordWrite, b64decode, buildProof, checkRollback, checkWitnessedHistory, computeStateDigest, deriveAuditKey, deviceIdFromSignPub, effectiveGrant,
   openItem, sasCode, sasDigest, sasTranscript, signKeyPairFromSeed, b64encode, utf8Decode, validateWrapRecipients, verifyAuditChain,
   verifyAuditCheckpoint, verifyCheckpoint, verifyMembershipChain, verifyProof, verifyRecord, wrapsDigest,
   type ItemState, type VerifyChainOptions,
@@ -96,6 +96,16 @@ describe('checkpoints.json', () => {
   });
   it.each(named(v.rollback.reject))('rejects %s', (_n, c: Vec) => {
     expectCode(() => checkRollback(v.rollback.witnessed, c.incoming), c.expect_error);
+  });
+  const wh = v.witnessed_history;
+  const incomingOf = (c: Vec) => ({ ...wh.witnessed, log_seq: c.digests.length - 1, state_digest: c.digests[c.digests.length - 1] });
+  it.each(named(wh.accept))('witnessed history accepts %s', (_n, c: Vec) => {
+    expect(() => checkRollback(wh.witnessed, incomingOf(c))).not.toThrow();
+    expect(() => checkWitnessedHistory(wh.witnessed, wh.witnessed_log_head, c)).not.toThrow();
+  });
+  it.each(named(wh.reject))('witnessed history rejects %s', (_n, c: Vec) => {
+    if (c.passes_check_rollback) expect(() => checkRollback(wh.witnessed, incomingOf(c))).not.toThrow();
+    expectCode(() => checkWitnessedHistory(wh.witnessed, wh.witnessed_log_head, c), c.expect_error);
   });
 });
 

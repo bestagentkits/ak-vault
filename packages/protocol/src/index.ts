@@ -46,7 +46,8 @@
  *   `emptyItemState`, `computeStateDigest(items)`.
  *
  * Checkpoints (§6) — `signCheckpoint`, `parseCheckpoint`, `verifyCheckpoint(cp, state)`,
- * `checkRollback(witnessed, incoming): void`.
+ * `checkRollback(witnessed, incoming): void` (compares checkpoints only; also run
+ *   `checkWitnessedHistory(witnessed, witnessedLogHead, {heads, digests}): void` on the replayed history).
  *
  * Audit (§7) — `deriveAuditKey`, `appendAuditEntry`, `verifyAuditChain(entries, {vaultKeys, vaultId, keyEpoch, witnessed?})`,
  * `auditEntryHash`, `signAuditCheckpoint`, `verifyAuditCheckpoint`.
@@ -181,7 +182,7 @@ export {
   type VerifiedChangeLog,
   type VerifyChangeLogOptions,
 } from './change-log.js';
-export { checkRollback, parseCheckpoint, signCheckpoint, verifyCheckpoint, type Checkpoint, type CheckpointView, type UnsignedCheckpoint } from './checkpoints.js';
+export { checkRollback, checkWitnessedHistory, parseCheckpoint, signCheckpoint, verifyCheckpoint, type Checkpoint, type CheckpointView, type ReplayedHistory, type UnsignedCheckpoint } from './checkpoints.js';
 export {
   appendAuditEntry,
   auditAad,

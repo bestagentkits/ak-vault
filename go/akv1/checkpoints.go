@@ -120,6 +120,11 @@ func VerifyCheckpoint(v any, state MembershipState) (Checkpoint, error) {
 // CheckRollback returns CodeRollback if incoming is older than or forked from
 // witnessed: lower membership_seq, same membership_seq with a different head,
 // lower log_seq, same log_seq with a different state_digest, or lower key_epoch.
+//
+// It compares the two checkpoints only. It accepts a vault restored to an earlier
+// point and then grown past witnessed.LogSeq with different contents, because the
+// digests are compared only at an equal log_seq. Callers MUST also run
+// CheckWitnessedHistory on the history they replayed (spec §5 and §6).
 func CheckRollback(witnessed, incoming CheckpointView) error {
 	if witnessed.VaultID != incoming.VaultID {
 		return badRequest("checkpoint belongs to another vault")
@@ -138,6 +143,26 @@ func CheckRollback(witnessed, incoming CheckpointView) error {
 	}
 	if incoming.KeyEpoch < witnessed.KeyEpoch {
 		return newErr(CodeRollback, "key_epoch is behind the witnessed checkpoint")
+	}
+	return nil
+}
+
+// CheckWitnessedHistory returns CodeRollback unless the replayed history still
+// holds, at witnessed.LogSeq, the state digest of witnessed and the change-log
+// head the client recorded with it. heads and digests are indexed by log_seq
+// (index 0 is the empty log). It refuses a restored log that has since grown
+// past the witnessed position with different contents, which CheckRollback
+// cannot see.
+func CheckWitnessedHistory(witnessed CheckpointView, witnessedLogHead string, heads, digests []string) error {
+	at := witnessed.LogSeq
+	if at < 0 || int64(len(heads)) <= at || int64(len(digests)) <= at {
+		return newErr(CodeRollback, "history is shorter than the witnessed checkpoint")
+	}
+	if digests[at] != witnessed.StateDigest {
+		return newErr(CodeRollback, "state at the witnessed position differs from the witnessed checkpoint")
+	}
+	if heads[at] != witnessedLogHead {
+		return newErr(CodeRollback, "change-log head at the witnessed position differs from the witnessed head")
 	}
 	return nil
 }

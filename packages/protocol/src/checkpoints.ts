@@ -61,6 +61,12 @@ export function verifyCheckpoint(value: unknown, state: MembershipState): Checkp
  * Throws `rollback` if `incoming` is older than or forked from `witnessed`:
  * lower membership_seq, same membership_seq with a different head, lower
  * log_seq, same log_seq with a different state_digest, or lower key_epoch.
+ *
+ * This compares the two checkpoints only. It accepts a vault that was restored
+ * to an earlier point and then grown past `witnessed.log_seq` with different
+ * contents, because the digests are compared only at an equal `log_seq`.
+ * Callers MUST also run {@link checkWitnessedHistory} on the history they
+ * replayed (spec §5 and §6).
  */
 export function checkRollback(witnessed: CheckpointView, incoming: CheckpointView): void {
   if (witnessed.vault_id !== incoming.vault_id) fail('bad_request', 'checkpoint belongs to another vault');
@@ -73,4 +79,24 @@ export function checkRollback(witnessed: CheckpointView, incoming: CheckpointVie
     fail('rollback', 'state forks from the witnessed checkpoint');
   }
   if (incoming.key_epoch < witnessed.key_epoch) fail('rollback', 'key_epoch is behind the witnessed checkpoint');
+}
+
+/** The change-log head and state digest a client computed at every position it replayed, indexed by `log_seq` (0 is the empty log). */
+export interface ReplayedHistory {
+  heads: readonly string[];
+  digests: readonly string[];
+}
+
+/**
+ * Throws `rollback` unless the replayed history still holds, at the witnessed
+ * `log_seq`, the state digest of `witnessed` and the change-log head
+ * (`witnessedLogHead`) the client recorded with it. This is the half of the §6
+ * check that {@link checkRollback} cannot make: it refuses a restored log that
+ * has since grown past the witnessed position with different contents.
+ */
+export function checkWitnessedHistory(witnessed: CheckpointView, witnessedLogHead: string, history: ReplayedHistory): void {
+  const at = witnessed.log_seq;
+  if (history.heads.length <= at || history.digests.length <= at) fail('rollback', 'history is shorter than the witnessed checkpoint');
+  if (history.digests[at] !== witnessed.state_digest) fail('rollback', 'state at the witnessed position differs from the witnessed checkpoint');
+  if (history.heads[at] !== witnessedLogHead) fail('rollback', 'change-log head at the witnessed position differs from the witnessed head');
 }
