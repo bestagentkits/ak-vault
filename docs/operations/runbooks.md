@@ -398,8 +398,10 @@ Checks per second for a window is `sum.requests / 300` (revocation webhook write
 included, but are negligible next to check traffic). Run it over the last hour
 whenever sync usage grows, after a client release that changes the sync interval, and
 on any report of `503` from sync. As a second signal, a sustained rate of `503`
-responses with code `unauthorized` (revocation or JWKS unavailable) means the
-registry is already queueing or failing; the Worker logs status and code only.
+responses with code `unauthorized` means the registry, or the JWKS fetch, is already
+queueing or failing; check which before treating it as capacity. Read that rate from
+Workers Logs, where the Worker logs status and code only, and not from `wrangler tail`,
+which exposes request headers.
 
 **Threshold.** Alert the owner when the registry sustains **4 checks a second for
 15 minutes** (50% of the conservative 8 checks a second), and on any sustained

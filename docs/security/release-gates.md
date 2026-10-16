@@ -41,7 +41,8 @@ user on such a release upgrades, or revokes a lost device in the ak-web account,
 which the Worker enforces on the device's next request.
 
 **Capacity.** Every authenticated request checks the single revocation registry,
-which the lab measurement suggests is roughly 10 checks a second (derived, not measured) for the whole service
+which the lab's measured active time per check puts at roughly 8 to 10 checks a
+second for the whole service (derived, not measured)
 ([cost model](../operations/cost-model.md)). Beyond that, requests queue and then
 fail closed with `503`. With the client's 15 s default sync interval that is a few
 dozen active devices. The query, alert threshold and response are in the
