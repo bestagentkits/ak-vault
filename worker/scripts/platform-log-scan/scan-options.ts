@@ -30,7 +30,7 @@ function within(root: string, path: string): boolean {
 }
 
 /** Captures and reports hold synthetic credentials and canaries: never let them land in this repository or any of its worktrees. */
-function outsideRepository(path: string, flag: string): string {
+export function outsideRepository(path: string, flag: string): string {
   const target = realPathOf(path);
   const worktrees = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: WORKER_DIR, encoding: 'utf8' })
     .split('\n')

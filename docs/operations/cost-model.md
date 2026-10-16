@@ -2,15 +2,18 @@
 
 An estimate for the Worker + one SQLite-backed Durable Object per vault
 ([ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md)). The first table of
-[assumptions](#assumptions) was written before any measurement; per-call inputs were
-then [measured](#measured-2026-10-15) on a defined workload and replace them where
-they differ. Device counts and pull rates are still assumptions, so do not quote
-these figures as observed cost.
+[assumptions](#assumptions) was written before any measurement; per-operation inputs
+were then measured on defined workloads, most recently
+[on the staging configuration](#measured-2026-10-16-staging-configuration), and
+replace them where they differ. Device counts and pull rates are still assumptions,
+so do not quote these figures as observed cost.
 
 ## Prices used
 
-Cloudflare Workers Paid plan, read from the official pricing pages on 2026-10-13.
-Recheck the pages before relying on any number here.
+Cloudflare Workers Paid plan, read from the official pricing pages on 2026-10-13 and
+unchanged on 2026-10-16. Recheck the pages before relying on any number here. The
+same figures are in [`cost-projection.ts`](../../worker/scripts/cost-measurement/cost-projection.ts),
+which computes the estimates below.
 
 | Item | Included per month | Overage |
 |---|---|---|
@@ -46,6 +49,56 @@ Sources: [Workers pricing](https://developers.cloudflare.com/workers/platform/pr
 | Rows read per call / rows written per write | 10 / 5 | Record, change log, idempotency, index |
 | Stored data per vault | 1 MB | Ciphertext, change log, tombstones, membership |
 | Days per month | 30 | |
+
+## Measured 2026-10-16 (staging configuration)
+
+Method: [`pnpm cost:measure`](../../worker/scripts/cost-measurement/README.md) at
+`b49865c`, the commit staging runs. Staging accepts only ak-web staging tokens and the
+owner decided no authenticated staging session is used
+([#8](https://github.com/bestagentkits/ak-vault/issues/8)), so the workload ran on a
+temporary lab Worker deployed from the `staging` environment of `wrangler.jsonc`
+(same entry, compatibility date, observability, Durable Object classes and
+migrations; only the name, the synthetic issuer and the webhook secret differ), deleted
+afterwards. Each operation ran alone in its own minutes (08:17 to 08:33 UTC), with
+its own synthetic vaults, and was read from the same GraphQL datasets as the
+2026-10-15 run per phase window. 1,104 requests, all with the expected status except
+2 of the 720 polls (`401`; cause not established, possibly the harness retrying an
+identical request after a network timeout, which the Worker refuses as a proof
+replay). Worker figures divide by the sampled Worker request count, Durable Object
+figures by the operations the client made.
+
+| Operation (requests) | Worker CPU | DO requests | DO duration (vault + registry) | Rows read | Rows written |
+|---|---|---|---|---|---|
+| No-op pull, steady state (1) | 1.9 ms | 2 | 0.0116 + 0.0150 GB-s | 6.6 | **4.74** |
+| Item write (1) | 2.0 ms | 2 | 0.0085 + 0.0066 GB-s | 16.2 | 13.2 (up to 0.3 of it deletes setup `jti`s) |
+| Device add: `device_add` + new device's wrap fetch (2) | 8.1 ms | 4 | 0.028 GB-s | 24.8 | 17.8 |
+| Device remove: fence pull + `device_remove` + `rekey` (3) | 7.0 ms | 6 | 0.028 GB-s | 48.4 | 30.1 |
+| Revocation webhook (1) | — | 1 (registry) | — | 1 | 5 |
+| Request from a revoked device, refused `401` (1) | 2.8 ms | 1 (registry only) | 0.003 GB-s | 1 | 0 |
+| Vault creation: genesis, second device, 3 writes (about 7) | 28 ms | about 14 | 0.033 GB-s | 78 | 74 |
+
+The steady-state pull row is the pull phase from its fourth minute on (295 polls),
+after the 120 s proof `jti` lifetime, when each request also deletes the `jti`s that
+expired. Over the whole pull phase (720 polls) it was 4.66 rows written and 6.9 rows
+read per pull. Stored bytes were not sampled within the run window; the 2026-10-15
+figure (126,976 bytes for a vault with 4 records) is used below.
+
+Compared with the 2026-10-15 lab run (production configuration, `3f77991`):
+
+| Input | 2026-10-15 | 2026-10-16 | Note |
+|---|---|---|---|
+| Rows written per pull | 4.76 | 4.74 | Reproduced: the per-request rate counter and proof `jti` writes ([#50](https://github.com/bestagentkits/ak-vault/issues/50)) |
+| Rows read per call | 6.9 | 6.6 per pull, 16.2 per write | |
+| Worker CPU per call | 3.3 ms | 1.9 ms per pull, 2.0 ms per write | Lower than the earlier run; about the 2 ms assumption |
+| DO active time per pull | vault 50 ms; registry about 110 ms | vault 90 ms; registry 117 ms | In this run both objects answered pulls more slowly (Worker wall time 229 ms p50) than writes (37 ms p50); not explained. Duration per pull doubles to 0.027 GB-s |
+| Registry checks per second one object can serve | about 10 | about 8.5 (1 / 117 ms) | [#10](https://github.com/bestagentkits/ak-vault/issues/10) |
+
+Staging itself, read-only from its analytics: in the 7 days to 2026-10-16 08:12 UTC
+1,779 Worker requests (0 errors, CPU 0.70 ms p50), 19 vault and 21 registry Durable
+Object requests, 179 vault rows written, and 245,760 bytes stored in the vault namespace
+(45,056 in the registry); in the last 24 h of that, 141 Worker requests and no
+Durable Object requests. There is no sustained sync on staging, so this is a
+baseline only.
 
 ## Measured 2026-10-15
 
@@ -88,30 +141,47 @@ recorded as the baseline.
 
 ## Estimates (USD per month, including the $5 minimum)
 
-Same device count and pull rates as the assumptions, with the measured per-call
-inputs (rows written 4.76 per call, CPU 3.3 ms, duration as measured with the
-registry capped). The active-polling rows at 1,000 and 10,000 vaults (about 50 and
-500 requests a second) also assume a sharded or cached revocation registry: at the
-measured active time a single registry object handles roughly 10 checks a second, so
-without one those configurations do not run at all
-([#10](https://github.com/bestagentkits/ak-vault/issues/10)).
+Same device count, write rate and pull rates as the [assumptions](#assumptions), with
+the 2026-10-16 per-operation inputs (steady-state pull and item write rows above) and
+126,976 stored bytes per vault, computed by
+[`cost-projection.ts`](../../worker/scripts/cost-measurement/cost-projection.ts).
+Registry duration is no longer capped at one object: beyond about 8.5 checks a second
+(roughly 170 vaults of 3 devices polling every 60 s) the single registry cannot keep
+up, so those rows assume a sharded or cached registry
+([#10](https://github.com/bestagentkits/ak-vault/issues/10)), and without one they
+do not run at all.
 
-| Vaults | Lazy pulls (assumed → measured) | Active polling every 60 s (assumed → measured) |
-|---|---|---|
-| 100 | ≈ $5 → ≈ $5 | ≈ $10 → ≈ $22 |
-| 1,000 | ≈ $7 → ≈ $6 | ≈ $101 → ≈ $666 |
-| 10,000 | ≈ $38 → ≈ $231 | ≈ $1,039 → ≈ $7,109 |
+| Vaults | Lazy pulls (50 a device-day) | per vault | Active polling every 60 s | per vault | per device |
+|---|---|---|---|---|---|
+| 100 | ≈ $5 | $0.05 | ≈ $22 | $0.22 | $0.07 |
+| 1,000 | ≈ $6 | $0.006 | ≈ $694 | $0.69 | $0.23 |
+| 10,000 | ≈ $287 | $0.03 | ≈ $7,426 | $0.74 | $0.25 |
+| 100,000 | ≈ $3,354 | $0.03 | ≈ $74,803 | $0.75 | $0.25 |
 
 At 10,000 vaults with active polling, **rows written dominate**: about 6.2 billion a
-month (≈ $6,142), then about 1.3 billion Worker requests (≈ $388), 2.6 billion
-Durable Object requests (≈ $386), duration (≈ $103) and CPU (≈ $86). Rows read stay
-inside the included 25 billion and storage is minor.
+month (≈ $6,166), then Durable Object duration (≈ $427), Durable Object requests
+(≈ $390), Worker requests (≈ $388) and CPU (≈ $49). Rows read stay inside the included
+25 billion and storage is minor. The fixed floor is the $5 plan minimum; 1,000 lazy
+vaults cost about $6.
+
+## Levers ([#63](https://github.com/bestagentkits/ak-vault/issues/63))
+
+Projected with the same inputs, changing only what each lever removes. These are
+projections, not measurements; each lever is re-measured when it lands.
+
+| Change | 10,000 vaults active | 100,000 vaults active |
+|---|---|---|
+| None (above) | ≈ $7,426 | ≈ $74,803 |
+| Pulls write no rows | ≈ $1,288 | ≈ $13,430 |
+| … and no registry Durable Object call per request (cached) | ≈ $850 | ≈ $9,043 |
+| Poll every 5 min instead of 60 s, nothing else | ≈ $1,509 | ≈ $15,577 |
+| All three | ≈ $193 | ≈ $2,414 |
 
 ## What this means
 
 - **Rows written per pull are the cost driver**, followed by polling frequency;
   storage is not. A pull that wrote no rows would bring the 10,000-vault active
-  case back to about $1,000 (assuming about 15 rows per item write). Reducing them is a Worker design decision
+  case to about $1,300 ([levers](#levers-63)). Reducing them is a Worker design decision
   ([#50](https://github.com/bestagentkits/ak-vault/issues/50)).
 - **Polling frequency multiplies everything.** Before GA, measure
   whether longer intervals, conditional pulls, or WebSocket hibernation (incoming
@@ -120,9 +190,10 @@ inside the included 25 billion and storage is minor.
   recorded where it is made.
 - Revocation checks double Durable Object requests, and they all go to one global
   registry object (`worker/src/revocation/`). One object's throughput therefore
-  caps total API throughput. The lab Worker measured about 110 ms of active time
-  per check ([#10](https://github.com/bestagentkits/ak-vault/issues/10)), which
-  suggests a ceiling of roughly 10 checks a second for the whole service; beyond it
+  caps total API throughput. Lab Workers measured about 110 ms (2026-10-15) and
+  117 ms (2026-10-16) of active time per check
+  ([#10](https://github.com/bestagentkits/ak-vault/issues/10)), which suggests a
+  ceiling of roughly 8 to 10 checks a second for the whole service; beyond it
   requests queue and then fail closed with `503`. Production sync is live, so watch the
   registry's request rate and cache or shard revocation state before it nears that
   ceiling.
@@ -137,7 +208,9 @@ inside the included 25 billion and storage is minor.
 
 ## Replacing estimates with measurements
 
-Per-call inputs are measured above. Still open: devices per vault, writes per
+Per-operation inputs are measured above; re-run
+[`pnpm cost:measure`](../../worker/scripts/cost-measurement/README.md) after any change
+to the request path and record the commit. Still open: devices per vault, writes per
 vault-day and the pull rate a real sync service uses. The owner replaced the
 two-device staging soak with the [Docker two-device e2e](../../e2e/docker/README.md)
 ([release gates](../security/release-gates.md#staging-soak)), which runs the real

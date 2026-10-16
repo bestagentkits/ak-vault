@@ -124,10 +124,15 @@ page and docs, and its own CI run is linked from its pull request.
       restore has not run on staging.
 - [ ] Cost measured on staging and compared with the
       [cost model](../operations/cost-model.md).
-      Latest run: [rehearsal log](../operations/rehearsal-2026-10.md#cost-measurement).
-      **Open:** measured on a lab Worker workload plus the staging idle baseline, not
-      on staging traffic; the dominant cost at scale is
-      [#50](https://github.com/bestagentkits/ak-vault/issues/50).
+      Latest run: 2026-10-16, a lab Worker built from the staging commit (`b49865c`)
+      and configuration, plus the staging idle baseline
+      ([cost model](../operations/cost-model.md#measured-2026-10-16-staging-configuration),
+      repeatable with `pnpm cost:measure`). **Open:** not on the staging Worker itself,
+      which accepts only ak-web staging tokens, and the owner decided no authenticated
+      staging session is used. Whether this method meets the gate is the
+      [owner's decision on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6211030336).
+      The dominant cost at scale is still rows written by every pull
+      ([#50](https://github.com/bestagentkits/ak-vault/issues/50)).
 - [ ] External review signed off (below). **Not signed off.** Production sync was
       enabled before it under the owner waiver of 2026-10-16
       ([owner waivers](#owner-waivers)).
