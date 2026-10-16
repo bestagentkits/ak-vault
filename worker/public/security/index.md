@@ -100,7 +100,7 @@ A box counts only when its evidence is linked on [issue #8](https://github.com/b
 
 Gate items; status and evidence are in the release gates:
 
-- ADR 0001 approved by the owner, with its open items resolved.
+- ADR 0001 accepted by the owner on 2026-10-16. Restore reconciliation stays an open item of the ADR.
 - Go and TypeScript reproduce every test vector byte for byte, including every rejection vector.
 - The Worker integration suite is green: conflicts, tombstones, idempotency, cross-tenant denial, replayed proofs, revoked devices and stale membership.
 - Disclosure scan: storage dumps, logs, traces, metrics and error responses from a seeded run contain no planted plaintext values or names. The live log tail shows request proofs and webhook signatures to account operators; the owner accepted that ([#61](https://github.com/bestagentkits/ak-vault/issues/61)).
