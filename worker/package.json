@@ -8,8 +8,9 @@
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:production": "wrangler deploy --env=\"\"",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json && tsc -p test/tsconfig.json && tsc -p tsconfig.node.json",
-    "smoke:staging": "tsx scripts/staging-smoke.ts"
+    "typecheck": "tsc -p tsconfig.json && tsc -p test/tsconfig.json && tsc -p tsconfig.node.json && tsc -p scripts/platform-log-scan/lab-worker/tsconfig.json",
+    "smoke:staging": "tsx scripts/staging-smoke.ts",
+    "scan:platform-logs": "tsx scripts/platform-log-scan/run-platform-log-scan.ts"
   },
   "dependencies": {
     "@ak-vault/protocol": "workspace:*"
