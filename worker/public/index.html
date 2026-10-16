@@ -349,7 +349,7 @@
         <div class="section-head reveal">
           <span class="eyebrow">Start</span>
           <h2 id="quick-title">Start local today. Turn on sync when it ships.</h2>
-          <p>The local vault ships in the AgentKit CLI now. Sync and agent-discovery commands are planned and not available yet.</p>
+          <p>The local vault ships in the AgentKit CLI now. Sync commands are a hidden, unsupported preview in the released CLI; agent-discovery commands are planned and not available yet.</p>
         </div>
         <div class="quick-grid" data-stagger>
           <div class="card spot quick-card reveal">
@@ -370,11 +370,11 @@
             </div>
           </div>
           <div class="card spot quick-card reveal">
-            <span class="num">03 <span class="badge badge-planned">planned</span></span>
+            <span class="num">03 <span class="badge badge-planned">preview</span></span>
             <h3>Sync a second device</h3>
             <p>Opt in, then enroll another device by comparing a six-digit code on both screens. Syntax may change.</p>
-            <div class="terminal"><div class="terminal-bar"><span class="title">shell · planned</span><button class="copy-btn" type="button" data-copy-target="#cmd-sync" aria-label="Copy the planned sync command"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
-<pre tabindex="0"><code id="cmd-sync"><span class="c"># PLANNED: not available yet</span>
+            <div class="terminal"><div class="terminal-bar"><span class="title">shell · preview</span><button class="copy-btn" type="button" data-copy-target="#cmd-sync" aria-label="Copy the preview sync command"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
+<pre tabindex="0"><code id="cmd-sync"><span class="c"># PREVIEW: hidden in the released CLI, unsupported, syntax may change</span>
 <span class="p">$ </span>ak secrets sync enable</code></pre>
             </div>
           </div>
@@ -397,7 +397,7 @@
           <li class="is-done"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><h3>Local vault</h3><div class="meta"><span class="badge badge-ok">available</span></div><p>Ships in the AgentKit CLI: keychain or age-encrypted file vault, agent grants, approvals and an audit ledger.</p></li>
           <li class="is-done"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><h3>Protocol v1 and test vectors</h3><div class="meta"><span class="badge badge-review">in review</span></div><p>Spec, TypeScript reference and a Go implementation that reproduce every vector. <a href="https://github.com/bestagentkits/ak-vault/issues/2">#2</a></p></li>
           <li class="is-done"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><h3>Worker and storage</h3><div class="meta"><span class="badge">preview</span></div><p>Cloudflare Worker with a SQLite Durable Object per vault, including shared-vault membership. The production sync API is live as a pre-release preview, before the external review. <a href="https://github.com/bestagentkits/ak-vault/issues/4">#4</a>, <a href="https://github.com/bestagentkits/ak-vault/issues/5">#5</a></p></li>
-          <li class="is-now"><span class="mark" aria-hidden="true"></span><h3>Client sync in the CLI</h3><div class="meta"><span class="badge badge-planned">in development</span></div><p>The sync commands in <code>ak</code> are not released yet.</p></li>
+          <li class="is-now"><span class="mark" aria-hidden="true"></span><h3>Client sync in the CLI</h3><div class="meta"><span class="badge badge-planned">preview</span></div><p>The sync commands ship hidden in the released <code>ak</code> beta (<code>v3.0.0-beta.30</code>); a release with the removal-fence client is pending.</p></li>
           <li class="is-next"><span class="mark" aria-hidden="true"></span><h3>Security gate</h3><div class="meta"><span class="badge badge-review">required for GA</span></div><p>Red team, a two-device end-to-end run with real clients, rollback rehearsal and an independent review. <a href="https://github.com/bestagentkits/ak-vault/issues/8">#8</a></p></li>
         </ol>
         <p class="note reveal">After personal sync: read-only CI identities (<a href="https://github.com/bestagentkits/ak-vault/issues/6">#6</a>) and portable policy with encrypted audit (<a href="https://github.com/bestagentkits/ak-vault/issues/7">#7</a>).</p>

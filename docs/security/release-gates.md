@@ -14,16 +14,30 @@ tokens ([owner waivers](#owner-waivers)). Any logged-in user running the preview
 review sign-off: production sync is pre-release, not externally reviewed and not yet
 recommended for production credentials. It was enabled while these remain open:
 ADR 0001 approval, every red-team scenario executed (scenario 13), the staging
-restore, the staging cost measurement, the external review and the shared Cloudflare
-token ([below](#production-deploy-control)). The waivers recorded on #8 are listed
-[below](#owner-waivers); nothing else is waived, and sync is not GA.
+restore, the staging cost measurement and the external review. Also open while
+production is live: confirming that the staging and production JWKS share no key
+material ([staging soak](#staging-soak)), and the owner confirming on #8 that
+Workers Tail access on production is limited, the complement to the tail waiver.
+Both bootstrap deploy exceptions ended before the deploy
+([below](#production-deploy-control)). The owner's decisions on #8 enabled
+production sync with these items open; they still gate GA. The waivers recorded on
+#8 are listed [below](#owner-waivers); nothing else is waived, and sync is not GA.
 
 **Released client lags the Worker.** The latest agentkit release with the preview
 sync commands, `v3.0.0-beta.30`, predates the removal-fence client (agentkit `dev`
 `67ff8e6`). Against the production Worker its device and member removals fail closed
 (`400 bad_request`, no signed `log_head`), and it does not verify change-log contents
 against removal fences. A release that includes the fence client is tracked in
-[agentkit#2469](https://github.com/bestagentkits/agentkit/issues/2469).
+[agentkit#2469](https://github.com/bestagentkits/agentkit/issues/2469). Until then,
+a beta.30 user who loses a device revokes it in the ak-web account, which the Worker
+enforces on the device's next request.
+
+**Capacity.** Every authenticated request checks the single revocation registry,
+which the lab measurement puts at roughly 10 checks a second for the whole service
+([cost model](../operations/cost-model.md)). Beyond that, requests queue and then
+fail closed with `503`. With the client's 15 s default sync interval that is a few
+dozen active devices. Watch the registry's request rate in the Durable Object
+analytics, and cache or shard revocation state before it nears that ceiling.
 
 CI evidence cited below is the `main` run at `b25c2bb`
 ([CI run](https://github.com/bestagentkits/ak-vault/actions/runs/38858206218)); the
@@ -154,7 +168,6 @@ does not satisfy the external review.
 | 2026-10-16 | Live `wrangler tail` shows `AKV-Proof` and `AKV-Webhook-Signature` values to account members with tail access. Accepted as account-operator access: proofs are single-use, bound to token hash, method, URL and body within a ±60 s window; webhook signatures cover one timestamped body with a single-use `event_id`. Complement: restrict Workers Tail permission on production. The header rename stays open as hardening. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248), [#61](https://github.com/bestagentkits/ak-vault/issues/61#issuecomment-6209133562); scan evidence [#62](https://github.com/bestagentkits/ak-vault/pull/62) |
 | 2026-10-16 | The Docker two-device e2e replaces the staging two-device round trip and the staging soak; no authenticated staging session is used. Residual risk is stated under [staging soak](#staging-soak). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6207406980) |
 | 2026-10-16 | The external-review gate is waived for enabling `VAULT_SYNC_ENABLED=true` on the production Worker. The external review stays open on #8. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248) |
-| 2026-10-16 | Agent approval of production deploys ends; the shared staging/production Cloudflare token stays while production sync is enabled, although the bootstrap rule required removing it first. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209176887) |
 | 2026-10-16 | Production sync is fully live: ak-web production mints vault tokens together with the Worker flag, so any logged-in user running the preview `ak secrets sync` commands can sync to production before the external review. Docs say it is pre-release, not externally reviewed and not yet recommended for production credentials. This supersedes the earlier statement that minting stays off. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209425010) |
 
 ## Feature flag and kill switch
@@ -185,13 +198,16 @@ Landing page and health endpoints are not affected by the flag.
   secrets and distinct token audiences, so neither accepts the other's tokens.
   The Worker never receives ak-web's CLI HS256 signing key.
 - **Bootstrap exceptions (owner decision, 2026-10-13):** an agent could approve the
-  production deployment, and staging and production share one Cloudflare API token
+  production deployment, and staging and production shared one Cloudflare API token
   (stored separately in each GitHub Environment); both were to be removed before
   enabling production sync. On 2026-10-16
   ([decision on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209176887))
   the owner ended the first: only the owner approves production deployments,
-  including the one that enabled production sync. **Open, waived for enabling
-  sync:** the shared token remains until the owner creates a production-only token. Worker secrets stay
+  including the one that enabled production sync. The second ended the same day
+  ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209542641)):
+  production deploys use a production-only Cloudflare token without Workers Tail
+  permission, set as the `production` environment secret; the next production
+  deploy proves its scope. Both exceptions are closed. Worker secrets stay
   separate per environment.
 - GitHub secret scanning, push protection and private vulnerability reporting stay
   enabled on the repository (enabled 2026-10-13; re-check the security settings

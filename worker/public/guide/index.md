@@ -1,14 +1,14 @@
 ---
 title: "ak-vault guide: from .env to an encrypted vault"
 url: https://vault.agentkit.best/guide/
-status: "Local vault available. Sync and agent-discovery commands planned, not available yet."
+status: "Local vault available. Sync commands in preview; agent-discovery commands planned, not available yet."
 ---
 
 # From `.env` to a vault, step by step
 
-Part 1 works today with the AgentKit CLI. Parts 2 and 3 describe the planned sync and agent commands; each planned step is marked and its syntax may change before release.
+Part 1 works today with the AgentKit CLI. Part 2 describes the preview sync commands and Part 3 the planned agent commands; each step is marked and its syntax may change before release.
 
-**Legend:** *available* works in the current `ak` CLI. *planned* is designed but not released; do not script against it yet. Sync is not generally available: the production sync API is live as a pre-release preview, not yet externally reviewed.
+**Legend:** *available* works in the current `ak` CLI. *preview* ships hidden in the released CLI but is not a supported workflow; syntax may change. *planned* is designed but not released; do not script against it yet. Sync is not generally available: the production sync API is live as a pre-release preview, not yet externally reviewed.
 
 ## Part 1: Keep secrets in the local vault (available)
 
@@ -40,19 +40,19 @@ Everything stays on this machine: values live in the OS keychain by default, or 
    ak secrets audit
    ```
 
-## Part 2: Sync a second device (planned)
+## Part 2: Sync a second device (preview)
 
 The end-to-end encrypted sync described on this site. A pre-release preview is live in production, before the external security review; the steps below are not a supported workflow until that review closes, and production credentials do not belong in it yet.
 
-1. **Sign in to your AgentKit account** (available; sync use planned). `ak login` exists today for your AgentKit account. Using that sign-in for vault sync is planned.
-2. **Opt in to sync on your first device** (planned). Sync stays off until you turn it on. Enabling it creates the vault key on this device, wraps it to your device key, a password-derived key and a recovery key, and uploads only ciphertext.
+1. **Sign in to your AgentKit account** (available). `ak login` exists today for your AgentKit account; the preview sync commands use that sign-in.
+2. **Opt in to sync on your first device** (preview). Sync stays off until you turn it on. Enabling it creates the vault key on this device, wraps it to your device key, a password-derived key and a recovery key, and uploads only ciphertext.
    ```sh
-   # PLANNED: not available yet, syntax may change
+   # PREVIEW: hidden in the released CLI, unsupported, syntax may change
    ak secrets sync enable
    ```
-3. **Save your recovery key offline** (planned). You will be shown a 32-byte recovery key, written in Crockford base32. Store it on paper or in a password manager you trust. If you lose every device, your password and this key, nobody can decrypt the vault.
-4. **Enroll a second device with a six-digit code** (planned). Start enrollment on the new device and approve it on one you already trust. Both screens show the same six digits; approve only if they match. A mismatch aborts. See [how the code is derived](https://vault.agentkit.best/how-it-works/index.md).
-5. **Check that it worked** (planned). The new device verifies the signed member list before it unwraps anything. Change a secret on one device and expect it on the other within about a minute on a healthy connection (a design target, not a measured result).
+3. **Save your recovery key offline** (preview). You will be shown a 32-byte recovery key, written in Crockford base32. Store it on paper or in a password manager you trust. If you lose every device, your password and this key, nobody can decrypt the vault.
+4. **Enroll a second device with a six-digit code** (preview). Start enrollment on the new device and approve it on one you already trust. Both screens show the same six digits; approve only if they match. A mismatch aborts. See [how the code is derived](https://vault.agentkit.best/how-it-works/index.md).
+5. **Check that it worked** (preview). The new device verifies the signed member list before it unwraps anything. Change a secret on one device and expect it on the other within about a minute on a healthy connection (a design target, not a measured result).
 
 ## Part 3: Let agents discover and use secrets (planned)
 

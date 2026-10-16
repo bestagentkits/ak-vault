@@ -124,7 +124,9 @@ listed in [release gates](./docs/security/release-gates.md). No agent may
 self-attest the external review or describe the waiver as a sign-off.
 
 - Only the owner approves production deployments. Agents never approve the
-  `production` environment.
+  `production` environment. Both bootstrap exceptions ended on 2026-10-16: agent
+  approval of production, and the Cloudflare token shared with staging (production
+  now has its own token).
 - Turning sync off goes through the
   [emergency kill switch](./docs/operations/runbooks.md#emergency-kill-switch). Agents
   may run it (sync off only, never on) without asking first, per the owner decision

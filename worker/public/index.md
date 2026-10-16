@@ -61,7 +61,7 @@ Full threat model: [Security model](https://vault.agentkit.best/security/index.m
 
 ## 5. Start local today
 
-The local vault ships in the AgentKit CLI now. Sync and agent-discovery commands are planned and not available yet.
+The local vault ships in the AgentKit CLI now. Sync commands are a hidden, unsupported preview in the released CLI; agent-discovery commands are planned and not available yet.
 
 1. **Import your `.env`** (available). Delete the plaintext file once you have checked the import.
    ```sh
@@ -72,9 +72,9 @@ The local vault ships in the AgentKit CLI now. Sync and agent-discovery commands
    ```
    OPENAI_API_KEY=${secret:OPENAI_API_KEY}
    ```
-3. **Sync a second device** (planned, not available yet; syntax may change). Opt in, then enroll another device by comparing a six-digit code on both screens.
+3. **Sync a second device** (preview: hidden in the released CLI, not a supported workflow; syntax may change). Opt in, then enroll another device by comparing a six-digit code on both screens.
    ```sh
-   # PLANNED: not available yet
+   # PREVIEW: hidden in the released CLI, unsupported, syntax may change
    ak secrets sync enable
    ```
 
@@ -87,7 +87,7 @@ Work is tracked in the [epic, issue #1](https://github.com/bestagentkits/ak-vaul
 - **Local vault: available.** Keychain or age-encrypted file vault, agent grants, approvals and an audit ledger in the AgentKit CLI.
 - **Protocol v1 and test vectors: in review.** Spec, TypeScript reference and a Go implementation that reproduce every vector ([#2](https://github.com/bestagentkits/ak-vault/issues/2)).
 - **Worker and storage: preview.** Cloudflare Worker with a SQLite Durable Object per vault, including shared-vault membership. The production sync API is live as a pre-release preview, before the external review ([#4](https://github.com/bestagentkits/ak-vault/issues/4), [#5](https://github.com/bestagentkits/ak-vault/issues/5)).
-- **Client sync in the CLI: in development.** The sync commands in `ak` are not released yet.
+- **Client sync in the CLI: preview.** The sync commands ship hidden in the released `ak` beta (`v3.0.0-beta.30`); a release with the removal-fence client is pending.
 - **Security gate: required for GA.** Red team, a two-device end-to-end run with real clients, rollback rehearsal and an independent review ([#8](https://github.com/bestagentkits/ak-vault/issues/8)).
 - After personal sync: read-only CI identities ([#6](https://github.com/bestagentkits/ak-vault/issues/6)) and portable policy with encrypted audit ([#7](https://github.com/bestagentkits/ak-vault/issues/7)).
 

@@ -94,7 +94,13 @@ the pull request and the production reviewer (owner decision on
 stop faster than the gated path allows. It needs an operator holding production
 Cloudflare credentials outside GitHub: the GitHub Environment secrets used by CI
 cannot be read back, so make sure such credentials exist before relying on this
-path. Load them as `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` without
+path. Holder (owner decision on #53): the operator's local Cloudflare token outside
+GitHub, which is the token staging and production shared during bootstrap. Since
+2026-10-16 the production CI deploy uses its own production-only token, so the
+local token is no longer exercised by CI. Check it before an incident by reading the
+production deployment status (a read-only command, step 3), and replace it before
+it is revoked: without it, turning sync off needs a pull request and the owner's
+approval. Load them as `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` without
 echoing them, and only after `pnpm install` (as CI does).
 
 - **Never use this path to enable sync**, or to ship code or any other config

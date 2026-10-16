@@ -29,7 +29,7 @@ The server relays enrollment messages, so it could try to slip in a key of its o
 3. **You compare, then approve.** If the codes match, the owner device signs a `device_add` event that commits to the enrollment transcript and to the vault key wrapped for the new device. If they differ, enrollment aborts.
 4. **The new device verifies first.** It checks the signed member list and wrap set against the owner's signature before it unwraps anything.
 
-The protocol defines this flow; the enrollment experience in `ak` is **planned**. If every device is lost, a fresh device can enroll itself with your password or recovery key through the encrypted recovery bundle.
+The protocol defines this flow; the enrollment experience in `ak` is a hidden **preview** in the released CLI, not yet a supported workflow. If every device is lost, a fresh device can enroll itself with your password or recovery key through the encrypted recovery bundle.
 
 ## 3. Conflicts: two edits, one secret, neither lost
 

@@ -69,9 +69,11 @@ so it carries no free text.
   covers one timestamped body with a single-use `event_id`
   ([decision on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248)).
   Persisted logs, traces, analytics and the Durable Object dump showed none of them.
-  **Recommendation:** grant Workers Tail permission on the production Worker's
-  account only to the operators who need it, and do not attach a Tail Worker or
-  Logpush job that stores request headers. Renaming the headers so the platform
+  **Complement named in the waiver:** grant Workers Tail permission on the
+  production Worker's account only to the operators who need it (the production
+  deploy token has none); the owner's confirmation of that is an open item in the
+  [release gates](./release-gates.md),
+  and do not attach a Tail Worker or Logpush job that stores request headers. Renaming the headers so the platform
   redacts them remains open as hardening
   ([#61](https://github.com/bestagentkits/ak-vault/issues/61)).
 

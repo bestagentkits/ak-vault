@@ -143,6 +143,6 @@ two-device staging soak with the [Docker two-device e2e](../../e2e/docker/README
 ([release gates](../security/release-gates.md#staging-soak)), which runs the real
 sync service under `wrangler dev` and so has no Cloudflare analytics. Measure these
 inputs from the production Worker's analytics datasets above (vault and registry
-namespaces), by route, once ak-web production issues vault tokens and real clients
-sync, and note the date and workload. Re-measure the per-call inputs after any
+namespaces), by route, now that ak-web production issues vault tokens, as real
+clients sync, and note the date and workload. Re-measure the per-call inputs after any
 change to the request path.
