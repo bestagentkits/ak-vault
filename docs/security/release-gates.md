@@ -55,7 +55,7 @@ page and docs, and its own CI run is linked from its pull request.
       ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210567772)). The owner accepted it with restore reconciliation
       still an [open item](../adr/0001-opt-in-zero-knowledge-sync.md#open-items) of
       the ADR, so this gate no longer requires that item resolved; the staging
-      restore gate below was met separately. Acceptance is not the external review.
+      restore gate below was met separately. Acceptance is not the [review](#review-by-the-owner).
 - [x] Go and TypeScript reproduce every vector in `protocol/v1/vectors/` byte for
       byte, including every rejection vector (tamper, wrong AAD, duplicate nonce,
       invalid signature, injected recipient, replay, rollback, unsupported version).

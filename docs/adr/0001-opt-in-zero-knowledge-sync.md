@@ -6,9 +6,10 @@
   ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210567772)). The first draft required
   the owner's approval **and** an external cryptographic review before acceptance;
   the owner accepted the design ahead of that review. Acceptance is the owner's
-  design decision, not a review sign-off: the external review is still pending on #8
-  and still blocks GA ([external review milestone](#external-review-milestone)).
-  Neither the owner's approval nor the external review can be self-attested by an
+  design decision, not a review sign-off: the review is still pending on #8 and
+  still blocks GA ([external review milestone](#external-review-milestone)); since
+  2026-10-16 the reviewer is the owner, not an independent third party.
+  Neither the owner's approval nor the review can be self-attested by an
   implementing agent.
 - **Tracking:** epic [#1](https://github.com/bestagentkits/ak-vault/issues/1),
   protocol issue [#2](https://github.com/bestagentkits/ak-vault/issues/2)
@@ -89,7 +90,7 @@ ADR adds an **opt-in** layer next to v1; it does not reinterpret v1:
 11. **Kill switch.** `VAULT_SYNC_ENABLED` gates the sync API on the Worker. When
     off, the sync API refuses with `sync_disabled`; local AgentKit use is
     unaffected. Production has run with it on since the owner's 2026-10-16 waiver,
-    as a pre-release preview before the external review
+    as a pre-release preview before the review
     ([release gates](../security/release-gates.md#feature-flag-and-kill-switch));
     turning it off is the first incident response step. The server-side flag does
     not make sync opt-out for users: each user still enables sync explicitly.

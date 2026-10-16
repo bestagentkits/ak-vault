@@ -9,13 +9,14 @@ Landing page: https://vault.agentkit.best
 ## Status
 
 - **Design: Accepted by the owner** (2026-10-16).
-  [ADR 0001](./docs/adr/0001-opt-in-zero-knowledge-sync.md) still awaits an
-  external cryptographic review.
-- **Security review: pending.** Tracked on
+  [ADR 0001](./docs/adr/0001-opt-in-zero-knowledge-sync.md) still awaits the
+  owner's review.
+- **Security review: pending.** By owner decision the reviewer is the owner, not an
+  independent third party. Tracked on
   [#8](https://github.com/bestagentkits/ak-vault/issues/8).
 - **Sync is not generally available.** Do not store production credentials in it.
   By owner decision on #8 the production sync API is live as a pre-release
-  preview before the external review: any logged-in user running the preview
+  preview before the review: any logged-in user running the preview
   `ak secrets sync` commands can sync to it. It is not externally reviewed and not
   yet recommended for production credentials. Open items are in the
   [release gates](./docs/security/release-gates.md).

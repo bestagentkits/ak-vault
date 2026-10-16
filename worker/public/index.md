@@ -8,7 +8,7 @@ status: "Protocol v1 proposed, in security review. Cloud sync not generally avai
 
 ak-vault is the opt-in, end-to-end encrypted sync layer for AgentKit's `ak secrets`. Secrets are sealed on your device before they leave it, agents keep reading from the local vault, and with sync off nothing touches the network.
 
-> **Status: Protocol v1 · in security review.** Cloud sync is not generally available. The production sync API is live as a pre-release preview, by owner decision, before the independent security review: anyone signed in to AgentKit who runs the preview `ak secrets sync` commands can use it. Do not put production credentials in it yet. The local `ak secrets` vault works today without it.
+> **Status: Protocol v1 · in security review.** Cloud sync is not generally available. The production sync API is live as a pre-release preview, by owner decision, before the owner's security review, which is not an independent third-party review: anyone signed in to AgentKit who runs the preview `ak secrets sync` commands can use it. Do not put production credentials in it yet. The local `ak secrets` vault works today without it.
 
 ## 1. The problem
 
