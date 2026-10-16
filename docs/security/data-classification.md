@@ -51,6 +51,15 @@ so it carries no free text.
   (`observability.logs.invocation_logs: false` in `worker/wrangler.jsonc`) because
   they record full request URLs and request metadata outside this contract. Only
   the Worker's own operational log lines are kept.
+- `wrangler tail` and Tail Workers see every request's URL, client IP and headers.
+  Cloudflare redacts a header only when its name contains `auth`, `key`, `secret`,
+  `token` or `jwt` (or is a cookie), so `Authorization`, `Idempotency-Key` and
+  `AKV-Device-Key` are hidden but `AKV-Proof` and `AKV-Webhook-Signature` are shown
+  ([#61](https://github.com/bestagentkits/ak-vault/issues/61);
+  [platform log scan](./red-team-evidence.md#platform-log-scan)). `wrangler tail`
+  is a live view for account members with tail access and stores nothing. A Tail
+  Worker, which this project does not configure, could store what it receives and
+  can read headers unredacted.
 
 **Errors**
 
