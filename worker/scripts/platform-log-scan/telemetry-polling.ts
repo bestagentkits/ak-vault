@@ -17,8 +17,8 @@ export async function waitFor(what: string, timeoutMs: number, everyMs: number, 
   }
 }
 
-export async function pullTelemetry(creds: CloudflareCredentials, name: string, from: number, to: number, minEvents: number): Promise<Record<TelemetryView, TelemetryPull>> {
-  // Ingestion lags: poll until the event count reaches what the run emitted and stops growing.
+/** Poll until events and invocations cover every request the run made (`minRequests`) and the counts stop growing. */
+export async function pullTelemetry(creds: CloudflareCredentials, name: string, from: number, to: number, minRequests: number): Promise<Record<TelemetryView, TelemetryPull>> {
   let last = -1;
   const deadline = Date.now() + 15 * 60_000;
   for (;;) {
@@ -26,7 +26,7 @@ export async function pullTelemetry(creds: CloudflareCredentials, name: string, 
     const pulls = { events: events!, traces: traces!, invocations: invocations! };
     const total = events!.rows + traces!.rows + invocations!.rows;
     say(`  telemetry: events ${events!.rows}, traces ${traces!.rows}, invocations ${invocations!.rows}`);
-    if (events!.rows >= minEvents && traces!.rows > 0 && total === last) return pulls;
+    if (events!.rows >= minRequests && invocations!.rows >= minRequests && traces!.rows > 0 && total === last) return pulls;
     if (Date.now() > deadline) throw new Error('telemetry did not settle within 15 minutes');
     last = total;
     await sleep(45_000);

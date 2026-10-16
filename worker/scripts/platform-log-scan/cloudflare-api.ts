@@ -23,9 +23,14 @@ export function credentialsFromEnv(): CloudflareCredentials {
   return { token, accountId };
 }
 
-/** Replace every credential value in `text` (for wrangler output shown on failure). */
-export function redactCredentials(text: string, creds: CloudflareCredentials): string {
-  return text.replaceAll(creds.token, '<token>').replaceAll(creds.accountId, '<account>');
+/**
+ * Replace every credential and account identifier in `text` (wrangler output and
+ * error messages shown on failure): the token, the account id and, once known,
+ * the account's workers.dev subdomain.
+ */
+export function redactAccount(text: string, creds: CloudflareCredentials, subdomain?: string): string {
+  const out = text.replaceAll(creds.token, '<token>').replaceAll(creds.accountId, '<account>');
+  return subdomain ? out.replaceAll(subdomain, '<subdomain>') : out;
 }
 
 interface Envelope<T> {
@@ -89,15 +94,14 @@ export type TelemetryView = 'events' | 'traces' | 'invocations';
 
 export interface TelemetryPull {
   view: TelemetryView;
-  /** Raw response bodies, concatenated: the text the scan searches. */
+  /** Raw response body: the text the scan searches. */
   text: string;
   /** Rows returned (events, traces or invocations). */
   rows: number;
-  pages: number;
 }
 
+/** Largest page the query API is asked for. */
 const PAGE = 2000;
-const MAX_PAGES = 50;
 
 function rowsOf(view: TelemetryView, result: Record<string, unknown>): unknown[] {
   if (view === 'events') return ((result['events'] as { events?: unknown[] } | undefined)?.events ?? []) as unknown[];
@@ -106,37 +110,25 @@ function rowsOf(view: TelemetryView, result: Record<string, unknown>): unknown[]
   return inv ? Object.values(inv).flat() : [];
 }
 
-function cursorOf(view: TelemetryView, rows: unknown[]): string | undefined {
-  const last = rows[rows.length - 1] as Record<string, unknown> | undefined;
-  if (!last) return undefined;
-  if (view === 'traces') return (last['trace_id'] ?? last['traceId'] ?? last['id']) as string | undefined;
-  return ((last['$metadata'] as { id?: string } | undefined)?.id ?? undefined) as string | undefined;
-}
-
-/** Every telemetry row of `service` in [from, to] for one view, all pages. */
+/**
+ * Every telemetry row of `service` in [from, to] for one view. A run fits in one
+ * page; a full page fails the run rather than paging, because a partial pull
+ * would be reported as complete if the API's paging differs from what a client
+ * assumes. Shorten the traffic or the window instead.
+ */
 export async function queryTelemetry(creds: CloudflareCredentials, service: string, view: TelemetryView, from: number, to: number): Promise<TelemetryPull> {
-  const pull: TelemetryPull = { view, text: '', rows: 0, pages: 0 };
-  let offset: string | undefined;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const body = {
-      queryId: `logscan-${view}`,
-      timeframe: { from, to },
-      view,
-      limit: PAGE,
-      dry: true,
-      ...(offset ? { offset, offsetDirection: 'next' } : {}),
-      parameters: { view, filters: [{ key: '$metadata.service', operation: 'eq', type: 'string', value: service }] },
-    };
-    const { result, text } = await apiOk<Record<string, unknown>>(creds, `telemetry ${view}`, `/accounts/${creds.accountId}/workers/observability/telemetry/query`, { method: 'POST', body });
-    const rows = rowsOf(view, result);
-    pull.text += `${text}\n`;
-    pull.rows += rows.length;
-    pull.pages++;
-    const next = cursorOf(view, rows);
-    if (rows.length < PAGE || !next || next === offset) return pull;
-    offset = next;
-  }
-  throw new Error(`telemetry ${view}: more than ${MAX_PAGES} pages`);
+  const body = {
+    queryId: `logscan-${view}`,
+    timeframe: { from, to },
+    view,
+    limit: PAGE,
+    dry: true,
+    parameters: { view, filters: [{ key: '$metadata.service', operation: 'eq', type: 'string', value: service }] },
+  };
+  const { result, text } = await apiOk<Record<string, unknown>>(creds, `telemetry ${view}`, `/accounts/${creds.accountId}/workers/observability/telemetry/query`, { method: 'POST', body });
+  const rows = rowsOf(view, result).length;
+  if (rows >= PAGE) throw new Error(`telemetry ${view} filled a whole page (${rows} rows): the pull may be partial`);
+  return { view, text, rows };
 }
 
 /** Workers and Durable Object analytics (the platform metrics) for `service` in [from, to]. */

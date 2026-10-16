@@ -9,62 +9,40 @@
  * and error paths run, dumps its Durable Objects, pulls Workers Observability
  * events, traces and invocations and the GraphQL analytics for it, and searches
  * all of it (and every response) for every planted value. Then it deletes the
- * Worker and checks that it and its Durable Object namespaces are gone.
+ * Worker and checks that it and its Durable Object namespaces are gone, also
+ * when the run fails or is interrupted (SIGINT, SIGTERM).
  *
  * Output and the optional JSON report hold counts only: never a planted value,
- * credential, or the captured telemetry. Exit 0 only when the scan found nothing
- * in a gating category, every source was non-empty and the lab was deleted.
+ * credential, account identifier or the captured telemetry. Exit 0 only when the
+ * scan found nothing in a gating category, every source was non-empty and the
+ * lab was deleted.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync, type ChildProcess } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { b64encode, randomBytes } from '@ak-vault/protocol';
 import { fetchRetrying } from './fetch-retrying.js';
-import { credentialsFromEnv, durableObjectNamespaces, scriptExists, workersDevSubdomain, type CloudflareCredentials } from './cloudflare-api.js';
+import { credentialsFromEnv, durableObjectNamespaces, redactAccount, scriptExists, workersDevSubdomain, type CloudflareCredentials } from './cloudflare-api.js';
 import { LabClient, LabIssuer } from './lab-client.js';
 import { runLabTraffic, type StepResult } from './lab-traffic.js';
-import { LAB_NAME_PATTERN, WORKER_DIR, countTailEvents, labObservability, startTail, stopProcess, writeLabConfig, wrangler } from './lab-worker-lifecycle.js';
+import { WORKER_DIR, countTailEvents, labObservability, startTail, stopTail, writeLabConfig, wrangler, type TailCapture } from './lab-worker-lifecycle.js';
 import { NeedleSet, selfTestNeedleScan } from './needle-scan.js';
+import { scanOptions } from './scan-options.js';
+import { concludeScan, say, type SourceResult } from './scan-report.js';
 import { pullAnalytics, pullTelemetry, sleep, waitFor } from './telemetry-polling.js';
 
-/** Categories that must have zero hits everywhere. The others are reported for context. */
-const GATING = ['secret_names', 'secret_values', 'recovery_material', 'tokens', 'proofs', 'keys', 'idempotency_keys', 'webhook_material', 'request_body_canaries', 'request_header_canaries'];
-/** Request URLs (with their opaque IDs, and any canary a client puts there) are platform request metadata. */
-const INFORMATIONAL = ['url_canaries', 'opaque_ids'];
+/** Hides credentials and account identifiers in anything printed; widened once they are known. */
+let redact = (text: string) => text;
+/** Deletes the lab and the private directory; set once there is something to clean up. */
+let cleanupOnInterrupt: (() => Promise<unknown>) | undefined;
 
-const say = (line: string) => process.stdout.write(`${line}\n`);
-
-function args(): { name: string; report?: string; keepCapture?: string } {
-  const argv = process.argv.slice(2);
-  const stamp = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Saigon', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
-    .format(new Date())
-    .replace(/[^0-9]/g, '');
-  let name = `ak-vault-lab-logscan-${stamp}`;
-  let report: string | undefined;
-  let keepCapture: string | undefined;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--name') name = argv[++i] ?? '';
-    else if (argv[i] === '--report') report = argv[++i];
-    else if (argv[i] === '--keep-capture') keepCapture = argv[++i];
-    else throw new Error(`unknown argument ${argv[i]}`);
-  }
-  if (!LAB_NAME_PATTERN.test(name)) throw new Error(`lab name must match ${LAB_NAME_PATTERN}`);
-  if (keepCapture !== undefined && (keepCapture === '' || existsSync(keepCapture))) throw new Error('--keep-capture needs a directory that does not exist yet');
-  return { name, ...(report ? { report } : {}), ...(keepCapture ? { keepCapture } : {}) };
-}
-
-interface SourceResult {
-  bytes: number;
-  rows?: number;
-  hits: Record<string, number>;
-}
-
+/** Delete the lab (again, if a deploy finished after the first attempt) until it and its namespaces are gone. */
 async function deleteLab(creds: CloudflareCredentials, name: string, cwd: string, log: string): Promise<{ scriptGone: boolean; namespacesLeft: number }> {
-  if (await scriptExists(creds, name)) await wrangler(['delete', '--name', name, '--force'], cwd, log, creds);
   let namespacesLeft = -1;
   let scriptGone = false;
   await waitFor('lab deletion', 120_000, 5_000, async () => {
+    if (await scriptExists(creds, name)) await wrangler(['delete', '--name', name, '--force'], cwd, log, redact);
     scriptGone = !(await scriptExists(creds, name));
     namespacesLeft = (await durableObjectNamespaces(creds, name)).length;
     return scriptGone && namespacesLeft === 0;
@@ -74,25 +52,50 @@ async function deleteLab(creds: CloudflareCredentials, name: string, cwd: string
 
 async function main(): Promise<number> {
   selfTestNeedleScan();
-  const { name, report, keepCapture } = args();
+  const { name, report, keepCapture } = scanOptions(process.argv.slice(2));
   const creds = credentialsFromEnv();
+  redact = (text) => redactAccount(text, creds);
   if (await scriptExists(creds, name)) throw new Error('a Worker with the lab name already exists; pick another --name');
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: WORKER_DIR, encoding: 'utf8' }).trim();
   const dirty = execFileSync('git', ['status', '--porcelain', '--', 'src', 'wrangler.jsonc', 'public', 'scripts/platform-log-scan', '../packages/protocol'], { cwd: WORKER_DIR, encoding: 'utf8' }).trim() !== '';
-  const origin = `https://${name}.${await workersDevSubdomain(creds)}.workers.dev`;
+  const subdomain = await workersDevSubdomain(creds);
+  redact = (text) => redactAccount(text, creds, subdomain);
+  const origin = `https://${name}.${subdomain}.workers.dev`;
   const priv = mkdtempSync(join(tmpdir(), 'akvault-logscan-'));
   const log = join(priv, 'wrangler.log');
   const needles = new NeedleSet();
-  let tail: ChildProcess | undefined;
+  let tail: TailCapture | undefined;
   let deployed = false;
   let steps: StepResult[] = [];
   let requests = 0;
   let tailFetches = 0;
+  let analyticsRequests = 0;
   const sources: Record<string, SourceResult> = {};
-  let cleanup: { scriptGone: boolean; namespacesLeft: number } = { scriptGone: false, namespacesLeft: -1 };
+  let cleanup = { scriptGone: false, namespacesLeft: -1 };
   const problems: string[] = [];
   const cleanupProblems: string[] = [];
   const settings = labObservability();
+
+  // Runs once, from `finally` or from a signal handler, whichever comes first.
+  let cleaning: Promise<void> | undefined;
+  const cleanUp = () =>
+    (cleaning ??= (async () => {
+      await stopTail(tail).catch((err: Error) => cleanupProblems.push(`tail did not stop cleanly: ${redact(err.message)}`));
+      tail = undefined;
+      if (deployed) {
+        say('deleting the lab Worker');
+        cleanup = await deleteLab(creds, name, priv, log).catch((err: Error) => {
+          cleanupProblems.push(`lab deletion failed: ${redact(err.message)}`);
+          return cleanup;
+        });
+        if (!cleanup.scriptGone) cleanupProblems.push(`the lab Worker ${name} still exists: delete it by hand`);
+        if (cleanup.namespacesLeft !== 0) cleanupProblems.push(`lab Durable Object namespaces not confirmed gone (${cleanup.namespacesLeft})`);
+      }
+      rmSync(priv, { recursive: true, force: true });
+      for (const p of cleanupProblems) say(`cleanup problem: ${p}`);
+    })());
+  cleanupOnInterrupt = cleanUp;
+
   say(`lab ${name} at ${commit}${dirty ? ' (uncommitted changes)' : ''}`);
   try {
     const issuer = await LabIssuer.create('https://logscan-issuer.ak-vault.invalid', origin, needles);
@@ -106,7 +109,7 @@ async function main(): Promise<number> {
 
     say('deploying the lab Worker');
     deployed = true;
-    await wrangler(['deploy', '--config', config.path, '--secrets-file', secretsFile], priv, log, creds);
+    await wrangler(['deploy', '--config', config.path, '--secrets-file', secretsFile], priv, log, redact);
     rmSync(secretsFile);
     const client = new LabClient(origin, issuer, needles);
     await waitFor('the lab Worker', 180_000, 3_000, async () => (await fetch(`${origin}/healthz`, { signal: AbortSignal.timeout(10_000) })).status === 200);
@@ -128,7 +131,7 @@ async function main(): Promise<number> {
     say(`  ${steps.length} steps, ${client.requests} requests, ${failed.length} unexpected status(es)`);
     for (const s of failed) problems.push(`step "${s.step}": expected ${s.expected}, got ${s.got}`);
     await sleep(15_000);
-    await stopProcess(tail);
+    await stopTail(tail);
     tail = undefined;
     // The window closes before the dump request, which is lab-only harness traffic.
     const to = Date.now();
@@ -143,8 +146,9 @@ async function main(): Promise<number> {
     for (const t of ['records', 'audit_entries', 'recovery_blob', 'idempotency', 'proof_jti']) if (!vaultTables.has(t)) problems.push(`vault dump lacks table ${t}`);
 
     say('pulling platform telemetry (ingestion can take minutes)');
-    const telemetry = await pullTelemetry(creds, name, from, to, client.requests - 5);
-    const analytics = await pullAnalytics(creds, name, from, to, Math.floor(client.requests / 2));
+    const telemetry = await pullTelemetry(creds, name, from, to, client.requests);
+    const analytics = await pullAnalytics(creds, name, from, to, client.requests);
+    analyticsRequests = analytics.requests;
 
     const tailText = readFileSync(tailFile, 'utf8');
     if (keepCapture) {
@@ -165,66 +169,43 @@ async function main(): Promise<number> {
     sources['responses'] = scan(client.responses.join('\n'), client.responses.length);
     for (const [source, r] of Object.entries(sources)) if (r.bytes === 0 || r.rows === 0) problems.push(`source "${source}" is empty`);
   } finally {
-    await stopProcess(tail);
-    if (deployed) {
-      say('deleting the lab Worker');
-      cleanup = await deleteLab(creds, name, priv, log).catch((err: Error) => {
-        cleanupProblems.push(`lab deletion failed: ${err.message}`);
-        return cleanup;
-      });
-      if (!cleanup.scriptGone) cleanupProblems.push(`the lab Worker ${name} still exists: delete it by hand`);
-      if (cleanup.namespacesLeft !== 0) cleanupProblems.push(`lab Durable Object namespaces not confirmed gone (${cleanup.namespacesLeft})`);
-    }
-    rmSync(priv, { recursive: true, force: true });
-    // Printed here so they are seen even when the run itself failed.
-    for (const p of cleanupProblems) say(`cleanup problem: ${p}`);
+    await cleanUp();
   }
 
-  const seeded = needles.categories();
-  const categories = [...GATING.filter((c) => seeded.includes(c)), ...seeded.filter((c) => !GATING.includes(c))];
-  say('\nhits per source (gating categories first):');
-  const header = ['source', 'bytes', 'rows', ...categories];
-  say(header.join('\t'));
-  for (const [source, r] of Object.entries(sources)) say([source, r.bytes, r.rows ?? '', ...categories.map((c) => r.hits[c] ?? 0)].join('\t'));
-  const gatingHits = Object.values(sources).reduce((n, r) => n + GATING.reduce((m, c) => m + (r.hits[c] ?? 0), 0), 0);
-  for (const c of GATING) if (!seeded.includes(c)) problems.push(`category ${c} was never seeded`);
-  const ok = gatingHits === 0 && problems.length === 0 && cleanupProblems.length === 0;
-  for (const p of problems) say(`problem: ${p}`);
-  say(`tail captured ${tailFetches} fetch invocation(s) for ${requests} traffic request(s) plus warm-up probes`);
-  say(`\nresult: ${ok ? 'PASS' : 'FAIL'} (${gatingHits} gating hit(s))`);
-  if (report) {
-    writeFileSync(
-      report,
-      `${JSON.stringify(
-        {
-          date: new Date().toISOString(),
-          commit,
-          dirty,
-          lab: name,
-          observability: { production: settings.production, scanned: settings.lab },
-          gating: GATING,
-          informational: [...INFORMATIONAL, 'lab_harness'],
-          needle_forms: needles.formCounts(),
-          steps: { total: steps.length, unexpected: steps.filter((s) => s.expected !== s.got).length },
-          traffic_requests: requests,
-          tail_fetch_events: tailFetches,
-          sources,
-          cleanup,
-          problems: [...problems, ...cleanupProblems],
-          result: ok ? 'pass' : 'fail',
-        },
-        null,
-        2,
-      )}\n`,
-    );
-  }
+  const ok = concludeScan(
+    {
+      commit,
+      dirty,
+      lab: name,
+      observability: { production: settings.production, scanned: settings.lab },
+      needleForms: needles.formCounts(),
+      steps: { total: steps.length, unexpected: steps.filter((s) => s.expected !== s.got).length },
+      trafficRequests: requests,
+      tailFetchEvents: tailFetches,
+      analyticsRequests,
+      sources,
+      cleanup,
+      problems,
+      cleanupProblems,
+    },
+    report,
+  );
   return ok ? 0 : 1;
 }
+
+// An interrupted or crashed run still deletes the lab; a second signal exits at once.
+const abort = (why: string, code: number) => {
+  process.stderr.write(`platform log scan stopped (${why}); cleaning up\n`);
+  void (cleanupOnInterrupt?.() ?? Promise.resolve()).finally(() => process.exit(code));
+};
+process.once('SIGINT', () => abort('SIGINT', 130));
+process.once('SIGTERM', () => abort('SIGTERM', 143));
+process.once('uncaughtException', (err) => abort(`uncaught ${err.name}`, 2));
 
 main().then(
   (code) => process.exit(code),
   (err: Error) => {
-    process.stderr.write(`platform log scan failed: ${err.message}\n`);
+    process.stderr.write(`platform log scan failed: ${redact(err.message)}\n`);
     process.exit(2);
   },
 );

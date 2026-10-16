@@ -8,7 +8,8 @@
  * named in the body and of the revocation registry, so the scan can search the
  * deployed Durable Object state the same way the vitest suite does. The route
  * answers only when `LAB_DUMP_SECRET` (a random per-run Worker secret) is
- * presented, and 404s otherwise, exactly like any unknown path outside `/v1`.
+ * presented; otherwise the request goes to the real Worker, which answers it as
+ * the unknown path it is there.
  */
 import worker, { RevocationRegistry as RealRevocationRegistry, VaultDurableObject as RealVaultDurableObject } from '../../../src/index.js';
 import { REVOCATION_REGISTRY_NAME } from '../../../src/auth/revocation-check.js';
@@ -63,10 +64,10 @@ async function secretMatches(expected: string, presented: string): Promise<boole
 }
 
 async function labDump(request: Request, env: LabEnv): Promise<Response> {
-  const notFound = new Response('not found', { status: 404 });
+  const notFound = () => worker.fetch(request, env);
   const presented = request.headers.get('Lab-Dump-Secret');
-  if (request.method !== 'POST' || !env.LAB_DUMP_SECRET || env.LAB_DUMP_SECRET.length < 32 || !presented) return notFound;
-  if (!(await secretMatches(env.LAB_DUMP_SECRET, presented))) return notFound;
+  if (request.method !== 'POST' || !env.LAB_DUMP_SECRET || env.LAB_DUMP_SECRET.length < 32 || !presented) return notFound();
+  if (!(await secretMatches(env.LAB_DUMP_SECRET, presented))) return notFound();
   let vaultIds: unknown;
   try {
     vaultIds = ((await request.json()) as { vault_ids?: unknown }).vault_ids;

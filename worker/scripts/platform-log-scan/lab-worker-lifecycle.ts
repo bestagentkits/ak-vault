@@ -12,7 +12,6 @@ import { createWriteStream, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { unstable_readConfig } from 'wrangler';
-import { redactCredentials, type CloudflareCredentials } from './cloudflare-api.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const WORKER_DIR = resolve(HERE, '../..');
@@ -57,10 +56,14 @@ export function writeLabConfig(dir: string, name: string, vars: LabVars): { path
   return { path, observability: lab };
 }
 
-/** Run wrangler to completion; its output goes to `logFile` and only a redacted tail is shown on failure. */
-export function wrangler(args: string[], cwd: string, logFile: string, creds: CloudflareCredentials, timeoutMs = 300_000): Promise<void> {
+/**
+ * Run wrangler to completion; its output goes to `logFile` and only the last
+ * lines, passed through `redact`, are shown on failure.
+ */
+export function wrangler(args: string[], cwd: string, logFile: string, redact: (text: string) => string, timeoutMs = 300_000): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const out = createWriteStream(logFile, { flags: 'a', mode: 0o600 });
+    out.on('error', (err) => reject(new Error(`wrangler log could not be written: ${err.name}`)));
     const chunks: string[] = [];
     const child = spawn(WRANGLER, args, { cwd, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
     const collect = (b: Buffer) => {
@@ -79,24 +82,41 @@ export function wrangler(args: string[], cwd: string, logFile: string, creds: Cl
       clearTimeout(timer);
       out.end();
       if (code === 0) return resolvePromise();
-      const tail = redactCredentials(chunks.join('').split('\n').slice(-15).join('\n'), creds);
+      const tail = redact(chunks.join('').split('\n').slice(-15).join('\n'));
       reject(new Error(`wrangler ${args[0]} exited with ${code}:\n${tail}`));
     });
   });
 }
 
-/** `wrangler tail --format json` into `file` until stopped. */
-export function startTail(name: string, cwd: string, file: string): ChildProcess {
-  const out = createWriteStream(file, { mode: 0o600 });
-  const child = spawn(WRANGLER, ['tail', name, '--format', 'json'], { cwd, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  child.stdout.pipe(out);
-  // stderr carries wrangler's own status lines; keep them with the capture so they are scanned too.
-  child.stderr.pipe(out, { end: false });
-  return child;
+export interface TailCapture {
+  child: ChildProcess;
+  /** Settles once wrangler exited and the capture file is fully flushed; rejects on a process or write error. */
+  flushed: Promise<void>;
 }
 
-export function stopProcess(child: ChildProcess | undefined, timeoutMs = 10_000): Promise<void> {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+/** `wrangler tail --format json` into `file` until stopped with `stopTail`. */
+export function startTail(name: string, cwd: string, file: string): TailCapture {
+  const out = createWriteStream(file, { mode: 0o600 });
+  const child = spawn(WRANGLER, ['tail', name, '--format', 'json'], { cwd, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  // stderr carries wrangler's own status lines; keep them with the capture so they are scanned too.
+  const write = (b: Buffer) => out.write(b);
+  child.stdout.on('data', write);
+  child.stderr.on('data', write);
+  const flushed = new Promise<void>((resolvePromise, reject) => {
+    out.on('error', (err) => reject(new Error(`tail capture could not be written: ${err.name}`)));
+    child.on('error', (err) => {
+      out.end();
+      reject(new Error(`wrangler tail could not start: ${err.name}`));
+    });
+    child.on('close', () => out.end(() => resolvePromise()));
+  });
+  // Observed by stopTail; this only keeps an early failure from crashing the process unhandled.
+  flushed.catch(() => undefined);
+  return { child, flushed };
+}
+
+function stopProcess(child: ChildProcess, timeoutMs = 10_000): Promise<void> {
+  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
   return new Promise((resolvePromise) => {
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
     child.once('close', () => {
@@ -107,8 +127,15 @@ export function stopProcess(child: ChildProcess | undefined, timeoutMs = 10_000)
   });
 }
 
-export /** `wrangler tail --format json` prints pretty-printed objects back to back: count them, and the fetch invocations among them. */
-function countTailEvents(text: string): { events: number; fetches: number } {
+/** Stop the tail and wait until its capture is on disk. */
+export async function stopTail(tail: TailCapture | undefined): Promise<void> {
+  if (!tail) return;
+  await stopProcess(tail.child);
+  await tail.flushed;
+}
+
+/** `wrangler tail --format json` prints pretty-printed objects back to back: count them, and the fetch invocations among them. */
+export function countTailEvents(text: string): { events: number; fetches: number } {
   let events = 0;
   let fetches = 0;
   let buffer: string[] = [];
