@@ -109,8 +109,12 @@ page and docs, and its own CI run is linked from its pull request.
       scenarios 1 to 12, 14 and 15 executed, findings filed as issues (open
       include [#41](https://github.com/bestagentkits/ak-vault/issues/41) and
       [#42](https://github.com/bestagentkits/ak-vault/issues/42)). **Open:**
-      scenario 13 has not run because the attacked feature is not built; run it when
+      scenario 13 must run again when
       [#7](https://github.com/bestagentkits/ak-vault/issues/7) or agentkit#2299 lands.
+      Its 2026-10-16 run ([#80](https://github.com/bestagentkits/ak-vault/issues/80))
+      passed against what exists (the protocol policy evaluator and the sync client's
+      handling of pulled policy and profile items), but the features it attacks are
+      not built ([red-team evidence](./red-team-evidence.md#scenario-13-hostile-policy-and-profile-text)).
 - [x] Two-device round trip and soak (below): replaced by the
       [Docker two-device e2e](../../e2e/docker/README.md)
       ([#55](https://github.com/bestagentkits/ak-vault/pull/55)) by owner decision

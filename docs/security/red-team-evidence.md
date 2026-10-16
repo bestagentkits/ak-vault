@@ -40,9 +40,53 @@ not exist yet.
 | 10 | Removed member reads new material; `needs-rotate` for the rest | `authorization.test.ts`: "a removed device loses access immediately"; `membership.test.ts`: "a removed device is denied and writes wait for rekey"; `removal-fence-and-recovery-rotation.test.ts`: writes by a removed device refused; vectors `removed_member_recipient`, `removed_member_older_epoch`, `removal-fence.json`; new [`red-team-removed-member.test.ts`](../../worker/test/red-team-removed-member.test.ts): after `member_remove` the old and a fresh device of the account read nothing, the rekey set has no wrap for them, and `needs_rotate` lists the exposed item. Client: `TestRemoveDeviceFencesRekeysAndReseals`, `TestRemovedDeviceIsFencedAndItsWritesRefused` (e2e), `TestRotateAfterAStoppedRemovalFlagsTheExposedItems` | Pass | Limitations stay as stated: no clawback; the fence binds the log as its remover verified it ([#21](https://github.com/bestagentkits/ak-vault/issues/21); `removal-fence-binds-log.test.ts`) |
 | 11 | Reader and machine write; machine reads outside its vault | `authorization.test.ts` "read-only devices" block; `checkpoints-audit.test.ts` read-only cases; new [`red-team-tenant-and-role-isolation.test.ts`](../../worker/test/red-team-tenant-and-role-isolation.test.ts): reader and machine refused on every write route with no state change; a machine of the owner account refused on every item, change, wrap, checkpoint and audit route of another vault | Pass, finding | [#42](https://github.com/bestagentkits/ak-vault/issues/42) (open; the owner decided to fix it, via [ak-web#578](https://github.com/bestagentkits/ak-web/issues/578), before machine identities ship in #6): through the recovery-identity path that machine still fetches the other vault's encrypted bundle and membership. Related open: [#22](https://github.com/bestagentkits/ak-vault/issues/22), [#14](https://github.com/bestagentkits/ak-vault/issues/14) |
 | 12 | Cross-tenant read with a valid token | `authorization.test.ts`: "another tenant's device cannot touch a vault it does not belong to", "a device presenting another account's sub is refused"; `auth-token.test.ts`: "a token whose did names a non-member device is forbidden"; [`recovery-fetch.test.ts`](../../worker/test/recovery-fetch.test.ts): "refuses another account"; new `red-team-tenant-and-role-isolation.test.ts`: another tenant's token and proof refused on every read and write route and on a genesis for the victim's vault ID, state unchanged | Pass | |
-| 13 | Hostile shared profile or policy text widens a grant or runs a command | The attacked feature is not built: portable policy ([#7](https://github.com/bestagentkits/ak-vault/issues/7)) and agent discovery ([agentkit#2299](https://github.com/bestagentkits/agentkit/issues/2299)) are open. Existing guards: `policy.json` `malicious_policy_cannot_elevate`, `instruction_text_is_inert`, `unknown_field_grant_all` (TS and Go); client `TestLocalFromPayloadFailsClosed` (synced `policy` and `profile` kinds are never applied), `TestSpoofingNamesStayLocalAndAreNotApplied` | N/A | Re-run when #7 / agentkit#2299 land |
+| 13 | Hostile shared profile or policy text widens a grant or runs a command | Run on 2026-10-16 against what exists ([below](#scenario-13-hostile-policy-and-profile-text)). New [`red-team-hostile-policy.test.ts`](../../packages/protocol/test/red-team-hostile-policy.test.ts) and Go [`red_team_hostile_policy_test.go`](../../go/akv1/red_team_hostile_policy_test.go): 26 hostile policy texts through the strict parser, literal wildcards, approval and sensitivity, inert instruction text, and a randomized never-widens check; `policy.json` `malicious_policy_cannot_elevate`, `instruction_text_is_inert`, `unknown_field_grant_all`. Client: `TestLocalFromPayloadFailsClosed`, `TestPayloadRefusesPolicyPreviousHead`, `TestSpoofingNamesStayLocalAndAreNotApplied`, and an uncommitted engine-level probe at [`4aff1984b`](https://github.com/bestagentkits/agentkit/tree/4aff1984bf805e5d3a4e09e8376039692be65e83) | Pass (existing surface); portable policy and discovery: N/A | [#80](https://github.com/bestagentkits/ak-vault/issues/80). Hardening: [agentkit#2478](https://github.com/bestagentkits/agentkit/issues/2478). Re-run when [#7](https://github.com/bestagentkits/ak-vault/issues/7) / [agentkit#2299](https://github.com/bestagentkits/agentkit/issues/2299) land |
 | 14 | Forked PR reads secrets or triggers a deploy | Configuration review of [`.github/workflows/`](../../.github/workflows/) and repository settings, below | Pass, findings | Hardening: [#43](https://github.com/bestagentkits/ak-vault/issues/43), [#44](https://github.com/bestagentkits/ak-vault/issues/44), [#45](https://github.com/bestagentkits/ak-vault/issues/45) |
 | 15 | Planted plaintext and names in dumps, logs, metrics and errors | [`disclosure-scan.test.ts`](../../worker/test/disclosure-scan.test.ts): canaries in item names and values, audit, recovery password and keys, scanned across every Durable Object table, console line and response; new [`red-team-disclosure-scan.test.ts`](../../worker/test/red-team-disclosure-scan.test.ts): canaries in query strings, path segments, proof, idempotency and bearer headers, a device-key header on the recovery-identity path, webhook bodies and refused or oversize bodies, scanned across response bodies and headers, logs and both Durable Object dumps. agentkit e2e `checkLogRedaction` scans the `wrangler dev` log of the full e2e run (all nine scenarios passed against this head) for synthetic names, values, passwords, recovery keys and JWTs; a manual grep of that log also found no bearer, proof, idempotency-key, bundle or ciphertext fields. Client: `TestNoSecretInSyncState`, `akvhttp` `TestDoErrorsCarryNoSecretsOrPaths`. Deployed platform: the [platform log scan](#platform-log-scan) on a lab Worker | Pass (local); platform: finding | [#61](https://github.com/bestagentkits/ak-vault/issues/61): `wrangler tail` shows `AKV-Proof` and `AKV-Webhook-Signature` header values; Workers Observability logs and traces, analytics and the deployed dump had no hits. Waived by the owner on 2026-10-16 ([decision on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248)); #61 stays open as hardening |
+
+## Scenario 13: hostile policy and profile text
+
+Run on 2026-10-16. The features this scenario attacks are not built: portable policy
+is not enforced by any client ([#7](https://github.com/bestagentkits/ak-vault/issues/7))
+and there are no shared profiles, discovery or `run`
+([agentkit#2299](https://github.com/bestagentkits/agentkit/issues/2299)). The run covers
+the two surfaces a hostile vault member can reach today.
+
+**Protocol policy evaluator** (TypeScript `effectiveGrant` and Go `EffectiveGrant`).
+Each hostile policy is parsed from raw JSON text, as a device would receive it. Refused
+as `bad_request`, so the caller denies: duplicate keys hiding a long TTL,
+`__proto__` and `constructor` keys, case, fullwidth and trailing-space lookalike
+fields, `grant`, `exec` and nested-policy fields, exponent, fractional, negative and
+above-2^53 TTLs, wrong types, lone surrogates, a byte-order mark, trailing data,
+and policy text instead of an object; an unknown item sensitivity is refused the same
+way. Accepted policies only narrowed: `*`, `proj_*`, `c*` and `$(id)` in allow and
+deny lists are literals, an allow
+list cannot add an entry, and `require_approval:false` cannot lift local approval or
+the approval of a high-sensitivity item. Instruction text in `description`,
+`when_to_use` and `urls` is returned verbatim and leaves the grant exactly as without
+it. A randomized check (2,000 local grant and policy pairs per language, valid and
+hostile, fixed seed) found no widening.
+
+**Sync client** at agentkit `dev`
+[`4aff1984b`](https://github.com/bestagentkits/agentkit/tree/4aff1984bf805e5d3a4e09e8376039692be65e83). An
+uncommitted engine-level probe had an enrolled member seal and push, through the real
+engine and the fake Worker, a `policy` item with grant-everything text and `grants`,
+`approvals`, `trust`, `exec` and `when_to_use` meta, items of kind `profile`, `Policy`
+and `grant`, and a secret named `SYNTH_SHELL_$(id)` with shell and instruction text in
+its value and meta. On the victim's sync the policy item was cached as ciphertext only,
+the other three were reported `unapplied: unsupported_kind` and stayed out of the
+Store, the secret was stored as inert data with only the mapped metadata, no command
+ran, and the sync wrote no grant, pending-request or trust file. The probe source is
+attached to [agentkit#2478](https://github.com/bestagentkits/agentkit/issues/2478). The full
+`secretsync/...` and `secretscmd/...` suites passed at the same commit with the probe
+in place.
+
+Findings: none that widens a grant or runs a command. That engine-level path has no
+committed test, filed as hardening
+([agentkit#2478](https://github.com/bestagentkits/agentkit/issues/2478)), which also
+records a design note for #7 and agentkit#2299: the client carries unknown meta keys
+forward on its next push under its own signature, so record authorship alone cannot
+attribute profile text once profiles read from meta.
 
 ## Scenario 14: workflow and settings review
 
@@ -135,6 +179,8 @@ analytics counted, and one attempt was repeated because tail never connected.
   covers Workers Observability, `wrangler tail` and analytics with production's
   observability settings plus traces. It does not cover invocation logs turned on,
   Logpush or other account-level sinks, and tail is best effort.
-- **Client policy and discovery** (scenario 13), until the feature exists.
+- **Client policy and discovery** (scenario 13): the run covered the policy evaluator
+  and the sync client's handling of pulled items; the policy and discovery features
+  must be attacked again when they exist.
 - **Review.** This run is the owner's agents testing their own code; it does
   not satisfy the [review](./release-gates.md#review-by-the-owner) gate.
