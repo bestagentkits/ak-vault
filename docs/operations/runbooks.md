@@ -312,7 +312,7 @@ Restoring a vault is **an incident in itself**:
 - Revocations live in the separate revocation registry object. Never restore that
   object to before a revocation: it would un-revoke sessions and devices.
 - How clients re-converge after a deliberate restore is not yet specified
-  ([ADR 0001 open items](../adr/0001-opt-in-zero-knowledge-sync.md#open-items-before-approval)).
+  ([ADR 0001 open items](../adr/0001-opt-in-zero-knowledge-sync.md#open-items)).
   Until it is, restore only to recover from server-side corruption, one vault at a
   time, and expect the vault owner's devices to need manual reconciliation.
 
@@ -325,7 +325,7 @@ backups until the [cost model](./cost-model.md) justifies it.
 
 | Key | Owner | Procedure |
 |---|---|---|
-| Token signing keys (JWKS) | ak-web ([ak-web#568](https://github.com/bestagentkits/ak-web/issues/568)) | ak-web publishes the new key, issues with it, then retires the old one. The Worker accepts only `kid`s present in the current JWKS. Its cache (`worker/src/auth/jwks.ts`) refreshes every 5 minutes, and an unknown `kid` forces a refetch at most every 30 s, so wait at least 5 minutes after publishing before issuing with the new key. |
+| Token signing keys (JWKS) | ak-web ([ak-web#568](https://github.com/bestagentkits/ak-web/issues/568)); production config provenance in [production deploy control](../security/release-gates.md#production-deploy-control) | ak-web publishes the new key, issues with it, then retires the old one. The Worker accepts only `kid`s present in the current JWKS. Its cache (`worker/src/auth/jwks.ts`) refreshes every 5 minutes, and an unknown `kid` forces a refetch at most every 30 s, so wait at least 5 minutes after publishing before issuing with the new key. |
 | Revocation webhook HMAC secret | This repo + ak-web | Generate a new secret in the approved secret store, set it on the Worker with `wrangler secret put <NAME> --env <env>` (name from the Worker config), update the ak-web sender, then verify a test revocation is accepted. The Worker accepts a current and a previous secret (both names in `worker/src/env.ts`): set the old value as the previous secret and the new value as the current one, switch the sender, verify, then delete the previous secret. |
 | Cloudflare API token used by CI | Repository admin | Rotate in Cloudflare, update the GitHub Environment secret, run the staging deploy. |
 | Vault keys | Clients | Not an operator action; see [key lifecycle](../security/key-lifecycle-and-recovery.md). |
