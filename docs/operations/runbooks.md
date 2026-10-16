@@ -368,10 +368,12 @@ backups until the [cost model](./cost-model.md) justifies it.
 
 Every authenticated `/v1` request makes one call to the single `global` revocation
 registry object, so its request rate is the service's capacity signal
-([#65](https://github.com/bestagentkits/ak-vault/issues/65)). The ceiling is derived,
-not measured: about 8 to 10 checks a second from the lab's active time per check
-([cost model](./cost-model.md)); the true knee is unknown until a lab ramp test
-records it. Past the knee, requests queue and then fail closed with `503`.
+([#65](https://github.com/bestagentkits/ak-vault/issues/65)). A lab ramp test put
+its knee at about 1,000 checks a second
+([cost model](./cost-model.md#revocation-registry-throughput),
+[#91](https://github.com/bestagentkits/ak-vault/issues/91)). The earlier 8 to 10 a
+second was derived from active time per check and was wrong. Past the knee, requests
+queue and, on bursts, fail closed with `503`.
 
 **Query (owner, read-only).** With a Cloudflare token that has analytics read access
 (never paste it or the account or namespace identifiers anywhere), query the GraphQL
@@ -403,10 +405,11 @@ queueing or failing; check which before treating it as capacity. Read that rate 
 Workers Logs, where the Worker logs status and code only, and not from `wrangler tail`,
 which exposes request headers.
 
-**Threshold.** Alert the owner when the registry sustains **4 checks a second for
-15 minutes** (50% of the conservative 8 checks a second), and on any sustained
-`503 unauthorized`. Once the lab ramp records the real knee, set the threshold to 50%
-of it and update this section and the [cost model](./cost-model.md). A scheduled check
+**Threshold.** Alert the owner when the registry sustains **500 checks a second for
+15 minutes** (half the measured knee of about 1,000), and on any sustained
+`503 unauthorized`. Re-run the [ramp test](../../worker/scripts/registry-load/README.md)
+after any change to the registry or the request path before it, and set the threshold
+to half the new knee here and in the [cost model](./cost-model.md). A scheduled check
 in CI needs an analytics-read-only token, which is an owner decision; until then the
 query above is the minimum and the owner runs it.
 

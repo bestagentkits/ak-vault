@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p test/tsconfig.json && tsc -p tsconfig.node.json && tsc -p scripts/platform-log-scan/lab-worker/tsconfig.json",
     "smoke:staging": "tsx scripts/staging-smoke.ts",
     "scan:platform-logs": "tsx scripts/platform-log-scan/run-platform-log-scan.ts",
-    "cost:measure": "tsx scripts/cost-measurement/run-cost-measurement.ts"
+    "cost:measure": "tsx scripts/cost-measurement/run-cost-measurement.ts",
+    "registry:load": "tsx scripts/registry-load/run-registry-load.ts"
   },
   "dependencies": {
     "@ak-vault/protocol": "workspace:*"

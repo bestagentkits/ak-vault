@@ -40,15 +40,21 @@ showed both), and they do not verify change-log contents against removal fences.
 user on such a release upgrades, or revokes a lost device in the ak-web account,
 which the Worker enforces on the device's next request.
 
-**Capacity.** Every authenticated request checks the single revocation registry,
-which the lab's measured active time per check puts at roughly 8 to 10 checks a
-second for the whole service (derived, not measured)
-([cost model](../operations/cost-model.md)). Beyond that, requests queue and then
-fail closed with `503`. With the client's 15 s default sync interval that is a few
-dozen active devices. The query, alert threshold and response are in the
+**Capacity.** Every authenticated request checks the single revocation registry. A
+lab ramp test put its knee between 800 and 1,000 checks a second for the whole
+service ([cost model](../operations/cost-model.md#revocation-registry-throughput),
+[#91](https://github.com/bestagentkits/ak-vault/issues/91)): at 1,000 a second registry
+wall p99 rose from about 200 ms to 1.2 s, and 800 a second ran without that rise. That
+is one lab run from one client machine, with requests the registry refuses (all three
+lookups, no vault object), so treat it as the registry's own limit, not a measured
+end-to-end figure. Past
+the knee, requests queue and, on bursts, fail closed with `503`. With the client's
+15 s default sync interval and one request per sync, the knee is about 15,000 active
+devices. The query, alert threshold (500 checks a second sustained, half the knee)
+and response are in the
 [runbook](../operations/runbooks.md#revocation-registry-capacity-alert)
 ([#65](https://github.com/bestagentkits/ak-vault/issues/65)); replicate or shard
-revocation state before the rate nears the ceiling.
+revocation state before demand nears the knee.
 
 CI evidence cited below is the `main` run at `b25c2bb`
 ([CI run](https://github.com/bestagentkits/ak-vault/actions/runs/38858206218)); the
