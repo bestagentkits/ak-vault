@@ -165,8 +165,9 @@ These are accepted and must be stated wherever the guarantees are described:
   independent cryptographic review and with other release gates open
   ([release gates](./release-gates.md#owner-waivers)). It is pre-release and not
   yet recommended for production credentials. The latest released client
-  (`v3.0.0-beta.30`) also predates the removal-fence client: its removals are
-  refused and it does not check change-log contents against removal fences, so the
+  (`v3.0.0-beta.30`) also predates the removal-fence client: its removals and
+  recovery are refused, a lost device is revoked through ak-web instead, and it
+  does not check change-log contents against removal fences, so the
   fence guarantee above holds only for clients that include it
   ([agentkit#2469](https://github.com/bestagentkits/agentkit/issues/2469)).
 - **A live device can stall its own removal.** The fence must equal the current

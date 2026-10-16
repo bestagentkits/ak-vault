@@ -243,10 +243,10 @@
         <div class="section-head reveal">
           <span class="eyebrow">Part 4</span>
           <h2 id="lost-title">If a device is lost or stolen</h2>
-          <p>Some of this works today on the local vault; the device-removal steps arrive with sync.</p>
+          <p>Some of this works today on the local vault; the device-removal and recovery steps are in preview.</p>
         </div>
         <ol class="steps reveal">
-            <li class="is-planned"><div class="step-head"><h3>Revoke the lost device</h3><span class="badge badge-planned">planned</span></div><div class="step-body"><p>Once sync ships, a removed device is checked on every request, so it is refused even with an unexpired token. Removal also moves the vault to a new key epoch before new writes.</p></div></li>
+            <li class="is-planned"><div class="step-head"><h3>Revoke the lost device</h3><span class="badge badge-planned">preview</span></div><div class="step-body"><p>A removed device is checked on every request, so it is refused even with an unexpired token. Removal also moves the vault to a new key epoch before new writes. The released beta (<code>v3.0.0-beta.30</code>) cannot remove a device or recover yet: the service refuses them until a release with the removal-fence client. Until then, revoke the lost device in your AgentKit account, which the service enforces on its next request.</p></div></li>
             <li><div class="step-head"><h3>Rotate what it could read</h3><span class="badge badge-ok">available</span></div><div class="step-body"><p>Revocation cannot take back values the device already decrypted. Rotate sensitive credentials at the provider, then store the new value. This works today.</p>
                 <div class="terminal">
               <div class="terminal-bar"><span class="title">shell</span>
@@ -260,7 +260,7 @@
 <pre tabindex="0"><code id="g-revoke"><span class="p">$ </span>ak secrets revoke OPENAI_API_KEY --agent sha256:&lt;fingerprint&gt;
 <span class="p">$ </span>ak secrets revoke --agent sha256:&lt;fingerprint&gt; --all</code></pre>
             </div></div></li>
-            <li class="is-planned"><div class="step-head"><h3>Lost every device? Recover with your password or recovery key</h3><span class="badge badge-planned">planned</span></div><div class="step-body"><p>A fresh device can enroll itself through the encrypted recovery bundle, which also carries the owner's public trust anchor and the newest witnessed checkpoint so it does not have to trust the server.</p></div></li>
+            <li class="is-planned"><div class="step-head"><h3>Lost every device? Recover with your password or recovery key</h3><span class="badge badge-planned">preview</span></div><div class="step-body"><p>A fresh device can enroll itself through the encrypted recovery bundle, which also carries the owner's public trust anchor and the newest witnessed checkpoint so it does not have to trust the server. Not yet on the released beta; see the step above.</p></div></li>
         </ol>
       </div>
     </section>

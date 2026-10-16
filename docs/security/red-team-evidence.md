@@ -60,9 +60,12 @@ repository settings:
   `production` requires a reviewer. Cloudflare credentials are environment secrets
   exposed only to the deploy step; checkout uses `persist-credentials: false`;
   every action is pinned by commit SHA.
-- The production reviewer may approve their own run during bootstrap. This is the
-  recorded [bootstrap exception](./release-gates.md#production-deploy-control), not a
-  new finding.
+- At the time of the run the production reviewer could approve their own run during
+  bootstrap, the recorded
+  [bootstrap exception](./release-gates.md#production-deploy-control), not a new
+  finding. That exception ended on 2026-10-16: only the owner approves production
+  now. The staging environment still holds the formerly shared Cloudflare token,
+  which is the open part of the same exception.
 
 Gaps that a fork cannot exploit today, filed as hardening: an unused organization
 secret is visible to this repository (#43), the `main` ruleset does not require a

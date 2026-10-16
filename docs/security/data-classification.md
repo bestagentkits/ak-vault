@@ -71,9 +71,9 @@ so it carries no free text.
   Persisted logs, traces, analytics and the Durable Object dump showed none of them.
   **Complement named in the waiver:** grant Workers Tail permission on the
   production Worker's account only to the operators who need it (the production
-  deploy token has none); the owner's confirmation of that is an open item in the
-  [release gates](./release-gates.md),
-  and do not attach a Tail Worker or Logpush job that stores request headers. Renaming the headers so the platform
+  deploy token has none). The owner's confirmation of that is an open item in the
+  [release gates](./release-gates.md). Do not attach a Tail Worker or Logpush job
+  that stores request headers. Renaming the headers so the platform
   redacts them remains open as hardening
   ([#61](https://github.com/bestagentkits/ak-vault/issues/61)).
 

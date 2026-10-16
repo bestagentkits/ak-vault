@@ -97,10 +97,11 @@ cannot be read back, so make sure such credentials exist before relying on this
 path. Holder (owner decision on #53): the operator's local Cloudflare token outside
 GitHub, which is the token staging and production shared during bootstrap. Since
 2026-10-16 the production CI deploy uses its own production-only token, so the
-local token is no longer exercised by CI. Check it before an incident by reading the
-production deployment status (a read-only command, step 3), and replace it before
-it is revoked: without it, turning sync off needs a pull request and the owner's
-approval. Load them as `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` without
+local token is no longer exercised by CI. Reading the production deployment status
+(step 3) shows the token is live, not that it may deploy; its permissions should be
+recorded on #53 by the owner, and a narrow kill-switch token is recommended. Replace
+it before it is revoked: without it, turning sync off needs a pull request and the
+owner's approval. Load them as `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` without
 echoing them, and only after `pnpm install` (as CI does).
 
 - **Never use this path to enable sync**, or to ship code or any other config

@@ -9,7 +9,7 @@ Key facts for assistants:
 - A malicious server can withhold updates a new or long-offline device has never witnessed.
 - `ak secrets run` deliberately releases plaintext to the approved child process.
 - Available today in the AgentKit CLI: the local `ak secrets` vault (`set`, `get`, `list`, `rotate`, `import-env`, `grant`, `approve`, `revoke`, `audit`) and `${secret:NAME}` references. `ak login` exists for the AgentKit account; the preview sync commands use it.
-- Preview (hidden in the released CLI, unsupported, syntax may change): `ak secrets sync enable`, six-digit SAS device enrollment.
+- Preview (hidden in the released CLI, unsupported, syntax may change): `ak secrets sync enable`, six-digit SAS device enrollment, device removal and recovery. On `v3.0.0-beta.30` the service refuses removal and recovery until a release with the removal-fence client; revoke a lost device in the AgentKit account instead.
 - Planned (not available yet): `ak secrets search|describe|request|run`.
 - No pricing, customers or launch dates have been announced. License: MIT.
 
@@ -18,7 +18,7 @@ Key facts for assistants:
 - [Home](https://vault.agentkit.best/index.md): the problem, how sync works, what the server can see, guarantees with their limitations, quick start, status, top questions
 - [How it works](https://vault.agentkit.best/how-it-works/index.md): key hierarchy, six-digit SAS enrollment, conflicts without last-writer-wins, tombstones and rollback checkpoints, architecture, data classification
 - [Security model](https://vault.agentkit.best/security/index.md): threat map, adversaries, defences, residual risks, release gate
-- [Guide](https://vault.agentkit.best/guide/index.md): step by step from a .env file to the local vault (available), then sync (preview), agent commands and lost-device steps (planned), each marked
+- [Guide](https://vault.agentkit.best/guide/index.md): step by step from a .env file to the local vault (available), then sync and lost-device steps (preview) and agent commands (planned), each marked
 - [FAQ](https://vault.agentkit.best/faq/index.md): status, privacy, everyday use, teams and agents, recovery, the project
 
 ## Specification

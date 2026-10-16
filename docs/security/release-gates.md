@@ -17,8 +17,8 @@ ADR 0001 approval, every red-team scenario executed (scenario 13), the staging
 restore, the staging cost measurement and the external review. Also open while
 production is live: confirming that the staging and production JWKS share no key
 material ([staging soak](#staging-soak)), and the owner confirming on #8 that
-Workers Tail access on production is limited, the complement to the tail waiver.
-Both bootstrap deploy exceptions ended before the deploy
+Workers Tail access on production is limited, the complement to the tail waiver;
+and retiring the formerly shared Cloudflare token, which staging still holds
 ([below](#production-deploy-control)). The owner's decisions on #8 enabled
 production sync with these items open; they still gate GA. The waivers recorded on
 #8 are listed [below](#owner-waivers); nothing else is waived, and sync is not GA.
@@ -26,8 +26,9 @@ production sync with these items open; they still gate GA. The waivers recorded 
 **Released client lags the Worker.** The latest agentkit release with the preview
 sync commands, `v3.0.0-beta.30`, predates the removal-fence client (agentkit `dev`
 `67ff8e6`). Against the production Worker its device and member removals fail closed
-(`400 bad_request`, no signed `log_head`), and it does not verify change-log contents
-against removal fences. A release that includes the fence client is tracked in
+(`400 bad_request`, no signed `log_head`), recovery is blocked as well (the pre-fence
+client in the [Docker e2e run on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6206840562)
+showed both), and it does not verify change-log contents against removal fences. A release that includes the fence client is tracked in
 [agentkit#2469](https://github.com/bestagentkits/agentkit/issues/2469). Until then,
 a beta.30 user who loses a device revokes it in the ak-web account, which the Worker
 enforces on the device's next request.
@@ -37,7 +38,8 @@ which the lab measurement puts at roughly 10 checks a second for the whole servi
 ([cost model](../operations/cost-model.md)). Beyond that, requests queue and then
 fail closed with `503`. With the client's 15 s default sync interval that is a few
 dozen active devices. Watch the registry's request rate in the Durable Object
-analytics, and cache or shard revocation state before it nears that ceiling.
+analytics ([#65](https://github.com/bestagentkits/ak-vault/issues/65)), and cache or
+shard revocation state before it nears that ceiling.
 
 CI evidence cited below is the `main` run at `b25c2bb`
 ([CI run](https://github.com/bestagentkits/ak-vault/actions/runs/38858206218)); the
@@ -59,7 +61,7 @@ page and docs, and its own CI run is linked from its pull request.
       recipient, reader and machine write denial.
       Evidence: the CI TypeScript job (above) runs [`worker/test/`](../../worker/test/)
       in workerd; the cases are mapped in the [red-team evidence](./red-team-evidence.md).
-- [x] Disclosure scan, **waived for live tail**: a full Durable Object dump, Worker logs, traces, metrics and
+- [x] Disclosure scan, **ticked by owner waiver for live tail; the waiver's complement (Workers Tail access limited) is open**: a full Durable Object dump, Worker logs, traces, metrics and
       every error response from a run seeded with known plaintext values and names
       contain none of them ([data classification](./data-classification.md)).
       Platform logs, traces and analytics were scanned with seeded traffic on a
@@ -194,8 +196,9 @@ Landing page and health endpoints are not affected by the flag.
   and both environments allow deployments from `main` only. Cloudflare credentials
   are scoped to the deploy step; actions are pinned by commit SHA. Missing
   credentials fail the job rather than skipping it.
-- Production and staging use separate Cloudflare credentials, separate Worker
-  secrets and distinct token audiences, so neither accepts the other's tokens.
+- Production and staging use separate Worker secrets and distinct token audiences,
+  so neither accepts the other's tokens. Production CI deploys with its own
+  Cloudflare token; staging's credential is not yet separated (below).
   The Worker never receives ak-web's CLI HS256 signing key.
 - **Bootstrap exceptions (owner decision, 2026-10-13):** an agent could approve the
   production deployment, and staging and production shared one Cloudflare API token
@@ -207,8 +210,12 @@ Landing page and health endpoints are not affected by the flag.
   ([record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209542641)):
   production deploys use a production-only Cloudflare token without Workers Tail
   permission, set as the `production` environment secret; the next production
-  deploy proves its scope. Both exceptions are closed. Worker secrets stay
-  separate per environment.
+  deploy proves its scope. **Open:** the `staging` environment secret was not
+  replaced, so staging, whose deploys run from `main` without a reviewer, still
+  holds the formerly shared token with production scope, and the operator's
+  emergency kill-switch token is that same token. Close this when staging gets a
+  staging-only token (and the operator a narrow kill-switch token) and that is
+  recorded on #8. Worker secrets stay separate per environment.
 - GitHub secret scanning, push protection and private vulnerability reporting stay
   enabled on the repository (enabled 2026-10-13; re-check the security settings
   before GA rather than assuming), and no token, key or personal data is committed.

@@ -73,9 +73,9 @@ Planned commands that let an agent find and request secrets without ever seeing 
 
 ## Part 4: If a device is lost or stolen
 
-Some of this works today on the local vault; the device-removal steps arrive with sync.
+Some of this works today on the local vault; the device-removal and recovery steps are in preview.
 
-1. **Revoke the lost device** (planned). Once sync ships, a removed device is checked on every request, so it is refused even with an unexpired token. Removal also moves the vault to a new key epoch before new writes.
+1. **Revoke the lost device** (preview). A removed device is checked on every request, so it is refused even with an unexpired token. Removal also moves the vault to a new key epoch before new writes. The released beta (`v3.0.0-beta.30`) cannot remove a device or recover yet: the service refuses them until a release with the removal-fence client. Until then, revoke the lost device in your AgentKit account, which the service enforces on its next request.
 2. **Rotate what it could read** (available). Revocation cannot take back values the device already decrypted. Rotate sensitive credentials at the provider, then store the new value.
    ```sh
    ak secrets rotate OPENAI_API_KEY
@@ -85,7 +85,7 @@ Some of this works today on the local vault; the device-removal steps arrive wit
    ak secrets revoke OPENAI_API_KEY --agent sha256:<fingerprint>
    ak secrets revoke --agent sha256:<fingerprint> --all
    ```
-4. **Lost every device? Recover with your password or recovery key** (planned). A fresh device can enroll itself through the encrypted recovery bundle, which also carries the owner's public trust anchor and the newest witnessed checkpoint so it does not have to trust the server.
+4. **Lost every device? Recover with your password or recovery key** (preview; not yet on the released beta, see step 1). A fresh device can enroll itself through the encrypted recovery bundle, which also carries the owner's public trust anchor and the newest witnessed checkpoint so it does not have to trust the server.
 
 ## Keep reading
 
