@@ -402,19 +402,22 @@ async function vaultExists(): Promise<boolean | null> {
   const current = await currentBookmark(vaultId);
   const signed = signOperatorRequest(operatorSecret, base, { action: 'restore', vault_id: vaultId, bookmark: preGenesis, expected_current: current });
   const res = await operator(signed);
-  if (res.status !== 200) {
-    say(`info restore to the pre-genesis bookmark: ${res.status} ${codeOf(res) ?? ''} (not possible on this platform)`);
+  if (res.status === 400 && codeOf(res) === 'bad_request') {
+    say('info restore to the pre-genesis bookmark: 400 bad_request (the platform refuses it)');
   } else {
+    if (res.status !== 200) fail(`restore to the pre-genesis bookmark: expected 200 or a platform 400, got ${res.status} ${codeOf(res) ?? ''}`);
     const undo = res.json?.['undo_bookmark'] as string;
     say(`ok   restore to the pre-genesis bookmark (200), undo_bookmark ${short(undo)}`);
     const t0 = Date.now();
     let exists = await vaultExists();
     while (exists !== false && Date.now() - t0 < 30_000) exists = await vaultExists();
-    say(`${exists === false ? 'ok  ' : 'FAIL'} after it, the object reports vault_exists ${String(exists)}`);
+    if (exists !== false) fail(`after the pre-genesis restore the object reports vault_exists ${String(exists)}`);
+    say('ok   after it, the object reports vault_exists false');
     expectStatus('a client read of the restored pre-genesis object', await api(ownerDev, 'GET', `${v}/membership`), 404, 'not_found');
     await restore(undo, 'undo of the pre-genesis restore');
     await waitForLogSeq(laptopDev, 5, 'vault after undoing the pre-genesis restore');
-    say(`ok   vault_exists ${String(await vaultExists())} after the undo`);
+    if ((await vaultExists()) !== true) fail('the vault does not exist after undoing the pre-genesis restore');
+    say('ok   vault_exists true after the undo');
     await laptop.expectPull('laptop pulls after undoing the pre-genesis restore', { accept: true, logSeq: 5 });
   }
 }

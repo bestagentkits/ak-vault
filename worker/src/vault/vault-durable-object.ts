@@ -123,8 +123,8 @@ export class VaultDurableObject extends DurableObject<Env> {
   async operatorScheduleRestore(target: string, expectedCurrent: string): Promise<ApiResult> {
     try {
       this.refuseWhileRestorePending();
-      const undo = await scheduleRestore(this.ctx.storage, target, expectedCurrent, (pending) => {
-        this.restorePending = pending;
+      const undo = await scheduleRestore(this.ctx.storage, target, expectedCurrent, () => {
+        this.restorePending = true;
       });
       return okResult({ restored_to: target, undo_bookmark: undo });
     } catch (err) {

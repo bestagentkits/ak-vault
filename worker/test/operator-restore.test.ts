@@ -180,8 +180,8 @@ class FakePitr implements PointInTimeStorage {
   restoredTo: string | null = null;
   failWith: Error | null = null;
   pendingLog: boolean[] = [];
-  setPending = (pending: boolean): void => {
-    this.pendingLog.push(pending);
+  markPending = (): void => {
+    this.pendingLog.push(true);
   };
   bookmark(n: number): string {
     return `0000${n.toString(16).padStart(8, '0')}`;
@@ -206,7 +206,7 @@ class FakePitr implements PointInTimeStorage {
 describe('point-in-time restore logic', () => {
   it('schedules a restore at the expected point and returns the undo bookmark', async () => {
     const pitr = new FakePitr();
-    const undo = await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.setPending);
+    const undo = await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.markPending);
     expect(pitr.pendingLog).toEqual([true]);
     expect(undo).toBe(pitr.bookmark(10));
     expect(pitr.restoredTo).toBe(pitr.bookmark(4));
@@ -214,16 +214,16 @@ describe('point-in-time restore logic', () => {
 
   it('refuses a stale expected point, so a replayed restore does nothing', async () => {
     const pitr = new FakePitr();
-    await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.setPending);
+    await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.markPending);
     pitr.restoredTo = null;
-    await expect(scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.setPending)).rejects.toMatchObject({ code: 'conflict', status: 409 });
+    await expect(scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.markPending)).rejects.toMatchObject({ code: 'conflict', status: 409 });
     expect(pitr.restoredTo).toBeNull();
   });
 
   it('maps platform errors to a fixed message that echoes nothing', async () => {
     const pitr = new FakePitr();
     pitr.failWith = new Error(PLATFORM_TEXT);
-    const err = await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.setPending).catch((e: unknown) => e);
+    const err = await scheduleRestore(pitr, pitr.bookmark(4), pitr.bookmark(10), pitr.markPending).catch((e: unknown) => e);
     expect(err).toMatchObject({ code: 'bad_request', message: 'point-in-time recovery refused the request' });
     expect(String((err as Error).message)).not.toContain(PLATFORM_TEXT);
   });
@@ -231,7 +231,7 @@ describe('point-in-time restore logic', () => {
   it('refuses a platform value that is not a bookmark', async () => {
     const pitr = new FakePitr();
     pitr.getCurrentBookmark = async () => 'not a bookmark';
-    await expect(scheduleRestore(pitr, '0001', '0002', pitr.setPending)).rejects.toMatchObject({ code: 'internal' });
+    await expect(scheduleRestore(pitr, '0001', '0002', pitr.markPending)).rejects.toMatchObject({ code: 'internal' });
     expect(pitr.pendingLog).toEqual([]);
   });
 
@@ -240,12 +240,12 @@ describe('point-in-time restore logic', () => {
     refused.onNextSessionRestoreBookmark = async () => {
       throw new Error(PLATFORM_TEXT);
     };
-    await expect(scheduleRestore(refused, refused.bookmark(4), refused.bookmark(10), refused.setPending)).rejects.toMatchObject({ code: 'bad_request' });
+    await expect(scheduleRestore(refused, refused.bookmark(4), refused.bookmark(10), refused.markPending)).rejects.toMatchObject({ code: 'bad_request' });
     expect(refused.pendingLog).toEqual([true]);
 
     const malformed = new FakePitr();
     malformed.onNextSessionRestoreBookmark = async () => 'not a bookmark';
-    await expect(scheduleRestore(malformed, malformed.bookmark(4), malformed.bookmark(10), malformed.setPending)).rejects.toMatchObject({ code: 'internal' });
+    await expect(scheduleRestore(malformed, malformed.bookmark(4), malformed.bookmark(10), malformed.markPending)).rejects.toMatchObject({ code: 'internal' });
     expect(malformed.pendingLog).toEqual([true]);
   });
 

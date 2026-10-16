@@ -65,14 +65,14 @@ export async function bookmarkForTime(storage: PointInTimeStorage, atMs: number,
  * Schedule a restore to `target` if the object is still at `expectedCurrent`.
  * Returns the undo bookmark (the point just before the restore). The restore
  * applies when the object next starts; the caller must restart it, and
- * `setPending(true)` runs before the platform call (and is never undone) so the
+ * `markPending` runs before the platform call (and is never undone) so the
  * caller refuses every request until that restart.
  */
-export async function scheduleRestore(storage: PointInTimeStorage, target: string, expectedCurrent: string, setPending: (pending: boolean) => void): Promise<string> {
+export async function scheduleRestore(storage: PointInTimeStorage, target: string, expectedCurrent: string, markPending: () => void): Promise<string> {
   if (!isBookmark(target) || !isBookmark(expectedCurrent)) throw new ApiError('bad_request');
   const current = await currentBookmark(storage);
   if (current !== expectedCurrent) throw new ApiError('conflict', { message: 'the vault changed since the bookmark was read' });
-  setPending(true);
+  markPending();
   // From here the restore may be scheduled even if the call throws, so the object
   // stays pending (refusing requests) until it restarts: at worst one needless restart.
   return checkedBookmark(await pitr(() => storage.onNextSessionRestoreBookmark(target)));

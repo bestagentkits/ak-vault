@@ -24,8 +24,10 @@
  * restarts the object, confirms the restart by a new instance ID and returns the
  * target and the undo bookmark (`202` with `restart_confirmed: false` when the
  * restart could not be confirmed; any later operator request retries the restart
- * first, and answers `503` while it still cannot confirm it). Record both bookmarks on the incident issue:
- * nothing else keeps them. Logs record this route's template even when it is off;
+ * first, and answers `503` while it still cannot confirm it). Record both
+ * bookmarks on the incident issue: nothing else keeps them. When the pending state
+ * cannot be read, the object is restarted anyway (fail closed): that aborts client
+ * requests in flight on it, which retry. Logs record this route's template even when it is off;
  * responses cannot tell it from an unknown path.
  */
 import { b64decode, parseJson, utf8Decode, utf8Encode, concatBytes, b64decodeLength } from '@ak-vault/protocol';
