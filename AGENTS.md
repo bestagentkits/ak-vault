@@ -125,9 +125,14 @@ self-attest the external review or describe the waiver as a sign-off.
 
 - Only the owner approves production deployments. Agents never approve the
   `production` environment. Agent approval of production ended on 2026-10-16.
-  Production CI now has its own Cloudflare token, but staging still holds the
-  formerly shared one; that exception stays open in the
-  [release gates](./docs/security/release-gates.md#production-deploy-control).
+  Production CI has its own Cloudflare token. Staging's token can still reach the
+  production Worker; the owner closed that exception under code-owner review of
+  `.github/` and `worker/wrangler.jsonc`, in effect since 2026-10-16
+  ([release gates](./docs/security/release-gates.md#production-deploy-control)).
+  Agents act as the owner's GitHub account, so that review does not check agent
+  PRs: an agent never bypasses CI, never approves production, and never changes
+  `.github/`, `worker/wrangler.jsonc` or deploy-time dependencies beyond its
+  assigned issue.
 - Turning sync off goes through the
   [emergency kill switch](./docs/operations/runbooks.md#emergency-kill-switch). Agents
   may run it (sync off only, never on) without asking first, per the owner decision

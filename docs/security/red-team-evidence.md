@@ -64,8 +64,10 @@ repository settings:
   bootstrap, the recorded
   [bootstrap exception](./release-gates.md#production-deploy-control), not a new
   finding. That exception ended on 2026-10-16: only the owner approves production
-  now. The staging environment still holds the formerly shared Cloudflare token,
-  which is the open part of the same exception.
+  now. The staging environment still holds the formerly shared Cloudflare token;
+  the owner closed that part under code-owner review of `.github/` and
+  `worker/wrangler.jsonc` (in effect since 2026-10-16), with a stated residual risk (see the
+  [release gates](./release-gates.md#production-deploy-control)).
 
 Gaps that a fork cannot exploit today, filed as hardening: an unused organization
 secret is visible to this repository (#43), the `main` ruleset does not require a

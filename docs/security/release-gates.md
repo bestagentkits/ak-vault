@@ -17,10 +17,8 @@ ADR 0001 approval, every red-team scenario executed (scenario 13), the staging
 restore, the staging cost measurement and the external review. Also open while
 production is live: confirming that the staging and production JWKS share no key
 material ([staging soak](#staging-soak)), and the owner confirming on #8 that
-Workers Tail access on production is limited, the complement to the tail waiver;
-and retiring the formerly shared Cloudflare token, which staging still holds
-([below](#production-deploy-control)). The owner's decisions on #8 enabled
-production sync with these items open; they still gate GA. The waivers recorded on
+Workers Tail access on production is limited, the complement to the tail waiver.
+The owner's decisions on #8 enabled production sync with these items open; they still gate GA. The waivers recorded on
 #8 are listed [below](#owner-waivers); nothing else is waived, and sync is not GA.
 
 **Released client lags the Worker.** The latest agentkit release with the preview
@@ -171,7 +169,8 @@ does not satisfy the external review.
 | 2026-10-16 | The Docker two-device e2e replaces the staging two-device round trip and the staging soak; no authenticated staging session is used. Residual risk is stated under [staging soak](#staging-soak). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6207406980) |
 | 2026-10-16 | The external-review gate is waived for enabling `VAULT_SYNC_ENABLED=true` on the production Worker. The external review stays open on #8. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248) |
 | 2026-10-16 | Production sync is fully live: ak-web production mints vault tokens together with the Worker flag, so any logged-in user running the preview `ak secrets sync` commands can sync to production before the external review. Docs say it is pre-release, not externally reviewed and not yet recommended for production credentials. This supersedes the earlier statement that minting stays off. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209425010) |
-| 2026-10-16 | The owner approves the deploy that enables production sync while the shared-Cloudflare-token bootstrap exception stays an open item ([production deploy control](#production-deploy-control)). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209176887) |
+| 2026-10-16 | The owner approves the deploy that enables production sync while the shared-Cloudflare-token bootstrap exception stays an open item ([production deploy control](#production-deploy-control)). Superseded by the next row. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209176887) |
+| 2026-10-16 | Staging keeps a Cloudflare token that can reach the production Worker, because Cloudflare cannot scope a Workers token to one script. The exception closes under owner code review of `.github/` and `worker/wrangler.jsonc`, in effect since 2026-10-16 ([production deploy control](#production-deploy-control)). Residual risk: agents act as the owner's GitHub account. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210230956) |
 
 ## Feature flag and kill switch
 
@@ -199,7 +198,8 @@ Landing page and health endpoints are not affected by the flag.
   credentials fail the job rather than skipping it.
 - Production and staging use separate Worker secrets and distinct token audiences,
   so neither accepts the other's tokens. Production CI deploys with its own
-  Cloudflare token; staging's credential is not yet separated (below).
+  Cloudflare token. Staging's token can still reach the production Worker; the
+  owner accepted that under code-owner review (below), not a separate credential.
   The Worker never receives ak-web's CLI HS256 signing key.
 - **Bootstrap exceptions (owner decision, 2026-10-13):** an agent could approve the
   production deployment, and staging and production shared one Cloudflare API token
@@ -213,15 +213,28 @@ Landing page and health endpoints are not affected by the flag.
   production deploys use a production-only Cloudflare token without Workers Tail
   permission, set as the `production` environment secret. That record covers only
   the `production` secret: the `staging` environment secret is unchanged since
-  2026-10-13, although the record says staging keeps its own secret, so the owner
-  should correct the record or replace the staging secret. The next production
+  2026-10-13, although the record says staging keeps its own secret; the later
+  decision below supersedes that claim. The next production
   deploy shows the new token can deploy; that it lacks Workers Tail rests on the
-  owner's record. **Open:** the `staging` environment secret was not
-  replaced, so staging, whose deploys run from `main` without a reviewer, still
-  holds the formerly shared token with production scope, and the operator's
-  emergency kill-switch token is that same token. Close this when staging gets a
-  staging-only token (and the operator a narrow kill-switch token) and that is
-  recorded on #8. Worker secrets stay separate per environment.
+  owner's record. The rest of the second exception closed by owner decision
+  ([decision on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6210230956)) under a mitigation instead
+  of a separate credential: Cloudflare cannot scope a Workers token to one script,
+  so the `staging` secret, which deploys from `main` without a reviewer, can still
+  reach the production Worker, and the operator's emergency kill-switch token is
+  that same token. The mitigation is that `.github/` and `worker/wrangler.jsonc` are
+  code-owned by the owner ([#67](https://github.com/bestagentkits/ak-vault/pull/67))
+  and the `main` ruleset requires code-owner review, with the repository admin role
+  allowed to bypass in pull-request mode only. Both conditions were met on
+  2026-10-16 (#67 merged; the ruleset requires code-owner review); check the
+  ruleset rather than assuming. Maintainers then cannot change `.github/` or `worker/wrangler.jsonc`
+  without the owner's review. The deploy job also runs `wrangler` from
+  dependencies resolved by the `package.json` files and the lockfile, which are not
+  code-owned, so a dependency change can still reach the deploy token without the
+  owner's review
+  ([#68](https://github.com/bestagentkits/ak-vault/issues/68)). **Residual risk:** agents act as the owner's
+  GitHub account, so for agent PRs the control rests on the
+  [AGENTS.md](../../AGENTS.md) rules (green CI, agents never approve production).
+  Worker secrets stay separate per environment.
 - GitHub secret scanning, push protection and private vulnerability reporting stay
   enabled on the repository (enabled 2026-10-13; re-check the security settings
   before GA rather than assuming), and no token, key or personal data is committed.

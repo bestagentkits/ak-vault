@@ -72,8 +72,8 @@ so it carries no free text.
   **Complement named in the waiver:** grant Workers Tail permission on the
   production Worker's account only to the operators who need it (the production
   deploy token has none). The formerly shared token, still held by the `staging`
-  environment and the operator, is in scope until it is replaced. The owner's
-  confirmation and that replacement are open items in the
+  environment and the operator, stays in scope: Cloudflare cannot scope it to one
+  Worker. The owner's confirmation is an open item in the
   [release gates](./release-gates.md#production-deploy-control). Do not attach a Tail Worker or Logpush job
   that stores request headers. Renaming the headers so the platform
   redacts them remains open as hardening
