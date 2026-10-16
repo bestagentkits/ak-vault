@@ -8,6 +8,7 @@
  *   AKV_OPERATOR_SECRET_PATH=<file holding staging's VAULT_OPERATOR_SECRET> \
  *     tsx scripts/staging-restore-rehearsal.ts [https://vault-staging.agentkit.best]
  *
+ * The Worker URL may be omitted; any other origin than staging is refused.
  * Optional AK_STAGING_WEB_ORIGIN and AK_STAGING_SMOKE_STATE_PATH as for the smoke
  * (`scripts/staging-smoke.ts`); the two smoke devices are reused.
  *
@@ -58,7 +59,8 @@ import { DEFAULT_STATE_PATH, loadDeviceSecrets, type DeviceSecrets } from './sta
 
 const AUDIENCE = 'https://vault-staging.agentkit.best';
 const base = parseSecureOrigin(process.argv[2] ?? AUDIENCE, 'the Worker URL');
-if (base === 'https://vault.agentkit.best') fail('this rehearsal never runs against production');
+// Staging only: the one origin this rehearsal may touch.
+if (base !== AUDIENCE) fail('this rehearsal runs only against the staging Worker');
 const akWebOrigin = parseSecureOrigin(process.env['AK_STAGING_WEB_ORIGIN'] || DEFAULT_AK_WEB_ORIGIN, 'AK_STAGING_WEB_ORIGIN');
 const session = readCliSession(process.env['AK_STAGING_SESSION_TOKEN_PATH']);
 const operatorSecret = readOperatorSecret(process.env['AKV_OPERATOR_SECRET_PATH']);
@@ -254,7 +256,7 @@ class Client {
     } catch (err) {
       const code = isAkvError(err) ? err.code : (err as { code?: string }).code;
       if (outcome.accept || code !== outcome.code) throw err;
-      say(`ok   ${step}: refused with ${code} (${(err as Error).message})`);
+      say(`ok   ${step}: refused with ${code}`);
       return null;
     }
   }
@@ -303,6 +305,8 @@ const owner = new Client(ownerDev);
 const laptop = new Client(laptopDev);
 
 say('== 1. synthetic vault: genesis, second device, two writes, both devices witness log_seq 2');
+const preGenesis = await currentBookmark(vaultId);
+say(`ok   bookmark of the object before genesis ${short(preGenesis)}`);
 const recovery = signKeyPairFromSeed(randomBytes(32));
 const ownerWrap = wrapToDevice({ vk, vaultId, keyEpoch: 1, recipient: ownerDev.keys.record });
 const genesis = buildGenesisEvent(
@@ -372,7 +376,7 @@ try {
   checkRollback(laptop.witness!.checkpoint, { vault_id: vaultId, membership_seq: forked.state.seq, membership_head: forked.state.head, log_seq: forked.logSeq, state_digest: forked.digests[forked.logSeq]!, key_epoch: forked.state.key_epoch });
   say('info checkRollback alone (sequence comparison only) passes on the fork; the witnessed-position digest and head check is what refuses it');
 } catch (err) {
-  say(`info checkRollback alone also refuses the fork (${(err as Error).message})`);
+  say(`info checkRollback alone also refuses the fork (${isAkvError(err) ? err.code : 'error'})`);
 }
 
 say('== 7. undo: restore to the undo bookmark');
@@ -388,5 +392,31 @@ say('ok   laptop state digest at log_seq 4 equals its pre-restore checkpoint');
 await owner.expectPull('owner (witnessed the post-restore log_seq 5) pulls after the undo', { accept: false, code: 'rollback' });
 say('     the owner\'s post-restore writes are gone: refused as a rollback, not accepted silently');
 await write(laptopDev, randomId(), 0, 'synthetic-e1', 'a new write after the undo (log_seq 5)');
+
+say('== 8. a restore to before genesis, and its undo');
+async function vaultExists(): Promise<boolean | null> {
+  const res = await operator(signOperatorRequest(operatorSecret, base, { action: 'bookmark', vault_id: vaultId, at_ms: null }));
+  return res.status === 200 ? res.json?.['vault_exists'] === true : null;
+}
+{
+  const current = await currentBookmark(vaultId);
+  const signed = signOperatorRequest(operatorSecret, base, { action: 'restore', vault_id: vaultId, bookmark: preGenesis, expected_current: current });
+  const res = await operator(signed);
+  if (res.status !== 200) {
+    say(`info restore to the pre-genesis bookmark: ${res.status} ${codeOf(res) ?? ''} (not possible on this platform)`);
+  } else {
+    const undo = res.json?.['undo_bookmark'] as string;
+    say(`ok   restore to the pre-genesis bookmark (200), undo_bookmark ${short(undo)}`);
+    const t0 = Date.now();
+    let exists = await vaultExists();
+    while (exists !== false && Date.now() - t0 < 30_000) exists = await vaultExists();
+    say(`${exists === false ? 'ok  ' : 'FAIL'} after it, the object reports vault_exists ${String(exists)}`);
+    expectStatus('a client read of the restored pre-genesis object', await api(ownerDev, 'GET', `${v}/membership`), 404, 'not_found');
+    await restore(undo, 'undo of the pre-genesis restore');
+    await waitForLogSeq(laptopDev, 5, 'vault after undoing the pre-genesis restore');
+    say(`ok   vault_exists ${String(await vaultExists())} after the undo`);
+    await laptop.expectPull('laptop pulls after undoing the pre-genesis restore', { accept: true, logSeq: 5 });
+  }
+}
 
 say('rehearsal passed');

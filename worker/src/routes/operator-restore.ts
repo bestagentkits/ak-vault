@@ -17,13 +17,14 @@
  * `origin` must equal this Worker's origin and `ts` (unix s) be within ±60 s.
  * Replay: a bookmark read is harmless; a restore is compare-and-swap on the
  * vault's current bookmark, so a replay is refused with `409` once the bookmark
- * has moved (every write moves it; that a restore does is checked on staging).
+ * has moved (every write moves it; that a restore does is to be checked on staging).
  *
  * A restore schedules the target, refuses every request to that vault from then
  * until the restart (so nothing is acknowledged that the restore discards),
  * restarts the object, confirms the restart by a new instance ID and returns the
  * target and the undo bookmark (`202` with `restart_confirmed: false` when the
- * restart could not be confirmed). Record both bookmarks on the incident issue:
+ * restart could not be confirmed; any later operator request retries the restart
+ * first, and answers `503` while it still cannot confirm it). Record both bookmarks on the incident issue:
  * nothing else keeps them. Logs record this route's template even when it is off;
  * responses cannot tell it from an unknown path.
  */
@@ -127,6 +128,11 @@ export async function handleOperatorRequest(request: Request, env: Env, info: Ro
   const op = parseOperatorRequest(signed, new URL(request.url).origin, nowMs);
   info.vaultId = op.vaultId;
   const stub = () => env.VAULT.get(env.VAULT.idFromName(op.vaultId));
+  // A restore left pending (an unconfirmed restart) is finished first, whatever the action.
+  const pendingBefore = await instanceOf(stub);
+  if (pendingBefore === null || pendingBefore.restorePending) {
+    if (!(await restartAndConfirm(stub, pendingBefore?.instance ?? null))) throw restartUnconfirmed();
+  }
   if (op.action === 'bookmark') return stub().operatorBookmark(op.atMs, nowMs);
 
   // RPC types `unknown` bodies as never; the value is a plain ApiResult.
@@ -137,6 +143,10 @@ export async function handleOperatorRequest(request: Request, env: Env, info: Ro
   const restarted = await restartAndConfirm(stub, before?.instance ?? null);
   if (scheduled.status !== 200) return scheduled;
   return restarted ? scheduled : { status: 202, body: { ...(scheduled.body as Record<string, unknown>), restart_confirmed: false } };
+}
+
+function restartUnconfirmed(): ApiError {
+  return new ApiError('internal', { status: 503, message: 'vault restart not confirmed', headers: { 'Retry-After': '5' } });
 }
 
 type VaultStub = ReturnType<Env['VAULT']['get']>;
@@ -162,7 +172,8 @@ async function restartAndConfirm(stub: () => VaultStub, previous: string | null)
       // Expected: the restart aborts the call that requested it.
     }
     const now = await instanceOf(stub);
-    if (now && previous !== null && now.instance !== previous && !now.restorePending) return true;
+    // Without the previous instance ID, a start that is not pending is the best evidence.
+    if (now && !now.restorePending && (previous === null || now.instance !== previous)) return true;
   }
   return false;
 }

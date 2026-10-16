@@ -8,7 +8,7 @@
  * names the bookmark it read just before, and any write since (or an earlier
  * restore, which moves the history forward) refuses it with `conflict`. That
  * is meant to make a replayed restore request a refusal; that a restore moves the
- * current bookmark is verified on staging, not locally (local workerd has no history).
+ * current bookmark is to be checked on staging, not locally (local workerd has no history).
  *
  * Platform errors carry text from the storage layer; they are mapped to fixed
  * messages and never echoed.
@@ -65,21 +65,15 @@ export async function bookmarkForTime(storage: PointInTimeStorage, atMs: number,
  * Schedule a restore to `target` if the object is still at `expectedCurrent`.
  * Returns the undo bookmark (the point just before the restore). The restore
  * applies when the object next starts; the caller must restart it, and
- * `setPending(true)` runs before the restore is scheduled (and `false` if
- * scheduling fails) so the caller can refuse every request in between.
+ * `setPending(true)` runs before the platform call (and is never undone) so the
+ * caller refuses every request until that restart.
  */
 export async function scheduleRestore(storage: PointInTimeStorage, target: string, expectedCurrent: string, setPending: (pending: boolean) => void): Promise<string> {
   if (!isBookmark(target) || !isBookmark(expectedCurrent)) throw new ApiError('bad_request');
   const current = await currentBookmark(storage);
   if (current !== expectedCurrent) throw new ApiError('conflict', { message: 'the vault changed since the bookmark was read' });
   setPending(true);
-  let undo: string;
-  try {
-    undo = await pitr(() => storage.onNextSessionRestoreBookmark(target));
-  } catch (err) {
-    setPending(false); // the platform refused: nothing is scheduled
-    throw err;
-  }
-  // Scheduled from here on, even if the returned value is malformed: stay pending.
-  return checkedBookmark(undo);
+  // From here the restore may be scheduled even if the call throws, so the object
+  // stays pending (refusing requests) until it restarts: at worst one needless restart.
+  return checkedBookmark(await pitr(() => storage.onNextSessionRestoreBookmark(target)));
 }

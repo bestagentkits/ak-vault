@@ -94,6 +94,10 @@ describe('operator restore route: authentication and shape', () => {
     const res = await send(bookmarkOf(missing));
     expect(res.status).toBe(200);
     expect(res.json?.['vault_exists']).toBe(false);
+    // Reading a bookmark creates no vault tables.
+    await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(missing)), (_instance: unknown, state: DurableObjectState) => {
+      expect(state.storage.sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meta'").toArray()).toHaveLength(0);
+    });
   });
 
   it('works with the sync kill switch off', async () => {
@@ -136,8 +140,22 @@ describe('operator restore: pending restore and restart', () => {
     expect(read.json.error).toEqual({ code: 'internal', message: 'vault restore in progress' });
     const write = await fx.write(fx.owner, randomId(), 0, { name: 'SYNTH_PENDING', value: 'synthetic' });
     expect(write.status).toBe(503);
-    expect((await send(bookmarkOf(fx.vaultId))).status).toBe(503);
-    expect((await send({ action: 'restore', vault_id: fx.vaultId, bookmark: 'a', expected_current: 'b' })).status).toBe(503);
+  });
+
+  it('an operator request finishes a pending restore first: restart, then answer', async () => {
+    const fx = await VaultFixture.create();
+    const before = await stubOf(fx.vaultId).operatorInstance();
+    await runInDurableObject(stubOf(fx.vaultId), (instance: VaultDurableObject) => {
+      (instance as unknown as { restorePending: boolean }).restorePending = true;
+    });
+    expect((await fx.get(fx.owner, '/membership')).status).toBe(503);
+    const res = await send(bookmarkOf(fx.vaultId));
+    expect(res.status).toBe(200);
+    expect(res.json?.['vault_exists']).toBe(true);
+    const after = await stubOf(fx.vaultId).operatorInstance();
+    expect(after.instance).not.toBe(before.instance);
+    expect(after.restorePending).toBe(false);
+    expect((await fx.get(fx.owner, '/membership')).status).toBe(200);
   });
 
   it('a restart starts a new instance that is no longer pending, and the vault serves again', async () => {
@@ -217,13 +235,13 @@ describe('point-in-time restore logic', () => {
     expect(pitr.pendingLog).toEqual([]);
   });
 
-  it('clears pending when the platform refuses, and stays pending once the restore is scheduled', async () => {
+  it('stays pending once the platform call started, even when it fails', async () => {
     const refused = new FakePitr();
     refused.onNextSessionRestoreBookmark = async () => {
       throw new Error(PLATFORM_TEXT);
     };
     await expect(scheduleRestore(refused, refused.bookmark(4), refused.bookmark(10), refused.setPending)).rejects.toMatchObject({ code: 'bad_request' });
-    expect(refused.pendingLog).toEqual([true, false]);
+    expect(refused.pendingLog).toEqual([true]);
 
     const malformed = new FakePitr();
     malformed.onNextSessionRestoreBookmark = async () => 'not a bookmark';

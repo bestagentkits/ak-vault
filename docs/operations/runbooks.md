@@ -298,11 +298,11 @@ operator script's `bookmark` action: it is exact, while a time lookup is not (be
 5. The response holds the target and the **undo bookmark** (the moment just before
    the restore). Record both on the incident issue before going on; nothing else
    keeps them. From scheduling until the restart the vault refuses every request
-   with `503`, so no write is acknowledged and then discarded. The route restarts
-   the object and confirms it; the next request sees the restored state. `202` with
-   `restart_confirmed: false` means the restart was not confirmed: the vault keeps
-   answering `503` until the object restarts, and then the restore applies. Retry a
-   `bookmark` read until it answers.
+   with `503` and `Retry-After`, so no write is acknowledged and then discarded.
+   The route restarts the object and confirms it; the next request sees the
+   restored state. `202` with `restart_confirmed: false` means the restart was not
+   confirmed: send any operator request for that vault (a `bookmark` read), which
+   restarts it first and answers `503` while it still cannot confirm the restart.
 6. Verify with a client pull: the membership chain and the change log verify, and
    the head matches the intended point.
 7. To undo, read the current bookmark and restore to the undo bookmark the same way.
