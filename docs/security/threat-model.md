@@ -146,12 +146,20 @@ These are accepted and must be stated wherever the guarantees are described:
   ([#42](https://github.com/bestagentkits/ak-vault/issues/42)). The Worker now refuses
   the recovery-identity path, and recovery enrollment, for sessions whose token carries
   `session_kind` `machine` or `api_key_device`, and fails closed on an unknown value
-  ([spec §9.1](../protocol/v1/spec.md#9-transport-authentication-worker)). Remaining
-  until ak-web sets the claim ([ak-web#578](https://github.com/bestagentkits/ak-web/issues/578)):
-  a token without the claim is treated as `email_otp`, so a machine or API-key session
-  that ak-web mints unmarked still takes the path. That ak-web change is a prerequisite
-  for shipping machine identities ([#6](https://github.com/bestagentkits/ak-vault/issues/6))
-  and API-key device sessions ([#74](https://github.com/bestagentkits/ak-vault/issues/74)).
+  ([spec §9.1](../protocol/v1/spec.md#9-transport-authentication-worker)). The refusal is
+  only as good as the claim ak-web puts in the token, and it does not yet cover any
+  machine identity that exists today. A token without the claim is treated as `email_otp`
+  (making the claim mandatory is [#88](https://github.com/bestagentkits/ak-vault/issues/88)).
+  ak-web mints vault tokens only for email-OTP sign-ins (its API-key sign-in gets no
+  vault token, and there is no machine sign-in), so a machine or CI device provisioned by
+  signing in to the owner account with email OTP is an `email_otp` session and still
+  takes the path. Until machine
+  identities get their own sign-in that ak-web marks `session_kind: machine`
+  ([ak-web#578](https://github.com/bestagentkits/ak-web/issues/578),
+  [#6](https://github.com/bestagentkits/ak-vault/issues/6)), the only way to prevent the
+  fetch is not signing a CI runner in to the owner account. Marking sessions is a
+  prerequisite for shipping machine identities and API-key device sessions
+  ([ak-web#583](https://github.com/bestagentkits/ak-web/issues/583)).
 - **Audit entries are not signed per author.** Any device that held `VK[e]` can
   write audit entries at epoch `e`, including a device removed later. With a
   colluding server it can keep doing so after the rekey until the first entry at a
