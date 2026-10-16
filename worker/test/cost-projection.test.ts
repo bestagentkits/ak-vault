@@ -32,7 +32,20 @@ describe('projectMonthlyCost', () => {
     expect(total).toBeCloseTo(Object.values(lines).reduce((a, b) => a + b, 0), 6);
   });
 
-  it('reproduces the 2026-10-15 estimate for 10,000 vaults polling every 60 s', () => {
+  it('reproduces the cost model estimates from the 2026-10-16 inputs as published', () => {
+    // Per-operation inputs as rounded in docs/operations/cost-model.md ("Measured 2026-10-16").
+    const pull: OperationCost = { workerCpuMs: 1.9, doRequests: 2, durationGbS: 0.0116 + 0.015, rowsRead: 6.6, rowsWritten: 4.74 };
+    const write: OperationCost = { workerCpuMs: 2.0, doRequests: 2, durationGbS: 0.0085 + 0.0066, rowsRead: 16.2, rowsWritten: 13.2 };
+    const at = (vaults: number, pullsPerDevicePerDay: number, p = pull) => projectMonthlyCost({ vaults, devicesPerVault: 3, pullsPerDevicePerDay, writesPerVaultPerDay: 20, storedBytesPerVault: 126_976 }, p, write);
+    // Published: $7,426, rows written $6,166, $74,803, lazy $287, zero-write pulls $1,288 (from unrounded inputs).
+    expect(at(10_000, 1440).total).toBeCloseTo(7_426, -2);
+    expect(at(10_000, 1440).lines.rowsWritten).toBeCloseTo(6_166, -2);
+    expect(at(100_000, 1440).total / 74_803).toBeCloseTo(1, 2);
+    expect(at(10_000, 50).total).toBeCloseTo(287, 0);
+    expect(at(10_000, 1440, { ...pull, rowsWritten: 0 }).total).toBeCloseTo(1_288, 0);
+  });
+
+  it('reproduces the historical 2026-10-15 estimate for 10,000 vaults polling every 60 s', () => {
     // Inputs of the lab measurement at 3f77991 (cost model, "Measured 2026-10-15"), registry duration capped as documented then.
     const scenario: Scenario = { vaults: 10_000, devicesPerVault: 3, pullsPerDevicePerDay: 1440, writesPerVaultPerDay: 20, storedBytesPerVault: 0 };
     const op: OperationCost = { workerCpuMs: 3.3, doRequests: 1.98, durationGbS: 0.0064 + 324_000 / 1_302_000_000, rowsRead: 6.9, rowsWritten: 4.76 };

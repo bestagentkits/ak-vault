@@ -29,7 +29,7 @@ import { credentialsFromEnv, redactAccount, scriptExists, workersDevSubdomain, t
 import { LabClient, LabIssuer } from '../platform-log-scan/lab-client.js';
 import { LAB_NAME_PATTERN, WORKER_DIR, deleteLab, stopAllWrangler, wrangler } from '../platform-log-scan/lab-worker-lifecycle.js';
 import { NeedleSet } from '../platform-log-scan/needle-scan.js';
-import { outsideRepository } from '../platform-log-scan/scan-options.js';
+import { outsideRepository, saigonStamp } from '../platform-log-scan/scan-options.js';
 import { sleep, waitFor } from '../platform-log-scan/telemetry-polling.js';
 import { namespaceIds, storedBytes, windowUsage, type WindowUsage } from './cost-analytics.js';
 import { phaseWindows } from './cost-projection.js';
@@ -41,8 +41,6 @@ const say = (line: string) => process.stdout.write(`${line}\n`);
 let redact = (text: string) => text;
 let cleanupOnInterrupt: (() => Promise<unknown>) | undefined;
 let interrupted = false;
-/** True once the cleanup confirmed the lab and its namespaces are gone. */
-let labGone = () => false;
 
 interface Options {
   name: string;
@@ -53,10 +51,7 @@ interface Options {
 
 function options(rawArgv: string[]): Options {
   const argv = rawArgv[0] === '--' ? rawArgv.slice(1) : rawArgv;
-  const stamp = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Saigon', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-    .format(new Date())
-    .replace(/[^0-9]/g, '');
-  const out: Options = { name: `ak-vault-lab-cost-${stamp}`, baselineOnly: false, baselineHours: 24 };
+  const out: Options = { name: `ak-vault-lab-cost-${saigonStamp()}`, baselineOnly: false, baselineHours: 24 };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--name') out.name = argv[++i] ?? '';
@@ -105,7 +100,7 @@ function printUsage(label: string, u: WindowUsage): void {
   }
 }
 
-async function stagingBaseline(creds: CloudflareCredentials, hours: number): Promise<{ hours: number; usage: WindowUsage; storedBytes: Record<string, number> }> {
+async function stagingBaseline(creds: CloudflareCredentials, hours: number): Promise<{ hours: number; usage: WindowUsage; storedBytes: Record<string, number | null> }> {
   const ns = await namespaceIds(creds, STAGING_SCRIPT);
   const to = Math.floor(Date.now() / 60_000) * 60_000;
   const from = to - hours * 3_600_000;
@@ -113,7 +108,7 @@ async function stagingBaseline(creds: CloudflareCredentials, hours: number): Pro
   const bytes = await storedBytes(creds, ns, from, to);
   say(`staging baseline, last ${hours} h (read-only):`);
   printUsage('staging', usage);
-  say(`    stored bytes: vault ${bytes.vault}, registry ${bytes.registry}`);
+  say(`    stored bytes: vault ${bytes.vault ?? 'not sampled'}, registry ${bytes.registry ?? 'not sampled'}`);
   return { hours, usage, storedBytes: bytes };
 }
 
@@ -134,7 +129,9 @@ async function main(): Promise<number> {
 
   if (await scriptExists(creds, opts.name)) throw new Error('a Worker with the lab name already exists; pick another --name');
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: WORKER_DIR, encoding: 'utf8' }).trim();
-  const dirty = execFileSync('git', ['status', '--porcelain', '--', 'src', 'wrangler.jsonc', 'public', '../packages/protocol'], { cwd: WORKER_DIR, encoding: 'utf8' }).trim() !== '';
+  const changed = (...paths: string[]) => execFileSync('git', ['status', '--porcelain', '--', ...paths], { cwd: WORKER_DIR, encoding: 'utf8' }).trim() !== '';
+  const dirty = changed('src', 'wrangler.jsonc', 'public', '../packages/protocol');
+  const harnessDirty = changed('scripts/cost-measurement', 'scripts/platform-log-scan');
   const subdomain = await workersDevSubdomain(creds);
   redact = (text) => redactAccount(text, creds, subdomain);
   const origin = `https://${opts.name}.${subdomain}.workers.dev`;
@@ -142,9 +139,11 @@ async function main(): Promise<number> {
   let priv: string | undefined;
   let deployed = false;
   let cleanup = { scriptGone: false, namespacesLeft: -1 };
-  let phases: PhaseResult[] = [];
-  let runStored: Record<string, number> = {};
-  let vaults = 0;
+  // Written after the workload (so an ingestion timeout keeps the phase records) and again after cleanup.
+  const report: Record<string, unknown> = { commit, dirty, harnessDirty, configuration: 'staging', baseline, shape: DEFAULT_SHAPE };
+  const writeReport = () => {
+    if (opts.report) writeFileSync(opts.report, JSON.stringify(report, null, 2), { mode: 0o600 });
+  };
 
   let cleaning: Promise<void> | undefined;
   const cleanUp = () =>
@@ -160,12 +159,18 @@ async function main(): Promise<number> {
         if (cleanup.namespacesLeft !== 0) problems.push(`lab Durable Object namespaces not confirmed gone (${cleanup.namespacesLeft})`);
       }
       if (priv) rmSync(priv, { recursive: true, force: true });
+      if (interrupted) problems.push('the run was interrupted');
+      const labDeleted = !deployed || (cleanup.scriptGone && cleanup.namespacesLeft === 0);
+      report['labDeleted'] = labDeleted;
+      report['problems'] = problems;
+      writeReport();
+      for (const p of problems) say(`problem: ${p}`);
+      say(`lab deleted: ${deployed ? (labDeleted ? 'yes' : 'NO') : 'never deployed'}`);
     })());
   cleanupOnInterrupt = cleanUp;
-  labGone = () => cleanup.scriptGone && cleanup.namespacesLeft === 0;
   priv = mkdtempSync(join(tmpdir(), 'akvault-cost-'));
   const log = join(priv, 'wrangler.log');
-  say(`lab ${opts.name} at ${commit}${dirty ? ' (uncommitted changes)' : ''}, staging configuration`);
+  say(`lab ${opts.name} at ${commit}${dirty ? ' (uncommitted Worker changes)' : ''}${harnessDirty ? ' (uncommitted harness changes)' : ''}, staging configuration`);
   try {
     const needles = new NeedleSet();
     const issuer = await LabIssuer.create('https://cost-issuer.ak-vault.invalid', origin, needles);
@@ -186,10 +191,12 @@ async function main(): Promise<number> {
 
     const client = new LabClient(origin, issuer, needles);
     const workload = await runCostWorkload(client, needles, webhookSecret, DEFAULT_SHAPE, say);
-    vaults = workload.vaults;
     for (const p of workload.phases) if (p.unexpected > 0) problems.push(`phase ${p.name}: ${p.unexpected} unexpected status(es)`);
-
     const windows = phaseWindows(workload.phases);
+    report['vaults'] = workload.vaults;
+    report['phases'] = workload.phases.map((p, i) => ({ ...p, window: { from: new Date(windows[i]!.from).toISOString(), to: new Date(windows[i]!.to).toISOString() } }));
+    writeReport();
+
     const runFrom = windows[0]!.from;
     const runTo = windows.at(-1)!.to;
     await sleep(Math.max(0, runTo - Date.now()));
@@ -203,7 +210,7 @@ async function main(): Promise<number> {
       lastRows = rows;
       return settled;
     });
-    phases = [];
+    const phases: PhaseResult[] = [];
     for (const [i, p] of workload.phases.entries()) {
       const w = windows[i]!;
       const usage = await windowUsage(creds, opts.name, ns, w.from, w.to);
@@ -214,45 +221,38 @@ async function main(): Promise<number> {
     const pullWindow = windows[workload.phases.indexOf(pull)]!;
     const steadyFrom = pullWindow.from + 3 * 60_000;
     const steadyUsage = await windowUsage(creds, opts.name, ns, steadyFrom, pullWindow.to);
-    runStored = await storedBytes(creds, ns, runFrom, runTo);
+    const runStored = await storedBytes(creds, ns, runFrom, runTo);
 
     say('per-phase usage:');
     for (const p of phases) printUsage(`${p.name} (${p.operations} ops, ${p.requests} requests)`, p.usage);
     printUsage(`pull steady state from ${new Date(steadyFrom).toISOString()}`, steadyUsage);
-    say(`  stored bytes after the run: vault ${runStored['vault']}, registry ${runStored['registry']} (${vaults} vaults)`);
-    if (opts.report) {
-      writeFileSync(
-        opts.report,
-        JSON.stringify({ commit, dirty, configuration: 'staging', baseline, shape: DEFAULT_SHAPE, vaults, phases, pullSteadyState: { from: new Date(steadyFrom).toISOString(), to: new Date(pullWindow.to).toISOString(), usage: steadyUsage }, storedBytes: runStored, problems }, null, 2),
-        { mode: 0o600 },
-      );
-    }
+    const bytes = (b: number | null) => (b === null ? 'not sampled' : String(b));
+    say(`  stored bytes in the run window: vault ${bytes(runStored.vault)}, registry ${bytes(runStored.registry)} (${workload.vaults} vaults)`);
+    Object.assign(report, { phases, pullSteadyState: { from: new Date(steadyFrom).toISOString(), to: new Date(pullWindow.to).toISOString(), usage: steadyUsage }, storedBytes: runStored });
   } finally {
     await cleanUp();
   }
-  if (interrupted) problems.push('the run was interrupted');
-  for (const p of problems) say(`problem: ${p}`);
-  say(`lab deleted: ${cleanup.scriptGone && cleanup.namespacesLeft === 0 ? 'yes' : 'NO'}`);
   return problems.length === 0 ? 0 : 1;
 }
+
+/** Exit once stdout and stderr have flushed (they are asynchronous when piped). */
+const exitAfterFlush = (code: number) => {
+  process.exitCode = code;
+  process.stdout.write('', () => process.stderr.write('', () => process.exit(code)));
+};
 
 const abort = (why: string, code: number) => {
   if (interrupted) process.exit(code);
   interrupted = true;
   process.stderr.write(`cost measurement stopped (${redact(why)}); cleaning up\n`);
-  void (cleanupOnInterrupt?.() ?? Promise.resolve()).finally(() => process.exit(code));
+  void (cleanupOnInterrupt?.() ?? Promise.resolve()).finally(() => exitAfterFlush(code));
 };
 process.on('SIGINT', () => abort('SIGINT', 130));
 process.on('SIGTERM', () => abort('SIGTERM', 143));
 process.on('uncaughtException', (err) => abort(`uncaught ${err.name}: ${err.message}`, 2));
 
-main().then(
-  (code) => process.exit(code),
-  async (err: Error) => {
-    process.stderr.write(`cost measurement failed: ${redact(err.message)}\n`);
-    // `main` cleaned up in its `finally`; report whether the lab is gone.
-    await (cleanupOnInterrupt?.() ?? Promise.resolve());
-    process.stderr.write(`lab deleted: ${labGone() ? 'yes' : 'NO, or never deployed'}\n`);
-    process.exit(2);
-  },
-);
+// `main` cleans up in its `finally`, which prints any cleanup problem and whether the lab is gone.
+main().then(exitAfterFlush, (err: Error) => {
+  process.stderr.write(`cost measurement failed: ${redact(err.message)}\n`);
+  exitAfterFlush(2);
+});

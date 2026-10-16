@@ -71,7 +71,7 @@ figures by the operations the client made.
 |---|---|---|---|---|---|
 | No-op pull, steady state (1) | 1.9 ms | 2 | 0.0116 + 0.0150 GB-s | 6.6 | **4.74** |
 | Item write (1) | 2.0 ms | 2 | 0.0085 + 0.0066 GB-s | 16.2 | 13.2 (up to 0.3 of it deletes setup `jti`s) |
-| Device add: `device_add` + new device's wrap fetch (2) | 8.1 ms | 4 | 0.028 GB-s | 24.8 | 17.8 |
+| Device add: `device_add` + new device's wrap fetch (2) | 8.1 ms | 4 (3.3 sampled) | 0.028 GB-s | 24.8 | 17.8 |
 | Device remove: fence pull + `device_remove` + `rekey` (3) | 7.0 ms | 6 | 0.028 GB-s | 48.4 | 30.1 |
 | Revocation webhook (1) | — | 1 (registry) | — | 1 | 5 |
 | Request from a revoked device, refused `401` (1) | 2.8 ms | 1 (registry only) | 0.003 GB-s | 1 | 0 |
@@ -80,7 +80,10 @@ figures by the operations the client made.
 The steady-state pull row is the pull phase from its fourth minute on (295 polls),
 after the 120 s proof `jti` lifetime, when each request also deletes the `jti`s that
 expired. Over the whole pull phase (720 polls) it was 4.66 rows written and 6.9 rows
-read per pull. Stored bytes were not sampled within the run window; the 2026-10-15
+read per pull. The two revocation rows share one phase (4 webhooks, then 40 refused
+requests): CPU and duration there are averages over all 44 requests, and the split
+of the 20 registry rows written to the webhooks assumes a refused request writes none
+(the registry only reads on a check). Stored bytes were not sampled within the run window; the 2026-10-15
 figure (126,976 bytes for a vault with 4 records) is used below.
 
 Compared with the 2026-10-15 lab run (production configuration, `3f77991`):

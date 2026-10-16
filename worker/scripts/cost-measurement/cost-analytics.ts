@@ -126,8 +126,8 @@ export async function windowUsage(creds: CloudflareCredentials, script: string, 
   return { worker, objects };
 }
 
-/** Largest SQLite stored bytes per namespace reported in [from, to). */
-export async function storedBytes(creds: CloudflareCredentials, ns: NamespaceIds, from: number, to: number): Promise<Record<DoLabel, number>> {
+/** Largest SQLite stored bytes per namespace reported in [from, to); null when the dataset has no sample in the window. */
+export async function storedBytes(creds: CloudflareCredentials, ns: NamespaceIds, from: number, to: number): Promise<Record<DoLabel, number | null>> {
   const account = await graphql<{ storage: { max: { storedBytes: number }; dimensions: { namespaceId: string } }[] }>(
     creds,
     `query ($account: String!, $ns: [String!], $from: Time!, $to: Time!) {
@@ -140,7 +140,7 @@ export async function storedBytes(creds: CloudflareCredentials, ns: NamespaceIds
     }`,
     { account: creds.accountId, ns: [ns.vault, ns.registry], from: new Date(from).toISOString(), to: new Date(to).toISOString() },
   );
-  const out: Record<DoLabel, number> = { vault: 0, registry: 0 };
+  const out: Record<DoLabel, number | null> = { vault: null, registry: null };
   for (const row of account.storage) {
     if (row.dimensions.namespaceId === ns.vault) out.vault = row.max.storedBytes;
     else if (row.dimensions.namespaceId === ns.registry) out.registry = row.max.storedBytes;

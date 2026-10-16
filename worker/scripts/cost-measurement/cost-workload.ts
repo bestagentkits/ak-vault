@@ -39,7 +39,7 @@ export interface WorkloadShape {
   stepIntervalMs: number;
 }
 
-/** About 1,400 requests over about 16 minutes. */
+/** About 1,100 requests over about 16 minutes. */
 export const DEFAULT_SHAPE: WorkloadShape = {
   pullVaults: 6,
   pullSeconds: 300,

@@ -2,8 +2,8 @@
  * Monthly cost projection for docs/operations/cost-model.md: Cloudflare Workers
  * Paid prices, per-operation inputs (measured by run-cost-measurement.ts) and a
  * fleet scenario (vaults, devices, pull and write rates) -> USD per line item.
- * Pure arithmetic with no I/O, so the documented figures can be recomputed and
- * are pinned by worker/test/cost-projection.test.ts. Prices are read from the
+ * Pure arithmetic with no I/O, so the documented figures can be recomputed;
+ * worker/test/cost-projection.test.ts pins them from the published inputs. Prices are read from the
  * Cloudflare pricing pages; recheck them before relying on a result.
  */
 

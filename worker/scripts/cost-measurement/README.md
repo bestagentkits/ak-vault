@@ -63,17 +63,21 @@ pnpm cost:measure -- --report /path/outside/repo/cost.json
 
 Options: `--name ak-vault-lab-<suffix>`, `--baseline-only` (only step 1) and
 `--baseline-hours N`. The report is refused inside the repository. A run takes about
-30 minutes, about 16 of them traffic (about 1,400 requests). Output and report hold
+30 minutes, about 16 of them traffic (about 1,100 requests). Output and report hold
 aggregates only: no credential, account or namespace identifier, vault ID or
-synthetic value. Exit status: 0 when every request got its expected status and the
-lab was deleted; 1 otherwise; 2 when the run itself failed (the lab is still deleted).
+synthetic value; the report is written once the traffic ends (phase records) and again
+after cleanup (results, problems, `labDeleted`). Exit status: 0 when every request got
+its expected status and the lab was deleted; 1 otherwise; 2 when the run itself failed.
+Cleanup runs in every case and the last line says whether the lab is gone.
 
 ## Limits
 
 - The Worker name, route and issuer differ from staging. Billing metrics depend on
-  the code and configuration, which are the staging ones, but edge routing, the JWKS
-  URL fetch (cached for 5 minutes) and real staging registry contents are not
-  exercised.
+  the code and configuration, which are the staging ones, but edge routing, the
+  cached JWKS URL fetch (`src/auth/jwks.ts`) and real staging registry contents are
+  not exercised.
+- The SQLite storage dataset may have no sample inside the run window; the output then
+  says `not sampled`.
 - The adaptive datasets (Worker and Durable Object invocations) are sampled; the
   periodic Durable Object usage is what billing uses. Per-operation figures divide
   by the operations the client counted.
