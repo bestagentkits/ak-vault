@@ -47,10 +47,11 @@ export interface ProfileField {
 
 export type Profile = Partial<Record<ProfileKey, ProfileField>>;
 
-// C0, DEL, C1, the Arabic letter mark, zero-width space/non-joiner/joiner,
-// LRM/RLM, bidi embeddings/overrides/isolates, line and paragraph separators,
-// and the byte order mark (zero-width no-break space).
-const FORBIDDEN = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029\ufeff]/;
+// C0, DEL, C1, the Arabic letter mark, zero-width space, LRM/RLM, bidi
+// embeddings/overrides/isolates, line and paragraph separators, and the byte
+// order mark (zero-width no-break space). ZWNJ and ZWJ (U+200C, U+200D) are
+// allowed: Persian and Indic text and emoji sequences need them.
+const FORBIDDEN = /[\u0000-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029\ufeff]/;
 const EXPIRES_AT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/;
 
 /** Profile text rule (spec §5.1): non-empty, at most `limit` code points, no control or bidi characters. */

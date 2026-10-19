@@ -226,10 +226,11 @@ func asProfileText(v any, what string, limit int) (string, error) {
 }
 
 // isForbiddenProfileRune reports C0, DEL, C1, the Arabic letter mark,
-// zero-width space/non-joiner/joiner, LRM/RLM, bidi embeddings, overrides and
-// isolates, line and paragraph separators, and the byte order mark.
+// zero-width space, LRM/RLM, bidi embeddings, overrides and isolates, line and
+// paragraph separators, and the byte order mark. ZWNJ and ZWJ (U+200C, U+200D)
+// are allowed: Persian and Indic text and emoji sequences need them.
 func isForbiddenProfileRune(r rune) bool {
-	return r <= 0x1F || (r >= 0x7F && r <= 0x9F) || r == 0x061C || (r >= 0x200B && r <= 0x200F) ||
+	return r <= 0x1F || (r >= 0x7F && r <= 0x9F) || r == 0x061C || r == 0x200B || r == 0x200E || r == 0x200F ||
 		(r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) || r == 0x2028 || r == 0x2029 ||
 		r == 0xFEFF
 }

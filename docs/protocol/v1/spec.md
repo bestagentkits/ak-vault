@@ -590,9 +590,11 @@ and `src`:
   operator, `import`: derived by an importer on that device}.
 - Text rules for every string (a text `value` and each list item): non-empty, at most
   the limit in Unicode code points, and no code point in U+0000–U+001F, U+007F,
-  U+0080–U+009F, U+061C, U+200B–U+200F, U+202A–U+202E, U+2066–U+2069, U+2028,
-  U+2029 or U+FEFF (controls, bidi marks, embeddings, overrides and isolates,
-  zero-width characters, line and paragraph separators, and the byte order mark).
+  U+0080–U+009F, U+061C, U+200B, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069,
+  U+2028, U+2029 or U+FEFF (controls, bidi marks, embeddings, overrides and
+  isolates, the zero-width space, line and paragraph separators, and the byte order
+  mark). The zero-width non-joiner and joiner (U+200C, U+200D) are allowed: Persian
+  and Indic text and emoji sequences need them.
 - Lists: 1–32 items, each at most 64 code points, without a comma, no two items equal.
 
 | Key | `value` | Limit |
@@ -662,8 +664,9 @@ as an instruction (§8).
 
 Vectors (`profile.json`): a changed field with `by` ≠ author, or `at` ≠ record `ts`,
 is dropped; an unchanged field relabelled to another device is dropped; an unknown key,
-an over-length text, a list with a duplicate or a comma, a bidi mark or zero-width
-character, and an unknown `kind` → `bad_request`; with `prev` `null` every field is
+an over-length text, a list with a duplicate or a comma, a bidi mark, a zero-width
+space or a byte order mark, and an unknown `kind` → `bad_request`, while text with a
+zero-width non-joiner or joiner is accepted; with `prev` `null` every field is
 kept and shown `sync`, also on this device's own record; a create (`base_revision` 0)
 requires every field by the author. The `chains` replay consecutive revisions for one
 device. A field forged in its name under `prev = null`, then carried unchanged by the

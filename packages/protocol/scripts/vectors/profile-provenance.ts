@@ -93,7 +93,7 @@ export function profileVectors(): Record<string, unknown> {
   return {
     version: 1,
     description:
-      'Item profile and provenance (spec §5.1). validateProfile(profile) refuses an unknown key, a field object other than exactly {value, by, at, src}, a wrong type, an unknown src (local, import), kind or sensitivity, and a broken text rule (1..limit code points; no U+0000-001F, U+007F-009F, U+061C, U+200B-200F, U+202A-202E, U+2066-2069, U+2028, U+2029, U+FEFF) or list rule (1..32 items of 1..64 code points, no comma, no duplicate) with bad_request. ' +
+      'Item profile and provenance (spec §5.1). validateProfile(profile) refuses an unknown key, a field object other than exactly {value, by, at, src}, a wrong type, an unknown src (local, import), kind or sensitivity, and a broken text rule (1..limit code points; no U+0000-001F, U+007F-009F, U+061C, U+200B, U+200E, U+200F, U+202A-202E, U+2066-2069, U+2028, U+2029, U+FEFF; ZWNJ U+200C and ZWJ U+200D are allowed) or list rule (1..32 items of 1..64 code points, no comma, no duplicate) with bad_request. ' +
       'checkProfileProvenance(prev, next, record, {self_device_id?, prev_origins?}): prev is the validated profile at record.base_revision ({} for a create or a tombstone base), or null when not held (a create is always checked against {}). For each field of next: prev holds the key with an equal value (cjson of value) -> the field MUST be byte-identical to prev (same by, at, src); otherwise by MUST equal record.author and at MUST equal record.ts. A breaking field is dropped (dropped, key order); with prev null every field is kept. origins are transitive: a kept field shows its src only when by = self_device_id and prev was held (or the record is a create) and either the field is new or changed and record.author = self_device_id, or the field is unchanged and prev_origins[key] equals its src (prev_origins: the origins this check returned when the device accepted prev); every other field, and every field when prev is null, is "sync". cases MUST yield expect exactly. ' +
       'chains replay consecutive revisions as one device (self_device_id) sees them: step 0 uses start.prev and start.prev_origins; each later step uses the previous step expect.profile and expect.origins; every step MUST yield its expect exactly. ' +
       'carry_forward: carryForwardMeta(meta) drops kind, item_ids, policy, profile and any key that, lowercased with "_", "-" and "." removed, equals a profile key with "_" removed; it MUST yield expect. Payload meta keys are already [a-z0-9_]+ (cjson), so in practice the fold catches spellings such as whentouse and usagehosts; the "-" and "." folds are defensive.',
@@ -109,12 +109,11 @@ export function profileVectors(): Record<string, unknown> {
       bad('bidi_override', { description: f('safe\u202etxt.exe') }),
       bad('line_separator', { description: f('a\u2028b') }),
       bad('control_character', { description: f('a\u0007b') }),
-      bad('left_to_right_mark', { description: f('a‎b') }),
-      bad('right_to_left_mark', { description: f('a‏b') }),
-      bad('arabic_letter_mark', { description: f('a؜b') }),
-      bad('zero_width_space', { provider: f('str​ipe') }),
-      bad('zero_width_joiner', { tags: f(['li‍ve']) }),
-      bad('byte_order_mark', { owner: f('﻿ops') }),
+      bad('left_to_right_mark', { description: f('a\u200eb') }),
+      bad('right_to_left_mark', { description: f('a\u200fb') }),
+      bad('arabic_letter_mark', { description: f('a\u061cb') }),
+      bad('zero_width_space', { provider: f('str\u200bipe') }),
+      bad('byte_order_mark', { owner: f('\ufeffops') }),
       bad('list_duplicate', { tags: f(['live', 'live']) }),
       bad('list_comma', { tags: f(['live,eu']) }),
       bad('list_empty', { tags: f([]) }),
@@ -126,7 +125,11 @@ export function profileVectors(): Record<string, unknown> {
       bad('rotate_url_not_https', { rotate_url: f('http://example.com/rotate') }),
       bad('text_value_is_list', { provider: f(['stripe']) }),
     ],
-    valid_limits: validateProfile({ provider: f('p'.repeat(128)), description: f('😀'.repeat(1024)), tags: f(Array.from({ length: 32 }, (_, i) => `t${i}`)), expires_at: f('2028-02-29T23:59:59Z') }),
+    valid_limits: validateProfile({
+      provider: f('p'.repeat(128)), description: f('😀'.repeat(1024)), tags: f(Array.from({ length: 32 }, (_, i) => `t${i}`)),
+      owner: f('\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645'),
+      environment: f('\u{1f469}\u200d\u{1f4bb}'), expires_at: f('2028-02-29T23:59:59Z'),
+    }),
     carry_forward: { meta, expect: carryForwardMeta(meta) },
   };
 }
