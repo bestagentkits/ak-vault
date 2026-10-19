@@ -57,7 +57,7 @@ export function enrollCodeVectors(): Record<string, unknown> {
     description:
       'Enrollment codes (spec §3.8). join = "akj1-" || b64(cjson({"v":1,"ctx":"agentkit/akv1-join","account","device","nonce_j","label"})); offer = "ako1-" || b64(cjson({"v":1,"ctx":"agentkit/akv1-offer","vault_origin","vault_id","initiator","joiner","nonce_i","nonce_j","trust_anchor","checkpoint"})). ' +
       'join and offer: encoding the object MUST give code byte for byte and parsing code MUST give the object back. whitespace_split parses to join. ' +
-      'parse order (every failure bad_request except v): remove every Unicode White_Space character; at most 8192 bytes and the code prefix; b64 then canonical cjson with exactly the keys (v other than 1: unsupported_version); ctx is the code context; join: device parses as a device record with account = account, role owner and kind human, nonce_j 16 bytes, label 0..64 bytes of printable ASCII; offer: canonical vault_origin (https://host[:port], lowercase, no default port, trailing dot, path, query, fragment or userinfo; http only for localhost, 127.0.0.0/8, [::1]), IDs, 16-byte nonces, 32-byte trust_anchor, checkpoint parses and names vault_id. ' +
+      'parse order (every failure bad_request except the code own v field): remove every Unicode White_Space character; at most 8192 bytes and the code prefix; b64 then canonical cjson with exactly the keys (v other than 1: unsupported_version); ctx is the code context; join: device parses as a device record with account = account, role owner and kind human, nonce_j 16 bytes, label 0..64 bytes of printable ASCII; offer: canonical vault_origin (https://host[:port], lowercase, no default port, trailing dot, path, query, fragment or userinfo; http only for localhost, 127.0.0.0/8, [::1]), IDs, 16-byte nonces, 32-byte trust_anchor, checkpoint parses and names vault_id. ' +
       'invalid_join and invalid_offer: parsing code_text MUST fail with expect_error. origins: canonical MUST be accepted and non_canonical refused by the origin rule.',
     join,
     join_code: joinCode,
@@ -93,6 +93,7 @@ export function enrollCodeVectors(): Record<string, unknown> {
       badOffer('checkpoint_of_other_vault', 'bad_request', raw('ako1-', offerText({ checkpoint: otherVaultCp }))),
       badOffer('short_trust_anchor', 'bad_request', raw('ako1-', offerText({ trust_anchor: b64(seed('enroll/anchor').slice(0, 31)) }))),
       badOffer('version_2', 'unsupported_version', raw('ako1-', offerText({ v: 2 }))),
+      badOffer('checkpoint_version_2', 'bad_request', raw('ako1-', offerText({ checkpoint: { ...checkpoint, v: 2 } }))),
     ],
   };
 }

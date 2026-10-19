@@ -9,7 +9,7 @@ import { b64decode, b64encode } from './base64url.js';
 import { utf8Encode } from './bytes.js';
 import { cjson, cjsonParse } from './canonical-json.js';
 import { parseCheckpoint, type Checkpoint } from './checkpoints.js';
-import { fail } from './errors.js';
+import { fail, isAkvError } from './errors.js';
 import { MAX_ACCOUNT_LENGTH, parseDevice, type DeviceRecord } from './membership-types.js';
 import { asB64, asId, asObject, asPrintableAscii, asString, exactKeys, type Obj } from './validate.js';
 
@@ -84,6 +84,16 @@ function checkJoin(obj: Obj, what: string): JoinCode {
   };
 }
 
+/** Only the code's own `v` yields unsupported_version; an embedded checkpoint that fails to parse is bad_request. */
+function parseEmbeddedCheckpoint(value: unknown, what: string): Checkpoint {
+  try {
+    return parseCheckpoint(value, what);
+  } catch (err) {
+    if (isAkvError(err) && err.code === 'unsupported_version') fail('bad_request', `${what} does not parse`);
+    throw err;
+  }
+}
+
 function checkOffer(obj: Obj, what: string): OfferCode {
   const origin = obj['vault_origin'];
   if (typeof origin !== 'string' || !isCanonicalOrigin(origin)) fail('bad_request', `${what}.vault_origin is not a canonical origin`);
@@ -96,7 +106,7 @@ function checkOffer(obj: Obj, what: string): OfferCode {
     nonce_i: asB64(obj['nonce_i'], `${what}.nonce_i`, 16),
     nonce_j: asB64(obj['nonce_j'], `${what}.nonce_j`, 16),
     trust_anchor: asB64(obj['trust_anchor'], `${what}.trust_anchor`, 32),
-    checkpoint: parseCheckpoint(obj['checkpoint'], `${what}.checkpoint`),
+    checkpoint: parseEmbeddedCheckpoint(obj['checkpoint'], `${what}.checkpoint`),
   };
   if (offer.checkpoint.vault_id !== vaultId) fail('bad_request', `${what}.checkpoint names another vault`);
   return offer;
