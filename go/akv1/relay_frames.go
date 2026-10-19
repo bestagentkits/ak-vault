@@ -293,6 +293,9 @@ func parseCall(obj map[string]any, f *RelayFrame) error {
 	if f.Caller.Scopes, err = asEnumSet(caller["scopes"], mcpScopes, what+".caller.scopes"); err != nil {
 		return err
 	}
+	if len(f.Caller.Scopes) == 0 {
+		return badRequest("%s.caller.scopes must have 1..%d entries", what, len(mcpScopes))
+	}
 	f.DeadlineMs, err = asInt(obj["deadline_ms"], what+".deadline_ms", 1, MaxSafeInteger)
 	return err
 }

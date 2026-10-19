@@ -26,8 +26,15 @@ export function relayFrameVectors(): Record<string, unknown> {
   };
   const okResult = signResult({ call_id: call.call_id, ok: true, result: { name: 'STRIPE_SECRET_KEY', profile: { provider: { value: 'stripe', origin: 'sync' } }, sensitivity: 'high' } }, alicePhone.signSecret);
   const errResult = signResult({ call_id: id('relay/call/2'), ok: false, error: { code: 'pending_approval' } }, alicePhone.signSecret);
+  const vaultList = (n: number) => Array.from({ length: n }, (_, i) => id(`relay/vault/${i}`));
+  const helloLimits = signHello({ device_id: alicePhone.record.device_id, vaults: vaultList(16), tools: ['search'], ts: NOW }, alicePhone.signSecret);
+  const helloMin = signHello({ device_id: alicePhone.record.device_id, vaults: [VAULT_SHARED], tools: ['list'], ts: NOW }, alicePhone.signSecret);
   const frames = [
     { name: 'hello', frame: hello },
+    { name: 'hello_16_vaults_1_tool', frame: helloLimits },
+    { name: 'hello_1_vault_1_tool', frame: helloMin },
+    { name: 'call_1_scope', frame: { ...call, caller: { ...call.caller, scopes: ['vault-mcp:use'] } } },
+    { name: 'call_3_scopes', frame: { ...call, caller: { ...call.caller, scopes: ['vault-mcp:read', 'vault-mcp:write', 'vault-mcp:use'] } } },
     { name: 'ready', frame: { v: 1, type: 'ready', exp: NOW + 900_000 } },
     { name: 'reauth', frame: { v: 1, type: 'reauth', token: 'akv1.synthetic-token-not-real', proof: 'v1.synthetic-proof-not-real' } },
     { name: 'call', frame: call },
@@ -76,8 +83,15 @@ export function relayFrameVectors(): Record<string, unknown> {
       badText('unknown_error_code', 'bad_request', t({ ...errResult, error: { code: 'timeout' } })),
       badText('error_extra_key', 'bad_request', t({ ...errResult, error: { code: 'denied', message: 'no' } })),
       badText('hello_duplicate_vault', 'bad_request', t({ ...hello, vaults: [VAULT_SHARED, VAULT_SHARED] })),
+      badText('hello_empty_vaults', 'bad_request', t({ ...hello, vaults: [] })),
+      badText('hello_17_vaults', 'bad_request', t({ ...hello, vaults: vaultList(17) })),
       badText('hello_no_tools', 'bad_request', t({ ...hello, tools: [] })),
+      badText('hello_8_tools', 'bad_request', t({ ...hello, tools: [...hello.tools, 'search'] })),
+      badText('hello_duplicate_tool', 'bad_request', t({ ...hello, tools: ['search', 'search'] })),
       badText('hello_unknown_tool', 'bad_request', t({ ...hello, tools: ['exec'] })),
+      badText('call_empty_scopes', 'bad_request', t({ ...call, caller: { ...call.caller, scopes: [] } })),
+      badText('call_4_scopes', 'bad_request', t({ ...call, caller: { ...call.caller, scopes: ['vault-mcp:read', 'vault-mcp:write', 'vault-mcp:use', 'vault-mcp:read'] } })),
+      badText('call_duplicate_scope', 'bad_request', t({ ...call, caller: { ...call.caller, scopes: ['vault-mcp:read', 'vault-mcp:read'] } })),
       badText('call_unknown_scope', 'bad_request', t({ ...call, caller: { ...call.caller, scopes: ['vault-mcp:admin'] } })),
       badText('call_zero_deadline', 'bad_request', t({ ...call, deadline_ms: 0 })),
       badText('reauth_empty_token', 'bad_request', t({ v: 1, type: 'reauth', token: '', proof: 'p' })),
