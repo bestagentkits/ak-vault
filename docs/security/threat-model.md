@@ -3,7 +3,9 @@
 Scope: the opt-in sync protocol ([spec](../protocol/v1/spec.md)), the Worker and
 per-vault Durable Object in `worker/`, and the client obligations the spec places on
 AgentKit (agentkit#2298/#2299). Decisions and rationale are in
-[ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md). What the server can see is in
+[ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md); the browser device, relay and
+remote MCP (staging only) are in [ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md).
+What the server can see is in
 [data classification](./data-classification.md).
 
 ## Assets
@@ -19,6 +21,9 @@ AgentKit (agentkit#2298/#2299). Decisions and rationale are in
 | Vault-resource tokens and session/device IDs | ak-web issuer, client, Worker in transit |
 | Worker operational secrets (webhook HMAC key; operator restore HMAC key, set only for a restore) | Worker secret store; the operator key also on the operator's machine for the restore |
 | Availability of local `resolve` | Local client; must not depend on this service |
+| Browser device keys and the dashboard's decrypted view | Page memory of the enrolled browser device at `/app` |
+| Seal private keys `SealSK[e]` | Derived from `VK[e]` on member devices only; the server holds only `seal_pub[e]` |
+| MCP grants and tokens | ak-web authorization server, the MCP client, the Worker's `/mcp` endpoint in transit |
 
 ## Actors
 
@@ -32,6 +37,8 @@ AgentKit (agentkit#2298/#2299). Decisions and rationale are in
 | Forked pull request | Untrusted code in CI on this repo or a consumer repo |
 | Prompt-injected agent or hostile shared profile | Controls text an agent reads; may call local `ak` commands |
 | Network attacker | On-path between client and edge |
+| Remote MCP client (hosted agent), possibly prompt-injected | Holds an MCP grant within its scopes; controls tool arguments |
+| Script injected into the dashboard (XSS, malicious dependency) | Runs in the browser device's page with its keys |
 
 ## Trust boundaries
 
@@ -51,11 +58,22 @@ AgentKit (agentkit#2298/#2299). Decisions and rationale are in
    to an earlier point. That is no more than the "malicious server" actor above
    already has, and it is detected the same way: only by devices that witnessed a
    newer checkpoint (T5).
+7. **MCP client ↔ Worker ↔ relayed device.** An MCP call crosses the Worker, which
+   relays it to an opted-in device or seals a write. Plaintext tool arguments and
+   relayed metadata results are in Worker memory after TLS termination (ADR 0002 D7);
+   the device applies its own grants, approvals and redaction and signs its answer.
+8. **Browser device ↔ Worker.** The dashboard is a device: it decrypts in page
+   memory, and its `browser` session kind is refused on genesis, membership,
+   recovery, seal-key publication and the sealed queue
+   ([spec §9](../protocol/v1/spec.md#9-transport-authentication-worker)).
 
 ## Invariants
 
-- The server never receives plaintext values, names, profiles, policy or audit, and
-  never holds a key that decrypts them.
+- The server never stores plaintext values, names, profiles, policy or audit, and
+  never holds a key that decrypts them. It never receives them either, except, while
+  remote access is enabled, the plaintext in transit through Worker memory that
+  ADR 0002 D7 names (an MCP set's `value`, relayed metadata results and redacted run
+  output); that plaintext is never logged, stored or put into an error.
 - No write is accepted unless its base revision matches (CAS); no write silently
   overwrites another.
 - A write below a tombstone never becomes live.
@@ -70,6 +88,9 @@ AgentKit (agentkit#2298/#2299). Decisions and rationale are in
   pass; revocation lookup failure is a refusal.
 - Synced data can narrow a grant, never create or widen one.
 - Sync-off makes zero network requests; `resolve` never waits on the network.
+- A sealed operation becomes vault state only as a normal record signed by the
+  device that drained it; no relayed result carries an item value except redacted
+  `run` output.
 
 ## Threats, mitigations and tests
 
@@ -108,6 +129,19 @@ directories themselves are the authority for exact file names.
 | I4 | Offline guessing of the recovery bundle; recovery identity reading beyond its need | Holder of an owner-account token (stolen session) | Bundle and the read-only membership log are released only to the owner account with a device-key proof; every other route refuses the recovery identity; removed device IDs refused; Argon2id minimums and a 256-bit recovery key; owner revokes sessions after a loss | `worker/test/recovery-fetch.test.ts` wrong account, removed device, key/did mismatch; `worker/test/removal-fence-and-recovery-rotation.test.ts` route refusals |
 | C2 | Compromised CI runner reads beyond scope | CI runner | Dedicated CI vault, machine read-only identity, revocable; the Worker refuses the recovery-identity path for `session_kind` `machine` ([#42](https://github.com/bestagentkits/ak-vault/issues/42)); incomplete until ak-web marks machine sessions with the claim ([ak-web#578](https://github.com/bestagentkits/ak-web/issues/578), required before #6 ships) | #6 tests (post-MVP); `red-team-tenant-and-role-isolation.test.ts` (marked machine refused, unmarked token still admitted) |
 | I5 | Stolen or leaked AgentKit API key used to sync ([#74](https://github.com/bestagentkits/ak-vault/issues/74)) | Holder of an API key | The key never mints vault tokens. Once [ak-web#583](https://github.com/bestagentkits/ak-web/issues/583) ships (it is open; no API-key sign-in gets a vault token today), it is exchanged for a revocable `api_key_device` session bound to a device key (ak-web). The Worker refuses that session on the recovery bundle, the membership read by a non-member and recovery enrollment, so the key alone cannot collect bundles for offline guessing. Joining an existing vault needs a `device_add` signed by an existing owner device; creating a new vault is allowed. Revoking the key revokes derived sessions through the revocation webhook. Per-key device cap (5), enrolment email notice and per-key opt-in are ak-web controls (ak-web#583). Residual: a leaked key with opt-in can create vaults and devices up to the cap, and an owner who approves an unknown device enrols it. Decision (owner-delegated, recorded by an agent on the owner's behalf on [#90](https://github.com/bestagentkits/ak-vault/issues/90); it answers [#74](https://github.com/bestagentkits/ak-vault/issues/74)): approved `api_key_device` devices keep member access to items but are refused all recovery operations (`GET /recovery`, `PUT /recovery`, recovery-key rotation), even with an owner role. That refusal is not implemented yet: until [#90](https://github.com/bestagentkits/ak-vault/issues/90) lands, an owner-role `api_key_device` device could read and replace the recovery bundle and rotate the recovery key. Revocation of derived sessions is an ak-web control; the Worker checks revoked `sid` per request | `worker/test/recovery-fetch.test.ts` "human email-OTP sessions only"; `worker/test/auth-token.test.ts` session kinds |
+| X1 | Forged or replayed relayed result, or a result from another device | Network, another device, a Worker bug | `hello` and every `result` signed by the device key (`akv1/relay`, `akv1/relay-result`); `device_id` = token `did` and the upgrade key; one answer per `call_id`, late or unknown results dropped ([spec §9.7](../protocol/v1/spec.md#97-relay)) | Vectors: `relay-frames.json` bad signature, other device's signature; relay Worker tests |
+| X2 | A revoked or removed device, or a revoked grant, keeps relaying or calling | Stolen device, removed device, revoked MCP client | Revocation and vault membership checked before every relayed call (`sid`, `did`, minimum `iat`; `did` still a current human device of the vault); `reauth` before token expiry or close 4401; MCP tokens live at most 600 s and `sid` = `grant_id` reuses the revocation webhook | Relay and MCP Worker tests: revoked `did` mid-connection, revoked grant |
+| X3 | Prompt-injected MCP client exfiltrates values or escalates | Remote MCP client | No reveal tool; results never carry values except `run` output after device-side redaction; scopes map to tools (`vault-mcp:read`/`write`/`use`); the device applies its own grants, `run` needs a pinned `exec` grant and never prompts from the relay | Vectors: `relay-frames.json`; device-side tests (agentkit) |
+| X4 | Tampered, replayed or cross-account sealed operation, or one applied twice | Storage reader, replay of queued data, another account's MCP client | AEAD with AAD over vault, ID, epoch, origin (including the requesting account) and time; sealing only for an `owner`/`editor` account with `vault-mcp:write` and never while `rekey_required` is set; queue served only to the requesting account's devices, which refuse another account; draining devices dedupe `sealed_id`, enforce TTL and time bounds, and write a normal signed record audited `sealed_applied` / `sealed_refused`. A live compromised Worker can still seal what it likes (limitation below) ([spec §3.6](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)) | Vectors: `seal-key.json`, `sealed-op.json` tampered AAD, wrong epoch, replay |
+| X5 | Substituted seal key, so a later reader of stored queue entries can open them | Storage or document substitution | Seal-key document signed by an owner device current at its `membership_seq`; devices holding `VK[e]` recompute `seal_pub[e]` and refuse a mismatch; the MCP handler seals only to the current-epoch document | Vectors: `seal-key.json` non-owner author, wrong `seal_pub` |
+| X6 | Name-tag lookup misleads a reader into acting on the wrong item | Server | Tags are unsigned hints: a reader decrypts and compares the name before acting; a tag must match the record's `key_epoch`; tombstones carry none ([spec §3.7](../protocol/v1/spec.md#37-name-tags-keyed-blind-index)) | Vectors: `name-tag.json`; lookup Worker tests |
+| X7 | Browser session changes membership or reads recovery | XSS in `/app`, stolen browser token | `browser` session kind refused (`403`) on genesis, every membership POST, recovery bundle and identity routes, seal-key PUT and the sealed queue; strict CSP, SRI, no third-party code; sync token TTL 300 s | Worker tests: browser session refusals; CSP header test |
+| X8 | Synced profile field forged in another device's name | Malicious member, server relaying old fields | Per-field provenance: changed fields carry the record author and time, unchanged fields keep prior provenance; violating fields dropped and audited `profile_provenance_invalid`; another device's field shown as `sync` ([spec §5.1](../protocol/v1/spec.md#51-profile-layout)) | Vectors: `profile.json` |
+| X9 | Malformed or substituted enrollment code joins the wrong device | Network, phishing | Closed key set, exact contexts, version and size checks; owner role and `human` kind required; SAS confirmation on approval ([spec §3.8](../protocol/v1/spec.md#38-enrollment-codes)) | Vectors: `enroll-codes.json` |
+| X10 | Relay or MCP flood exhausts an account | MCP client, stolen token | Per-client and per-account MCP rate limits, per-device in-flight cap, per-account connection cap, sealed queue cap with `sealed_queue_full` ([spec §10](../protocol/v1/spec.md#10-errors-and-limits)) | Relay and MCP rate-limit tests |
+
+Rows X1–X10 cover remote access (ADR 0002); their vectors and tests land with the
+implementation, before the feature leaves staging.
 
 ## Explicit limitations
 
@@ -227,6 +261,28 @@ These are accepted and must be stated wherever the guarantees are described:
 - **Wraps of older epochs are optional.** A device enrolled without a wrap for an
   older epoch cannot read items still at that epoch; they are rotated forward by a
   device that can, never delivered by an unsigned late wrap.
+- **Remote access puts plaintext in Worker memory** (ADR 0002 D7). While remote access
+  is enabled, an MCP set's `value`, relayed names and profile fields, and redacted run
+  output pass through the Worker after TLS termination on their way to or from a
+  device. A compromised Worker sees them; it still stores none and holds no key.
+- **A compromised Worker can forge relay calls and sealed operations** for devices that
+  opted in, within any MCP scope it claims. Devices apply their own grants and
+  approvals, and every drained operation is a signed, audited record, but devices do
+  not verify the MCP token themselves.
+- **The browser device holds an owner-role key.** Script running in the dashboard can
+  decrypt every item and could sign a membership event offline that another channel
+  delivers; the `browser` session kind only stops the Worker from accepting it.
+  Removing the browser device and rekeying is the response.
+- **`run` redaction is literal.** The device removes exact released values from
+  relayed `run` output; output a command encoded, split or truncated still leaks.
+- **MCP clients trust the Worker for results.** They do not verify device
+  signatures; only the Worker checks them, so a compromised Worker can answer an MCP
+  client with anything.
+- **Old writers drop synced profiles.** A client that predates the profile layout
+  does not carry `meta.profile` forward, so its edit removes the item's profile.
+- **Offline MCP cannot read.** With no opted-in device online, MCP reads answer
+  `no_device_online`; only sealed writes work (ADR 0002 D3).
+- **Name tags leak name equality** within a key epoch, across that epoch's revisions.
 - **Metadata.** Item counts, sizes, timing, revisions, membership and device
   public keys are visible to the server
   ([data classification](./data-classification.md)).

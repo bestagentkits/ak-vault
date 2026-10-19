@@ -2,9 +2,10 @@
 
 What the sync server can and cannot see. Field formats are owned by the
 [spec](../protocol/v1/spec.md); this page owns the classification and the handling
-rules. Rationale is in [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md).
+rules. Rationale is in [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md) and, for
+the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md).
 
-## Encrypted (server never sees plaintext)
+## Encrypted (server never stores plaintext; with remote access off it never sees any)
 
 | Data | Protection |
 |---|---|
@@ -16,6 +17,8 @@ rules. Rationale is in [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md).
 | Private audit entries | Encrypted audit stream ([spec §7](../protocol/v1/spec.md#7-encrypted-audit-stream)) |
 | Vault keys | Wrapped to devices, password KEK and recovery KEK only |
 | Recovery bundle contents (vault keys, owner anchor, checkpoint) | AEAD under password and recovery KEKs |
+| Sealed operation contents (`op`, name, value, sensitivity) at rest | Sealed to the epoch's `seal_pub`; only member devices derive `SealSK[e]` ([spec §3.6](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)). The Worker saw them in plaintext before sealing ([transit table](#transits-worker-memory-never-stored-or-logged-remote-access-only)) |
+| Audit of drained sealed operations and dropped profile fields (`sealed_applied`, `sealed_refused`, `profile_invalid`, `profile_provenance_invalid`) | Encrypted audit stream |
 
 ## Visible operational metadata (unavoidable)
 
@@ -29,7 +32,13 @@ rules. Rationale is in [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md).
 | Wrap headers: recipient device ID, ephemeral public key, Argon2id salt and `t`/`m`/`p`; which membership event each device wrap set belongs to (kept after its recipients are removed) | Delivering the right wrap to each device and serving each signed set whole |
 | Checkpoint fields (sequences, digests, author, timestamp) | Relayed to devices for anti-rollback |
 | Timestamps and ciphertext sizes | Inherent to storage; sizes leak approximate value length |
-| Token claims: `sub`, `sid`, `did`, `scope`, `jti`, `session_kind` (`email_otp`, `api_key_device`, `machine`) | Authentication, authorization and revocation |
+| Token claims: `sub`, `sid`, `did`, `scope`, `jti`, `session_kind` (`email_otp`, `api_key_device`, `machine`, `browser`) | Authentication, authorization and revocation; `browser` restricts the dashboard device |
+| MCP token claims: `sub`, `client_id`, `grant_id` (= `sid`), `scope`, `jti` | Authorizing and revoking an MCP grant |
+| `name_tag` per record head (16-byte keyed tag and its `key_epoch`) | `lookup`; reveals which records share a name within an epoch, not the name ([spec §3.7](../protocol/v1/spec.md#37-name-tags-keyed-blind-index)) |
+| Seal-key document (vault ID, key epoch, membership position, `seal_pub`, author, time, signature) | Serving the key the MCP handler seals to |
+| Sealed operation envelope: `sealed_id`, key epoch, queue position, `origin` (`account`, `client_id`, `grant_id`), time, ciphertext size, and the `applied`/`refused` outcome of its ack | Queueing, deduplication, expiry and audit attribution |
+| Lookup requests: the requested `(key_epoch, tag)` pairs and the hits served | Answering name lookups; reveals which names a reader looks for, not the names |
+| Relay connection and call metadata: device ID, vault IDs and tool names from `hello`, `call_id`, vault ID and tool of each call, caller `client_id`/`grant_id`/scopes, result `ok` and error code, timing | Routing calls to a device and enforcing scopes, deadlines and rate limits |
 | Quota and rate-limit counters | Abuse protection |
 | Durable Object point-in-time bookmarks (operator restore route only) | Positions in a vault object's storage history; they carry no vault contents |
 | Client IP and TLS metadata at the Cloudflare edge | Inherent to the platform |
@@ -38,16 +47,34 @@ rules. Rationale is in [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md).
 `compromised`; [spec §4](../protocol/v1/spec.md#4-membership-log-owner-signed-hash-chained)),
 so it carries no free text.
 
+## Transits Worker memory, never stored or logged (remote access only)
+
+While remote access is enabled (staging), these cross the Worker in plaintext after TLS
+termination and are held only for the request or relayed call
+([ADR 0002 D7](../adr/0002-browser-device-relay-and-remote-mcp.md#decision)):
+
+| Data | Path |
+|---|---|
+| MCP tool arguments, including a `set` value | MCP client → Worker → relayed to a device or sealed |
+| Relayed results: names, profile fields, sensitivity, timestamps, request status | Device → Worker → MCP client |
+| Redacted `run` output (`stdout`, `stderr`) | Device → Worker → MCP client |
+
+The dashboard at `/app` decrypts in the browser, so its plaintext never reaches the
+Worker; its traffic is the same ciphertext and metadata as any device.
+
 ## Handling rules
 
 **Logs, traces and metrics**
 
 - Never record request or response bodies, ciphertext, wrap material, tokens,
   proofs, idempotency keys, recovery bundles, or any field from the encrypted table.
+  The same applies to MCP request and response bodies, relay frames, sealed
+  operations, `name_tag` values and everything in the transit table above.
   The operator restore route's signature and the `VAULT_OPERATOR_SECRET` it is keyed
   with are secrets. Its bookmarks go on the incident issue, not into logs.
 - Allowed fields: route template, status, stable error code, vault ID, device ID,
-  latency, sizes. Item IDs appear only where the request path already carries them.
+  latency, sizes; for MCP and the relay also tool name, `client_id`, relay close code
+  and outcome. Item IDs appear only where the request path already carries them.
 - Client IPs are not written to application logs. If a rate limiter keys on them,
   they stay inside its counters.
 - Cloudflare platform invocation logs are disabled

@@ -185,6 +185,43 @@ page and docs, and its own CI run is linked from its pull request.
       `protocol/v1/vectors/removal-fence.json` and
       `worker/test/removal-fence-binds-log.test.ts`.
 
+## Remote access gates
+
+The browser device, relay and remote MCP
+([ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md)) run on staging only,
+behind `VAULT_REMOTE_ACCESS_ENABLED`. They are not part of sync GA. Turning the flag on
+in production needs every box below, at the exact commit, plus an owner decision on
+[#101](https://github.com/bestagentkits/ak-vault/issues/101):
+
+- [ ] ADR 0002 accepted by the owner, and REVIEW.md and AGENTS.md carry its
+      exception scopes.
+- [ ] Go and TypeScript reproduce `seal-key.json`, `sealed-op.json`, `name-tag.json`,
+      `enroll-codes.json`, `profile.json` and `relay-frames.json`, including every
+      negative case ([spec §3.6–§3.8, §5.1, §9.7](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)).
+- [ ] Relay: Worker tests for the closed frame set and close codes, signed `hello` and
+      `result`, `reauth` before expiry, revocation and membership checked before each
+      call (a device removed mid-connection gets no further call), a replaced
+      connection, in-flight and connection caps, and dropped late results.
+- [ ] MCP: Worker tests for token audience and claims (`<aud>/mcp` only, refused on
+      `/v1`), grant revocation by `sid`, scope-to-tool mapping, 2026-07-28 and
+      stateless 2025-11-25 handshakes (no `Mcp-Session-Id`), protected-resource
+      metadata, rate limits, `no_device_online`, `device_timeout` and sealing with
+      `sealed_queue_full`; sealing refused for a reader account and while
+      `rekey_required` is set; another account's sealed operations never served.
+- [ ] Dashboard: `/app` served as static assets under a CSP with `script-src 'self'`,
+      SRI and no third-party code; `browser` session refused on genesis, membership,
+      recovery, seal-key PUT and the sealed queue; enrollment needs SAS approval from
+      an existing owner device.
+- [ ] Disclosure scan rerun with remote access on: planted values and names sent
+      through MCP set, relayed results and `run` output are absent from the Durable
+      Object dump, Worker logs, live tail and errors (scenario 15 and
+      [data classification](./data-classification.md#transits-worker-memory-never-stored-or-logged-remote-access-only)).
+- [ ] Red-team scenarios 16–21 executed and scenario 13 rerun with synced profiles
+      (`meta.profile` provenance) and MCP-originated text as the hostile input.
+- [ ] The D7 boundary (plaintext transits Worker memory) is stated on the MCP consent
+      screen and in the vault guide, matching the
+      [threat model](./threat-model.md#explicit-limitations).
+
 ## Staging soak
 
 The owner decided on 2026-10-16
@@ -347,3 +384,22 @@ expertise who did not implement the protocol.
     (client-side, agentkit#2299 / #7).
 14. Forked pull request tries to read secrets or trigger a deploy.
 15. Planted plaintext and names searched for in dumps, logs, metrics and errors.
+
+Remote access (staging, [ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md)):
+
+16. Forged, replayed, late or other-device relay results; unknown frame types,
+    oversize or binary frames.
+17. Revoked device or MCP grant mid-connection; `reauth` after expiry or for another
+    account or device.
+18. Prompt-injected MCP client tries to reveal a value, call a tool outside its
+    scopes, or `run` without a pinned `exec` grant.
+19. Server substitutes the seal key, replays or reorders sealed operations, or
+    serves one after its TTL.
+20. Browser session tries genesis, membership, recovery, seal-key publication and the
+    sealed queue; script injection blocked by the dashboard CSP.
+21. Server returns lookup hits for the wrong item or a stale epoch; malformed or
+    substituted enrollment codes.
+
+Scenario 13 is rerun once profiles sync: a hostile synced profile field, including
+one forged in another device's name, must not widen a grant, run a command or pass
+the provenance check.
