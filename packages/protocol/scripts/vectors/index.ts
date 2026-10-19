@@ -10,6 +10,10 @@ import { recoveryBundleVectors, rekeyWrapsVectors } from './bundle-rekey.js';
 import { edgeCaseVectors } from './edge-cases.js';
 import { deviceAddWrapsVectors } from './device-add-wraps.js';
 import { removalFenceVectors } from './removal-fence.js';
+import { nameTagVectors, sealedOpVectors, sealKeyVectors } from './seal-and-name-tag.js';
+import { enrollCodeVectors } from './enroll-codes.js';
+import { profileVectors } from './profile-provenance.js';
+import { relayFrameVectors } from './relay-frames.js';
 
 const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'canonical-json.json': canonicalJsonVectors,
@@ -31,6 +35,12 @@ const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'device-add-wraps.json': deviceAddWrapsVectors,
   'removal-fence.json': removalFenceVectors,
   'edge-cases.json': edgeCaseVectors,
+  'seal-key.json': sealKeyVectors,
+  'sealed-op.json': sealedOpVectors,
+  'name-tag.json': nameTagVectors,
+  'enroll-codes.json': enrollCodeVectors,
+  'profile.json': profileVectors,
+  'relay-frames.json': relayFrameVectors,
 };
 
 export const VECTOR_FILES = Object.keys(BUILDERS);

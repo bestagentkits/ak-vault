@@ -1,0 +1,640 @@
+{
+  "version": 1,
+  "description": "Sealed operations x25519-xc20p-seal (spec §3.6), sealed to seal_pub[e] of seal-key.json seal_keys (vault shared). epk = X25519(ephemeral_secret, 9); shared = X25519(ephemeral_secret, seal_pub) (all-zero: bad_request); seal_key = HKDF-SHA256(ikm=shared, salt=epk || seal_pub, info=utf8(\"akv1/seal\"), L=32); aad = cjson({\"ctx\":\"akv1/sealed-op\",\"vault_id\",\"sealed_id\",\"key_epoch\",\"origin\",\"ts\"}); ct = XChaCha20-Poly1305(seal_key, n, cjson(op), aad). cases: sealOp with the given ephemeral_secret, nonce wire.n and sealed_id MUST reproduce wire byte for byte, and openSealedOp(SealSK[key_epoch], wire, {vault_id}) MUST yield op. openSealedOp order: parse (v or alg unknown: unsupported_version; exact keys, IDs, epk 32 B, n 24 B, ct 16..65552 B, origin {kind \"mcp\", account 1..256, client_id 1..256 and grant_id 1..64 printable ASCII}, ts: bad_request); vault_id other than expected (bad_request); all-zero shared secret (bad_request); AEAD failure (decrypt_failed); pt not canonical, unknown op, set without value, delete with value or sensitivity, unknown keys (bad_request). invalid: open the wire with SealSK of open_with_epoch and MUST fail with expect_error; a wire with ct_zero_bytes replaces ct with b64 of that many zero bytes. seal_invalid: sealOp MUST refuse op with expect_error (an op with value_fill uses value = value_fill repeated value_length times).",
+  "origin": {
+    "kind": "mcp",
+    "account": "acct_alice",
+    "client_id": "mcp-client-example",
+    "grant_id": "grant_example_1"
+  },
+  "cases": [
+    {
+      "name": "set",
+      "key_epoch": 3,
+      "ephemeral_secret": "Gusrafl74EFbBg68RTR8VgJHwcIuvvoNYUwwaw8bEkE",
+      "op": {
+        "op": "set",
+        "name": "STRIPE_SECRET_KEY",
+        "value": "sk_test_example_not_real",
+        "sensitivity": "high"
+      },
+      "plaintext": "{\"name\":\"STRIPE_SECRET_KEY\",\"op\":\"set\",\"sensitivity\":\"high\",\"value\":\"sk_test_example_not_real\"}",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      }
+    },
+    {
+      "name": "set_without_sensitivity",
+      "key_epoch": 3,
+      "ephemeral_secret": "gUo11EzC2dSXasS4u7_VASU9LpdQAuyqfVuWI5GFZys",
+      "op": {
+        "op": "set",
+        "name": "Grüße API",
+        "value": ""
+      },
+      "plaintext": "{\"name\":\"Grüße API\",\"op\":\"set\",\"value\":\"\"}",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "kCiKQyoBP1OSkiik25qsfw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "Fgj5jIkQrpkN-vQLggZ4YVq0qxRJ5oi0op6l9Y4jJAw",
+        "n": "FU_Dy-zoWnnsiksWX5HNoZq4szS1HYy7",
+        "ct": "znJus-PNvQGo0zvXyBF0A5jHfcvIwmgh9Oma3bpwvzZqOQlT8e8v_DBeKLdTnhIZLIwz0hWoATM-3Kay",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      }
+    },
+    {
+      "name": "delete",
+      "key_epoch": 3,
+      "ephemeral_secret": "_ld8jcHtRNpZKCP9E74xkIBZnPYhS2t1SUkqnkmchWE",
+      "op": {
+        "op": "delete",
+        "name": "OLD_TOKEN"
+      },
+      "plaintext": "{\"name\":\"OLD_TOKEN\",\"op\":\"delete\"}",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "M2lYT1GoYc3oDJYLpbR2-Q",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "IuUK8sCtjlG6phOqPygg377hNdt8Oqts4y0NgYOz1EI",
+        "n": "GOur57lg6E4ErIzskhYweUv0aQj7dxKA",
+        "ct": "CewZxrvhq-rtkda601N8YQ0UtakjG5MLI8fBgq8P7Sl9pLIpX-zzrMJi_lO2GrsftUQ",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      }
+    },
+    {
+      "name": "set_epoch1",
+      "key_epoch": 1,
+      "ephemeral_secret": "ZcSnSv3SQMjW6mRDJc9TRcFrXWG-QZZGnu1nzo9Tf_M",
+      "op": {
+        "op": "set",
+        "name": "A",
+        "value": "v1"
+      },
+      "plaintext": "{\"name\":\"A\",\"op\":\"set\",\"value\":\"v1\"}",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "Jx5EVEcoWfRDNWC8pLtneg",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "epk": "W-jJSXGz-J-dUwHjmBOw5uADh-nAK_mR-1ukKyFZokw",
+        "n": "hNOL_YSlxhWkLmaStFK2sxirDZFcFznm",
+        "ct": "QA3WCVDvsH1chz8LIStASHBDuPJswVaJ1lbQm7Ls2cawhyi_e9FpooYl-7KlqoAOMbES5w",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "wrong_epoch_key",
+      "open_with_epoch": 2,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "tampered_origin_account",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_bob",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "tampered_origin_client_id",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "other-client",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "tampered_ts",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200001
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "tampered_sealed_id",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "ayL_99x4r8AR9BEyQlq-iw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "tampered_key_epoch",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 2,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "tampered_ct",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjXtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "other_vault",
+      "open_with_epoch": 3,
+      "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "zero_epk",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "delete_with_value",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000,
+        "epk": "6d-JIdrVIX_f5tqEre44hRSIeoZWdTMMef9-XLya8D8",
+        "n": "uE81Ur8QnM3IccEZm0NXWjwvRHNWNLAT",
+        "ct": "hgqNnibidefbJGvCmaYGjivMS18yfhJSd4i4QSqZ1fkhKawuKloiVp-wSFvY7LjCTIcctI6pppkUC-iu_vs"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "delete_with_sensitivity",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000,
+        "epk": "yQve8iBl8i5apXmGEa-Vo4Lo5kMAiG4pp-S752sW_Ek",
+        "n": "CUEbNPPDz1E6UxoqdggWku2xnmSyww-N",
+        "ct": "L_WOYNlBcnnZs2stJD5bGmFxTNUFcMTyYARO8B_9MghdUMyVX-ohINrWHJ1f-2VPjbPvTJTkQiFGU0R2g5GdB0zLY7sP-6o"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "set_without_value",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000,
+        "epk": "zPSgyhn0C-18uWJNU0Q05nGgjs-XWEfRZ5IpM4ehRUA",
+        "n": "Ou9YpnRSEd16c_pZSDu773mi07U4wXis",
+        "ct": "XB3Ohr2Wj6ZcndsTQZS-7jROtPpWprQ_jtyW32jYwCdnaBTtDn0g"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "unknown_op",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000,
+        "epk": "Vh1gxsdhr-bwS1iZNzzpAXaa7y19U9DM-u2-GAUJ2hY",
+        "n": "P9qhtmReWWDTHQ--D1nZfs5eE5WQKSy4",
+        "ct": "QhTxqgMdfbrhVpbdDQQ6zlLdkr5J2IwoLYKatciqhYS34Hw1YzmBNDv5"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "extra_pt_key",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000,
+        "epk": "u4W2FedkbkzONTPDjwJMvnErlAvKfpiGe19Zkm_hj2k",
+        "n": "x63JTFmRDr5pEF3xiVteg1GwUCZvKzfz",
+        "ct": "DhA_H69QUbkr6dvnK87SKRCnYpoWT5oyemOV0UOUqhsORbOvFbfEvJbGdzfn3OeI7AYbTygdOyUq"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "non_canonical_pt",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000,
+        "epk": "z4KTqqsdFNcEUCcgFbP4ElS8aZaHrdHjgcA7_zDqiH8",
+        "n": "qjik4i-p_oz8E2ESHgLAyqVT6LaxLyLp",
+        "ct": "rfvdXodgzDXYsok7K4OHAH8KpAOPf8ioHPI_snT_Ig7aoF1yos2TpM5ISHG6p9LL61GP"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "oversize_ct",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "ct_zero_bytes": 65553,
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "unknown_origin_kind",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "web",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "non_ascii_client_id",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "clïent",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "extra_wire_key",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000,
+        "note": "x"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "unknown_alg",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-aes-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "unsupported_version"
+    },
+    {
+      "name": "version_2",
+      "open_with_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "wire": {
+        "v": 2,
+        "alg": "x25519-xc20p-seal",
+        "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+        "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+        "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+        "origin": {
+          "kind": "mcp",
+          "account": "acct_alice",
+          "client_id": "mcp-client-example",
+          "grant_id": "grant_example_1"
+        },
+        "ts": 1767229200000
+      },
+      "expect_error": "unsupported_version"
+    }
+  ],
+  "seal_invalid": [
+    {
+      "name": "delete_with_value",
+      "op": {
+        "op": "delete",
+        "name": "A",
+        "value": "x"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "oversize_pt",
+      "op": {
+        "op": "set",
+        "name": "A"
+      },
+      "value_fill": "a",
+      "value_length": 65536,
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "empty_name",
+      "op": {
+        "op": "set",
+        "name": "",
+        "value": "v"
+      },
+      "expect_error": "bad_request"
+    }
+  ]
+}

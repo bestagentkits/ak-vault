@@ -60,6 +60,20 @@
  * Transport (§9) — `buildProof(args): string`, `decodeProof`, `verifyProof(header, opts): TransportProof`.
  *
  * Devices — `createDeviceKeys`, `randomId`, `signKeyPairFromSeed`, `kxKeyPairFromSecret`.
+ * External key stores (WebCrypto) — `DeviceSigner`, `DeviceKx`, `signObjectAsync`, `signRecordAsync`,
+ * `buildProofAsync`, `unwrapFromDeviceAsync` (byte-identical to the synchronous functions).
+ *
+ * Remote access
+ * - Seal key (§3.6): `deriveSealKeyPair(vk, vaultId, keyEpoch)`, `buildSealKeyDoc`, `signSealKeyDoc`,
+ *   `parseSealKeyDoc`, `verifySealKeyDoc(doc, chain, {vaultId, vk?})`, `checkSealKeyDocReplace(stored, incoming)`.
+ * - Sealed operations (§3.6): `sealOp(sealPub, args)`, `openSealedOp(sealSecret, wire, {vaultId})`, `parseSealedOp`,
+ *   `parseSealedOperation`, `parseSealedOrigin`.
+ * - Name tags (§3.7): `nameIndexKey(vk, vaultId, keyEpoch)`, `nameTag(indexKey, name)` (NFC).
+ * - Enrollment codes (§3.8): `encodeJoinCode`, `parseJoinCode`, `encodeOfferCode`, `parseOfferCode`, `isCanonicalOrigin`.
+ * - Profile (§5.1): `validateProfile`, `checkProfileProvenance(prev, next, record, {selfDeviceId?})`,
+ *   `buildNextProfile`, `carryForwardMeta`, `parseProfileValue`, `asProfileText`.
+ * - Relay (§9.7): `parseRelayFrame(data, {maxBytes})`, `parseRelayFrameObject`, `signHello`, `verifyHello`,
+ *   `signResult`, `verifyResult`, `parseToolArgs(tool, args)`, `parseToolResult(tool, result)`, `TOOL_SCOPE`.
  *
  * @packageDocumentation
  */
@@ -107,7 +121,7 @@ export {
   type Sensitivity,
   type TombstonePayload,
 } from './item.js';
-export { parseX25519Wrap, unwrapFromDevice, wrapToDevice, x25519Shared, type WrapRecipient, type WrapToDeviceArgs, type UnwrapFromDeviceArgs, type X25519Wrap } from './wrap-x25519.js';
+export { openWrapWithShared, parseX25519Wrap, unwrapFromDevice, wrapToDevice, x25519Shared, type WrapRecipient, type WrapToDeviceArgs, type UnwrapFromDeviceArgs, type X25519Wrap } from './wrap-x25519.js';
 export {
   ARGON2_BOUNDS,
   ARGON2_DEFAULTS,
@@ -217,5 +231,103 @@ export {
   type PolicyRules,
   type ResolvedItemPolicy,
 } from './policy-binding.js';
-export { PROOF_JTI_TTL_MS, PROOF_MAX_SKEW_MS, buildProof, decodeProof, verifyProof, type BuildProofArgs, type TransportProof, type VerifyProofOptions } from './proof.js';
+export { PROOF_JTI_TTL_MS, PROOF_MAX_SKEW_MS, buildProof, decodeProof, encodeProofHeader, proofObject, verifyProof, type BuildProofArgs, type TransportProof, type VerifyProofOptions } from './proof.js';
 export { createDeviceKeys, randomId, type CreateDeviceArgs, type DeviceKeys } from './device-keys.js';
+export {
+  buildProofAsync,
+  signObjectAsync,
+  signRecordAsync,
+  unwrapFromDeviceAsync,
+  type DeviceKx,
+  type DeviceSigner,
+} from './device-signer.js';
+export {
+  buildSealKeyDoc,
+  checkSealKeyDocReplace,
+  deriveSealKeyPair,
+  parseSealKeyDoc,
+  signSealKeyDoc,
+  verifySealKeyDoc,
+  type SealKeyDoc,
+  type UnsignedSealKeyDoc,
+  type VerifySealKeyDocOptions,
+} from './seal-key.js';
+export {
+  MAX_ITEM_NAME,
+  MAX_ITEM_VALUE,
+  SEALED_OPS,
+  SEALED_OP_ALG,
+  SEALED_ORIGIN_KINDS,
+  openSealedOp,
+  parseSealedOp,
+  parseSealedOperation,
+  parseSealedOrigin,
+  sealOp,
+  type OpenedSealedOp,
+  type SealOpArgs,
+  type SealedOpWire,
+  type SealedOperation,
+  type SealedOrigin,
+} from './sealed-op.js';
+export { NAME_TAG_BYTES, nameIndexKey, nameTag } from './name-tag.js';
+export {
+  JOIN_CODE_CONTEXT,
+  JOIN_CODE_PREFIX,
+  MAX_DEVICE_LABEL_BYTES,
+  MAX_ENROLL_CODE_BYTES,
+  OFFER_CODE_CONTEXT,
+  OFFER_CODE_PREFIX,
+  encodeJoinCode,
+  encodeOfferCode,
+  isCanonicalOrigin,
+  parseJoinCode,
+  parseOfferCode,
+  type JoinCode,
+  type OfferCode,
+} from './enroll-codes.js';
+export {
+  PROFILE_KEYS,
+  PROFILE_KINDS,
+  PROFILE_LIST_KEYS,
+  PROFILE_SOURCES,
+  PROFILE_TEXT_KEYS,
+  asProfileText,
+  buildNextProfile,
+  carryForwardMeta,
+  checkProfileProvenance,
+  parseProfileValue,
+  validateProfile,
+  type CheckedProfile,
+  type Profile,
+  type ProfileField,
+  type ProfileKey,
+  type ProfileOrigin,
+  type ProfileRecordContext,
+  type ProfileSource,
+} from './profile.js';
+export {
+  MCP_SCOPES,
+  RELAY_ERROR_CODES,
+  RELAY_FRAME_TYPES,
+  RELAY_TOOLS,
+  TOOL_SCOPE,
+  parseRelayFrame,
+  parseRelayFrameObject,
+  signHello,
+  signResult,
+  verifyHello,
+  verifyResult,
+  type CallFrame,
+  type HelloFrame,
+  type McpScope,
+  type ReadyFrame,
+  type ReauthFrame,
+  type RelayCaller,
+  type RelayErrorCode,
+  type RelayFrame,
+  type RelayFrameType,
+  type RelayTool,
+  type ResultFrame,
+  type UnsignedResult,
+} from './relay-frames.js';
+export { ENTRY_ORIGINS, SEARCH_FIELDS, parseToolArgs, parseToolResult } from './relay-tools.js';

@@ -36,17 +36,26 @@ export interface BuildProofArgs {
   jti?: string;
 }
 
-export function buildProof(args: BuildProofArgs): string {
-  const proof: TransportProof = {
+/** The validated proof object `buildProof` signs. */
+export function proofObject(args: Omit<BuildProofArgs, 'secretKey'>): TransportProof {
+  return parseProofObject({
     htm: args.htm,
     htu: args.htu,
     ts: args.ts,
     jti: args.jti ?? b64encode(randomBytes(16)),
     ath: sha256b64(utf8Encode(args.token)),
     bh: sha256b64(args.body),
-  };
-  parseProofObject(proof);
-  return `${b64encode(utf8Encode(cjson(proof)))}.${signDetached(SIGN_CONTEXT.proof, proof, args.secretKey)}`;
+  });
+}
+
+/** Header value from a proof object and its b64 signature. */
+export function encodeProofHeader(proof: TransportProof, sig: string): string {
+  return `${b64encode(utf8Encode(cjson(proof)))}.${sig}`;
+}
+
+export function buildProof(args: BuildProofArgs): string {
+  const proof = proofObject(args);
+  return encodeProofHeader(proof, signDetached(SIGN_CONTEXT.proof, proof, args.secretKey));
 }
 
 function parseProofObject(value: unknown): TransportProof {

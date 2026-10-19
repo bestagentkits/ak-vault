@@ -1,0 +1,387 @@
+{
+  "version": 1,
+  "description": "Seal key and seal-key document (spec §3.6). seal_keys: SealSK[e] = HKDF-SHA256(ikm=VK[e], salt=b64decode(vault_id), info=utf8(\"akv1/seal-key\\n\") || cjson({\"key_epoch\":e}), L=32), used unmodified as an X25519 secret; seal_pub = X25519(SealSK, 9). Documents are signed with context \"akv1/seal-key\" over the document without sig. verifySealKeyDoc(doc, chain, {vault_id, vk?}) runs against membership.json chains[0] (the shared chain, verified in full) and checks in order: shape (exact keys; v = 1 else unsupported_version; IDs, 32-byte seal_pub, integers: bad_request); vault_id is the expected vault (bad_request); membership_seq <= verified head seq and key_epoch = the chain key epoch at membership_seq (bad_request); author is a human owner device current at membership_seq, never the recovery key (forbidden); signature under the author sign_pub (invalid_signature); with vk (null = not held), seal_pub = seal_pub recomputed from vk (forbidden). cases MUST verify; invalid MUST fail with expect_error. replace: the server keeps one document per (vault_id, key_epoch) and refuses an incoming document whose membership_seq is below the stored one (conflict); replace_cases MUST be accepted, replace_invalid MUST fail.",
+  "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+  "chain": "membership.json chains[0]",
+  "seal_keys": [
+    {
+      "key_epoch": 1,
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "seal_sk": "sxz5V8QsF2NuPibkgrhWRNqB97G9Fl9Qnrp4rcgmqIY",
+      "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA"
+    },
+    {
+      "key_epoch": 2,
+      "vk": "TDWG7GxVRqkmFq-xOidfIBXaueFf9tPZQPdUg3xpcrE",
+      "seal_sk": "YaM2UHL-rrCM8EIhVHuHviHnZR7z2H9aYegvYZn5rz8",
+      "seal_pub": "iisksNpddFODkzUzRVrtfoaoK-5oTIhPL9kRQ7ElXRE"
+    },
+    {
+      "key_epoch": 3,
+      "vk": "B_qoCDTvDMaazdFHNPYvj15bRtznSnSWuWegL5sZnwE",
+      "seal_sk": "-vWao2le2K_YLzSx9LW14OkglSzbj3RBAypleO4trIg",
+      "seal_pub": "zVWEny6B9Cx4z_h0rlgqt1h8s3Zs_NQH-a1CHmG6ayw"
+    }
+  ],
+  "other_vault_seal_pub": {
+    "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+    "key_epoch": 1,
+    "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+    "seal_pub": "5sISJkFW2sB1p8saOSotFUP3g43xSJOIiXXxCGRGcig"
+  },
+  "cases": [
+    {
+      "name": "genesis_epoch1",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225601000,
+        "sig": "_3kqFY_FZ8O_DN6gP3JeCznLypaxPam9Cw4YDFzDoTP2JPV6UX9BeCF7knJWpFv7JfHe5EbQxdLJO2RY0X8PCA"
+      },
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI"
+    },
+    {
+      "name": "after_second_rekey_epoch3",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "membership_seq": 8,
+        "seal_pub": "zVWEny6B9Cx4z_h0rlgqt1h8s3Zs_NQH-a1CHmG6ayw",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767226081000,
+        "sig": "VuJz5Er9s__74lc1i5u0gYGAplp9PjGUNeR5W1TjrVESMQk-tkpMxk5nvvQ9HVgATP61AVftWYmpf63w2WIYDg"
+      },
+      "vk": "B_qoCDTvDMaazdFHNPYvj15bRtznSnSWuWegL5sZnwE"
+    },
+    {
+      "name": "epoch2_without_vk",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 2,
+        "membership_seq": 6,
+        "seal_pub": "iisksNpddFODkzUzRVrtfoaoK-5oTIhPL9kRQ7ElXRE",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225961000,
+        "sig": "2FtZVmV5G8JkI7QzU7Y9YLvsith-ilV6tQPw1vczwgJfb79C-KywDs4feaBz3B7DXd_O_rIndsmnj0a5ItqFBw"
+      },
+      "vk": null
+    },
+    {
+      "name": "epoch2_at_later_seq",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 2,
+        "membership_seq": 7,
+        "seal_pub": "iisksNpddFODkzUzRVrtfoaoK-5oTIhPL9kRQ7ElXRE",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767226021000,
+        "sig": "xqwOdx_ivJSSc6HqxEuh8J-nGkKY0UwcCzL-rG4rIUqvwuvpxljOfEnNzTIpzZF5zaoT6gIw3QNbhHj2KttdDw"
+      },
+      "vk": "TDWG7GxVRqkmFq-xOidfIBXaueFf9tPZQPdUg3xpcrE"
+    },
+    {
+      "name": "owner_removed_later_signed_before_removal",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 4,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "mPcGN24XundmA61ifDsv_A",
+        "ts": 1767225841000,
+        "sig": "3XDMAiFXKjTdb1uZrkzbvG7nnSl3SN_AjzPQLhz04pVbZMGHkIhYmwvipgo_8pfIVmNbds-GlcXX1HD18oX2Ag"
+      },
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "seal_pub_does_not_match_vk",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "membership_seq": 8,
+        "seal_pub": "iisksNpddFODkzUzRVrtfoaoK-5oTIhPL9kRQ7ElXRE",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767226081000,
+        "sig": "uZqA3LIVTXTWfdn1Vabg2kGUyyVbsssXr31bUpsv8G4VnOTUbxdq4-Mmdz6Yia_5zJl7ehUlscmCw0W3gHTgBQ"
+      },
+      "vk": "B_qoCDTvDMaazdFHNPYvj15bRtznSnSWuWegL5sZnwE",
+      "expect_error": "forbidden"
+    },
+    {
+      "name": "editor_author",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 1,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "VnU8BMAC7zPBg_J4WIZmkA",
+        "ts": 1767225661000,
+        "sig": "bkHaPZ_XR_WvvQI-Yqv0SytEY2YyixaYkbX7tzWFHAobgCmlg1EnttW1nymInTC636lmCuYnJ5_teqN8qNk8Dw"
+      },
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "expect_error": "forbidden"
+    },
+    {
+      "name": "removed_owner_author",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 2,
+        "membership_seq": 6,
+        "seal_pub": "iisksNpddFODkzUzRVrtfoaoK-5oTIhPL9kRQ7ElXRE",
+        "author": "mPcGN24XundmA61ifDsv_A",
+        "ts": 1767225961000,
+        "sig": "KuI36UEIdj6Gs5g1h1tpT4Iw3dvuD2B6K1yQJciJ8Ap0nqBHyuZkC53PXJcP9-Cxc8sAQC304hcZmrR35rNrBg"
+      },
+      "vk": "TDWG7GxVRqkmFq-xOidfIBXaueFf9tPZQPdUg3xpcrE",
+      "expect_error": "forbidden"
+    },
+    {
+      "name": "non_member_author",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "ULj2e_Uh7oOwVll5cmsPdQ",
+        "ts": 1767225601000,
+        "sig": "03X6DY2-ZyKaRlcEyksj2oZ18aJdiZNZHc86WJaK8WFARldSz5kxHZeOdpgoOfzHxk0J6njIb_Yvrzip0i4TBg"
+      },
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "expect_error": "forbidden"
+    },
+    {
+      "name": "key_epoch_not_chain_epoch_at_seq",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 2,
+        "membership_seq": 5,
+        "seal_pub": "iisksNpddFODkzUzRVrtfoaoK-5oTIhPL9kRQ7ElXRE",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225901000,
+        "sig": "nIC56Hd5YTiSNvVMif40a1NPBpHrmUNhc8JKO5kSMNOQ_9FYpnM0K_ecT5V9exD7x2D5OMDzNIT866p_HBoiAw"
+      },
+      "vk": "TDWG7GxVRqkmFq-xOidfIBXaueFf9tPZQPdUg3xpcrE",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "membership_seq_beyond_head",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "membership_seq": 9,
+        "seal_pub": "zVWEny6B9Cx4z_h0rlgqt1h8s3Zs_NQH-a1CHmG6ayw",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767226141000,
+        "sig": "BjmW833VFdf8PW5iFW_HRr1Ip2tKLt6MjEgS8pdcfbdok0__UBp63AiaCQN3hPnU9UtNlLCgXXesbwPdHbmXCA"
+      },
+      "vk": "B_qoCDTvDMaazdFHNPYvj15bRtznSnSWuWegL5sZnwE",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "other_vault",
+      "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225601000,
+        "sig": "_3kqFY_FZ8O_DN6gP3JeCznLypaxPam9Cw4YDFzDoTP2JPV6UX9BeCF7knJWpFv7JfHe5EbQxdLJO2RY0X8PCA"
+      },
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "tampered_ts",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225601001,
+        "sig": "_3kqFY_FZ8O_DN6gP3JeCznLypaxPam9Cw4YDFzDoTP2JPV6UX9BeCF7knJWpFv7JfHe5EbQxdLJO2RY0X8PCA"
+      },
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "signature_by_other_owner",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225601000,
+        "sig": "1pXd0IhXvFkxZXAjuPh8HAOcOtSCnUk6g5bT_WBF4KTmX_PP_InKvHcSOLuhtNWMGZnHsO4zP3TVchHdghseBA"
+      },
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "expect_error": "invalid_signature"
+    },
+    {
+      "name": "extra_key",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225601000,
+        "sig": "_3kqFY_FZ8O_DN6gP3JeCznLypaxPam9Cw4YDFzDoTP2JPV6UX9BeCF7knJWpFv7JfHe5EbQxdLJO2RY0X8PCA",
+        "note": "x"
+      },
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "short_seal_pub",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "doc": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "cCN1lGBPEsjxH7KA5T9NppoQIafx2Ikw2VmUATVDzg",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225601000,
+        "sig": "_3kqFY_FZ8O_DN6gP3JeCznLypaxPam9Cw4YDFzDoTP2JPV6UX9BeCF7knJWpFv7JfHe5EbQxdLJO2RY0X8PCA"
+      },
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "version_2",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "doc": {
+        "v": 2,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225601000,
+        "sig": "_3kqFY_FZ8O_DN6gP3JeCznLypaxPam9Cw4YDFzDoTP2JPV6UX9BeCF7knJWpFv7JfHe5EbQxdLJO2RY0X8PCA"
+      },
+      "vk": "gGtc7hJFAI6czIKzOotuZ7BCXFMAxOIg196lr0lEtgI",
+      "expect_error": "unsupported_version"
+    }
+  ],
+  "replace_cases": [
+    {
+      "name": "no_stored",
+      "stored": null,
+      "incoming": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225601000,
+        "sig": "_3kqFY_FZ8O_DN6gP3JeCznLypaxPam9Cw4YDFzDoTP2JPV6UX9BeCF7knJWpFv7JfHe5EbQxdLJO2RY0X8PCA"
+      }
+    },
+    {
+      "name": "newer_seq_same_epoch",
+      "stored": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225601000,
+        "sig": "_3kqFY_FZ8O_DN6gP3JeCznLypaxPam9Cw4YDFzDoTP2JPV6UX9BeCF7knJWpFv7JfHe5EbQxdLJO2RY0X8PCA"
+      },
+      "incoming": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 4,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "mPcGN24XundmA61ifDsv_A",
+        "ts": 1767225841000,
+        "sig": "3XDMAiFXKjTdb1uZrkzbvG7nnSl3SN_AjzPQLhz04pVbZMGHkIhYmwvipgo_8pfIVmNbds-GlcXX1HD18oX2Ag"
+      }
+    },
+    {
+      "name": "other_epoch",
+      "stored": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 3,
+        "membership_seq": 8,
+        "seal_pub": "zVWEny6B9Cx4z_h0rlgqt1h8s3Zs_NQH-a1CHmG6ayw",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767226081000,
+        "sig": "VuJz5Er9s__74lc1i5u0gYGAplp9PjGUNeR5W1TjrVESMQk-tkpMxk5nvvQ9HVgATP61AVftWYmpf63w2WIYDg"
+      },
+      "incoming": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225601000,
+        "sig": "_3kqFY_FZ8O_DN6gP3JeCznLypaxPam9Cw4YDFzDoTP2JPV6UX9BeCF7knJWpFv7JfHe5EbQxdLJO2RY0X8PCA"
+      }
+    }
+  ],
+  "replace_invalid": [
+    {
+      "name": "older_seq_same_epoch",
+      "stored": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 4,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "mPcGN24XundmA61ifDsv_A",
+        "ts": 1767225841000,
+        "sig": "3XDMAiFXKjTdb1uZrkzbvG7nnSl3SN_AjzPQLhz04pVbZMGHkIhYmwvipgo_8pfIVmNbds-GlcXX1HD18oX2Ag"
+      },
+      "incoming": {
+        "v": 1,
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "key_epoch": 1,
+        "membership_seq": 0,
+        "seal_pub": "bwdxvZt2ri251qEmZsI208vPEAKdl91V74kcyA6NUAA",
+        "author": "HuCy7tB5ixWPisxMZQdTTA",
+        "ts": 1767225601000,
+        "sig": "_3kqFY_FZ8O_DN6gP3JeCznLypaxPam9Cw4YDFzDoTP2JPV6UX9BeCF7knJWpFv7JfHe5EbQxdLJO2RY0X8PCA"
+      },
+      "expect_error": "conflict"
+    }
+  ]
+}

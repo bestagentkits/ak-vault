@@ -53,6 +53,20 @@ export function asString(value: unknown, what: string, maxLength = MAX_TEXT, min
   return value;
 }
 
+/** String of `minLength..maxLength` bytes, every byte printable ASCII (0x20–0x7E). */
+export function asPrintableAscii(value: unknown, what: string, maxLength: number, minLength = 0): string {
+  if (typeof value !== 'string' || value.length < minLength || value.length > maxLength || !/^[\x20-\x7e]*$/.test(value)) {
+    fail('bad_request', `${what} must be printable ASCII of length ${minLength}..${maxLength}`);
+  }
+  return value;
+}
+
+/** Reject strings with lone UTF-16 surrogates (they have no UTF-8 encoding). */
+export function asWellFormed(value: string, what: string): string {
+  if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(value)) fail('bad_request', `${what} contains a lone surrogate`);
+  return value;
+}
+
 export function asEnum<T extends string>(value: unknown, allowed: readonly T[], what: string): T {
   if (typeof value !== 'string' || !(allowed as readonly string[]).includes(value)) fail('bad_request', `${what} has an unsupported value`);
   return value as T;
