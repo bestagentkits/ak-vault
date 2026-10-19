@@ -67,6 +67,16 @@
 //
 // Transport (§9): BuildProof, DecodeProof, VerifyProof.
 //
+// Remote access: seal key and sealed operations (§3.6) DeriveSealKeyPair,
+// BuildSealKeyDoc, ParseSealKeyDoc, VerifySealKeyDoc, SealOp, OpenSealedOp,
+// ParseSealedOp; name tags (§3.7) NameIndexKey, NameTag, NewItemPutBody;
+// enrollment codes (§3.8) EncodeJoinCode, ParseJoinCode, EncodeOfferCode,
+// ParseOfferCode, ValidateVaultOrigin; profiles (§5.1) ValidateProfile,
+// CheckProfileProvenance, CarryForwardMeta; relay (§9.7) ParseRelayFrame,
+// SignHello, VerifyHello, SignResult, VerifyResult, ValidateToolArgs,
+// ToolScope; session kinds SessionKind* (SessionKindBrowser) and the MCP
+// tool-error codes CodeNoDeviceOnline, CodeDeviceTimeout, CodeSealedQueueFull.
+//
 // Randomness: when a nonce, salt, ephemeral key or ID argument is nil/empty,
 // it is drawn from crypto/rand. Injecting fixed values is for test vectors only.
 package akv1
