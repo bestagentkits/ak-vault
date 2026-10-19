@@ -1104,9 +1104,10 @@ Remote access adds three codes, all returned only by the MCP endpoint as tool er
 (§9.8) and never as the HTTP status of a `/v1` route: `no_device_online` (no opted-in
 device of the account holds the vault, and the call cannot be sealed),
 `device_timeout` (the device missed `deadline_ms`) and `sealed_queue_full` (the vault
-already holds `sealed_queue_max` unacknowledged operations). Relay and MCP limits join
-`GET /v1/meta`. `worker/src/limits.ts` owns their values; the table records the
-initial values for orientation and is not normative:
+already holds `sealed_queue_max` unacknowledged operations). Relay and MCP limits will
+join `GET /v1/meta`: the Worker phase that implements the relay and MCP routes adds
+them to `worker/src/limits.ts`, which then owns their values. Until then the table
+records the planned initial values for orientation and is not normative:
 
 | Limit | Initial value |
 |---|---|
