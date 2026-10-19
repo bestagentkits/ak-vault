@@ -26,6 +26,10 @@ export interface DeviceKx {
   deriveShared(peerPublic: Uint8Array): Promise<Uint8Array>;
 }
 
+function isOperationError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'OperationError';
+}
+
 async function signB64(signer: DeviceSigner, context: string, obj: object): Promise<string> {
   const sig = await signer.sign(signingInput(context, obj));
   if (!(sig instanceof Uint8Array) || sig.length !== 64) fail('bad_request', 'signer returned a malformed signature');
@@ -55,9 +59,11 @@ export async function unwrapFromDeviceAsync(args: { wrap: unknown; vaultId: stri
   let shared: Uint8Array;
   try {
     shared = await args.kx.deriveShared(b64decode(wrap.epk));
-  } catch {
-    // WebCrypto refuses low-order points; that is the all-zero case.
-    return fail('bad_request', 'X25519 produced an all-zero shared secret');
+  } catch (err) {
+    // WebCrypto refuses a low-order point (the all-zero case) with OperationError.
+    // Anything else (key store, permission, a protocol error) propagates as is.
+    if (isOperationError(err)) return fail('bad_request', 'X25519 produced an all-zero shared secret');
+    throw err;
   }
   if (!(shared instanceof Uint8Array) || shared.length !== 32 || isAllZero(shared)) fail('bad_request', 'X25519 produced an all-zero shared secret');
   if (!(args.kx.kxPub instanceof Uint8Array) || args.kx.kxPub.length !== 32) fail('bad_request', 'kx_pub must be 32 bytes');

@@ -220,7 +220,18 @@ describe('async device keys', () => {
     const sync = unwrapFromDevice({ wrap, vaultId, deviceId, kxSecret: kxPair.secretKey });
     expect(sync).toEqual(vk);
     expect(await unwrapFromDeviceAsync({ wrap, vaultId, deviceId, kx })).toEqual(sync);
-    const refusing: DeviceKx = { kxPub: kxPair.publicKey, deriveShared: async () => Promise.reject(new Error('low order')) };
-    await expect(unwrapFromDeviceAsync({ wrap, vaultId, deviceId, kx: refusing })).rejects.toMatchObject({ code: 'bad_request' });
+    // WebCrypto refuses a low-order point with OperationError: the all-zero case.
+    const lowOrder: DeviceKx = { kxPub: kxPair.publicKey, deriveShared: async () => Promise.reject(new DOMException('low order', 'OperationError')) };
+    await expect(unwrapFromDeviceAsync({ wrap, vaultId, deviceId, kx: lowOrder })).rejects.toMatchObject({ code: 'bad_request' });
+  });
+  it('unwrapFromDeviceAsync propagates key-store failures unchanged', async () => {
+    const vaultId = b64encode(new Uint8Array(16).fill(3));
+    const deviceId = b64encode(new Uint8Array(16).fill(4));
+    const wrap = wrapToDevice({ vk: new Uint8Array(32).fill(5), vaultId, keyEpoch: 1, recipient: { device_id: deviceId, kx_pub: kxPair.publicKey } });
+    const denied = new DOMException('key use not permitted', 'InvalidAccessError');
+    const failing: DeviceKx = { kxPub: kxPair.publicKey, deriveShared: async () => Promise.reject(denied) };
+    await expect(unwrapFromDeviceAsync({ wrap, vaultId, deviceId, kx: failing })).rejects.toBe(denied);
+    const zero: DeviceKx = { kxPub: kxPair.publicKey, deriveShared: async () => new Uint8Array(32) };
+    await expect(unwrapFromDeviceAsync({ wrap, vaultId, deviceId, kx: zero })).rejects.toMatchObject({ code: 'bad_request' });
   });
 });
