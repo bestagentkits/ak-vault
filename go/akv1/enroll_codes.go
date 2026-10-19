@@ -1,8 +1,8 @@
 package akv1
 
 import (
-	"net"
-	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -239,49 +239,36 @@ func parseOfferObject(obj map[string]any) (OfferCode, error) {
 	return o, nil
 }
 
+var (
+	originPattern     = regexp.MustCompile(`^(https|http)://(\[[0-9a-f:.]+\]|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)(?::([1-9][0-9]{0,4}))?$`)
+	loopbackV4Pattern = regexp.MustCompile(`^127\.` + ipv4Octet + `\.` + ipv4Octet + `\.` + ipv4Octet + `$`)
+)
+
+const ipv4Octet = `(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])`
+
 // ValidateVaultOrigin accepts only a canonical origin: https://host[:port]
-// with a lowercase scheme and host, no default port, no trailing dot, path,
-// query, fragment or userinfo; http:// only for localhost, 127.0.0.0/8 or
-// ::1. Anything else is bad_request.
+// with a lowercase scheme and host of [a-z0-9.-] (or a bracketed IPv6
+// literal), no empty label, trailing dot, default port, path, query,
+// fragment or userinfo; http:// only for localhost, 127.0.0.0/8 or [::1].
+// Anything else is bad_request.
 func ValidateVaultOrigin(origin string) error {
 	invalid := badRequest("vault origin is not canonical")
-	if origin == "" || !isPrintableASCII(origin) {
+	if len(origin) > 2048 {
 		return invalid
 	}
-	u, err := url.Parse(origin)
-	if err != nil || u.Host == "" || u.User != nil || u.Opaque != "" || u.Path != "" || u.RawPath != "" ||
-		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" {
+	m := originPattern.FindStringSubmatch(origin)
+	if m == nil || strings.Contains(m[2], "..") {
 		return invalid
 	}
-	hostname, port := u.Hostname(), u.Port()
-	if hostname == "" || strings.HasSuffix(hostname, ".") || strings.HasSuffix(u.Host, ":") || strings.HasPrefix(port, "0") {
-		return invalid
-	}
-	switch u.Scheme {
-	case "https":
-		if port == "443" {
+	scheme, host, port := m[1], m[2], m[3]
+	if port != "" {
+		n, _ := strconv.Atoi(port)
+		if n > 65535 || (scheme == "https" && n == 443) || (scheme == "http" && n == 80) {
 			return invalid
 		}
-	case "http":
-		if port == "80" || !isLoopbackHost(hostname) {
-			return invalid
-		}
-	default:
-		return invalid
 	}
-	if u.Scheme+"://"+strings.ToLower(u.Host) != origin {
+	if scheme == "http" && host != "localhost" && host != "[::1]" && !loopbackV4Pattern.MatchString(host) {
 		return invalid
 	}
 	return nil
-}
-
-func isLoopbackHost(host string) bool {
-	if host == "localhost" || host == "::1" {
-		return true
-	}
-	if strings.Contains(host, ":") {
-		return false // only the canonical spelling of the IPv6 loopback
-	}
-	ip := net.ParseIP(host).To4()
-	return ip != nil && ip[0] == 127
 }

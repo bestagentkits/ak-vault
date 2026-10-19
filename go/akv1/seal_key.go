@@ -156,7 +156,8 @@ type VerifySealKeyDocOptions struct {
 // when the document was signed.
 //
 //  1. shape (unsupported_version / bad_request);
-//  2. vault_id is the chain's vault (bad_request);
+//  2. vault_id is opts.Chain.VaultID when set, checked before the chain, and
+//     the chain's vault (bad_request);
 //  3. membership_seq ≤ head seq and key_epoch equals the chain's key epoch at
 //     membership_seq (bad_request);
 //  4. author is a human owner device current at membership_seq; never the
@@ -168,6 +169,9 @@ func VerifySealKeyDoc(doc any, events []any, opts VerifySealKeyDocOptions) (Seal
 	d, err := ParseSealKeyDoc(doc)
 	if err != nil {
 		return SealKeyDoc{}, err
+	}
+	if opts.Chain.VaultID != "" && d.VaultID != opts.Chain.VaultID {
+		return SealKeyDoc{}, badRequest("seal_key belongs to another vault")
 	}
 	head, err := VerifyMembershipChain(events, opts.Chain)
 	if err != nil {
@@ -206,4 +210,16 @@ func VerifySealKeyDoc(doc any, events []any, opts VerifySealKeyDocOptions) (Seal
 		}
 	}
 	return d, nil
+}
+
+// CheckSealKeyDocReplace is the server's replacement rule (spec §9.6): one
+// document per (vault_id, key_epoch); an incoming document whose
+// membership_seq is below the stored one for the same vault and epoch is
+// conflict. Both documents must already be verified; stored is nil when none
+// is held.
+func CheckSealKeyDocReplace(stored *SealKeyDoc, incoming SealKeyDoc) error {
+	if stored != nil && stored.VaultID == incoming.VaultID && stored.KeyEpoch == incoming.KeyEpoch && incoming.MembershipSeq < stored.MembershipSeq {
+		return newErr(CodeConflict, "a newer seal_key document is stored for this epoch")
+	}
+	return nil
 }

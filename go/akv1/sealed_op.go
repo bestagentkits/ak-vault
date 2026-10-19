@@ -62,8 +62,8 @@ func (s SealedOp) JSONValue() any {
 	}
 }
 
-// SealedOpPlaintext is the decrypted operation. Value and Sensitivity are
-// meaningful only for SealedOpSet; Sensitivity "" means absent.
+// SealedOpPlaintext is the decrypted operation. Value and Sensitivity belong
+// only to SealedOpSet; Sensitivity "" means absent.
 type SealedOpPlaintext struct {
 	Op          string
 	Name        string
@@ -71,12 +71,14 @@ type SealedOpPlaintext struct {
 	Sensitivity string
 }
 
-// JSONValue returns the plaintext object.
+// JSONValue returns the plaintext object as given: value is present for a
+// set or whenever non-empty and sensitivity whenever non-empty, so a delete
+// carrying either is refused by ParseSealedOpPlaintext rather than dropped.
 func (p SealedOpPlaintext) JSONValue() any {
-	if p.Op != SealedOpSet {
-		return map[string]any{"op": p.Op, "name": p.Name}
+	m := map[string]any{"op": p.Op, "name": p.Name}
+	if p.Op == SealedOpSet || p.Value != "" {
+		m["value"] = p.Value
 	}
-	m := map[string]any{"op": p.Op, "name": p.Name, "value": p.Value}
 	if p.Sensitivity != "" {
 		m["sensitivity"] = p.Sensitivity
 	}
