@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Sealed operations x25519-xc20p-seal (spec §3.6), sealed to seal_pub[e] of seal-key.json seal_keys (vault shared). epk = X25519(ephemeral_secret, 9); shared = X25519(ephemeral_secret, seal_pub) (all-zero: bad_request); seal_key = HKDF-SHA256(ikm=shared, salt=epk || seal_pub, info=utf8(\"akv1/seal\"), L=32); aad = cjson({\"ctx\":\"akv1/sealed-op\",\"vault_id\",\"sealed_id\",\"key_epoch\",\"origin\",\"ts\"}); ct = XChaCha20-Poly1305(seal_key, n, cjson(op), aad). cases: sealOp with the given ephemeral_secret, nonce wire.n and sealed_id MUST reproduce wire byte for byte, and openSealedOp(SealSK[key_epoch], wire, {vault_id}) MUST yield op. openSealedOp order: parse (v or alg unknown: unsupported_version; exact keys, IDs, epk 32 B, n 24 B, ct 16..65552 B, origin {kind \"mcp\", account 1..256, client_id 1..256 and grant_id 1..64 printable ASCII}, ts: bad_request); vault_id other than expected (bad_request); all-zero shared secret (bad_request); AEAD failure (decrypt_failed); pt not canonical, unknown op, set without value, delete with value or sensitivity, unknown keys (bad_request). invalid: open the wire with SealSK of open_with_epoch and MUST fail with expect_error; a wire with ct_zero_bytes replaces ct with b64 of that many zero bytes. seal_invalid: sealOp MUST refuse op with expect_error (an op with value_fill uses value = value_fill repeated value_length times).",
+  "description": "Sealed operations x25519-xc20p-seal (spec §3.6), sealed to seal_pub[e] of seal-key.json seal_keys (vault shared). epk = X25519(ephemeral_secret, 9); shared = X25519(ephemeral_secret, seal_pub) (all-zero: bad_request); seal_key = HKDF-SHA256(ikm=shared, salt=epk || seal_pub, info=utf8(\"akv1/seal\"), L=32); aad = cjson({\"ctx\":\"akv1/sealed-op\",\"vault_id\",\"sealed_id\",\"key_epoch\",\"origin\",\"ts\"}); ct = XChaCha20-Poly1305(seal_key, n, cjson(op), aad). cases: sealOp with the given ephemeral_secret, nonce wire.n and sealed_id MUST reproduce wire byte for byte, and openSealedOp(SealSK[key_epoch], wire, {vault_id}) MUST yield op. openSealedOp order: parse (v or alg unknown: unsupported_version; exact keys, IDs, epk 32 B, n 24 B, ct 16..65552 B, origin {kind \"mcp\", account 1..256, client_id 1..256 and grant_id 1..64 printable ASCII}, ts: bad_request); vault_id other than expected (bad_request); all-zero shared secret (bad_request); AEAD failure (decrypt_failed); pt not canonical, unknown op, set without value, delete with value or sensitivity, unknown keys (bad_request). invalid: open the wire with SealSK of open_with_epoch and MUST fail with expect_error; a wire with ct_zero_bytes replaces ct with b64 of that many zero bytes. seal_invalid: sealOp MUST refuse op with expect_error (an op with value_fill uses value = value_fill repeated value_length times). drain: checkSealedDrain(drain.wire, {account, now, sealed_ttl_s, seen}) for an opened op, in order: origin.account other than account (forbidden); sealed_id in seen, a replay (conflict); now - ts > sealed_ttl_s * 1000 (bad_request); ts - now > 300000 (bad_request). drain.cases MUST pass; drain.invalid MUST fail with expect_error.",
   "origin": {
     "kind": "mcp",
     "account": "acct_alice",
@@ -636,5 +636,113 @@
       },
       "expect_error": "bad_request"
     }
-  ]
+  ],
+  "drain": {
+    "wire": {
+      "v": 1,
+      "alg": "x25519-xc20p-seal",
+      "sealed_id": "BfE-_n70wX3mWr1mNc0FWw",
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 3,
+      "epk": "tsiAh-_5C38iQyTBwOZAFwT3aN5aziMZVfzPNGDdJHw",
+      "n": "4bgk9S1VYO0HEGcHcibcm0pQkn8axo8K",
+      "ct": "KKTnjHtAKqzzFJM1YgT3u7D-8XEjNH65WZaSv4-dkzYBGjWty67txj1lQZPxgD3jEwkO7HKOWKpgsUqZ31wl1bcj0YRkodO7KrpVpYzvYTqJmvng4LPkBR7qFpA2baDy8mBI6waKm1x399ZqojrS",
+      "origin": {
+        "kind": "mcp",
+        "account": "acct_alice",
+        "client_id": "mcp-client-example",
+        "grant_id": "grant_example_1"
+      },
+      "ts": 1767229200000
+    },
+    "cases": [
+      {
+        "name": "fresh",
+        "account": "acct_alice",
+        "now": 1767229200000,
+        "sealed_ttl_s": 3600,
+        "seen": []
+      },
+      {
+        "name": "other_id_seen",
+        "account": "acct_alice",
+        "now": 1767229200000,
+        "sealed_ttl_s": 3600,
+        "seen": [
+          "ayL_99x4r8AR9BEyQlq-iw"
+        ]
+      },
+      {
+        "name": "at_ttl",
+        "account": "acct_alice",
+        "now": 1767232800000,
+        "sealed_ttl_s": 3600,
+        "seen": []
+      },
+      {
+        "name": "future_at_limit",
+        "account": "acct_alice",
+        "now": 1767228900000,
+        "sealed_ttl_s": 3600,
+        "seen": []
+      }
+    ],
+    "invalid": [
+      {
+        "name": "replay",
+        "account": "acct_alice",
+        "now": 1767229201000,
+        "sealed_ttl_s": 3600,
+        "seen": [
+          "ayL_99x4r8AR9BEyQlq-iw",
+          "BfE-_n70wX3mWr1mNc0FWw"
+        ],
+        "expect_error": "conflict"
+      },
+      {
+        "name": "replay_after_ttl",
+        "account": "acct_alice",
+        "now": 1767232800001,
+        "sealed_ttl_s": 3600,
+        "seen": [
+          "BfE-_n70wX3mWr1mNc0FWw"
+        ],
+        "expect_error": "conflict"
+      },
+      {
+        "name": "other_account",
+        "account": "acct_bob",
+        "now": 1767229200000,
+        "sealed_ttl_s": 3600,
+        "seen": [],
+        "expect_error": "forbidden"
+      },
+      {
+        "name": "other_account_replay",
+        "account": "acct_bob",
+        "now": 1767229200000,
+        "sealed_ttl_s": 3600,
+        "seen": [
+          "BfE-_n70wX3mWr1mNc0FWw"
+        ],
+        "expect_error": "forbidden"
+      },
+      {
+        "name": "expired",
+        "account": "acct_alice",
+        "now": 1767232800001,
+        "sealed_ttl_s": 3600,
+        "seen": [],
+        "expect_error": "bad_request"
+      },
+      {
+        "name": "too_far_future",
+        "account": "acct_alice",
+        "now": 1767228899999,
+        "sealed_ttl_s": 3600,
+        "seen": [],
+        "expect_error": "bad_request"
+      }
+    ]
+  }
 }

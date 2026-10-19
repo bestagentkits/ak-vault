@@ -7,6 +7,7 @@ import {
   buildProofAsync,
   carryForwardMeta,
   checkProfileProvenance,
+  checkSealedDrain,
   checkSealKeyDocReplace,
   cjson,
   deriveSealKeyPair,
@@ -20,6 +21,7 @@ import {
   parseJoinCode,
   parseOfferCode,
   parseRelayFrame,
+  parseSealedOp,
   parseToolArgs,
   parseToolResult,
   sealOp,
@@ -40,6 +42,7 @@ import {
   type DeviceKx,
   type DeviceSigner,
 } from '../src/index.js';
+import { sealOpWithVectorValues } from '../src/sealed-op.js';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { expectCode, loadVector, named } from './helpers.js';
 
@@ -78,10 +81,11 @@ describe('sealed-op.json', () => {
   const keys = loadVector('seal-key.json').seal_keys as { key_epoch: number; seal_sk: string; seal_pub: string }[];
   const key = (e: number) => keys.find((k) => k.key_epoch === e)!;
   it.each(named(v.cases))('reproduces and opens %s', (_n, c) => {
-    const wire = sealOp(key(c.key_epoch).seal_pub, {
-      vaultId: c.wire.vault_id, keyEpoch: c.key_epoch, origin: c.wire.origin, ts: c.wire.ts, op: c.op,
-      sealedId: c.wire.sealed_id, ephemeralSecret: b64decode(c.ephemeral_secret), nonce: b64decode(c.wire.n),
-    });
+    const wire = sealOpWithVectorValues(
+      key(c.key_epoch).seal_pub,
+      { vaultId: c.wire.vault_id, keyEpoch: c.key_epoch, origin: c.wire.origin, ts: c.wire.ts, op: c.op },
+      { sealedId: c.wire.sealed_id, ephemeralSecret: b64decode(c.ephemeral_secret), nonce: b64decode(c.wire.n) },
+    );
     expect(wire).toEqual(c.wire);
     expect(cjson(c.op)).toBe(c.plaintext);
     expect(openSealedOp(b64decode(key(c.key_epoch).seal_sk), c.wire, { vaultId: c.wire.vault_id }).op).toEqual(c.op);
@@ -101,6 +105,16 @@ describe('sealed-op.json', () => {
     expect(a.epk).not.toBe(b.epk);
     expect(a.sealed_id).not.toBe(b.sealed_id);
     expect(openSealedOp(b64decode(key(3).seal_sk), a, { vaultId: args.vaultId }).op).toEqual(args.op);
+  });
+  type DrainCase = { account: string; now: number; sealed_ttl_s: number; seen: string[]; expect_error?: string };
+  const drain = (c: DrainCase) => () =>
+    checkSealedDrain(parseSealedOp(v.drain.wire), { account: c.account, now: c.now, sealedTtlS: c.sealed_ttl_s, seen: (sid) => c.seen.includes(sid) });
+  it.each(named(v.drain.cases))('drain admits %s', (_n, c) => expect(drain(c)).not.toThrow());
+  it.each(named(v.drain.invalid))('drain refuses %s', (_n, c) => expectCode(drain(c), c.expect_error));
+  it('drain refuses a malformed context', () => {
+    const base = { ...v.drain.cases[0], seen: [] };
+    expectCode(drain({ ...base, sealed_ttl_s: 0 }), 'bad_request');
+    expectCode(drain({ ...base, now: -1 }), 'bad_request');
   });
 });
 

@@ -295,8 +295,13 @@ are applied only by that account's own devices. For each operation, in order:
 1. open it with `SealSK[key_epoch]` (any failure: refuse), and refuse an
    `origin.account` other than its own account;
 2. refuse a `sealed_id` it already applied or refused (it MUST NOT apply one twice;
-   it keeps every such ID for at least `sealed_ttl_s`), and refuse a `ts` more than
-   `sealed_ttl_s` in the past or more than 300 s in the future by its own clock;
+   it keeps every such ID until at least `sealed_ttl_s` after the later of its `ts`
+   and the time it handled it, so an ID is never forgotten while its `ts` still
+   passes the age check), and refuse a `ts` more than `sealed_ttl_s` in the past or
+   more than 300 s in the future by its own clock. `checkSealedDrain(wire, {account,
+   now, sealedTtlS, seen})` runs steps 1 and 2 on an opened operation: another
+   account → `forbidden`, an applied or refused `sealed_id` → `conflict`, a `ts`
+   out of bounds → `bad_request`;
 3. resolve `name` against all its own decrypted live items: those whose payload
    `name` equals `name` after NFC normalization of both. More than one match, any
    match that is a policy item (§8.1), or a `delete` with no match → refuse. A `set`
@@ -319,9 +324,13 @@ are applied only by that account's own devices. For each operation, in order:
 Vectors (`seal-key.json`, `sealed-op.json`): `seal_pub` derived for two epochs;
 document sign and verify; a `seal_pub` that does not match `VK` → `forbidden`; a
 non-owner author → `forbidden`; `set` and `delete` round trips; wrong epoch key and
-tampered `origin` (including `account`), `ts` or `sealed_id` (AAD) → `decrypt_failed`; `delete` with a
-value → `bad_request`; oversize `pt` → `bad_request`; all-zero shared secret →
-`bad_request`; unknown `alg` → `unsupported_version`.
+tampered `origin` (including `account`), `ts` or `sealed_id` (AAD) → `decrypt_failed`;
+`delete` with a value → `bad_request`; oversize `pt` → `bad_request`; all-zero shared
+secret → `bad_request`; unknown `alg` → `unsupported_version`; a document verified
+under a pinned trust anchor and witnessed checkpoint, and refused under another
+anchor (`forbidden`) or a forked or longer checkpoint (`rollback`); drain admission:
+a replayed `sealed_id`, also after its TTL → `conflict`, another account →
+`forbidden`, an expired or too-far-future `ts` → `bad_request`.
 
 ### 3.7 Name tags (keyed blind index)
 

@@ -117,28 +117,39 @@ export interface SealOpArgs {
   /** Unix ms. */
   ts: number;
   op: SealedOperation;
-  /** Inject fixed values (test vectors only); random otherwise. */
+}
+
+/**
+ * Fixed values for test vectors only. Reusing an ephemeral secret reuses the
+ * (key, nonce) pair, so this is not re-exported from the package index.
+ */
+export interface SealOpVectorValues {
   sealedId?: string;
   ephemeralSecret?: Uint8Array;
   nonce?: Uint8Array;
 }
 
-/** Seal `args.op` to `seal_pub[keyEpoch]` (b64 or raw 32 bytes). */
+/** Seal `args.op` to `seal_pub[keyEpoch]` (b64 or raw 32 bytes) with a fresh ID, ephemeral key and nonce. */
 export function sealOp(sealPub: string | Uint8Array, args: SealOpArgs): SealedOpWire {
+  return sealOpWithVectorValues(sealPub, args, {});
+}
+
+/** `sealOp` with injected values (test vectors only); random where omitted. */
+export function sealOpWithVectorValues(sealPub: string | Uint8Array, args: SealOpArgs, fixed: SealOpVectorValues): SealedOpWire {
   const pub = typeof sealPub === 'string' ? b64decode(sealPub) : sealPub;
   if (!(pub instanceof Uint8Array) || pub.length !== 32) fail('bad_request', 'seal_pub must be 32 bytes');
   const op = parseSealedOperation(args.op);
   const header = {
     vault_id: asId(args.vaultId, 'vault_id'),
-    sealed_id: asId(args.sealedId ?? b64encode(randomBytes(16)), 'sealed_id'),
+    sealed_id: asId(fixed.sealedId ?? b64encode(randomBytes(16)), 'sealed_id'),
     key_epoch: asInt(args.keyEpoch, 'key_epoch', 1),
     origin: parseSealedOrigin(args.origin),
     ts: asInt(args.ts, 'ts'),
   };
-  const esk = args.ephemeralSecret ?? randomBytes(32);
+  const esk = fixed.ephemeralSecret ?? randomBytes(32);
   const epk = kxKeyPairFromSecret(esk).publicKey;
   const key = deriveSealKey(x25519Shared(esk, pub), epk, pub);
-  const nonce = args.nonce ?? randomBytes(NONCE_BYTES);
+  const nonce = fixed.nonce ?? randomBytes(NONCE_BYTES);
   const ct = xc20pSeal(key, nonce, cjsonBytes(op), sealedAad(header));
   return { v: 1, alg: SEALED_OP_ALG, sealed_id: header.sealed_id, vault_id: header.vault_id, key_epoch: header.key_epoch, epk: b64encode(epk), n: b64encode(nonce), ct: b64encode(ct), origin: header.origin, ts: header.ts };
 }
@@ -162,4 +173,35 @@ export function openSealedOp(sealSecret: Uint8Array, value: unknown, opts: { vau
   const key = deriveSealKey(x25519Shared(sealSecret, epk), epk, sealPub);
   const pt = xc20pOpen(key, b64decode(wire.n), b64decode(wire.ct), sealedAad(wire));
   return { wire, op: parseSealedOperation(cjsonParse(pt)) };
+}
+
+/** How far ahead of the draining device's clock a sealed op's `ts` may be (spec §3.6). */
+export const SEALED_MAX_FUTURE_MS = 300_000;
+
+export interface SealedDrainContext {
+  /** This device's account (its token `sub`, in device-record account form). */
+  account: string;
+  /** This device's clock, unix ms. */
+  now: number;
+  /** `sealed_ttl_s` from `/v1/meta`. */
+  sealedTtlS: number;
+  /** Whether this device already applied or refused `sealedId`. */
+  seen: (sealedId: string) => boolean;
+}
+
+/**
+ * Drain admission for an opened sealed op (spec §3.6 draining steps 1-2), in
+ * order: `origin.account` is not this device's account (`forbidden`); the
+ * `sealed_id` was already applied or refused, a replay (`conflict`); `ts`
+ * more than `sealed_ttl_s` in the past or more than 300 s in the future
+ * (`bad_request`). A device keeps every handled ID until `sealed_ttl_s` after
+ * the later of its `ts` and the time it handled it.
+ */
+export function checkSealedDrain(wire: SealedOpWire, ctx: SealedDrainContext): void {
+  const now = asInt(ctx.now, 'now');
+  const ttlMs = asInt(ctx.sealedTtlS, 'sealed_ttl_s', 1, Math.floor(Number.MAX_SAFE_INTEGER / 1000)) * 1000;
+  if (wire.origin.account !== ctx.account) fail('forbidden', 'sealed op belongs to another account');
+  if (ctx.seen(wire.sealed_id)) fail('conflict', 'sealed op already handled');
+  if (now - wire.ts > ttlMs) fail('bad_request', 'sealed op expired');
+  if (wire.ts - now > SEALED_MAX_FUTURE_MS) fail('bad_request', 'sealed op ts is in the future');
 }

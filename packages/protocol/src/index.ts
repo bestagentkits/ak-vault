@@ -66,7 +66,8 @@
  * Remote access
  * - Seal key (§3.6): `deriveSealKeyPair(vk, vaultId, keyEpoch)`, `buildSealKeyDoc`, `signSealKeyDoc`,
  *   `parseSealKeyDoc`, `verifySealKeyDoc(doc, chain, {vaultId, vk?, trustedAnchor?, witnessedCheckpoint?})`, `checkSealKeyDocReplace(stored, incoming)`.
- * - Sealed operations (§3.6): `sealOp(sealPub, args)`, `openSealedOp(sealSecret, wire, {vaultId})`, `parseSealedOp`,
+ * - Sealed operations (§3.6): `sealOp(sealPub, args)`, `openSealedOp(sealSecret, wire, {vaultId})`,
+ *   `checkSealedDrain(wire, {account, now, sealedTtlS, seen})`, `parseSealedOp`,
  *   `parseSealedOperation`, `parseSealedOrigin`.
  * - Name tags (§3.7): `nameIndexKey(vk, vaultId, keyEpoch)`, `nameTag(indexKey, name)` (NFC).
  * - Enrollment codes (§3.8): `encodeJoinCode`, `parseJoinCode`, `encodeOfferCode`, `parseOfferCode`, `isCanonicalOrigin`.
@@ -255,9 +256,11 @@ export {
 export {
   MAX_ITEM_NAME,
   MAX_ITEM_VALUE,
+  SEALED_MAX_FUTURE_MS,
   SEALED_OPS,
   SEALED_OP_ALG,
   SEALED_ORIGIN_KINDS,
+  checkSealedDrain,
   openSealedOp,
   parseSealedOp,
   parseSealedOperation,
@@ -265,6 +268,7 @@ export {
   sealOp,
   type OpenedSealedOp,
   type SealOpArgs,
+  type SealedDrainContext,
   type SealedOpWire,
   type SealedOperation,
   type SealedOrigin,

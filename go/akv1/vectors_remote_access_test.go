@@ -161,7 +161,7 @@ func checkSealedOp(t *testing.T, f *rec, n *counter) {
 		got := mustOK(SealOp(SealOpArgs{
 			SealPub: keys[epoch].public, VaultID: wire.VaultID, KeyEpoch: epoch, SealedID: wire.SealedID,
 			Origin: wire.Origin, TS: wire.TS, Plaintext: plaintextOf(t, c.path, op),
-			EphemeralSecret: c.b64("ephemeral_secret"), Nonce: mustOK(B64Decode(wire.N))(t, c.path+".n"),
+			ephemeralSecret: c.b64("ephemeral_secret"), nonce: mustOK(B64Decode(wire.N))(t, c.path+".n"),
 		}))(t, c.path)
 		eqJSON(t, c.path+" wire", got, c.raw("wire"))
 		eqStr(t, c.path+" plaintext", string(mustOK(CJSON(op))(t, c.path)), c.str("plaintext"))
@@ -209,6 +209,32 @@ func checkSealedOp(t *testing.T, f *rec, n *counter) {
 	_, pt := mustOK2(OpenSealedOp(keys[3].secret, a, vaultID))(t, "open fresh")
 	eqJSON(t, "fresh op", pt, del)
 	n.add(1)
+
+	d := f.obj("drain")
+	drainWire := mustOK(ParseSealedOp(d.raw("wire")))(t, d.path+".wire")
+	drain := func(c *rec) error {
+		seen := map[string]bool{}
+		for _, s := range c.list("seen") {
+			seen[s.(string)] = true
+		}
+		return CheckSealedDrain(drainWire, SealedDrainOptions{
+			Account: c.str("account"), Now: c.i64("now"), SealedTTLS: c.i64("sealed_ttl_s"),
+			Seen: func(id string) bool { return seen[id] },
+		})
+	}
+	for _, c := range d.recs("cases") {
+		if err := drain(c); err != nil {
+			t.Errorf("%s: %v", c.path, err)
+		}
+		c.done()
+		n.add(1)
+	}
+	for _, c := range d.recs("invalid") {
+		expectCode(t, c, drain(c))
+		c.done()
+		n.add(1)
+	}
+	d.done()
 }
 
 // mustOK2 is mustOK for three-value results.

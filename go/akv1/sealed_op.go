@@ -222,18 +222,21 @@ func ParseSealedOpPlaintext(v any) (SealedOpPlaintext, error) {
 	return p, nil
 }
 
-// SealOpArgs configures SealOp. SealedID, EphemeralSecret and Nonce are
-// empty/nil in production (fresh random values); tests inject them.
+// SealOpArgs configures SealOp. SealedID is empty in production (a fresh
+// random ID); test vectors inject it. The ephemeral secret and nonce are
+// unexported so only this package's vector tests can fix them: reusing an
+// ephemeral secret reuses the (key, nonce) pair.
 type SealOpArgs struct {
-	SealPub         []byte // seal_pub[KeyEpoch] from a verified seal-key document
-	VaultID         string
-	KeyEpoch        int64
-	SealedID        string
-	Origin          SealedOrigin
-	TS              int64
-	Plaintext       SealedOpPlaintext
-	EphemeralSecret []byte
-	Nonce           []byte
+	SealPub   []byte // seal_pub[KeyEpoch] from a verified seal-key document
+	VaultID   string
+	KeyEpoch  int64
+	SealedID  string
+	Origin    SealedOrigin
+	TS        int64
+	Plaintext SealedOpPlaintext
+
+	ephemeralSecret []byte
+	nonce           []byte
 }
 
 // SealOp encrypts one operation to seal_pub[e] after the same checks
@@ -246,11 +249,11 @@ func SealOp(args SealOpArgs) (SealedOp, error) {
 	if sealedID == "" {
 		sealedID = RandomID()
 	}
-	esk := args.EphemeralSecret
+	esk := args.ephemeralSecret
 	if esk == nil {
 		esk = randomBytes(KeyBytes)
 	}
-	nonce := args.Nonce
+	nonce := args.nonce
 	if nonce == nil {
 		nonce = randomBytes(NonceBytes)
 	}
@@ -323,4 +326,48 @@ func OpenSealedOp(sealSecret []byte, wire any, vaultID string) (SealedOp, Sealed
 		return SealedOp{}, SealedOpPlaintext{}, err
 	}
 	return s, pt, nil
+}
+
+// SealedMaxFutureMs is how far ahead of the draining device's clock a sealed
+// operation's ts may be (spec §3.6).
+const SealedMaxFutureMs = 300_000
+
+// SealedDrainOptions is the draining device's context for CheckSealedDrain.
+type SealedDrainOptions struct {
+	Account    string // this device's account (its token sub)
+	Now        int64  // this device's clock, unix ms
+	SealedTTLS int64  // sealed_ttl_s from /v1/meta
+	// Seen reports whether this device already applied or refused a sealed_id.
+	Seen func(sealedID string) bool
+}
+
+// CheckSealedDrain is drain admission for an opened sealed operation (spec
+// §3.6 draining steps 1-2), in order: origin.account is not this device's
+// account (forbidden); the sealed_id was already applied or refused, a
+// replay (conflict); ts more than sealed_ttl_s in the past or more than 300 s
+// in the future (bad_request). A device keeps every handled ID until
+// sealed_ttl_s after the later of its ts and the time it handled it.
+func CheckSealedDrain(s SealedOp, opts SealedDrainOptions) error {
+	if opts.Now < 0 || opts.Now > MaxSafeInteger {
+		return badRequest("now is out of range")
+	}
+	if opts.SealedTTLS < 1 || opts.SealedTTLS > MaxSafeInteger/1000 {
+		return badRequest("sealed_ttl_s is out of range")
+	}
+	if opts.Seen == nil {
+		return badRequest("sealed drain needs the seen set")
+	}
+	if s.Origin.Account != opts.Account {
+		return newErr(CodeForbidden, "sealed op belongs to another account")
+	}
+	if opts.Seen(s.SealedID) {
+		return newErr(CodeConflict, "sealed op already handled")
+	}
+	if opts.Now-s.TS > opts.SealedTTLS*1000 {
+		return badRequest("sealed op expired")
+	}
+	if s.TS-opts.Now > SealedMaxFutureMs {
+		return badRequest("sealed op ts is in the future")
+	}
+	return nil
 }

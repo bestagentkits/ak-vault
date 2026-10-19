@@ -102,7 +102,26 @@ func sealFixture(t *testing.T, pt SealedOpPlaintext) (SealKeyPair, SealOpArgs) {
 	return pair, SealOpArgs{
 		SealPub: pair.Public, VaultID: fixedID(0x11), KeyEpoch: 1, SealedID: fixedID(0x33),
 		Origin: SealedOrigin{Kind: SealedOriginMCP, Account: "acct-1", ClientID: "client-a", GrantID: "grant-1"},
-		TS:     1767225600000, Plaintext: pt, EphemeralSecret: fixedBytes(0x44, 32), Nonce: fixedBytes(0x45, NonceBytes),
+		TS:     1767225600000, Plaintext: pt, ephemeralSecret: fixedBytes(0x44, 32), nonce: fixedBytes(0x45, NonceBytes),
+	}
+}
+
+func TestCheckSealedDrainContext(t *testing.T) {
+	_, args := sealFixture(t, SealedOpPlaintext{Op: SealedOpDelete, Name: "A"})
+	op := mustOK(SealOp(args))(t, "seal")
+	never := func(string) bool { return false }
+	ok := SealedDrainOptions{Account: "acct-1", Now: op.TS, SealedTTLS: 60, Seen: never}
+	if err := CheckSealedDrain(op, ok); err != nil {
+		t.Fatalf("fresh op: %v", err)
+	}
+	for name, o := range map[string]SealedDrainOptions{
+		"zero ttl":     {Account: "acct-1", Now: op.TS, SealedTTLS: 0, Seen: never},
+		"negative now": {Account: "acct-1", Now: -1, SealedTTLS: 60, Seen: never},
+		"no seen set":  {Account: "acct-1", Now: op.TS, SealedTTLS: 60},
+	} {
+		if CodeOf(CheckSealedDrain(op, o)) != CodeBadRequest {
+			t.Errorf("%s: want bad_request", name)
+		}
 	}
 }
 
@@ -157,9 +176,9 @@ func TestSealedOpRoundTripsAndRefusals(t *testing.T) {
 		"unknown sensitivity": `{"name":"N","op":"set","sensitivity":"low","value":"v"}`,
 	} {
 		bad := op
-		shared := mustOK(X25519Shared(args.EphemeralSecret, pair.Public))(t, name)
+		shared := mustOK(X25519Shared(args.ephemeralSecret, pair.Public))(t, name)
 		epk, _ := B64Decode(op.Epk)
-		ct := mustOK(XC20PSeal(deriveSealKey(shared, epk, pair.Public), args.Nonce, []byte(raw), sealedOpAAD(op)))(t, name)
+		ct := mustOK(XC20PSeal(deriveSealKey(shared, epk, pair.Public), args.nonce, []byte(raw), sealedOpAAD(op)))(t, name)
 		bad.Ct = B64Encode(ct)
 		wantCode(t, name, open(bad.JSONValue().(map[string]any)), CodeBadRequest)
 	}

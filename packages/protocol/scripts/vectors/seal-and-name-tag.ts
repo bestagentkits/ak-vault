@@ -1,6 +1,7 @@
 /** seal-key.json, sealed-op.json, name-tag.json */
 import {
   buildSealKeyDoc,
+  checkSealedDrain,
   checkSealKeyDocReplace,
   cjson,
   deriveSealKeyPair,
@@ -9,7 +10,6 @@ import {
   nameIndexKey,
   nameTag,
   openSealedOp,
-  sealOp,
   signSealKeyDoc,
   verifySealKeyDoc,
   x25519Shared,
@@ -20,6 +20,7 @@ import {
 import { xc20pSeal } from '../../src/aead.js';
 import { concatBytes, utf8Encode } from '../../src/bytes.js';
 import { hkdf32 } from '../../src/hkdf.js';
+import { sealOpWithVectorValues } from '../../src/sealed-op.js';
 import { aliceLaptop, alicePhone, b64, BASE_TS, bobLaptop, flipByte, id, key32, negative, nonce, seed, stranger, VAULT_PERSONAL, VAULT_SHARED } from './fixtures.js';
 import { sharedChain } from './membership.js';
 
@@ -112,10 +113,11 @@ function rawSeal(epoch: number, header: Omit<SealedOpWire, 'v' | 'alg' | 'epk' |
 
 export function sealedOpVectors(): Record<string, unknown> {
   const seal = (label: string, op: SealedOperation, epoch = 3) =>
-    sealOp(sealPair(epoch).publicKey, {
-      vaultId: VAULT_SHARED, keyEpoch: epoch, origin: ORIGIN, ts: BASE_TS + 3_600_000, op,
-      sealedId: id(`sealed/${label}`), ephemeralSecret: seed(`sealed/esk/${label}`), nonce: nonce(`sealed/${label}`),
-    });
+    sealOpWithVectorValues(
+      sealPair(epoch).publicKey,
+      { vaultId: VAULT_SHARED, keyEpoch: epoch, origin: ORIGIN, ts: BASE_TS + 3_600_000, op },
+      { sealedId: id(`sealed/${label}`), ephemeralSecret: seed(`sealed/esk/${label}`), nonce: nonce(`sealed/${label}`) },
+    );
   const ok = (name: string, op: SealedOperation, epoch = 3) => {
     const wire = seal(name, op, epoch);
     const opened = openSealedOp(sealPair(epoch).secretKey, wire, { vaultId: VAULT_SHARED });
@@ -132,6 +134,24 @@ export function sealedOpVectors(): Record<string, unknown> {
   const { ct: _ct, ...wireWithoutCt } = w;
   const sealBad = (name: string, code: string, op: unknown) =>
     negative(name, code, { op }, () => seal(name, op as SealedOperation));
+  // Drain admission for the opened `set` case, as the device of ORIGIN.account sees it.
+  const TTL_S = 3600;
+  type Drain = { name: string; account?: string; now: number; seen?: string[] };
+  const drainCase = (c: Drain) => {
+    const ctx = { account: c.account ?? ORIGIN.account, now: c.now, sealed_ttl_s: TTL_S, seen: c.seen ?? [] };
+    const run = () => checkSealedDrain(w, { account: ctx.account, now: ctx.now, sealedTtlS: TTL_S, seen: (sid) => ctx.seen.includes(sid) });
+    return { name: c.name, ...ctx, run };
+  };
+  const drainOk = (c: Drain) => {
+    const { run, ...rest } = drainCase(c);
+    run();
+    return rest;
+  };
+  const drainBad = (code: string, c: Drain) => {
+    const { run, name, ...rest } = drainCase(c);
+    return negative(name, code, rest, run);
+  };
+  const otherId = id('sealed/other');
   return {
     version: 1,
     description:
@@ -139,7 +159,8 @@ export function sealedOpVectors(): Record<string, unknown> {
       'epk = X25519(ephemeral_secret, 9); shared = X25519(ephemeral_secret, seal_pub) (all-zero: bad_request); seal_key = HKDF-SHA256(ikm=shared, salt=epk || seal_pub, info=utf8("akv1/seal"), L=32); aad = cjson({"ctx":"akv1/sealed-op","vault_id","sealed_id","key_epoch","origin","ts"}); ct = XChaCha20-Poly1305(seal_key, n, cjson(op), aad). ' +
       'cases: sealOp with the given ephemeral_secret, nonce wire.n and sealed_id MUST reproduce wire byte for byte, and openSealedOp(SealSK[key_epoch], wire, {vault_id}) MUST yield op. ' +
       'openSealedOp order: parse (v or alg unknown: unsupported_version; exact keys, IDs, epk 32 B, n 24 B, ct 16..65552 B, origin {kind "mcp", account 1..256, client_id 1..256 and grant_id 1..64 printable ASCII}, ts: bad_request); vault_id other than expected (bad_request); all-zero shared secret (bad_request); AEAD failure (decrypt_failed); pt not canonical, unknown op, set without value, delete with value or sensitivity, unknown keys (bad_request). ' +
-      'invalid: open the wire with SealSK of open_with_epoch and MUST fail with expect_error; a wire with ct_zero_bytes replaces ct with b64 of that many zero bytes. seal_invalid: sealOp MUST refuse op with expect_error (an op with value_fill uses value = value_fill repeated value_length times).',
+      'invalid: open the wire with SealSK of open_with_epoch and MUST fail with expect_error; a wire with ct_zero_bytes replaces ct with b64 of that many zero bytes. seal_invalid: sealOp MUST refuse op with expect_error (an op with value_fill uses value = value_fill repeated value_length times). ' +
+      'drain: checkSealedDrain(drain.wire, {account, now, sealed_ttl_s, seen}) for an opened op, in order: origin.account other than account (forbidden); sealed_id in seen, a replay (conflict); now - ts > sealed_ttl_s * 1000 (bad_request); ts - now > 300000 (bad_request). drain.cases MUST pass; drain.invalid MUST fail with expect_error.',
     origin: ORIGIN,
     cases: [set, ok('set_without_sensitivity', { op: 'set', name: 'Grüße API', value: '' }), ok('delete', { op: 'delete', name: 'OLD_TOKEN' }), ok('set_epoch1', { op: 'set', name: 'A', value: 'v1' }, 1)],
     invalid: [
@@ -170,6 +191,23 @@ export function sealedOpVectors(): Record<string, unknown> {
       negative('oversize_pt', 'bad_request', { op: { op: 'set', name: 'A' }, value_fill: 'a', value_length: 65_536 }, () => seal('oversize_pt', { op: 'set', name: 'A', value: 'a'.repeat(65_536) })),
       sealBad('empty_name', 'bad_request', { op: 'set', name: '', value: 'v' }),
     ],
+    drain: {
+      wire: w,
+      cases: [
+        drainOk({ name: 'fresh', now: w.ts }),
+        drainOk({ name: 'other_id_seen', now: w.ts, seen: [otherId] }),
+        drainOk({ name: 'at_ttl', now: w.ts + TTL_S * 1000 }),
+        drainOk({ name: 'future_at_limit', now: w.ts - 300_000 }),
+      ],
+      invalid: [
+        drainBad('conflict', { name: 'replay', now: w.ts + 1000, seen: [otherId, w.sealed_id] }),
+        drainBad('conflict', { name: 'replay_after_ttl', now: w.ts + TTL_S * 1000 + 1, seen: [w.sealed_id] }),
+        drainBad('forbidden', { name: 'other_account', account: 'acct_bob', now: w.ts }),
+        drainBad('forbidden', { name: 'other_account_replay', account: 'acct_bob', now: w.ts, seen: [w.sealed_id] }),
+        drainBad('bad_request', { name: 'expired', now: w.ts + TTL_S * 1000 + 1 }),
+        drainBad('bad_request', { name: 'too_far_future', now: w.ts - 300_001 }),
+      ],
+    },
   };
 }
 
