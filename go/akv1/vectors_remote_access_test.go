@@ -330,11 +330,35 @@ func offerFields(o OfferCode) map[string]any {
 	return m
 }
 
+// profileOrigins reads an optional prev_origins object.
+func profileOrigins(c *rec, key string) map[string]string {
+	if !c.has(key) {
+		return nil
+	}
+	out := map[string]string{}
+	for k, v := range c.raw(key).(map[string]any) {
+		out[k] = v.(string)
+	}
+	return out
+}
+
+func profileRecord(r *rec) SignedRecord {
+	record := SignedRecord{Author: r.str("author"), TS: r.i64("ts"), BaseRevision: r.i64("base_revision")}
+	r.done()
+	return record
+}
+
+func profileCheckJSON(got ProfileCheck) map[string]any {
+	origins := map[string]any{}
+	for k, v := range got.Origins {
+		origins[k] = v
+	}
+	return map[string]any{"profile": got.Profile, "dropped": stringsToAny(got.Dropped), "origins": origins}
+}
+
 func checkProfile(t *testing.T, f *rec, n *counter) {
 	for _, c := range f.recs("cases") {
-		r := c.obj("record")
-		record := SignedRecord{Author: r.str("author"), TS: r.i64("ts"), BaseRevision: r.i64("base_revision")}
-		r.done()
+		record := profileRecord(c.obj("record"))
 		next := mustOK(ValidateProfile(c.raw("next")))(t, c.path+".next")
 		var prev Profile
 		if record.BaseRevision != 0 && c.raw("prev") != nil {
@@ -345,14 +369,30 @@ func checkProfile(t *testing.T, f *rec, n *counter) {
 		if c.has("self_device_id") {
 			self = c.str("self_device_id")
 		}
-		got := CheckProfileProvenance(prev, next, record, self)
-		origins := map[string]any{}
-		for k, v := range got.Origins {
-			origins[k] = v
-		}
-		eqJSON(t, c.path, map[string]any{"profile": got.Profile, "dropped": stringsToAny(got.Dropped), "origins": origins}, c.raw("expect"))
+		got := CheckProfileProvenance(prev, profileOrigins(c, "prev_origins"), next, record, self)
+		eqJSON(t, c.path, profileCheckJSON(got), c.raw("expect"))
 		c.done()
 		n.add(1)
+	}
+	for _, ch := range f.recs("chains") {
+		self := ch.str("self_device_id")
+		start := ch.obj("start")
+		var prev Profile
+		if start.raw("prev") != nil {
+			prev = mustOK(ValidateProfile(start.raw("prev")))(t, start.path+".prev")
+		}
+		prevOrigins := profileOrigins(start, "prev_origins")
+		start.done()
+		for _, s := range ch.recs("steps") {
+			record := profileRecord(s.obj("record"))
+			next := mustOK(ValidateProfile(s.raw("next")))(t, s.path+".next")
+			got := CheckProfileProvenance(prev, prevOrigins, next, record, self)
+			eqJSON(t, s.path, profileCheckJSON(got), s.raw("expect"))
+			prev, prevOrigins = got.Profile, got.Origins
+			s.done()
+			n.add(1)
+		}
+		ch.done()
 	}
 	for _, c := range f.recs("invalid") {
 		_, err := ValidateProfile(c.raw("profile"))

@@ -144,8 +144,18 @@ describe('enroll-codes.json', () => {
 describe('profile.json', () => {
   const v = loadVector('profile.json');
   it.each(named(v.cases))('provenance %s', (_n, c) => {
-    const out = checkProfileProvenance(c.prev, c.next, c.record, c.self_device_id === undefined ? {} : { selfDeviceId: c.self_device_id });
+    const out = checkProfileProvenance(c.prev, c.next, c.record, { selfDeviceId: c.self_device_id, prevOrigins: c.prev_origins });
     expect({ profile: out.profile, dropped: out.dropped, origins: out.origins }).toEqual(c.expect);
+  });
+  it.each(named(v.chains))('provenance chain %s', (_n, ch) => {
+    let prev = ch.start.prev;
+    let prevOrigins = ch.start.prev_origins;
+    for (const step of ch.steps) {
+      const out = checkProfileProvenance(prev, step.next, step.record, { selfDeviceId: ch.self_device_id, prevOrigins });
+      expect({ profile: out.profile, dropped: out.dropped, origins: out.origins }).toEqual(step.expect);
+      prev = out.profile;
+      prevOrigins = out.origins;
+    }
   });
   it.each(named(v.invalid))('validateProfile refuses %s', (_n, c) => expectCode(() => validateProfile(c.profile), c.expect_error));
   it('accepts values at their limits', () => expect(validateProfile(v.valid_limits)).toEqual(v.valid_limits));

@@ -47,8 +47,10 @@ export interface ProfileField {
 
 export type Profile = Partial<Record<ProfileKey, ProfileField>>;
 
-// C0, DEL, C1, bidi embeddings/overrides/isolates, line and paragraph separators.
-const FORBIDDEN = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069\u2028\u2029]/;
+// C0, DEL, C1, the Arabic letter mark, zero-width space/non-joiner/joiner,
+// LRM/RLM, bidi embeddings/overrides/isolates, line and paragraph separators,
+// and the byte order mark (zero-width no-break space).
+const FORBIDDEN = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029\ufeff]/;
 const EXPIRES_AT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/;
 
 /** Profile text rule (spec §5.1): non-empty, at most `limit` code points, no control or bidi characters. */
@@ -145,30 +147,47 @@ export interface CheckedProfile {
  * the device does not hold that revision. A create (`base_revision` 0) is
  * always checked against an empty profile. An unchanged field must be
  * byte-identical to `prev`; a new or changed one must carry `by` =
- * `record.author` and `at` = `record.ts`. Breaking fields are dropped. A kept
- * field shows its `src` only when `by` is `selfDeviceId` and it was checked
- * against a `prev` or comes from a record this device wrote; otherwise `sync`.
+ * `record.author` and `at` = `record.ts`. Breaking fields are dropped.
+ *
+ * Origins are transitive, so only this device's own write history yields its
+ * own label. A kept field shows its `src` only when `by` is `selfDeviceId` and
+ * either this record changed it and `record.author` is `selfDeviceId`, or it is
+ * carried unchanged from a held `prev` whose stored origin (`prevOrigins`: the
+ * `origins` this check returned when the device accepted `prev`) is that same
+ * `src`. Every other field, and every field when `prev` is `null`, is `sync`.
  */
-export function checkProfileProvenance(prev: unknown, next: unknown, record: ProfileRecordContext, opts: { selfDeviceId?: string } = {}): CheckedProfile {
+export function checkProfileProvenance(
+  prev: unknown,
+  next: unknown,
+  record: ProfileRecordContext,
+  opts: { selfDeviceId?: string; prevOrigins?: Partial<Record<ProfileKey, ProfileOrigin>> | null } = {},
+): CheckedProfile {
   const author = asId(record.author, 'record.author');
   const ts = asInt(record.ts, 'record.ts');
   const base = asInt(record.base_revision, 'record.base_revision');
   const nextProfile = validateProfile(next, 'next profile');
   const prevProfile: Profile | null = base === 0 ? {} : prev === null ? null : validateProfile(prev, 'prev profile');
+  const self = opts.selfDeviceId;
+  const prevOrigins = base === 0 ? null : (opts.prevOrigins ?? null);
   const out: CheckedProfile = { profile: {}, dropped: [], origins: {} };
   for (const key of Object.keys(nextProfile) as ProfileKey[]) {
     const field = nextProfile[key]!;
     let ok = true;
+    let carried = false;
     if (prevProfile !== null) {
       const before = prevProfile[key];
-      ok = before !== undefined && sameValue(before.value, field.value) ? cjson(before) === cjson(field) : field.by === author && field.at === ts;
+      carried = before !== undefined && sameValue(before.value, field.value);
+      ok = carried ? cjson(before) === cjson(field) : field.by === author && field.at === ts;
     }
     if (!ok) {
       out.dropped.push(key);
       continue;
     }
     out.profile[key] = field;
-    const own = opts.selfDeviceId !== undefined && field.by === opts.selfDeviceId && (prevProfile !== null || author === opts.selfDeviceId);
+    let own = false;
+    if (self !== undefined && field.by === self && prevProfile !== null) {
+      own = carried ? prevOrigins !== null && Object.prototype.hasOwnProperty.call(prevOrigins, key) && prevOrigins[key] === field.src : author === self;
+    }
     out.origins[key] = own ? field.src : 'sync';
   }
   return out;

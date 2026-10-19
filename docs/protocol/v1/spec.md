@@ -578,7 +578,9 @@ and `src`:
   operator, `import`: derived by an importer on that device}.
 - Text rules for every string (a text `value` and each list item): non-empty, at most
   the limit in Unicode code points, and no code point in U+0000–U+001F, U+007F,
-  U+0080–U+009F, U+202A–U+202E, U+2066–U+2069, U+2028 or U+2029.
+  U+0080–U+009F, U+061C, U+200B–U+200F, U+202A–U+202E, U+2066–U+2069, U+2028,
+  U+2029 or U+FEFF (controls, bidi marks, embeddings, overrides and isolates,
+  zero-width characters, line and paragraph separators, and the byte order mark).
 - Lists: 1–32 items, each at most 64 code points, without a comma, no two items equal.
 
 | Key | `value` | Limit |
@@ -598,9 +600,10 @@ wrong type, an unknown `src`, `kind` or `sensitivity`, or a broken text or list 
 (`bad_request`). A receiver whose pulled profile fails it keeps the rest of the item
 and drops `meta.profile` (audit `profile_invalid`).
 
-**Provenance.** `checkProfileProvenance(prev, next, record)` makes `by` and `at`
-checkable without new signatures. `prev` is the validated profile of the item at
-revision `record.base_revision` as this device verified it (an empty profile when
+**Provenance.** `checkProfileProvenance(prev, next, record, {selfDeviceId, prevOrigins})`
+makes `by` and `at` checkable without new signatures. `prev` is the validated
+profile of the item at revision `record.base_revision` as this device verified it
+(an empty profile when
 `base_revision` is 0 or that revision is a tombstone), or `null` when the device does
 not hold that revision. For each field of `next`:
 
@@ -613,26 +616,47 @@ not hold that revision. For each field of `next`:
 A field that breaks the rule is dropped and audited `profile_provenance_invalid` (item
 ID and field key, never the text); the record and every other field still apply.
 When `prev` is `null` the device cannot check unchanged fields and keeps every field
-as claimed. A receiver shows a field as its own (`src`) only when `by` is its own
-device ID and the field was checked against a `prev` it held or comes from a record
-it wrote; every other field is shown as `sync` and treated as untrusted text written
-by a vault member. Writers MUST build `next` by the same rule. A conflict branch's
-profile is never applied; a resolving record is checked against its
-`base_revision`.
+as claimed.
+
+**Origins.** The check returns an origin for every kept field, and the device stores
+those origins with the revision. The origin is transitive, so the own label comes
+only from this device's own write history. A field is shown as its own (`src`) only
+when `by` is this device's ID, `prev` was held (or the record is a create), and
+either:
+
+- the field is new or changed in this record and `record.author` is this device; or
+- the field is carried unchanged and its stored origin in `prevOrigins` (the origins
+  this check returned when the device accepted `prev`) is that same `src`.
+
+Every other field is shown as `sync` and treated as untrusted text written by a vault
+member. That includes every field when `prev` is `null`, even on a record this device
+wrote, since such a record may carry a field forged under this device's ID. A field
+kept under `prev = null` therefore stays `sync` for as long as it is carried
+unchanged. A later revision checked against the held one cannot upgrade it, and
+neither can this device's own later record that carries it. A device computes the
+origins of its own records with the same check before storing them. Writers MUST
+build `next` by the same rule. A conflict branch's profile is never applied; a
+resolving record is checked against its `base_revision`.
 
 Writers keep profile data only under `meta.profile`. A writer that carries unknown
 `meta` keys forward from the previous head MUST NOT carry forward `kind`, `item_ids`
 or `policy` (§8.1), and MUST NOT carry forward any key that, lowercased with `_`, `-`
-and `.` removed, equals a profile key with `_` removed (so `whenToUse` or
-`usage.hosts` written by an older client is dropped rather than re-signed by the next
-editor). Profile text is inert, author-attributed data: it never creates or widens a
-grant and is never interpreted as an instruction (§8).
+and `.` removed, equals a profile key with `_` removed. A key such as `whentouse` or
+`usagehosts` written by an older client is therefore dropped rather than re-signed by
+the next editor. Payload `meta` keys are already `[a-z0-9_]+` (§2 canonical JSON),
+so the case, `-` and `.` folds are defensive. Profile text is inert,
+author-attributed data: it never creates or widens a grant and is never interpreted
+as an instruction (§8).
 
 Vectors (`profile.json`): a changed field with `by` ≠ author, or `at` ≠ record `ts`,
 is dropped; an unchanged field relabelled to another device is dropped; an unknown key,
-an over-length text, a list with a duplicate or a comma, and an unknown `kind` →
-`bad_request`; with `prev` `null` every field is kept and shown `sync`; a create
-(`base_revision` 0) requires every field by the author.
+an over-length text, a list with a duplicate or a comma, a bidi mark or zero-width
+character, and an unknown `kind` → `bad_request`; with `prev` `null` every field is
+kept and shown `sync`, also on this device's own record; a create (`base_revision` 0)
+requires every field by the author. The `chains` replay consecutive revisions for one
+device. A field forged in its name under `prev = null`, then carried unchanged by the
+forger and by the device itself, stays `sync` at every step. Its own field carried
+through other devices' edits stays its `src`.
 
 ## 6. Checkpoints (anti-rollback)
 

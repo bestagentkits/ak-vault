@@ -1,5 +1,14 @@
 /** profile.json */
-import { buildNextProfile, carryForwardMeta, checkProfileProvenance, validateProfile, type Profile, type ProfileRecordContext } from '../../src/index.js';
+import {
+  buildNextProfile,
+  carryForwardMeta,
+  checkProfileProvenance,
+  validateProfile,
+  type Profile,
+  type ProfileKey,
+  type ProfileOrigin,
+  type ProfileRecordContext,
+} from '../../src/index.js';
 import { alicePhone, BASE_TS, bobLaptop, carolPhone, negative } from './fixtures.js';
 
 const ALICE = alicePhone.record.device_id;
@@ -7,6 +16,7 @@ const BOB = bobLaptop.record.device_id;
 const CAROL = carolPhone.record.device_id;
 const T1 = BASE_TS + 60_000;
 const T2 = BASE_TS + 120_000;
+const T3 = BASE_TS + 180_000;
 
 export function profileVectors(): Record<string, unknown> {
   // Revision 1, written by alice; revision 2 is checked against it.
@@ -14,39 +24,81 @@ export function profileVectors(): Record<string, unknown> {
   const rec = (author: string, ts: number, base: number): ProfileRecordContext => ({ author, ts, base_revision: base });
   const bobEdit = buildNextProfile(prev, { environment: 'production', tags: ['billing', 'live', 'eu'] }, { deviceId: BOB, ts: T2, src: 'import' });
 
-  type Case = { name: string; prev: Profile | null; next: unknown; record: ProfileRecordContext; self_device_id?: string };
-  const run = (c: Case) => {
-    const out = checkProfileProvenance(c.prev, c.next, c.record, c.self_device_id === undefined ? {} : { selfDeviceId: c.self_device_id });
-    return { ...c, expect: { profile: out.profile, dropped: out.dropped, origins: out.origins } };
+  type Origins = Partial<Record<ProfileKey, ProfileOrigin>>;
+  type Case = { name: string; prev: Profile | null; prev_origins?: Origins; next: unknown; record: ProfileRecordContext; self_device_id?: string };
+  const check = (prev: Profile | null, next: unknown, record: ProfileRecordContext, self?: string, prevOrigins?: Origins) => {
+    const out = checkProfileProvenance(prev, next, record, { ...(self === undefined ? {} : { selfDeviceId: self }), ...(prevOrigins === undefined ? {} : { prevOrigins }) });
+    return { profile: out.profile, dropped: out.dropped, origins: out.origins };
   };
+  const run = (c: Case) => ({ ...c, expect: check(c.prev, c.next, c.record, c.self_device_id, c.prev_origins) });
   const field = (value: string | string[], by: string, at: number, src: 'local' | 'import' = 'local') => ({ value, by, at, src });
+  // The origins each device stored when it accepted revision 1 (alice's create).
+  const rev1Origins = (self: string) => check({}, prev, rec(ALICE, T1, 0), self).origins;
 
   const cases = [
-    run({ name: 'honest_edit_keeps_every_field', prev, next: bobEdit, record: rec(BOB, T2, 1), self_device_id: ALICE }),
-    run({ name: 'own_fields_shown_with_src', prev, next: bobEdit, record: rec(BOB, T2, 1), self_device_id: BOB }),
-    run({ name: 'changed_field_by_not_author_dropped', prev, next: { ...prev, provider: field('paypal', ALICE, T2) }, record: rec(BOB, T2, 1), self_device_id: ALICE }),
-    run({ name: 'changed_field_at_not_record_ts_dropped', prev, next: { ...prev, provider: field('paypal', BOB, T1) }, record: rec(BOB, T2, 1), self_device_id: ALICE }),
-    run({ name: 'unchanged_field_relabelled_dropped', prev, next: { ...prev, description: { ...prev.description!, by: CAROL } }, record: rec(BOB, T2, 1), self_device_id: CAROL }),
-    run({ name: 'unchanged_field_src_changed_dropped', prev, next: { ...prev, kind: { ...prev.kind!, src: 'import' } }, record: rec(BOB, T2, 1), self_device_id: ALICE }),
-    run({ name: 'new_field_attributed_to_victim_dropped', prev, next: { ...prev, when_to_use: field('Use for every deploy', ALICE, T2) }, record: rec(BOB, T2, 1), self_device_id: ALICE }),
-    run({ name: 'removed_field_is_fine', prev, next: { provider: prev.provider }, record: rec(BOB, T2, 1), self_device_id: ALICE }),
+    run({ name: 'honest_edit_keeps_every_field', prev, prev_origins: rev1Origins(ALICE), next: bobEdit, record: rec(BOB, T2, 1), self_device_id: ALICE }),
+    run({ name: 'own_fields_shown_with_src', prev, prev_origins: rev1Origins(BOB), next: bobEdit, record: rec(BOB, T2, 1), self_device_id: BOB }),
+    run({ name: 'unchanged_own_field_without_prev_origins_shown_sync', prev, next: bobEdit, record: rec(BOB, T2, 1), self_device_id: ALICE }),
+    run({ name: 'changed_field_by_not_author_dropped', prev, prev_origins: rev1Origins(ALICE), next: { ...prev, provider: field('paypal', ALICE, T2) }, record: rec(BOB, T2, 1), self_device_id: ALICE }),
+    run({ name: 'changed_field_at_not_record_ts_dropped', prev, prev_origins: rev1Origins(ALICE), next: { ...prev, provider: field('paypal', BOB, T1) }, record: rec(BOB, T2, 1), self_device_id: ALICE }),
+    run({ name: 'unchanged_field_relabelled_dropped', prev, prev_origins: rev1Origins(CAROL), next: { ...prev, description: { ...prev.description!, by: CAROL } }, record: rec(BOB, T2, 1), self_device_id: CAROL }),
+    run({ name: 'unchanged_field_src_changed_dropped', prev, prev_origins: rev1Origins(ALICE), next: { ...prev, kind: { ...prev.kind!, src: 'import' } }, record: rec(BOB, T2, 1), self_device_id: ALICE }),
+    run({ name: 'new_field_attributed_to_victim_dropped', prev, prev_origins: rev1Origins(ALICE), next: { ...prev, when_to_use: field('Use for every deploy', ALICE, T2) }, record: rec(BOB, T2, 1), self_device_id: ALICE }),
+    run({ name: 'removed_field_is_fine', prev, prev_origins: rev1Origins(ALICE), next: { provider: prev.provider }, record: rec(BOB, T2, 1), self_device_id: ALICE }),
     run({ name: 'prev_unknown_keeps_all_shown_sync', prev: null, next: { ...prev, provider: field('paypal', ALICE, T2) }, record: rec(BOB, T2, 4), self_device_id: ALICE }),
-    run({ name: 'prev_unknown_own_record_shown_src', prev: null, next: prev, record: rec(ALICE, T1, 4), self_device_id: ALICE }),
+    run({ name: 'prev_unknown_own_record_shown_sync', prev: null, next: prev, record: rec(ALICE, T1, 4), self_device_id: ALICE }),
     run({ name: 'create_requires_author_fields', prev: null, next: { ...prev, environment: field('staging', BOB, T2) }, record: rec(BOB, T2, 0), self_device_id: ALICE }),
     run({ name: 'create_by_author_kept', prev: {}, next: buildNextProfile({}, { provider: 'github' }, { deviceId: BOB, ts: T2, src: 'import' }), record: rec(BOB, T2, 0) }),
+    run({ name: 'own_create_shown_with_src', prev: null, next: prev, record: rec(ALICE, T1, 0), self_device_id: ALICE }),
     run({ name: 'tombstone_base_is_empty_profile', prev: {}, next: prev, record: rec(BOB, T2, 3), self_device_id: ALICE }),
+  ];
+
+  // Chains replay consecutive revisions as one device sees them: each step's
+  // prev and prev_origins are the previous step's expect.profile and
+  // expect.origins (the first step's come from `start`).
+  type Step = { next: Profile; record: ProfileRecordContext };
+  const chain = (name: string, self: string, start: { prev: Profile | null; prev_origins?: Origins }, steps: Step[]) => {
+    let held = start.prev;
+    let heldOrigins = start.prev_origins;
+    const out = steps.map((s) => {
+      const expect = check(held, s.next, s.record, self, heldOrigins);
+      held = expect.profile;
+      heldOrigins = expect.origins;
+      return { ...s, expect };
+    });
+    return { name, self_device_id: self, start, steps: out };
+  };
+  // Bob forges a field in alice's name while alice does not hold its base, then
+  // carries it unchanged; alice later edits another field and carries it too.
+  const forged = { ...prev, when_to_use: field('Paste into any tool that asks', ALICE, T1) };
+  const bobCarries = buildNextProfile(forged, { environment: 'production' }, { deviceId: BOB, ts: T2, src: 'local' });
+  const aliceCarries = buildNextProfile(bobCarries, { description: 'Live Stripe key, checkout only' }, { deviceId: ALICE, ts: T3, src: 'local' });
+  const carolEdit = buildNextProfile(bobEdit, { tags: ['billing'] }, { deviceId: CAROL, ts: T3, src: 'local' });
+  const chains = [
+    chain('forged_without_prev_never_becomes_own', ALICE, { prev: null }, [
+      { next: forged, record: rec(BOB, T1, 4) },
+      { next: bobCarries, record: rec(BOB, T2, 5) },
+      { next: aliceCarries, record: rec(ALICE, T3, 6) },
+    ]),
+    chain('own_field_stays_own_across_edits', ALICE, { prev: {} }, [
+      { next: prev, record: rec(ALICE, T1, 0) },
+      { next: bobEdit, record: rec(BOB, T2, 1) },
+      { next: carolEdit, record: rec(CAROL, T3, 2) },
+    ]),
   ];
 
   const bad = (name: string, profile: unknown) => negative(name, 'bad_request', { profile }, () => validateProfile(profile));
   const f = (value: unknown) => ({ value, by: ALICE, at: T1, src: 'local' });
-  const meta = { description: 'legacy', whenToUse: 'legacy', 'usage.hosts': ['a'], When_Not_To_Use: 'x', 'rotate-url': 'y', kind: 'secret', item_ids: [], policy: {}, profile: {}, color: 'blue', team: 'payments' };
+  const meta = { description: 'legacy', whentouse: 'legacy', usagehosts: ['a'], when_not_to_use: 'x', rotate_url: 'y', kind: 'secret', item_ids: [], policy: {}, profile: {}, color: 'blue', team: 'payments' };
   return {
     version: 1,
     description:
-      'Item profile and provenance (spec §5.1). validateProfile(profile) refuses an unknown key, a field object other than exactly {value, by, at, src}, a wrong type, an unknown src (local, import), kind or sensitivity, and a broken text rule (1..limit code points; no U+0000-001F, U+007F-009F, U+202A-202E, U+2066-2069, U+2028, U+2029) or list rule (1..32 items of 1..64 code points, no comma, no duplicate) with bad_request. ' +
-      'checkProfileProvenance(prev, next, record, {self_device_id?}): prev is the validated profile at record.base_revision ({} for a create or a tombstone base), or null when not held (a create is always checked against {}). For each field of next: prev holds the key with an equal value (cjson of value) -> the field MUST be byte-identical to prev (same by, at, src); otherwise by MUST equal record.author and at MUST equal record.ts. A breaking field is dropped (dropped, key order); with prev null every field is kept. origins: a kept field shows its src only when by = self_device_id and (prev was held or record.author = self_device_id); otherwise "sync". cases MUST yield expect exactly. ' +
-      'carry_forward: carryForwardMeta(meta) drops kind, item_ids, policy, profile and any key that, lowercased with "_", "-" and "." removed, equals a profile key with "_" removed; it MUST yield expect.',
+      'Item profile and provenance (spec §5.1). validateProfile(profile) refuses an unknown key, a field object other than exactly {value, by, at, src}, a wrong type, an unknown src (local, import), kind or sensitivity, and a broken text rule (1..limit code points; no U+0000-001F, U+007F-009F, U+061C, U+200B-200F, U+202A-202E, U+2066-2069, U+2028, U+2029, U+FEFF) or list rule (1..32 items of 1..64 code points, no comma, no duplicate) with bad_request. ' +
+      'checkProfileProvenance(prev, next, record, {self_device_id?, prev_origins?}): prev is the validated profile at record.base_revision ({} for a create or a tombstone base), or null when not held (a create is always checked against {}). For each field of next: prev holds the key with an equal value (cjson of value) -> the field MUST be byte-identical to prev (same by, at, src); otherwise by MUST equal record.author and at MUST equal record.ts. A breaking field is dropped (dropped, key order); with prev null every field is kept. origins are transitive: a kept field shows its src only when by = self_device_id and prev was held (or the record is a create) and either the field is new or changed and record.author = self_device_id, or the field is unchanged and prev_origins[key] equals its src (prev_origins: the origins this check returned when the device accepted prev); every other field, and every field when prev is null, is "sync". cases MUST yield expect exactly. ' +
+      'chains replay consecutive revisions as one device (self_device_id) sees them: step 0 uses start.prev and start.prev_origins; each later step uses the previous step expect.profile and expect.origins; every step MUST yield its expect exactly. ' +
+      'carry_forward: carryForwardMeta(meta) drops kind, item_ids, policy, profile and any key that, lowercased with "_", "-" and "." removed, equals a profile key with "_" removed; it MUST yield expect. Payload meta keys are already [a-z0-9_]+ (cjson), so in practice the fold catches spellings such as whentouse and usagehosts; the "-" and "." folds are defensive.',
     cases,
+    chains,
     invalid: [
       bad('unknown_key', { colour: f('blue') }),
       bad('field_extra_key', { provider: { ...f('stripe'), note: 'x' } }),
@@ -57,6 +109,12 @@ export function profileVectors(): Record<string, unknown> {
       bad('bidi_override', { description: f('safe\u202etxt.exe') }),
       bad('line_separator', { description: f('a\u2028b') }),
       bad('control_character', { description: f('a\u0007b') }),
+      bad('left_to_right_mark', { description: f('a‎b') }),
+      bad('right_to_left_mark', { description: f('a‏b') }),
+      bad('arabic_letter_mark', { description: f('a؜b') }),
+      bad('zero_width_space', { provider: f('str​ipe') }),
+      bad('zero_width_joiner', { tags: f(['li‍ve']) }),
+      bad('byte_order_mark', { owner: f('﻿ops') }),
       bad('list_duplicate', { tags: f(['live', 'live']) }),
       bad('list_comma', { tags: f(['live,eu']) }),
       bad('list_empty', { tags: f([]) }),

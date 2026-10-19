@@ -225,9 +225,13 @@ func asProfileText(v any, what string, limit int) (string, error) {
 	return s, nil
 }
 
+// isForbiddenProfileRune reports C0, DEL, C1, the Arabic letter mark,
+// zero-width space/non-joiner/joiner, LRM/RLM, bidi embeddings, overrides and
+// isolates, line and paragraph separators, and the byte order mark.
 func isForbiddenProfileRune(r rune) bool {
-	return r <= 0x1F || (r >= 0x7F && r <= 0x9F) || (r >= 0x202A && r <= 0x202E) ||
-		(r >= 0x2066 && r <= 0x2069) || r == 0x2028 || r == 0x2029
+	return r <= 0x1F || (r >= 0x7F && r <= 0x9F) || r == 0x061C || (r >= 0x200B && r <= 0x200F) ||
+		(r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) || r == 0x2028 || r == 0x2029 ||
+		r == 0xFEFF
 }
 
 func sortedMapKeys(m map[string]any) []string {
@@ -255,15 +259,22 @@ type ProfileCheck struct {
 // validated profile next of record. prev is the validated profile of the item
 // at record.base_revision as this device verified it (an empty profile for a
 // tombstone), or nil when the device does not hold that revision; a create
-// (base_revision 0) is always checked against an empty profile. self is this
-// device's ID, used only for the display origins.
+// (base_revision 0) is always checked against an empty profile. prevOrigins
+// is the Origins this check returned when the device accepted prev (nil when
+// it has none). self is this device's ID, used only for the display origins.
 //
 // A field whose value equals prev's must be byte-identical to prev's field;
 // a new or changed field must have by = record.author and at = record.ts.
 // With prev nil every field is kept as claimed.
-func CheckProfileProvenance(prev Profile, next Profile, record SignedRecord, self string) ProfileCheck {
+//
+// Origins are transitive, so only this device's own write history yields its
+// own label: a kept field shows its src only when by = self and either this
+// record changed it and record.author = self, or it is carried unchanged from
+// a held prev whose stored origin is that same src. Every other field, and
+// every field when prev is nil, is ProfileOriginSync.
+func CheckProfileProvenance(prev Profile, prevOrigins map[string]string, next Profile, record SignedRecord, self string) ProfileCheck {
 	if record.BaseRevision == 0 {
-		prev = Profile{}
+		prev, prevOrigins = Profile{}, nil
 	}
 	res := ProfileCheck{Profile: Profile{}, Dropped: []string{}, Origins: map[string]string{}}
 	keys := make([]string, 0, len(next))
@@ -273,25 +284,36 @@ func CheckProfileProvenance(prev Profile, next Profile, record SignedRecord, sel
 	sort.Strings(keys)
 	for _, k := range keys {
 		f := next[k]
-		if prev != nil && !profileFieldValid(prev, k, f, record) {
-			res.Dropped = append(res.Dropped, k)
-			continue
+		carried := false
+		if prev != nil {
+			old, ok := prev[k]
+			carried = ok && cjsonEqual(old.Value, f.Value)
+			valid := f.By == record.Author && f.At == record.TS
+			if carried {
+				valid = cjsonEqual(old, f)
+			}
+			if !valid {
+				res.Dropped = append(res.Dropped, k)
+				continue
+			}
 		}
 		res.Profile[k] = f
-		if f.By == self && (prev != nil || record.Author == self) {
+		own := false
+		if self != "" && f.By == self && prev != nil {
+			if carried {
+				o, ok := prevOrigins[k]
+				own = ok && o == f.Src
+			} else {
+				own = record.Author == self
+			}
+		}
+		if own {
 			res.Origins[k] = f.Src
 		} else {
 			res.Origins[k] = ProfileOriginSync
 		}
 	}
 	return res
-}
-
-func profileFieldValid(prev Profile, key string, f ProfileField, record SignedRecord) bool {
-	if old, ok := prev[key]; ok && cjsonEqual(old.Value, f.Value) {
-		return cjsonEqual(old, f)
-	}
-	return f.By == record.Author && f.At == record.TS
 }
 
 func cjsonEqual(a, b any) bool {

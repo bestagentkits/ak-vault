@@ -70,7 +70,7 @@
  *   `parseSealedOperation`, `parseSealedOrigin`.
  * - Name tags (§3.7): `nameIndexKey(vk, vaultId, keyEpoch)`, `nameTag(indexKey, name)` (NFC).
  * - Enrollment codes (§3.8): `encodeJoinCode`, `parseJoinCode`, `encodeOfferCode`, `parseOfferCode`, `isCanonicalOrigin`.
- * - Profile (§5.1): `validateProfile`, `checkProfileProvenance(prev, next, record, {selfDeviceId?})`,
+ * - Profile (§5.1): `validateProfile`, `checkProfileProvenance(prev, next, record, {selfDeviceId?, prevOrigins?})`,
  *   `buildNextProfile`, `carryForwardMeta`, `parseProfileValue`, `asProfileText`.
  * - Relay (§9.7): `parseRelayFrame(data, {maxBytes})`, `parseRelayFrameObject`, `signHello`, `verifyHello`,
  *   `signResult`, `verifyResult`, `parseToolArgs(tool, args)`, `parseToolResult(tool, result)`, `TOOL_SCOPE`.
