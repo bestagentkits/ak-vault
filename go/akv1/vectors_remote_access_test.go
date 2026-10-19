@@ -36,6 +36,20 @@ func sealKeys(t *testing.T) map[int64]sealKeyVector {
 	return out
 }
 
+// sealKeyChainOptions reads a seal-key case's optional chain pins.
+func sealKeyChainOptions(c *rec, vaultID string) VerifyChainOptions {
+	opts := VerifyChainOptions{VaultID: vaultID}
+	if c.has("trusted_anchor") {
+		opts.TrustedAnchor = c.str("trusted_anchor")
+	}
+	if c.has("witnessed_checkpoint") {
+		w := c.obj("witnessed_checkpoint")
+		opts.Witnessed = &WitnessedMembership{MembershipSeq: w.i64("membership_seq"), MembershipHead: w.str("membership_head")}
+		w.done()
+	}
+	return opts
+}
+
 // optVK reads a vk that may be null (not held).
 func optVK(c *rec) []byte {
 	if c.raw("vk") == nil {
@@ -64,13 +78,13 @@ func checkSealKey(t *testing.T, f *rec, n *counter) {
 	n.add(1)
 
 	for _, c := range f.recs("cases") {
-		got := mustOK(VerifySealKeyDoc(c.raw("doc"), events, VerifySealKeyDocOptions{Chain: VerifyChainOptions{VaultID: vaultID}, VK: optVK(c)}))(t, c.path)
+		got := mustOK(VerifySealKeyDoc(c.raw("doc"), events, VerifySealKeyDocOptions{Chain: sealKeyChainOptions(c, vaultID), VK: optVK(c)}))(t, c.path)
 		eqJSON(t, c.path, got, c.raw("doc"))
 		c.done()
 		n.add(1)
 	}
 	for _, c := range f.recs("invalid") {
-		_, err := VerifySealKeyDoc(c.raw("doc"), events, VerifySealKeyDocOptions{Chain: VerifyChainOptions{VaultID: c.str("vault_id")}, VK: optVK(c)})
+		_, err := VerifySealKeyDoc(c.raw("doc"), events, VerifySealKeyDocOptions{Chain: sealKeyChainOptions(c, c.str("vault_id")), VK: optVK(c)})
 		expectCode(t, c, err)
 		c.done()
 		n.add(1)

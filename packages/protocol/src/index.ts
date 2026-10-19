@@ -65,7 +65,7 @@
  *
  * Remote access
  * - Seal key (§3.6): `deriveSealKeyPair(vk, vaultId, keyEpoch)`, `buildSealKeyDoc`, `signSealKeyDoc`,
- *   `parseSealKeyDoc`, `verifySealKeyDoc(doc, chain, {vaultId, vk?})`, `checkSealKeyDocReplace(stored, incoming)`.
+ *   `parseSealKeyDoc`, `verifySealKeyDoc(doc, chain, {vaultId, vk?, trustedAnchor?, witnessedCheckpoint?})`, `checkSealKeyDocReplace(stored, incoming)`.
  * - Sealed operations (§3.6): `sealOp(sealPub, args)`, `openSealedOp(sealSecret, wire, {vaultId})`, `parseSealedOp`,
  *   `parseSealedOperation`, `parseSealedOrigin`.
  * - Name tags (§3.7): `nameIndexKey(vk, vaultId, keyEpoch)`, `nameTag(indexKey, name)` (NFC).

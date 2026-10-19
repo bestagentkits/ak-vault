@@ -215,10 +215,13 @@ exactly these keys:
 {"v":1,"vault_id":…,"key_epoch":e,"membership_seq":n,"seal_pub":"<b64 32B>","author":device_id,"ts":unix_ms,"sig":"<b64 ed25519>"}
 ```
 
-`verifySealKeyDoc(doc, chain, {vault_id, vk?})` checks, in order, the first failure
-being the result. `chain` is the verifier's membership chain, verified in full; its
-head MUST be at or after `membership_seq`, and its prefix up to `membership_seq`
-gives the key epoch and the devices current when the document was signed.
+`verifySealKeyDoc(doc, chain, {vault_id, vk?, trusted_anchor?, witnessed_checkpoint?})`
+checks, in order, the first failure being the result. `chain` is the verifier's
+membership chain, verified in full (with the verifier's own pinned anchor and highest
+witnessed checkpoint when it has them, as in §4: a device passes both); its head
+MUST be at or after `membership_seq`, and its prefix up to `membership_seq`, verified
+under the same anchor, gives the key epoch and the devices current when the
+document was signed.
 
 1. shape: exact keys, `v` = 1 (`unsupported_version` otherwise), IDs, `seal_pub` of
    32 bytes, integers (`bad_request`);

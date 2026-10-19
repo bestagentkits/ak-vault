@@ -13,6 +13,7 @@ import { cjsonBytes } from './canonical-json.js';
 import { fail } from './errors.js';
 import { hkdf32 } from './hkdf.js';
 import { verifyMembershipChain } from './membership-log.js';
+import type { VerifyChainOptions } from './membership-types.js';
 import { SIGN_CONTEXT, kxKeyPairFromSecret, signObject, verifyObject, type KeyPair } from './signing.js';
 import { asB64, asId, asInt, asObject, checkVersion, exactKeys } from './validate.js';
 
@@ -77,11 +78,17 @@ export interface VerifySealKeyDocOptions {
   vaultId: string;
   /** `VK[doc.key_epoch]` when the verifier holds it; a device that holds it MUST pass it. */
   vk?: Uint8Array;
+  /** Pinned owner anchor (b64 sign_pub of the genesis author), checked on the chain and its prefix (`forbidden`). */
+  trustedAnchor?: VerifyChainOptions['trustedAnchor'];
+  /** Highest witnessed membership checkpoint; a shorter or forked chain is `rollback`. */
+  witnessedCheckpoint?: VerifyChainOptions['witnessedCheckpoint'];
 }
 
 /**
  * Verify a seal-key document against the verifier's verified membership chain
- * (`chain`, genesis first, at or after `membership_seq`). Checks in spec §3.6
+ * (`chain`, genesis first, at or after `membership_seq`), pinned to
+ * `trustedAnchor` and `witnessedCheckpoint` when given (a device passes the
+ * values it pinned and witnessed itself). Checks in spec §3.6
  * order: shape; vault; `membership_seq` within the chain and `key_epoch` equal
  * to the chain's key epoch there (`bad_request`); author a human owner device
  * current at `membership_seq` (`forbidden`); signature (`invalid_signature`);
@@ -90,9 +97,12 @@ export interface VerifySealKeyDocOptions {
 export function verifySealKeyDoc(value: unknown, chain: readonly unknown[], opts: VerifySealKeyDocOptions): SealKeyDoc {
   const doc = parseSealKeyDoc(value);
   if (doc.vault_id !== opts.vaultId) fail('bad_request', 'seal-key document belongs to another vault');
-  const head = verifyMembershipChain(chain, { vaultId: opts.vaultId });
+  const anchor = opts.trustedAnchor === undefined ? {} : { trustedAnchor: opts.trustedAnchor };
+  const witnessed = opts.witnessedCheckpoint === undefined ? {} : { witnessedCheckpoint: opts.witnessedCheckpoint };
+  const head = verifyMembershipChain(chain, { vaultId: opts.vaultId, ...anchor, ...witnessed });
   if (doc.membership_seq > head.seq) fail('bad_request', 'seal-key document is ahead of the verified chain');
-  const at = doc.membership_seq === head.seq ? head : verifyMembershipChain(chain.slice(0, doc.membership_seq + 1), { vaultId: opts.vaultId });
+  // The prefix of a verified chain is itself a verified chain; the witnessed checkpoint applies only to the full chain.
+  const at = doc.membership_seq === head.seq ? head : verifyMembershipChain(chain.slice(0, doc.membership_seq + 1), { vaultId: opts.vaultId, ...anchor });
   if (doc.key_epoch !== at.key_epoch) fail('bad_request', 'seal-key document key_epoch does not match the chain');
   const author = at.devices.find((d) => d.device_id === doc.author);
   if (!author || author.kind !== 'human' || author.role !== 'owner') fail('forbidden', 'seal-key document author is not an owner device');

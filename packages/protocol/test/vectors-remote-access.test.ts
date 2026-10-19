@@ -59,11 +59,15 @@ describe('seal-key.json', () => {
     expect(b64encode(deriveSealKeyPair(b64decode(o.vk), o.vault_id, o.key_epoch).publicKey)).toBe(o.seal_pub);
     expect(o.seal_pub).not.toBe(v.seal_keys[0].seal_pub);
   });
+  const pinsOf = (c: { trusted_anchor?: string; witnessed_checkpoint?: { membership_seq: number; membership_head: string } }) => ({
+    ...(c.trusted_anchor === undefined ? {} : { trustedAnchor: c.trusted_anchor }),
+    ...(c.witnessed_checkpoint === undefined ? {} : { witnessedCheckpoint: c.witnessed_checkpoint }),
+  });
   it.each(named(v.cases))('verifies %s', (_n, c) => {
-    expect(verifySealKeyDoc(c.doc, sharedChain, { vaultId: v.vault_id, ...vkOf(c.vk) })).toEqual(c.doc);
+    expect(verifySealKeyDoc(c.doc, sharedChain, { vaultId: v.vault_id, ...vkOf(c.vk), ...pinsOf(c) })).toEqual(c.doc);
   });
   it.each(named(v.invalid))('refuses %s', (_n, c) => {
-    expectCode(() => verifySealKeyDoc(c.doc, sharedChain, { vaultId: c.vault_id, ...vkOf(c.vk) }), c.expect_error);
+    expectCode(() => verifySealKeyDoc(c.doc, sharedChain, { vaultId: c.vault_id, ...vkOf(c.vk), ...pinsOf(c) }), c.expect_error);
   });
   it.each(named(v.replace_cases))('replace accepts %s', (_n, c) => expect(() => checkSealKeyDocReplace(c.stored, c.incoming)).not.toThrow());
   it.each(named(v.replace_invalid))('replace refuses %s', (_n, c) => expectCode(() => checkSealKeyDocReplace(c.stored, c.incoming), c.expect_error));

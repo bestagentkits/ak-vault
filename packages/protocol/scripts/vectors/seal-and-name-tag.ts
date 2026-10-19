@@ -5,6 +5,7 @@ import {
   cjson,
   deriveSealKeyPair,
   kxKeyPairFromSecret,
+  membershipEventHash,
   nameIndexKey,
   nameTag,
   openSealedOp,
@@ -33,14 +34,22 @@ export function sealKeyVectors(): Record<string, unknown> {
   const fields = (epoch: number, seq: number, author = alicePhone, sealPubEpoch = epoch) => ({
     vault_id: VAULT_SHARED, key_epoch: epoch, membership_seq: seq, seal_pub: b64(sealPair(sealPubEpoch).publicKey), author: author.record.device_id, ts: tsAt(seq),
   });
-  const ok = (name: string, d: unknown, epoch: number | null) => {
-    verifySealKeyDoc(d, sharedChain, { vaultId: VAULT_SHARED, ...(epoch === null ? {} : { vk: vk(epoch) }) });
-    return { name, doc: d, vk: epoch === null ? null : b64(vk(epoch)) };
+  // Optional chain pins: trusted_anchor and witnessed_checkpoint, as membership.json chains use them.
+  type Pins = { trusted_anchor?: string; witnessed_checkpoint?: { membership_seq: number; membership_head: string } };
+  const pinOpts = (p: Pins) => ({
+    ...(p.trusted_anchor === undefined ? {} : { trustedAnchor: p.trusted_anchor }),
+    ...(p.witnessed_checkpoint === undefined ? {} : { witnessedCheckpoint: p.witnessed_checkpoint }),
+  });
+  const ok = (name: string, d: unknown, epoch: number | null, pins: Pins = {}) => {
+    verifySealKeyDoc(d, sharedChain, { vaultId: VAULT_SHARED, ...(epoch === null ? {} : { vk: vk(epoch) }), ...pinOpts(pins) });
+    return { name, doc: d, vk: epoch === null ? null : b64(vk(epoch)), ...pins };
   };
-  const bad = (name: string, code: string, d: unknown, epoch: number | null, vaultId = VAULT_SHARED) =>
-    negative(name, code, { vault_id: vaultId, doc: d, vk: epoch === null ? null : b64(vk(epoch)) }, () =>
-      verifySealKeyDoc(d, sharedChain, { vaultId, ...(epoch === null ? {} : { vk: vk(epoch) }) }),
+  const bad = (name: string, code: string, d: unknown, epoch: number | null, vaultId = VAULT_SHARED, pins: Pins = {}) =>
+    negative(name, code, { vault_id: vaultId, doc: d, vk: epoch === null ? null : b64(vk(epoch)), ...pins }, () =>
+      verifySealKeyDoc(d, sharedChain, { vaultId, ...(epoch === null ? {} : { vk: vk(epoch) }), ...pinOpts(pins) }),
     );
+  const anchor = alicePhone.record.sign_pub;
+  const witnessed = { membership_seq: 7, membership_head: membershipEventHash(sharedChain[7]!) };
   const e1 = doc(1, 0);
   const e3 = doc(3, 8);
   const e1Later = doc(1, 4, aliceLaptop);
@@ -52,7 +61,7 @@ export function sealKeyVectors(): Record<string, unknown> {
     version: 1,
     description:
       'Seal key and seal-key document (spec §3.6). seal_keys: SealSK[e] = HKDF-SHA256(ikm=VK[e], salt=b64decode(vault_id), info=utf8("akv1/seal-key\\n") || cjson({"key_epoch":e}), L=32), used unmodified as an X25519 secret; seal_pub = X25519(SealSK, 9). ' +
-      'Documents are signed with context "akv1/seal-key" over the document without sig. verifySealKeyDoc(doc, chain, {vault_id, vk?}) runs against membership.json chains[0] (the shared chain, verified in full) and checks in order: shape (exact keys; v = 1 else unsupported_version; IDs, 32-byte seal_pub, integers: bad_request); vault_id is the expected vault (bad_request); membership_seq <= verified head seq and key_epoch = the chain key epoch at membership_seq (bad_request); author is a human owner device current at membership_seq, never the recovery key (forbidden); signature under the author sign_pub (invalid_signature); with vk (null = not held), seal_pub = seal_pub recomputed from vk (forbidden). ' +
+      'Documents are signed with context "akv1/seal-key" over the document without sig. verifySealKeyDoc(doc, chain, {vault_id, vk?, trusted_anchor?, witnessed_checkpoint?}) runs against membership.json chains[0] (the shared chain, verified in full) and checks in order: shape (exact keys; v = 1 else unsupported_version; IDs, 32-byte seal_pub, integers: bad_request); vault_id is the expected vault (bad_request); membership_seq <= verified head seq and key_epoch = the chain key epoch at membership_seq (bad_request); author is a human owner device current at membership_seq, never the recovery key (forbidden); signature under the author sign_pub (invalid_signature); with vk (null = not held), seal_pub = seal_pub recomputed from vk (forbidden). A case with trusted_anchor or witnessed_checkpoint verifies the chain with those pins as membership.json chains do (anchor mismatch: forbidden; a shorter or forked chain: rollback), and the prefix up to membership_seq with the anchor only. ' +
       'cases MUST verify; invalid MUST fail with expect_error. replace: the server keeps one document per (vault_id, key_epoch) and refuses an incoming document whose membership_seq is below the stored one (conflict); replace_cases MUST be accepted, replace_invalid MUST fail.',
     vault_id: VAULT_SHARED,
     chain: 'membership.json chains[0]',
@@ -64,6 +73,7 @@ export function sealKeyVectors(): Record<string, unknown> {
       ok('epoch2_without_vk', doc(2, 6), null),
       ok('epoch2_at_later_seq', doc(2, 7), 2),
       ok('owner_removed_later_signed_before_removal', e1Later, 1),
+      ok('pinned_anchor_and_witnessed_checkpoint', e1, 1, { trusted_anchor: anchor, witnessed_checkpoint: witnessed }),
     ],
     invalid: [
       bad('seal_pub_does_not_match_vk', 'forbidden', signSealKeyDoc(fields(3, 8, alicePhone, 2), alicePhone.signSecret), 3),
@@ -78,6 +88,9 @@ export function sealKeyVectors(): Record<string, unknown> {
       bad('extra_key', 'bad_request', { ...e1, note: 'x' }, 1),
       bad('short_seal_pub', 'bad_request', { ...e1, seal_pub: b64(seed('short').slice(0, 31)) }, 1),
       bad('version_2', 'unsupported_version', { ...e1, v: 2 }, 1),
+      bad('untrusted_anchor', 'forbidden', e1, 1, VAULT_SHARED, { trusted_anchor: stranger.record.sign_pub }),
+      bad('chain_forks_from_witnessed_checkpoint', 'rollback', e1, 1, VAULT_SHARED, { witnessed_checkpoint: { membership_seq: 3, membership_head: b64(seed('seal-key/fork')) } }),
+      bad('chain_behind_witnessed_checkpoint', 'rollback', e1, 1, VAULT_SHARED, { witnessed_checkpoint: { membership_seq: 9, membership_head: b64(seed('seal-key/ahead')) } }),
     ],
     replace_cases: [replaceCase('no_stored', null, e1), replaceCase('newer_seq_same_epoch', e1, e1Later), replaceCase('other_epoch', e3, e1)],
     replace_invalid: [negative('older_seq_same_epoch', 'conflict', { stored: e1Later, incoming: e1 }, () => checkSealKeyDocReplace(e1Later, e1))],
