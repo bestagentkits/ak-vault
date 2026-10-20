@@ -84,6 +84,23 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # CI runs can finish out of order and an old CI run can be re-run, so an
+      # older commit must never replace a newer one on staging. Fails closed
+      # when the head of main cannot be read.
+      - name: Refuse when the commit is no longer the head of main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          head=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha') || head=""
+          if [ -z "$head" ]; then
+            echo "::error::could not read the head of main; refusing to deploy staging"
+            exit 1
+          fi
+          if [ "$head" != "$SHA" ]; then
+            echo "::error::${SHA} is no longer the head of main (now ${head}); refusing to deploy staging. The Deploy run for the newer commit deploys it"
+            exit 1
+          fi
       - name: Deploy
         working-directory: worker
         env:

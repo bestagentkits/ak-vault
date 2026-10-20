@@ -263,6 +263,14 @@ Record freezing and unfreezing on the incident issue. Merges to `main` still lan
 while frozen; their deploys fail at the gate and are not retried, so after
 unfreezing run the Deploy workflow on `main` once.
 
+The staging job also refuses, right before it deploys, when its commit is no longer
+the head of `main` (or when the head cannot be read), so a late or re-run CI run
+cannot put an older commit on staging. Production needs staging, so that run's
+production deploy is skipped as well. The newer commit deploys only once its own CI
+is green and deploys are not frozen, and a manual run needs a green CI push run for
+the head. While the head of `main` is red, no deploy goes through the workflow: land
+a fix, or use the emergency kill switch or the rollback below.
+
 ## Worker rollback
 
 Use when a deploy introduced a fault and the previous version is known good.
