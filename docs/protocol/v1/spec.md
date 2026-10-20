@@ -1059,7 +1059,8 @@ are refused.
 
 `POST /mcp` is the Worker's remote MCP endpoint, served only where remote access is
 enabled. It is not a `/v1` route and runs no `AKV-Proof` check; its credential is an
-MCP access token.
+MCP access token. It obeys the sync kill switch: while the switch is off, `/mcp`
+answers `503 sync_disabled` (§10 error body) before any token check.
 
 - **Token.** ES256 JWT, header `typ` `at+jwt`, exactly the claims `iss`, `aud` =
   `<origin>/mcp`, `sub`, `client_id`, `grant_id`, `sid` (= `grant_id`), `scope`, `jti`,
@@ -1067,29 +1068,43 @@ MCP access token.
   of {`vault-mcp:read`, `vault-mcp:write`, `vault-mcp:use`}. There is no `did` and no
   `session_kind`. The Worker checks issuer, audience, algorithm, key, times, and live
   revocation of `sid` and `sub` per request (item 3), then that `sub` is a member of
-  the selected vault. The `/v1` routes refuse this token (item 1) and `/mcp` refuses
-  every other audience.
+  the selected vault; a vault that does not exist and a vault `sub` is not a member
+  of both answer the tool error `invalid_args`, alike, so the answer never says
+  whether the vault exists. The `/v1` routes refuse this token (item 1) and `/mcp`
+  refuses every other audience.
 - **Discovery.** RFC 9728 protected-resource metadata at
   `GET /.well-known/oauth-protected-resource/mcp` names the resource `<origin>/mcp`,
-  the authorization server (the token issuer) and the scopes above. A missing or
-  invalid token answers `401` with a `WWW-Authenticate: Bearer` header carrying
-  `resource_metadata`.
+  the authorization server (the token issuer) and the scopes above; no other
+  metadata path is served. A missing or invalid token answers `401` with a
+  `WWW-Authenticate: Bearer` header carrying `resource_metadata`, plus
+  `error="invalid_token"` when a bearer token was presented and refused.
 - **Protocol.** MCP revision 2026-07-28, stateless: POST only (other methods `405`),
-  `MCP-Protocol-Version` required, `server/discover`, no `Mcp-Session-Id`. A
-  2025-11-25 client's `initialize` is answered statelessly, without a session ID.
+  `server/discover`, no `Mcp-Session-Id`. A 2026-07-28 request names its version in
+  `MCP-Protocol-Version`; an unsupported value answers `400` `-32022` with the
+  request's `id`. A request without the header is served as 2025-11-25, statelessly:
+  a 2025-11-25 client's `initialize` is answered without a session ID.
+- **Rate limits.** Every JSON-RPC request spends one call from the
+  `mcp_calls_per_minute_per_client` and `mcp_calls_per_minute_per_account` budgets
+  (§10), and a `run` call also from `mcp_run_calls_per_minute_per_client`. A refused
+  `tools/call` of a known tool within the token's scopes is the tool error
+  `rate_limited` with `retry_after_s`; any other refused request is HTTP
+  `429 rate_limited` with `Retry-After` and the §10 error body. A call refused as
+  `rate_limited` writes no audit row.
 - **Tools** map one to one onto the relay tools (§9.7) with the same scopes. Each
   takes the relay `args` plus an optional `vault_id`. Without it the Worker uses the
-  one vault the account's online relay connections list; when they list none or more
-  than one, the call needs `vault_id` (`invalid_args`), so a sealed write always
-  names its vault. The Worker relays the call to
+  one vault the account's online relay connections list. When they list more than
+  one, the call needs `vault_id` (`invalid_args`). When none is online, a read or
+  `use` tool answers `no_device_online` with the relay hint, and `set` or `delete`
+  needs `vault_id` (`invalid_args`), so a sealed write always names its vault. The
+  Worker relays the call to
   one online opted-in device of `sub` that listed that vault and tool in `hello`.
 - **Sealed fallback.** With no such device, `set` and `delete` are sealed (§3.6) and
   answer `{"status":"queued","sealed_id"}`; every other tool answers
   `no_device_online`.
 - **Errors.** A device `error.code`, `no_device_online`, `device_timeout`,
   `sealed_queue_full` and `rate_limited` are MCP tool errors (`isError` true) carrying
-  `{"code"}`; a token or scope failure is an HTTP `401` or `403` with the §10 error
-  body. Messages never echo arguments.
+  `{"code"}`; a token or scope failure is an HTTP `401` or `403`, and the kill switch
+  an HTTP `503 sync_disabled`, with the §10 error body. Messages never echo arguments.
 
 ## 10. Errors and limits
 
@@ -1117,7 +1132,8 @@ The last `membership_events_per_vault` slot is kept for a `rekey` that clears
 
 Remote access adds three codes, all returned only by the MCP endpoint as tool errors
 (§9.8) and never as the HTTP status of a `/v1` route: `no_device_online` (no opted-in
-device of the account holds the vault, and the call cannot be sealed),
+device of the account holds the vault, or none is online for a read or `use` call
+without `vault_id`, and the call cannot be sealed),
 `device_timeout` (the device missed `deadline_ms`) and `sealed_queue_full` (the vault
 already holds `sealed_queue_max` operations, acknowledged ones kept for replay refusal
 included). `worker/src/limits.ts` owns the relay and MCP limits and `GET /v1/meta`

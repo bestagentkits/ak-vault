@@ -294,7 +294,8 @@ export class AccountRelay extends DurableObject<Env> {
       }
       const role = await this.deviceRole(vaultId, initial);
       const conn = this.connection(ws);
-      if (!conn || conn.cid !== initial.cid || !this.isOpen(ws)) continue;
+      // The lookups above awaited: the token in force may have expired meanwhile.
+      if (!conn || conn.cid !== initial.cid || !this.isOpen(ws) || !live(conn, Date.now())) continue;
       if (role === null) {
         const vaults = conn.vaults.filter((v) => v !== vaultId);
         if (vaults.length === 0) this.close(ws, conn, CLOSE.forbidden);
@@ -312,12 +313,14 @@ export class AccountRelay extends DurableObject<Env> {
   }
 
   /**
-   * Take one call from the client's budgets: per (account, client), per (account,
-   * client) for `run`, and per account, each a one-minute window. A refused call
-   * spends nothing. An invalid client ID or tool is refused without `retryAfterS`.
+   * Take one MCP request from the client's budgets: per (account, client), per
+   * (account, client) for `run`, and per account, each a one-minute window. `tool` is
+   * null for a request that runs no tool (`tools/list`, `ping`, a refused call). A
+   * refused request spends nothing. An invalid client ID or tool is refused without
+   * `retryAfterS`.
    */
-  async takeRate(clientId: string, tool: RelayTool, nowMs: number = Date.now()): Promise<RateDecision> {
-    if (typeof clientId !== 'string' || !/^[\x20-\x7e]{1,256}$/.test(clientId) || !(RELAY_TOOLS as readonly string[]).includes(tool)) {
+  async takeRate(clientId: string, tool: RelayTool | null, nowMs: number = Date.now()): Promise<RateDecision> {
+    if (typeof clientId !== 'string' || !/^[\x20-\x7e]{1,256}$/.test(clientId) || (tool !== null && !(RELAY_TOOLS as readonly string[]).includes(tool))) {
       return { ok: false };
     }
     const window = Math.floor(nowMs / RATE_WINDOW_MS);

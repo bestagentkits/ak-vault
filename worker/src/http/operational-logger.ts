@@ -43,6 +43,14 @@ export function logRelayEvent(entry: { event: 'close'; code: number; sub: string
   console.log(JSON.stringify({ route: 'relay', event: entry.event, code: entry.code, account: accountLogTag(entry.sub) }));
 }
 
+/**
+ * One MCP tool call: tool, stable outcome code, latency, hashed client and account,
+ * and whether the audit row was written. Never arguments, results, names or values.
+ */
+export function logMcpCall(entry: { tool: string; outcome: string; ms: number; client: string; account: string; audited: boolean }): void {
+  console.log(JSON.stringify({ route: '/mcp', tool: entry.tool, outcome: entry.outcome, ms: entry.ms, client: entry.client, account: entry.account, audited: entry.audited }));
+}
+
 export function logRequest(entry: OperationalLogEntry): void {
   const line: Record<string, string | number> = { route: entry.route, status: entry.status, ms: entry.ms };
   if (entry.code) line['code'] = entry.code;

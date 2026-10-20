@@ -3,7 +3,7 @@
  *   GET /healthz, GET /v1/meta       public, always on
  *   /v1/vaults/...                    sync API (kill switch VAULT_SYNC_ENABLED)
  *   GET /v1/relay                     device relay WebSocket (remote access only)
- *   /mcp, /.well-known/oauth-protected-resource[/mcp]
+ *   /mcp, /.well-known/oauth-protected-resource/mcp
  *                                     remote MCP endpoint (remote access only)
  *   /app, /app/*                      vault dashboard (remote access only)
  *   POST /internal/v1/revocations     HMAC-authenticated ak-web revocation feed
@@ -21,6 +21,7 @@ import { logRequest } from './http/operational-logger.js';
 import { isAppPath, resultResponse, withSecurityHeaders } from './http/responses.js';
 import { serveAsset } from './http/static-assets.js';
 import { handleMcp } from './mcp/mcp-entry.js';
+import { PRM_MCP_PATH } from './mcp/protected-resource-metadata.js';
 import { RELAY_PATH, handleApi, handleRelayUpgrade, type RouteInfo } from './routes/api-handler.js';
 import { healthz } from './routes/meta-routes.js';
 import { handleRevocationWebhook } from './routes/revocation-webhook.js';
@@ -30,7 +31,7 @@ export { VaultDurableObject } from './vault/vault-durable-object.js';
 export { RevocationRegistry } from './revocation/revocation-registry.js';
 export { AccountRelay } from './relay/account-relay-durable-object.js';
 
-const MCP_PATHS: ReadonlySet<string> = new Set(['/mcp', '/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp']);
+const MCP_PATHS: ReadonlySet<string> = new Set(['/mcp', PRM_MCP_PATH]);
 
 async function route(request: Request, env: Env, info: RouteInfo): Promise<ApiResult> {
   const { pathname } = new URL(request.url);

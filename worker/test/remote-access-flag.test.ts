@@ -33,11 +33,13 @@ describe('remote access flag', () => {
       const relay = await upgrade(fx.owner, { env: off });
       expect(relay.status).toBe(404);
       expect(await relay.json()).toEqual({ error: { code: 'not_found', message: 'not found' } });
-      for (const path of ['/mcp', '/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp', '/app', '/app/', '/app/index.html', '/app/assets/x.js']) {
+      for (const path of ['/mcp', '/.well-known/oauth-protected-resource/mcp', '/app', '/app/', '/app/index.html', '/app/assets/x.js']) {
         const res = await fetchRaw(path, {}, off);
         expect(res.status, path).toBe(404);
         expect(((await res.json()) as { error: { code: string } }).error.code).toBe('not_found');
       }
+      // The root metadata path is no remote-access route at all: the landing site's 404.
+      expect((await fetchRaw('/.well-known/oauth-protected-resource', {}, off)).status).toBe(404);
       const health = (await (await fetchRaw('/healthz', {}, off)).json()) as { remote_access: boolean };
       expect(health.remote_access).toBe(false);
     });
@@ -68,11 +70,26 @@ describe('remote access flag', () => {
     expect(on.remote_access).toBe(true);
   });
 
-  it('on routes /mcp and /app to their handlers (not yet served: 404 JSON) and never to the landing site', async () => {
-    for (const path of ['/mcp', '/.well-known/oauth-protected-resource', '/app', '/app/x']) {
+  it('on routes /app to its handler (not yet served: 404 JSON) and never to the landing site', async () => {
+    for (const path of ['/app', '/app/x']) {
       const res = await fetchRaw(path);
       expect(res.status, path).toBe(404);
       expect(res.headers.get('Content-Type')).toContain('application/json');
     }
+  });
+
+  it('on serves /mcp (401 challenge) and protected-resource metadata, never the landing site', async () => {
+    const mcp = await fetchRaw('/mcp', { method: 'POST' });
+    expect(mcp.status).toBe(401);
+    expect(mcp.headers.get('WWW-Authenticate')).toContain('resource_metadata=');
+    const prm = await fetchRaw('/.well-known/oauth-protected-resource/mcp');
+    expect(prm.status).toBe(200);
+    expect(prm.headers.get('Content-Type')).toContain('application/json');
+  });
+
+  it('on still answers 404 for the root /.well-known/oauth-protected-resource', async () => {
+    const res = await fetchRaw('/.well-known/oauth-protected-resource');
+    expect(res.status).toBe(404);
+    expect(res.headers.get('Content-Type') ?? '').not.toContain('application/json');
   });
 });
