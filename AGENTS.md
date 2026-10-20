@@ -49,6 +49,14 @@ Node 22+ and pnpm (version pinned in `package.json`) are required.
 - Fail closed: unknown version, algorithm, event type, epoch or signature, and any
   auth or revocation lookup error, is a refusal.
 - No last-writer-wins, no server-side decryption, no server-authored membership.
+- Remote access exceptions are exactly those scoped in
+  [ADR 0002](./docs/adr/0002-browser-device-relay-and-remote-mcp.md) and
+  [REVIEW.md](./REVIEW.md#hard-rejection-criteria): the browser dashboard at `/app`
+  decrypts only as an enrolled device with its own keys; `/app`, the MCP
+  protected-resource metadata, `/mcp`, `/v1/relay` and the lookup, seal-key and
+  sealed-queue routes are the only new routes, each with the auth REVIEW.md lists;
+  plaintext may transit Worker memory only as ADR 0002 D7 describes and is never
+  logged, stored or put in an error. Nothing else widens.
 - Never commit `.env`, `.dev.vars`, tokens, keys, account identifiers or personal
   data. Test data is synthetic.
 - The Worker never receives the ak-web CLI HS256 signing key.

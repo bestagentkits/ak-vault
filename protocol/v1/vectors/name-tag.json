@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "description": "Name tags (spec §3.7). NameIndexKey[e] = HKDF-SHA256(ikm=VK[e], salt=b64decode(vault_id), info=utf8(\"akv1/name-index\\n\") || cjson({\"key_epoch\":e}), L=32); name_tag = b64(HKDF-SHA256(ikm=NameIndexKey[e], salt=\"\" (HashLen zero bytes), info=utf8(\"akv1/name-tag\\n\") || utf8(NFC(name)), L=16)). VK[e] is seal-key.json seal_keys[e].vk (used for both vaults here). index_keys and every tag MUST reproduce. same_tag: all entries give one tag (NFC and NFD spellings). distinct_tags: pairwise different (another epoch, another vault). known_answers: ASCII and non-ASCII names. A name is 1..4096 UTF-16 code units and well formed; invalid names MUST fail with expect_error.",
+  "index_keys": [
+    {
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 2,
+      "vk": "TDWG7GxVRqkmFq-xOidfIBXaueFf9tPZQPdUg3xpcrE",
+      "index_key": "EW3-9C0q9GADeFmqV8eafOi9PU3mAgfbcCElDKJuTE0"
+    },
+    {
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "key_epoch": 3,
+      "vk": "B_qoCDTvDMaazdFHNPYvj15bRtznSnSWuWegL5sZnwE",
+      "index_key": "9m56PCUwwXm6I2wFu7eWiHlvxM8FiyvSygJL-cNrs3o"
+    },
+    {
+      "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+      "key_epoch": 3,
+      "vk": "B_qoCDTvDMaazdFHNPYvj15bRtznSnSWuWegL5sZnwE",
+      "index_key": "x3K_pO_9nVr2vqFme-gwd8KrMo4p-TZRvKSwCAjz22Y"
+    }
+  ],
+  "same_tag": [
+    {
+      "name": "Café API",
+      "key_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "tag": "ycWKArcSJDJMFECWkVd-YA"
+    },
+    {
+      "name": "Café API",
+      "key_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "tag": "ycWKArcSJDJMFECWkVd-YA"
+    }
+  ],
+  "distinct_tags": [
+    {
+      "name": "GITHUB_TOKEN",
+      "key_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "tag": "xfB7KbVuWfMpjwemWIL2Qw"
+    },
+    {
+      "name": "GITHUB_TOKEN",
+      "key_epoch": 2,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "tag": "qb8p6y7wJCw_IzZrSg8snA"
+    },
+    {
+      "name": "GITHUB_TOKEN",
+      "key_epoch": 3,
+      "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+      "tag": "FyXEBtufen4XZpL7AH7UbQ"
+    }
+  ],
+  "known_answers": [
+    {
+      "name": "OPENAI_API_KEY",
+      "key_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "tag": "vPYu-yKQ0n3J-eSLxE6gtg"
+    },
+    {
+      "name": "stripe live key",
+      "key_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "tag": "29KkXlmiz06HT9i8p7OfLQ"
+    },
+    {
+      "name": "東京 データベース",
+      "key_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "tag": "BzPjDypQE1zeD1VjeQm7Kg"
+    },
+    {
+      "name": "🔑 deploy",
+      "key_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "tag": "eUrXRSLSjhzM1upbZZfJ8w"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "",
+      "key_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "lone_surrogate",
+      "key_epoch": 3,
+      "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+      "name_utf16_hex": "d800",
+      "expect_error": "bad_request"
+    }
+  ]
+}

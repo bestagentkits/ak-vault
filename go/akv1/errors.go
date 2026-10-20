@@ -23,6 +23,12 @@ const (
 	CodeSyncDisabled        = "sync_disabled"
 	CodeBadRequest          = "bad_request"
 	CodeDecryptFailed       = "decrypt_failed"
+
+	// Remote-access codes (spec §10): returned only by the MCP endpoint as
+	// tool errors, never as the HTTP status of a /v1 route.
+	CodeNoDeviceOnline  = "no_device_online"
+	CodeDeviceTimeout   = "device_timeout"
+	CodeSealedQueueFull = "sealed_queue_full"
 )
 
 // ErrorCodes lists every stable code in the same order as the TypeScript
@@ -31,7 +37,7 @@ var ErrorCodes = []string{
 	CodeUnauthorized, CodeForbidden, CodeNotFound, CodeConflict, CodeTombstoned,
 	CodeRekeyRequired, CodeUnsupportedVersion, CodeInvalidSignature, CodeRollback,
 	CodeRateLimited, CodeQuotaExceeded, CodeIdempotencyMismatch, CodeSyncDisabled,
-	CodeBadRequest, CodeDecryptFailed,
+	CodeBadRequest, CodeDecryptFailed, CodeNoDeviceOnline, CodeDeviceTimeout, CodeSealedQueueFull,
 }
 
 // Error is the only error type returned by this package. Code is one of the

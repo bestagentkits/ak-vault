@@ -28,6 +28,14 @@ Algorithm identifiers are closed sets. A verifier MUST reject an unknown `v`, `a
 event `type` or `suite` value (fail closed). Crypto agility = a new identifier plus a
 new protocol version; never silent negotiation down.
 
+Remote access (§3.6–§3.8, §9.6, §9.7) adds no primitive. The seal construction
+(§3.6) is the §3.3 shape (X25519, HKDF-SHA256, XChaCha20-Poly1305) aimed at a
+recipient key derived from `VK[e]`, and a name tag (§3.7) is HKDF-SHA256 output used
+as a keyed pseudorandom function. Its new identifiers (`x25519-xc20p-seal`, the
+`browser` session kind, the relay frame types) belong to new message types with their
+own closed sets; no existing set gains a member that an existing verifier would meet,
+so they do not need a new protocol version.
+
 ## 2. Encodings
 
 - **Binary on the wire:** base64url without padding (`b64`). Decoders MUST reject
@@ -179,7 +187,239 @@ ak-web sessions, and the password or recovery key remains the barrier.
 SAS transcript = `cjson({"ctx":"akv1/sas","vault_id","initiator":device_id,"joiner":device,
 "nonce_i":b64 16B,"nonce_j":b64 16B})`; both devices display
 `uint32be(sha256(transcript)[0:4]) mod 10^6` as six digits; `device_add.body.sas` is
-`b64(sha256(transcript))`. A mismatch aborts enrollment.
+`b64(sha256(transcript))`. A mismatch aborts enrollment. The joiner and the
+initiator exchange the transcript inputs as enrollment codes (§3.8).
+
+### 3.6 Seal key and sealed operations
+
+A **sealed operation** lets the Worker queue a write that a remote MCP client asked
+for while no device is online (§9.6), without the Worker holding any vault key. The
+Worker encrypts the operation to a per-epoch public key whose private key every
+holder of `VK[e]` can derive; an opted-in device later opens it and writes a normal
+signed record.
+
+```
+SealSK[e]   = HKDF(ikm=VK[e], salt=b64decode(vault_id),
+                   info=utf8("akv1/seal-key\n") || cjson({"key_epoch":e}), L=32)
+seal_pub[e] = X25519(SealSK[e], 9)        ; the RFC 7748 base point
+```
+
+`SealSK[e]` is used unmodified as an X25519 private key; X25519 applies the RFC 7748
+scalar clamping itself, so implementations never store a pre-clamped copy.
+
+**Seal-key document.** Owner-signed, stored by the server, never a membership event
+(older clients keep verifying the chain unchanged). Signing context `akv1/seal-key`;
+exactly these keys:
+
+```json
+{"v":1,"vault_id":…,"key_epoch":e,"membership_seq":n,"seal_pub":"<b64 32B>","author":device_id,"ts":unix_ms,"sig":"<b64 ed25519>"}
+```
+
+`verifySealKeyDoc(doc, chain, {vault_id, vk?, trusted_anchor?, witnessed_checkpoint?})`
+checks, in order, the first failure being the result. `chain` is the verifier's
+membership chain, verified in full (with the verifier's own pinned anchor and highest
+witnessed checkpoint when it has them, as in §4: a device passes both); its head
+MUST be at or after `membership_seq`, and its prefix up to `membership_seq`, verified
+under the same anchor, gives the key epoch and the devices current when the
+document was signed.
+
+1. shape: exact keys, `v` = 1 (`unsupported_version` otherwise), IDs, `seal_pub` of
+   32 bytes, integers (`bad_request`);
+2. `vault_id` is the expected vault (`bad_request`);
+3. `membership_seq` is at most the verified head seq, and `key_epoch` equals the
+   chain's key epoch at `membership_seq` (`bad_request`);
+4. `author` is a human `owner` device current at `membership_seq`; the recovery
+   signing key never authors a seal-key document (`forbidden`);
+5. the signature verifies under the author's `sign_pub` (`invalid_signature`);
+6. when the verifier holds `VK[key_epoch]` (`vk`), `seal_pub` equals
+   `seal_pub[key_epoch]` recomputed from it (`forbidden`). A device that holds the
+   key MUST pass it. A device that finds a mismatch raises a vault alarm, drains
+   nothing sealed to that epoch, and, if it is an owner device, publishes a correct
+   document.
+
+Owner devices SHOULD publish a document after genesis and after every `rekey`, and
+on their first sync when the vault has none for the current key epoch.
+
+**Sealed operation (wire).** Exactly these keys:
+
+```json
+{"v":1,"alg":"x25519-xc20p-seal","sealed_id":"<b64 16B>","vault_id":…,"key_epoch":e,
+ "epk":"<b64 32B>","n":"<b64 24B>","ct":"<b64 ct||tag>",
+ "origin":{"kind":"mcp","account":"<token sub>","client_id":"<string>","grant_id":"<string>"},"ts":unix_ms}
+```
+
+```
+esk, epk = fresh X25519 keypair
+shared   = X25519(esk, seal_pub[e])                      ; reject all-zero output
+seal_key = HKDF(ikm=shared, salt=epk || seal_pub[e], info=utf8("akv1/seal"), L=32)
+aad      = {"ctx":"akv1/sealed-op","vault_id","sealed_id","key_epoch","origin","ts"}
+pt       = cjson({"op":"set","name":…,"value":…,"sensitivity"?:"normal"|"high"})
+         | cjson({"op":"delete","name":…})
+ct       = XC20P(seal_key, n, pt, aad)
+```
+
+- `sealed_id` is 16 random bytes (§2). `origin` has exactly the keys `kind`,
+  `account`, `client_id` and `grant_id`; `kind` is the closed set {`mcp`}; `account` is
+  the MCP token's `sub`, in the account form device records use (§4); `client_id` is
+  1–256 and `grant_id` 1–64 bytes of printable ASCII (0x20–0x7E). The device cannot
+  verify `origin` beyond its binding into the AAD: it records who the Worker says
+  asked, nothing more.
+- `pt` is canonical; `op` is the closed set {`set`, `delete`}; `name` is 1–4096 and
+  `value` 0–65 536 UTF-16 code units, the item payload limits the reference
+  implementations enforce; a `set` carries `value` and MAY carry `sensitivity`, a
+  `delete` carries neither. `pt` ≤ 65 536 bytes (§3.1), which bounds a `value` more
+  tightly than its own limit.
+- `openSealedOp(SealSK[e], wire, {vaultId})`, in order: parse the wire (`v`/`alg`
+  unknown → `unsupported_version`; keys, lengths, `origin` → `bad_request`);
+  `vault_id` ≠ expected → `bad_request`; an all-zero shared secret → `bad_request`;
+  AEAD failure → `decrypt_failed`; `pt` not canonical, unknown `op`, missing `value` on
+  `set`, `value` or `sensitivity` on `delete`, unknown keys → `bad_request`.
+  `sealOp` applies the same checks before encrypting.
+
+**Who seals.** Only the Worker's MCP handler creates sealed operations; there is no
+public route that accepts one. It seals only when the MCP token carries
+`vault-mcp:write` and its `sub` is an `owner` or `editor` member of the vault, only to
+the stored seal-key document whose `key_epoch` is the vault's current key epoch, and
+never while the vault has `rekey_required` set (a removed device may still derive
+that epoch's seal key). Otherwise it does not seal and the tool answers
+`no_device_online` (§10). The queue holds at most `sealed_queue_max` operations per
+vault (`sealed_queue_full` beyond) and drops an operation `sealed_ttl_s` after its
+`ts`.
+
+**Draining.** A device drains the queue (`GET …/sealed`, `POST …/sealed/{id}/ack`,
+§9.6) only when its operator opted in to sealed writes, and only if it is a human
+`owner` or `editor` device of a non-`browser` session. The server serves a device only
+operations whose `origin.account` is its token `sub`, so an account's sealed writes
+are applied only by that account's own devices. For each operation, in order:
+
+1. open it with `SealSK[key_epoch]` (any failure: refuse), and refuse an
+   `origin.account` other than its own account;
+2. refuse a `sealed_id` it already applied or refused (it MUST NOT apply one twice;
+   it keeps every such ID until at least `sealed_ttl_s` after the later of its `ts`
+   and the time it handled it, so an ID is never forgotten while its `ts` still
+   passes the age check), and refuse a `ts` more than `sealed_ttl_s` in the past or
+   more than 300 s in the future by its own clock. `checkSealedDrain(opened,
+   {account, now, sealedTtlS, seen})` runs steps 1 and 2 on the result of
+   `openSealedOp`, never on a raw wire, so it reads only authenticated header fields:
+   another account → `forbidden`, an applied or refused `sealed_id` → `conflict`, a
+   `ts` out of bounds → `bad_request`;
+3. resolve `name` against all its own decrypted live items: those whose payload
+   `name` equals `name` after NFC normalization of both. More than one match, any
+   match that is a policy item (§8.1), or a `delete` with no match → refuse. A `set`
+   with no match creates a new item (fresh `item_id`). Resolution uses the device's
+   full synced state, never a name-tag lookup (§3.7);
+4. write a normal signed record (§5): author = itself, `base_revision` = the
+   revision it holds, current `key_epoch`. The payload is what a local set or delete
+   by this device would write, including the meta keys its own item mapping requires
+   for a new item and the timestamps it updates on a changed value; beyond that, a
+   `set` keeps every other payload field of the head (`meta.profile` unchanged, so
+   profile provenance is untouched, §5.1). Its sensitivity is the higher of the
+   head's (`normal` for a new item) and the requested one, so a sealed write never
+   lowers sensitivity. A `delete` writes a tombstone. A `409` is an ordinary conflict
+   branch (§5), never retried as an overwrite;
+5. append an encrypted audit entry (§7) with `action` `sealed_applied` or
+   `sealed_refused`, the `sealed_id`, `origin.client_id` and, when applied, the
+   `item_id`; never the name or value;
+6. acknowledge it with the outcome.
+
+Vectors (`seal-key.json`, `sealed-op.json`): `seal_pub` derived for two epochs;
+document sign and verify; a `seal_pub` that does not match `VK` → `forbidden`; a
+non-owner author → `forbidden`; `set` and `delete` round trips; wrong epoch key and
+tampered `origin` (including `account`), `ts` or `sealed_id` (AAD) → `decrypt_failed`;
+`delete` with a value → `bad_request`; oversize `pt` → `bad_request`; all-zero shared
+secret → `bad_request`; unknown `alg` → `unsupported_version`; a document verified
+under a pinned trust anchor and witnessed checkpoint, and refused under another
+anchor (`forbidden`) or a forked or longer checkpoint (`rollback`); drain admission:
+a replayed `sealed_id`, also after its TTL → `conflict`, another account →
+`forbidden`, an expired or too-far-future `ts` → `bad_request`.
+
+### 3.7 Name tags (keyed blind index)
+
+A **name tag** lets a device find an item by name without pulling the vault. Only
+devices compute tags; the Worker never holds or derives the index key.
+
+```
+NameIndexKey[e] = HKDF(ikm=VK[e], salt=b64decode(vault_id),
+                       info=utf8("akv1/name-index\n") || cjson({"key_epoch":e}), L=32)
+name_tag        = b64(HKDF(ikm=NameIndexKey[e], salt="", info=utf8("akv1/name-tag\n") || utf8(NFC(name)), L=16))
+```
+
+`salt=""` is the RFC 5869 default (HashLen zero bytes). `e` is the record's
+`key_epoch`.
+
+- **Upload.** `PUT /v1/vaults/{vid}/items/{iid}` accepts either the bare record (§5,
+  unchanged) or the wrapper `{"record":<record>,"name_tag":{"key_epoch":e,"tag":"<b64 16B>"}}`
+  (keys exactly `record` and optional `name_tag`; `name_tag` keys exactly `key_epoch`
+  and `tag`). The tag is beside the record, not inside it: it is not signed, not
+  encrypted and not trusted. The server refuses a `name_tag.key_epoch` other than
+  `record.key_epoch` and a `name_tag` on a tombstone (`bad_request`). It stores the tag
+  only when the record is applied (never for a conflict branch or a replay); an
+  applied record without a tag, a tombstone included, clears the item's stored tag.
+  The `Idempotency-Key` covers the whole body. Writers SHOULD send a tag with every
+  live secret item record and SHOULD NOT send one for policy items. Where the
+  deployment has remote access disabled, the wrapper is `bad_request`; writers send
+  it only when `GET /v1/meta` publishes `lookup_tags_max`.
+- **Lookup.** `GET /v1/vaults/{vid}/lookup` (§9.6) returns the items whose current
+  head carries a requested `(key_epoch, tag)`. A reader computes a tag for each epoch
+  it holds that the item may still be at. A hit is a hint: the reader MUST fetch,
+  verify (§5) and decrypt the record and compare the decrypted name (NFC) before
+  acting on it. A miss is never evidence that no item has the name: items written by
+  clients that send no tags, or whose tag the server dropped, are not found this way.
+  Before creating an item, a reader checks its full synced state.
+- **Leakage.** The server learns which items share a name within an epoch, when an
+  item is renamed back to an earlier name, and which tags a reader asks for. It does
+  not learn names. A rekey changes the tag of every record written after it; items
+  not yet rotated forward keep their old-epoch tags.
+
+Vectors (`name-tag.json`): NFC and NFD spellings give the same tag; another epoch and
+another vault give different tags; known-answer tags for ASCII and non-ASCII names.
+
+### 3.8 Enrollment codes
+
+The join code a new device prints and the offer code the approving owner device
+answers with carry the SAS inputs (§3.5). They hold only public keys, nonces, IDs and
+a signed checkpoint, so they are not secret; the six-digit SAS is what authenticates
+the exchange. Each is a prefix followed by `b64(cjson(obj))`. The contexts keep their
+`agentkit/` prefix because shipped CLIs already produce and accept these codes.
+
+```
+join  = "akj1-" || b64(cjson({"v":1,"ctx":"agentkit/akv1-join","account":…,"device":<device record>,"nonce_j":"<b64 16B>","label":…}))
+offer = "ako1-" || b64(cjson({"v":1,"ctx":"agentkit/akv1-offer","vault_origin":…,"vault_id":…,"initiator":device_id,
+                               "joiner":device_id,"nonce_i":"<b64 16B>","nonce_j":"<b64 16B>",
+                               "trust_anchor":"<b64 32B Ed25519 sign_pub>","checkpoint":<signed checkpoint>}))
+```
+
+`parseJoinCode` and `parseOfferCode`, in order, every failure `bad_request` except
+`v`:
+
+1. remove every Unicode `White_Space` character (a terminal may wrap a pasted code);
+2. the result is at most 8192 bytes and starts with its prefix;
+3. the rest decodes as `b64` to a canonical `cjson` object with exactly the keys
+   above; `v` other than 1 → `unsupported_version`;
+4. `ctx` is the code's own context (a join code is never accepted as an offer);
+5. join: `device` parses as a device record (§4) whose `account` equals `account`,
+   with `role` `owner` and `kind` `human` (v1 codes enroll another device of an owner
+   account, which is what shipped CLIs produce; a browser device is therefore enrolled
+   only for an account that owns the vault); `nonce_j` is 16 bytes; `label` is
+   0–64 bytes of printable ASCII (0x20–0x7E). The label is chosen by the joiner and is
+   display text only;
+6. offer: `vault_origin` is in canonical form, `https://host[:port]` with a lowercase
+   scheme and host, no default port, no trailing dot, path, query, fragment or
+   userinfo (`http://` only for `localhost`, `127.0.0.0/8` or `::1`); `vault_id`,
+   `initiator` and `joiner` are IDs; both nonces are 16 bytes; `trust_anchor` is a
+   32-byte key; `checkpoint` parses (§6) and names `vault_id`.
+
+Encoders apply the same checks before encoding. Parsing checks no signature. The
+joiner MUST then verify the membership chain from `trust_anchor` (the genesis
+author's `sign_pub`, §4), the checkpoint signature and its non-rollback against that
+chain (§6), and that the `device_add` adding it carries `sas` = `b64(sha256(transcript))`
+for its own device record before it trusts any wrap.
+
+Vectors (`enroll-codes.json`): byte-exact round trips of a join and an offer code in
+the format shipped CLIs produce; a code split by whitespace parses; oversize, wrong
+prefix, wrong `ctx`, an extra or missing key, non-canonical JSON, a non-owner or
+machine device, a non-ASCII label and a non-canonical origin → `bad_request`; `v` 2 →
+`unsupported_version`.
 
 ## 4. Membership log (owner-signed, hash-chained)
 
@@ -332,6 +572,107 @@ last position is `rollback`, then a kept head beyond the last position is `rollb
 It returns the new cursor and the verified records. Apart from fences below `from`,
 no position requires a kept head, and on a page that is not `complete` a kept head
 beyond the last entry is not checked.
+
+### 5.1 Profile layout
+
+A secret item MAY carry a **profile**: operator-facing text that helps a person or an
+agent choose a credential. It lives inside the item ciphertext as `meta.profile`, an
+object whose keys are drawn from the closed set below. A policy item (§8.1) never
+carries one. Each value is a field object with exactly the keys `value`, `by`, `at`
+and `src`:
+
+```json
+"profile":{"provider":{"value":"stripe","by":"<device_id>","at":1767225600000,"src":"local"},
+           "tags":{"value":["billing","live"],"by":"<device_id>","at":1767225600000,"src":"import"}}
+```
+
+- `by` is the device ID (§2) that last changed the field; `at` is that change's
+  unix milliseconds; `src` is the closed set {`local`: typed by that device's
+  operator, `import`: derived by an importer on that device}.
+- Text rules for every string (a text `value` and each list item): non-empty, at most
+  the limit in Unicode code points, and no code point in U+0000–U+001F, U+007F,
+  U+0080–U+009F, U+061C, U+200B, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069,
+  U+2028, U+2029 or U+FEFF (controls, bidi marks, embeddings, overrides and
+  isolates, the zero-width space, line and paragraph separators, and the byte order
+  mark). The zero-width non-joiner and joiner (U+200C, U+200D) are allowed: Persian
+  and Indic text and emoji sequences need them.
+- Lists: 1–32 items, each at most 64 code points, without a comma, no two items equal.
+
+| Key | `value` | Limit |
+|---|---|---|
+| `description`, `when_to_use`, `when_not_to_use` | text | 1024 |
+| `provider`, `account`, `environment`, `owner` | text | 128 |
+| `projects`, `tags`, `permissions`, `aliases`, `usage_hosts` | list | 32 × 64 |
+| `kind` | one of `api_key`, `token`, `password`, `private_key`, `certificate`, `connection_string`, `webhook_secret`, `client_secret`, `other` | — |
+| `sensitivity` | one of `normal`, `high` | — |
+| `expires_at` | RFC 3339 UTC text `YYYY-MM-DDTHH:MM:SSZ` | 20 |
+| `rotate_url` | text starting `https://` | 512 |
+
+The profile `sensitivity` is a label for whoever chooses a credential. It is not the
+payload `sensitivity` (§3.2), and no grant, policy or approval reads it.
+`validateProfile(profile)` refuses an unknown key, a field object with other keys, a
+wrong type, an unknown `src`, `kind` or `sensitivity`, or a broken text or list rule
+(`bad_request`). A receiver whose pulled profile fails it keeps the rest of the item
+and drops `meta.profile` (audit `profile_invalid`).
+
+**Provenance.** `checkProfileProvenance(prev, next, record, {selfDeviceId, prevOrigins})`
+makes `by` and `at` checkable without new signatures. `prev` is the validated
+profile of the item at revision `record.base_revision` as this device verified it
+(an empty profile when
+`base_revision` is 0 or that revision is a tombstone), or `null` when the device does
+not hold that revision. For each field of `next`:
+
+- `prev` holds the field with an equal `value` (lists compared item by item, in
+  order): the field MUST be byte-identical to the one in `prev` (same `by`, `at`,
+  `src`);
+- otherwise (new or changed value): `by` MUST equal `record.author` and `at` MUST
+  equal `record.ts`.
+
+A field that breaks the rule is dropped and audited `profile_provenance_invalid` (item
+ID and field key, never the text); the record and every other field still apply.
+When `prev` is `null` the device cannot check unchanged fields and keeps every field
+as claimed.
+
+**Origins.** The check returns an origin for every kept field, and the device stores
+those origins with the revision. The origin is transitive, so the own label comes
+only from this device's own write history. A field is shown as its own (`src`) only
+when `by` is this device's ID, `prev` was held (or the record is a create), and
+either:
+
+- the field is new or changed in this record and `record.author` is this device; or
+- the field is carried unchanged and its stored origin in `prevOrigins` (the origins
+  this check returned when the device accepted `prev`) is that same `src`.
+
+Every other field is shown as `sync` and treated as untrusted text written by a vault
+member. That includes every field when `prev` is `null`, even on a record this device
+wrote, since such a record may carry a field forged under this device's ID. A field
+kept under `prev = null` therefore stays `sync` for as long as it is carried
+unchanged. A later revision checked against the held one cannot upgrade it, and
+neither can this device's own later record that carries it. A device computes the
+origins of its own records with the same check before storing them. Writers MUST
+build `next` by the same rule. A conflict branch's profile is never applied; a
+resolving record is checked against its `base_revision`.
+
+Writers keep profile data only under `meta.profile`. A writer that carries unknown
+`meta` keys forward from the previous head MUST NOT carry forward `kind`, `item_ids`
+or `policy` (§8.1), and MUST NOT carry forward any key that, lowercased with `_`, `-`
+and `.` removed, equals a profile key with `_` removed. A key such as `whentouse` or
+`usagehosts` written by an older client is therefore dropped rather than re-signed by
+the next editor. Payload `meta` keys are already `[a-z0-9_]+` (§2 canonical JSON),
+so the case, `-` and `.` folds are defensive. Profile text is inert,
+author-attributed data: it never creates or widens a grant and is never interpreted
+as an instruction (§8).
+
+Vectors (`profile.json`): a changed field with `by` ≠ author, or `at` ≠ record `ts`,
+is dropped; an unchanged field relabelled to another device is dropped; an unknown key,
+an over-length text, a list with a duplicate or a comma, a bidi mark, a zero-width
+space or a byte order mark, and an unknown `kind` → `bad_request`, while text with a
+zero-width non-joiner or joiner is accepted; with `prev` `null` every field is
+kept and shown `sync`, also on this device's own record; a create (`base_revision` 0)
+requires every field by the author. The `chains` replay consecutive revisions for one
+device. A field forged in its name under `prev = null`, then carried unchanged by the
+forger and by the device itself, stays `sync` at every step. Its own field carried
+through other devices' edits stays its `src`.
 
 ## 6. Checkpoints (anti-rollback)
 
@@ -511,12 +852,26 @@ devices that honor it, not what a vault member can decrypt (§3).
    `iss` (exact), `aud` = the deployment's own origin (exact; production
    `https://vault.agentkit.best`, staging `https://vault-staging.agentkit.best`), `sub`, `exp`, `nbf`,
    `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`. Optional
-   `session_kind` ∈ {`email_otp`, `api_key_device`, `machine`}: how the session behind the
+   `session_kind` ∈ {`email_otp`, `api_key_device`, `machine`, `browser`}: how the session behind the
    token signed in. An absent claim means `email_otp` (the only kind issued before the claim
    existed); any other value, or a non-string, is `401 unauthorized`. ak-web MUST set it for
    every session that is not a human email-OTP sign-in; the Worker never infers it, so a
    non-human session minted without it is read as `email_otp` (see the threat model's
-   recovery bundle limitation). Header `alg`
+   recovery bundle limitation). The audiences `<origin>/mcp` and `<origin>/app` name
+   other resources (the remote MCP endpoint and the dashboard sign-in) and are refused
+   on every route of this section like any other wrong `aud`.
+
+   **Browser sessions.** `browser` marks a token ak-web minted for the vault dashboard
+   in exchange for a dashboard sign-in grant; its `sid` is that grant's ID. The device
+   behind it is an ordinary enrolled device record (§4: `kind` `human`, its account's
+   role, so `owner` in a personal vault), added by an owner device's `device_add`
+   after a SAS match (§3.5, §3.8). The session kind, not the role, restricts it: the
+   Worker refuses a `browser` session with `403 forbidden` on genesis
+   (`PUT /v1/vaults/{vid}`), on every `POST /v1/vaults/{vid}/membership` (recovery
+   enrollment included), on `GET` and `PUT /v1/vaults/{vid}/recovery`, on the
+   recovery-identity reads (§3.5), on `PUT /v1/vaults/{vid}/seal-key` and on draining
+   sealed operations (`GET …/sealed`, `POST …/sealed/{id}/ack`). Every other route
+   treats it as the member device it is. Header `alg`
    MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. If the JWKS
    cannot be loaded the server fails closed (`503`) and backs off for 30 s before
    fetching again; it never serves expired keys.
@@ -556,6 +911,184 @@ devices that honor it, not what a vault member can decrypt (§3).
    carries none, a set that does not match the signed digest, and a `bundle` on any
    event but `recovery_rotate` are `bad_request`.
 
+### 9.6 Remote-access routes
+
+Served only where the deployment enables remote access (every route below answers
+`404` otherwise). Each runs the shared pipeline before touching vault data: token
+(item 1), live revocation (item 3), proof (item 2), then membership, scope and role
+(item 4). Bodies are JSON objects; unknown keys are `bad_request`.
+
+| Route | Op | Scope | Who |
+|---|---|---|---|
+| `GET /v1/vaults/{vid}/lookup?tag=<b64>&key_epoch=<e>` (1–`lookup_tags_max` pairs) | `lookup.get` | `vault:read` | any member device |
+| `GET /v1/vaults/{vid}/seal-key` | `sealkey.get` | `vault:read` | any member device |
+| `PUT /v1/vaults/{vid}/seal-key` | `sealkey.put` | `vault:write` | human `owner` device, not `browser` |
+| `GET /v1/vaults/{vid}/sealed?after=<seq>&limit=<n>` | `sealed.get` | `vault:read` | human `owner`/`editor` device, not `browser` |
+| `POST /v1/vaults/{vid}/sealed/{sealed_id}/ack` | `sealed.ack` | `vault:write` | human `owner`/`editor` device, not `browser` |
+| `GET /v1/relay` (WebSocket upgrade, §9.7) | `relay.open` | `vault:read` and `vault:write` | human device, not `browser` or `machine` |
+
+- **Lookup.** The *i*-th `tag` pairs with the *i*-th `key_epoch`; unequal counts, more
+  than `lookup_tags_max` pairs, a tag that is not 16 bytes or an epoch outside
+  `1..current` are `bad_request`. Response
+  `{"hits":[{"item_id","revision","key_epoch","tag"}…]}`, items whose current head
+  carries a requested pair, in `item_id` byte order; no hit is `{"hits":[]}`, never
+  `not_found`.
+- **Seal key.** `GET` returns `{"seal_key":<doc>}` for the vault's current key epoch,
+  or `not_found`. `PUT` takes `{"seal_key":<doc>}`; the server runs
+  `verifySealKeyDoc` steps 1–5 (§3.6) against its stored chain and also refuses a
+  `key_epoch` other than the current one (`bad_request`) and an `author` other than
+  the token `did` (`forbidden`). It keeps one document per key epoch: a document whose
+  `membership_seq` is below the stored one for that epoch is `409 conflict`; otherwise
+  it replaces it. Response `{"key_epoch","membership_seq"}`.
+- **Sealed queue.** `GET` returns `{"sealed":[{"seq","op":<sealed op wire>}…],"next":<seq>|null}`
+  in ascending `seq` (a server-assigned position, starting at 1), operations whose
+  `origin.account` is the token `sub` with `seq` above `after` (default 0), at most `limit` (default and maximum
+  `sealed_page_max`); expired operations are never served. `ack` takes
+  `{"outcome":"applied"|"refused"}`, removes the operation and returns `{}`; an
+  unknown or already acknowledged `sealed_id`, or one of another account, is
+  `not_found`, which the device treats as done. There is no route that creates a sealed operation.
+- **Item PUT.** Also accepts the `{record, name_tag}` wrapper (§3.7).
+
+### 9.7 Relay
+
+The relay lets the Worker hand a remote MCP tool call to one of the account's online
+devices, which decrypts locally, applies its own grants and approvals, and answers.
+One connection per device; the device opts in by opening it.
+
+**Upgrade.** `GET /v1/relay` with `Upgrade: websocket`, `Authorization` (a sync token,
+item 1, whose `session_kind` is neither `machine` nor `browser`: the dashboard never
+answers relay calls), `AKV-Device-Key: <b64 Ed25519 sign_pub>` with
+`kid(sign_pub)` = `did`, and `AKV-Proof` (htm `GET`, htu the exact
+`<origin>/v1/relay`, `ath` of the token, `bh` of the empty body) verified
+against that key. More than `relay_devices_per_account` open connections for the
+token `sub` → `429 rate_limited`. A new connection for the same `did` closes the old
+one (4409).
+
+**Frames.** Text frames only, each one canonical `cjson` object of at most
+`relay_frame_max_bytes`, with exactly the keys listed for its `type`; the `type` set is
+closed. Any other frame closes the connection with 4400.
+
+| Direction | `type` | Object |
+|---|---|---|
+| device → server | `hello` | `{"v":1,"type":"hello","device_id","vaults":[vault_id…],"tools":[tool…],"ts","sig"}` |
+| server → device | `ready` | `{"v":1,"type":"ready","exp":<unix s of the token now in force>}` |
+| device → server | `reauth` | `{"v":1,"type":"reauth","token","proof"}` |
+| server → device | `call` | `{"v":1,"type":"call","call_id":"<b64 16B>","vault_id","tool","args":{…},"caller":{"client_id","grant_id","scopes":[…]},"deadline_ms"}` |
+| device → server | `result` | `{"v":1,"type":"result","call_id","ok":true,"result":{…},"sig"}` or `{"v":1,"type":"result","call_id","ok":false,"error":{"code"},"sig"}` |
+
+- `hello` is the first device frame, within `relay_hello_timeout_ms` of the upgrade,
+  and is sent once. Signing context `akv1/relay` over the frame without `sig`, by the
+  `did` key. `device_id` = token `did`; `ts` (unix ms) within ±60 s; `vaults` 1–16 unique IDs;
+  `tools` 1–7 unique names from the tool set. For every listed vault, `did` MUST be a
+  current `human` device of the token `sub` whose `sign_pub` is the upgrade key, else
+  close 4403. The server answers `ready`.
+- `reauth` carries a fresh sync token for the same `sub` and `did` and its proof (the
+  `AKV-Proof` header value: htm `GET`, htu the relay URL, `ath` of the new token, `bh`
+  of the empty body, fresh `jti`). It MUST arrive before the token in force expires,
+  else close 4401. The server verifies token, revocation and proof as at the upgrade
+  and answers `ready`. A token for another `sub` or `did` closes 4401.
+- Before each `call` the server checks revocation of the token in force (`sid`, `did`,
+  minimum `iat`), closing 4401 when revoked, and checks membership again: `did` MUST
+  still be a current `human` device of the token `sub` in `call.vault_id`. A device
+  that is no longer one gets no call; the server drops that vault from the
+  connection and closes it with 4403 when no listed vault remains. `reauth` repeats
+  the membership check for every listed vault. A device has at most
+  `relay_calls_inflight_per_device` calls outstanding. `vault_id` is always set (the
+  server picks the vault before choosing a device). `deadline_ms` is the time the
+  device has from receipt, at most `relay_call_deadline_ms` (`run`:
+  `relay_run_deadline_ms`). `caller.scopes` are the MCP token's scopes; a device MUST
+  refuse a tool the scopes do not cover (`denied`): `search`, `list`, `describe` need
+  `vault-mcp:read`; `set`, `delete` need `vault-mcp:write`; `request`, `run` need
+  `vault-mcp:use`.
+- `result` answers one `call` once. Signing context `akv1/relay-result` over the frame
+  without `sig`, by the `did` key; the server verifies it and drops a result that does
+  not verify, arrives after the deadline, or names an unknown `call_id`. `ok:true`
+  carries `result` and no `error`; `ok:false` carries `error` (exactly `code`) and no
+  `result`. `error.code` is the closed set {`denied`, `pending_approval`, `not_found`,
+  `invalid_args`, `conflict`, `unsupported`, `internal`}; a tool the device did not
+  list in `hello` is `unsupported`.
+- Close codes: 4400 bad frame, 4401 token expired or revoked, 4403 not a member or
+  wrong device kind, 4409 replaced by a newer connection of the same device, 4429 the
+  device sent frames faster than the server accepts them (more than
+  `relay_calls_inflight_per_device` unsolicited `result` frames, or repeated
+  `reauth` within one token lifetime).
+
+**Tools.** `tool` is the closed set {`search`, `list`, `describe`, `set`, `delete`,
+`request`, `run`}. Arguments and results are `cjson`, so object keys are
+`[a-z0-9_]+`. Names and values follow the item payload limits (§3.6); a `set` whose
+`{"op":"set","name","value","sensitivity"?}` object would exceed 65 536 bytes in
+`cjson` is `invalid_args` before it is relayed or sealed, so a `call` always fits
+`relay_frame_max_bytes`. Text fields follow the profile text rules (§5.1).
+
+| Tool | `args` (exact keys; `?` optional) | `result` |
+|---|---|---|
+| `search` | `{"query":1–200 code points,"fields"?:[…],"limit"?:1–50}`; `fields` ⊆ {`name`, `description`, `provider`, `account`, `environment`, `projects`, `tags`} | `{"items":[entry…]}` |
+| `list` | `{"cursor"?:string ≤256 bytes,"limit"?:1–100}` | `{"items":[entry…],"next_cursor"?:string}` |
+| `describe` | `{"name"}` | `{"name","profile","sensitivity","created_at"?,"rotated_at"?,"last_device_label"?}`; `sensitivity` is the payload's (§3.2) |
+| `set` | `{"name","value","sensitivity"?}` | `{"status":"written","revision"}` or `{"status":"conflict"}` |
+| `delete` | `{"name"}` | `{"status":"deleted"}`, `{"status":"conflict"}` or `{"status":"not_found"}` |
+| `request` | `{"name","purpose":1–200 code points,"project"?:≤128,"ttl_s"?:1–86400}` | `{"status":"pending"|"granted"|"denied","request_id":≤64 bytes}` |
+| `run` | `{"argv":[1–64 strings],"env":[{"var","name"}…1–16],"cwd_project"?:≤128,"timeout_s"?:1–110}` | `{"exit_code","stdout","stderr","truncated"}` |
+
+- `entry` = `{"name","profile","updated_at"}`; `profile` maps each present profile
+  key (§5.1) to `{"value","origin"}`, `origin` ∈ {`local`, `import`, `sync`} as this
+  device classifies it; `updated_at`, `created_at`, `rotated_at` are unix ms;
+  `last_device_label` is display text of at most 64 bytes.
+- `run.env` names environment variables (`var` matches `[A-Z_][A-Z0-9_]*`, at most
+  128 bytes, unique) and the secret each receives. The device runs only commands an
+  `exec` grant pinned on that device allows, never prompts from the relay, and
+  answers `pending_approval` when no grant covers the call. `exit_code` is an
+  integer ≥ 0 (a child the device killed, including at timeout, reports 137 on every
+  OS). `timeout_s` stays below `relay_run_deadline_ms` so the result can still
+  arrive. The device decodes output as UTF-8, replacing invalid sequences with U+FFFD,
+  truncates `stdout` and `stderr` so the whole frame fits `relay_frame_max_bytes`, and
+  sets `truncated` when it cut anything.
+- A `result` MUST NOT contain an item value, except `run` output after the device
+  redacted every value it released to the child. Redaction removes exact values only;
+  output a command transformed (encoded, split, partial) is not caught. A `set` call carries the value from
+  the server to the device; nothing carries one back.
+
+Vectors (`relay-frames.json`): each frame type valid; an unknown `type`, an extra or
+missing key, a binary-only or oversize frame, a bad `hello` or `result` signature, a
+`result` signed by another device, `ok:true` with `error`, and an unknown error code
+are refused.
+
+### 9.8 MCP endpoint
+
+`POST /mcp` is the Worker's remote MCP endpoint, served only where remote access is
+enabled. It is not a `/v1` route and runs no `AKV-Proof` check; its credential is an
+MCP access token.
+
+- **Token.** ES256 JWT, header `typ` `at+jwt`, exactly the claims `iss`, `aud` =
+  `<origin>/mcp`, `sub`, `client_id`, `grant_id`, `sid` (= `grant_id`), `scope`, `jti`,
+  `iat`, `nbf`, `exp`, with `exp` ≤ `iat` + 600 s. `scope` is a space-separated subset
+  of {`vault-mcp:read`, `vault-mcp:write`, `vault-mcp:use`}. There is no `did` and no
+  `session_kind`. The Worker checks issuer, audience, algorithm, key, times, and live
+  revocation of `sid` and `sub` per request (item 3), then that `sub` is a member of
+  the selected vault. The `/v1` routes refuse this token (item 1) and `/mcp` refuses
+  every other audience.
+- **Discovery.** RFC 9728 protected-resource metadata at
+  `GET /.well-known/oauth-protected-resource/mcp` names the resource `<origin>/mcp`,
+  the authorization server (the token issuer) and the scopes above. A missing or
+  invalid token answers `401` with a `WWW-Authenticate: Bearer` header carrying
+  `resource_metadata`.
+- **Protocol.** MCP revision 2026-07-28, stateless: POST only (other methods `405`),
+  `MCP-Protocol-Version` required, `server/discover`, no `Mcp-Session-Id`. A
+  2025-11-25 client's `initialize` is answered statelessly, without a session ID.
+- **Tools** map one to one onto the relay tools (§9.7) with the same scopes. Each
+  takes the relay `args` plus an optional `vault_id`. Without it the Worker uses the
+  one vault the account's online relay connections list; when they list none or more
+  than one, the call needs `vault_id` (`invalid_args`), so a sealed write always
+  names its vault. The Worker relays the call to
+  one online opted-in device of `sub` that listed that vault and tool in `hello`.
+- **Sealed fallback.** With no such device, `set` and `delete` are sealed (§3.6) and
+  answer `{"status":"queued","sealed_id"}`; every other tool answers
+  `no_device_online`.
+- **Errors.** A device `error.code`, `no_device_online`, `device_timeout`,
+  `sealed_queue_full` and `rate_limited` are MCP tool errors (`isError` true) carrying
+  `{"code"}`; a token or scope failure is an HTTP `401` or `403` with the §10 error
+  body. Messages never echo arguments.
+
 ## 10. Errors and limits
 
 Errors are `{"error":{"code","message"}}` with stable codes: `unauthorized`,
@@ -579,6 +1112,31 @@ recovery `device_add` may add one more, so a rekey of every device fits
 are exempt (still bounded by `membership_events_per_vault` x `wraps_per_request`).
 The last `membership_events_per_vault` slot is kept for a `rekey` that clears
 `rekey_required`.
+
+Remote access adds three codes, all returned only by the MCP endpoint as tool errors
+(§9.8) and never as the HTTP status of a `/v1` route: `no_device_online` (no opted-in
+device of the account holds the vault, and the call cannot be sealed),
+`device_timeout` (the device missed `deadline_ms`) and `sealed_queue_full` (the vault
+already holds `sealed_queue_max` unacknowledged operations). Relay and MCP limits will
+join `GET /v1/meta`: the Worker phase that implements the relay and MCP routes adds
+them to `worker/src/limits.ts`, which then owns their values. Until then the table
+records the planned initial values for orientation and is not normative:
+
+| Limit | Initial value |
+|---|---|
+| `relay_frame_max_bytes` | 131072 |
+| `relay_hello_timeout_ms` | 10000 |
+| `relay_calls_inflight_per_device` | 4 |
+| `relay_devices_per_account` | 8 |
+| `relay_call_deadline_ms` | 60000 |
+| `relay_run_deadline_ms` | 120000 |
+| `sealed_queue_max` (per vault) | 256 |
+| `sealed_ttl_s` | 604800 |
+| `sealed_page_max` | 50 |
+| `lookup_tags_max` | 8 |
+| `mcp_calls_per_minute_per_client` | 60 |
+| `mcp_run_calls_per_minute_per_client` | 10 |
+| `mcp_calls_per_minute_per_account` | 300 |
 
 ## 11. Clarifications fixed by the reference implementation (normative)
 
@@ -731,3 +1289,12 @@ under an earlier revision does not verify and is reset rather than migrated.
   `meta.item_ids` naming the governed items, the payload `sensitivity` as a minimum,
   and `resolveItemPolicy`. Earlier revisions defined no policy-item layout and no
   client applied policy items, so no existing data changes meaning.
+- **2026-10 (issue #101, bestagentkits/ak-web#628):** remote access, all additive: the
+  seal key and sealed operations (§3.6), name tags and the `{record, name_tag}` item
+  PUT wrapper (§3.7), enrollment code formats (§3.8), the profile layout and its
+  provenance check (§5.1), the `browser` session kind (§9 item 1), the remote-access
+  routes (§9.6), the relay (§9.7) and their errors and limits (§10). A bare record
+  PUT, every existing route and every existing body keep their meaning, so clients
+  that ignore these additions keep verifying and syncing and no data is reset. One
+  limitation: a writer that predates §5.1 does not carry `meta.profile` forward, so
+  its edit of an item drops that item's synced profile.

@@ -268,6 +268,12 @@ var vectorHandlers = map[string]fileHandler{
 	"device-add-wraps.json": checkDeviceAddWraps,
 	"removal-fence.json":    checkRemovalFence,
 	"edge-cases.json":       checkEdgeCases,
+	"seal-key.json":         checkSealKey,
+	"sealed-op.json":        checkSealedOp,
+	"name-tag.json":         checkNameTag,
+	"enroll-codes.json":     checkEnrollCodes,
+	"profile.json":          checkProfile,
+	"relay-frames.json":     checkRelayFrames,
 }
 
 // TestVectors verifies every vector file; an unknown file fails the test.

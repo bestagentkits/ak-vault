@@ -11,7 +11,11 @@ contract in the [spec](./docs/protocol/v1/spec.md); attacks and their tests in t
   makes no network calls, and `resolve` never waits on the network.
 - **Zero-knowledge by construction.** The server stores ciphertext and the metadata
   listed in [data classification](./docs/security/data-classification.md), nothing
-  more. No code path may need server-side plaintext.
+  more. No code path may store, log or decrypt plaintext on the server. The only
+  plaintext the Worker may handle is the remote-access transit in
+  [ADR 0002](./docs/adr/0002-browser-device-relay-and-remote-mcp.md) D7: an MCP `set`
+  value until it is sealed or relayed, and relayed metadata results on their way to
+  the MCP client, held in memory only and never logged, stored or put in an error.
 - **Honest guarantees.** State limitations as plainly as guarantees: vault-wide
   key, no clawback, withheld updates, plaintext released to `run`.
 - **Fail closed.** Unknown, malformed, unverifiable or unavailable means refuse.
@@ -28,10 +32,10 @@ contract in the [spec](./docs/protocol/v1/spec.md); attacks and their tests in t
 | A plaintext value, secret name, token, proof or key reaches a log, metric, trace, error message, fixture or dump | Log route, status, stable code, opaque IDs and sizes only |
 | Any last-writer-wins or silent overwrite path | CAS on `base_revision`; `409` with a preserved branch |
 | Custom or hand-rolled cryptography, or a primitive outside the spec | Spec primitives from `@noble/*` or Go `crypto`/`x/crypto` |
-| A new endpoint without token, proof, live revocation and membership checks | Route through the shared auth path; only `/healthz`, `/v1/meta` and static assets are public; the ak-web revocation webhook and the operator restore route (404 unless its secret is set) are HMAC-authenticated |
+| A new endpoint without token, proof, live revocation and membership checks | Route through the shared auth path; only `/healthz`, `/v1/meta` and static assets are public; the ak-web revocation webhook and the operator restore route (404 unless its secret is set) are HMAC-authenticated. Remote access ([ADR 0002](./docs/adr/0002-browser-device-relay-and-remote-mcp.md)) adds exactly these: `/app` (static assets) and `/.well-known/oauth-protected-resource/mcp` (public metadata) are public; `/mcp` verifies the MCP token, live revocation by `sid` and vault membership, without a device proof; `/v1/relay`, lookup, seal-key and sealed-queue routes run the full shared pipeline |
 | A doc or comment widens a guarantee without vectors or tests | Add the vector/test first, or narrow the claim |
 | Synced policy, profile or metadata can create or widen a grant | Policy is a maximum intersected with local grants |
-| Any server-side decryption, server-held vault key, or web decryption | Client-side crypto only |
+| Any server-side decryption, server-held vault key, or web decryption | Client-side crypto only. The one web exception ([ADR 0002](./docs/adr/0002-browser-device-relay-and-remote-mcp.md)): the dashboard at `/app` decrypts as an enrolled akv1 device with its own keys, from static assets under a strict CSP (`script-src 'self'`, SRI, no third-party code), with `browser` session-kind restrictions |
 | Server can add a device, member or recipient | Owner-signed membership events only |
 | Unknown version/algorithm accepted or silently downgraded | Closed sets; new identifier means new protocol version |
 | Wire change without regenerated vectors and green Go **and** TS | Follow the spec-change procedure in AGENTS.md |

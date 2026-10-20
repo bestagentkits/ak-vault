@@ -108,7 +108,16 @@ export function unwrapFromDevice(args: UnwrapFromDeviceArgs): Uint8Array {
   const wrap = parseX25519Wrap(args.wrap);
   if (wrap.rcpt !== args.deviceId) fail('forbidden', 'wrap is addressed to a different device');
   const ownPub = kxKeyPairFromSecret(args.kxSecret).publicKey; // bad_request on a wrong-length secret
+  return openWrapWithShared(wrap, x25519Shared(args.kxSecret, b64decode(wrap.epk)), ownPub, args.vaultId);
+}
+
+/**
+ * Finish unwrapping a parsed wrap given `X25519(own secret, wrap.epk)`, already
+ * checked to be non-zero, and the recipient's own `kx_pub`. Shared by the
+ * synchronous path and external key stores.
+ */
+export function openWrapWithShared(wrap: X25519Wrap, shared: Uint8Array, ownKxPub: Uint8Array, vaultId: string): Uint8Array {
   const epk = b64decode(wrap.epk);
-  const wrapKey = deriveWrapKey(x25519Shared(args.kxSecret, epk), epk, ownPub);
-  return xc20pOpen(wrapKey, b64decode(wrap.n), b64decode(wrap.ct), wrapAad(asId(args.vaultId, 'vault_id'), wrap.key_epoch, wrap.rcpt));
+  const wrapKey = deriveWrapKey(shared, epk, ownKxPub);
+  return xc20pOpen(wrapKey, b64decode(wrap.n), b64decode(wrap.ct), wrapAad(asId(vaultId, 'vault_id'), wrap.key_epoch, wrap.rcpt));
 }

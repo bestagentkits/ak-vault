@@ -19,6 +19,9 @@ export const SIGN_CONTEXT = {
   checkpoint: 'akv1/checkpoint',
   auditCheckpoint: 'akv1/audit-checkpoint',
   proof: 'akv1/proof',
+  sealKey: 'akv1/seal-key',
+  relay: 'akv1/relay',
+  relayResult: 'akv1/relay-result',
 } as const;
 export type SignContext = (typeof SIGN_CONTEXT)[keyof typeof SIGN_CONTEXT];
 
