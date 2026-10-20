@@ -64,6 +64,7 @@ async function dumpPageState(page: Page): Promise<string> {
 
 test.describe('dashboard without a signed-in session', () => {
   test.skip(g.remote !== null, g.remote ?? '');
+  test.skip(g.oauth !== null, g.oauth ?? '');
 
   test('the page makes only same-origin and ak-web requests and no third-party requests', async ({ page }) => {
     const seen = capture(page);

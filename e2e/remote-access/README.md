@@ -53,8 +53,11 @@ line. That is not a clean scan.
 ## Known state
 
 - The staging Worker must report `remote_access=true` for the remote suites to run.
-  The Phase 11 run on 2026-10-20 found it did not; see
+  It did on 2026-10-20; the live results are in
   [red-team evidence](../../docs/security/red-team-evidence.md#remote-access-staging-run-2026-10-20).
+- The leak scan's `wrangler tail` needs one Cloudflare account. When the Wrangler login
+  covers several accounts, set `CLOUDFLARE_ACCOUNT_ID` to the account that owns the
+  staging Worker for the run. Without it the tail exits and the scan is BLOCKED.
 - The `ak` phase-10 command contract (device approve/remove, annotate, set
   argument shapes) is not verified here. The suites that drive `ak` are gated on
   `AK_BIN` and will need to be checked against that binary when it exists.

@@ -10,6 +10,8 @@ import { existsSync } from 'node:fs';
 import type { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
+// wrangler resolves `--env staging` from the worker's wrangler.jsonc, so the tail runs there.
+const WORKER_DIR = fileURLToPath(new URL('../../worker/', import.meta.url));
 const WRANGLER_BIN = fileURLToPath(new URL('../../worker/node_modules/wrangler/bin/wrangler.js', import.meta.url));
 const READY_AFTER_MS = 8_000;
 const DRAIN_MS = 5_000;
@@ -31,7 +33,7 @@ export interface TailHandle {
  * Starts the tail and resolves once it has stayed alive for `READY_AFTER_MS`.
  * The returned handle's `stop()` drains, kills the process and returns the result.
  */
-export async function startLeakScan(sentinels: readonly string[], cwd: string): Promise<TailHandle> {
+export async function startLeakScan(sentinels: readonly string[]): Promise<TailHandle> {
   const needles = sentinels.filter((s) => s.length > 0);
   const carryLength = Math.max(0, ...needles.map((s) => s.length)) - 1;
   const result: LeakScanResult = { status: 'scanned', chunks: 0, hits: 0 };
@@ -44,7 +46,7 @@ export async function startLeakScan(sentinels: readonly string[], cwd: string): 
   }
 
   const child: ChildProcessByStdio<null, Readable, Readable> = spawn(process.execPath, [WRANGLER_BIN, 'tail', '--env', 'staging', '--format', 'json'], {
-    cwd,
+    cwd: WORKER_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });

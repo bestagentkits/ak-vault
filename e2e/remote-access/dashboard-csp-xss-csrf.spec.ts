@@ -61,6 +61,8 @@ test.describe('dashboard response headers', () => {
 
 test.describe('script containment in the page', () => {
   test.skip(g.remote !== null, g.remote ?? '');
+  // The dashboard renders its configuration alert, not its views, while ak-web's metadata is unavailable.
+  test.skip(g.oauth !== null, g.oauth ?? '');
 
   test('Trusted Types refuse a string sink and the injected handler never runs', async ({ page }) => {
     await openDashboard(page);
@@ -145,6 +147,7 @@ test.describe('cross-origin requests cannot act on the vault', () => {
   });
 
   test('the vault origin sets no cookies on a dashboard visit', async ({ page, context }) => {
+    test.skip(g.oauth !== null, g.oauth ?? '');
     await openDashboard(page);
     expect(await context.cookies(BASE_URL)).toEqual([]);
   });
