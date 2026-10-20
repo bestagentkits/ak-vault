@@ -108,10 +108,17 @@ describe('sealed-op.json', () => {
     expect(a.sealed_id).not.toBe(b.sealed_id);
     expect(openSealedOp(b64decode(key(3).seal_sk), a, { vaultId: args.vaultId }).op).toEqual(args.op);
   });
-  type DrainCase = { account: string; now: number; sealed_ttl_s: number; seen: string[]; expect_error?: string };
+  type DrainCase = { account: string; now: number; sealed_ttl_s: number; seen: string[]; seen_missing?: boolean; unopened?: boolean; expect_error?: string };
   const drainOpened = openSealedOp(b64decode(key(v.drain.wire.key_epoch).seal_sk), v.drain.wire, { vaultId: v.drain.wire.vault_id });
+  // An unopened wire, even a well-formed one, carries only unauthenticated header fields.
+  const unopenedOp = { wire: parseSealedOp(v.drain.wire), op: drainOpened.op } as OpenedSealedOp;
   const drain = (c: DrainCase) => () =>
-    checkSealedDrain(drainOpened, { account: c.account, now: c.now, sealedTtlS: c.sealed_ttl_s, seen: (sid) => c.seen.includes(sid) });
+    checkSealedDrain(c.unopened ? unopenedOp : drainOpened, {
+      account: c.account,
+      now: c.now,
+      sealedTtlS: c.sealed_ttl_s,
+      seen: c.seen_missing ? undefined : (sid: string) => c.seen.includes(sid),
+    } as SealedDrainContext);
   it.each(named(v.drain.cases))('drain admits %s', (_n, c) => expect(drain(c)).not.toThrow());
   it.each(named(v.drain.invalid))('drain refuses %s', (_n, c) => expectCode(drain(c), c.expect_error));
   it('drain refuses a malformed context', () => {
