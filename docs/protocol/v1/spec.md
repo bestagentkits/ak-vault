@@ -283,8 +283,8 @@ the stored seal-key document whose `key_epoch` is the vault's current key epoch,
 never while the vault has `rekey_required` set (a removed device may still derive
 that epoch's seal key). Otherwise it does not seal and the tool answers
 `no_device_online` (§10). The queue holds at most `sealed_queue_max` operations per
-vault (`sealed_queue_full` beyond) and drops an operation `sealed_ttl_s` after its
-`ts`.
+vault, counting acknowledged ones whose ID it still keeps to refuse a replay
+(`sealed_queue_full` beyond), and drops an operation `sealed_ttl_s` after its `ts`.
 
 **Draining.** A device drains the queue (`GET …/sealed`, `POST …/sealed/{id}/ack`,
 §9.6) only when its operator opted in to sealed writes, and only if it is a human
@@ -914,7 +914,8 @@ devices that honor it, not what a vault member can decrypt (§3).
 ### 9.6 Remote-access routes
 
 Served only where the deployment enables remote access (every route below answers
-`404` otherwise). Each runs the shared pipeline before touching vault data: token
+`404` otherwise). While the kill switch is off, the `/v1/vaults/…` routes below answer
+`503 sync_disabled` like every other `/v1` path, whatever remote access is set to. Each runs the shared pipeline before touching vault data: token
 (item 1), live revocation (item 3), proof (item 2), then membership, scope and role
 (item 4). Bodies are JSON objects; unknown keys are `bad_request`.
 
@@ -944,7 +945,8 @@ Served only where the deployment enables remote access (every route below answer
   in ascending `seq` (a server-assigned position, starting at 1), operations whose
   `origin.account` is the token `sub` with `seq` above `after` (default 0), at most `limit` (default and maximum
   `sealed_page_max`); expired operations are never served. `ack` takes
-  `{"outcome":"applied"|"refused"}`, removes the operation and returns `{}`; an
+  `{"outcome":"applied"|"refused"}`, removes the operation's ciphertext (its ID stays
+  until it expires, so a replayed `sealed_id` is refused) and returns `{}`; an
   unknown or already acknowledged `sealed_id`, or one of another account, is
   `not_found`, which the device treats as done. There is no route that creates a sealed operation.
 - **Item PUT.** Also accepts the `{record, name_tag}` wrapper (§3.7).
@@ -1010,8 +1012,8 @@ closed. Any other frame closes the connection with 4400.
 - Close codes: 4400 bad frame, 4401 token expired or revoked, 4403 not a member or
   wrong device kind, 4409 replaced by a newer connection of the same device, 4429 the
   device sent frames faster than the server accepts them (more than
-  `relay_calls_inflight_per_device` unsolicited `result` frames, or repeated
-  `reauth` within one token lifetime).
+  `relay_calls_inflight_per_device` unsolicited `result` frames, or more than
+  `relay_reauth_per_token_lifetime` `reauth` frames within one token lifetime).
 
 **Tools.** `tool` is the closed set {`search`, `list`, `describe`, `set`, `delete`,
 `request`, `run`}. Arguments and results are `cjson`, so object keys are
@@ -1117,17 +1119,18 @@ Remote access adds three codes, all returned only by the MCP endpoint as tool er
 (§9.8) and never as the HTTP status of a `/v1` route: `no_device_online` (no opted-in
 device of the account holds the vault, and the call cannot be sealed),
 `device_timeout` (the device missed `deadline_ms`) and `sealed_queue_full` (the vault
-already holds `sealed_queue_max` unacknowledged operations). Relay and MCP limits will
-join `GET /v1/meta`: the Worker phase that implements the relay and MCP routes adds
-them to `worker/src/limits.ts`, which then owns their values. Until then the table
-records the planned initial values for orientation and is not normative:
+already holds `sealed_queue_max` operations, acknowledged ones kept for replay refusal
+included). `worker/src/limits.ts` owns the relay and MCP limits and `GET /v1/meta`
+publishes them where remote access is enabled; the table lists them for orientation,
+and `limits.ts` wins on any difference:
 
-| Limit | Initial value |
+| Limit | Value |
 |---|---|
 | `relay_frame_max_bytes` | 131072 |
 | `relay_hello_timeout_ms` | 10000 |
 | `relay_calls_inflight_per_device` | 4 |
 | `relay_devices_per_account` | 8 |
+| `relay_reauth_per_token_lifetime` (per connection) | 3 |
 | `relay_call_deadline_ms` | 60000 |
 | `relay_run_deadline_ms` | 120000 |
 | `sealed_queue_max` (per vault) | 256 |
