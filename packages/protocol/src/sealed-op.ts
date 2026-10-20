@@ -154,10 +154,18 @@ export function sealOpWithVectorValues(sealPub: string | Uint8Array, args: SealO
   return { v: 1, alg: SEALED_OP_ALG, sealed_id: header.sealed_id, vault_id: header.vault_id, key_epoch: header.key_epoch, epk: b64encode(epk), n: b64encode(nonce), ct: b64encode(ct), origin: header.origin, ts: header.ts };
 }
 
+/**
+ * The authenticated result of `openSealedOp`: the wire whose header the AEAD
+ * bound and its decrypted operation, both frozen. Only `openSealedOp` produces
+ * one that `checkSealedDrain` accepts.
+ */
 export interface OpenedSealedOp {
-  wire: SealedOpWire;
-  op: SealedOperation;
+  readonly wire: Readonly<SealedOpWire>;
+  readonly op: SealedOperation;
 }
+
+/** Results returned by `openSealedOp`; `checkSealedDrain` refuses anything else. */
+const openedResults = new WeakSet<object>();
 
 /**
  * Open a sealed operation with `SealSK[wire.key_epoch]`. Order (spec §3.6):
@@ -172,7 +180,11 @@ export function openSealedOp(sealSecret: Uint8Array, value: unknown, opts: { vau
   const epk = b64decode(wire.epk);
   const key = deriveSealKey(x25519Shared(sealSecret, epk), epk, sealPub);
   const pt = xc20pOpen(key, b64decode(wire.n), b64decode(wire.ct), sealedAad(wire));
-  return { wire, op: parseSealedOperation(cjsonParse(pt)) };
+  const op = Object.freeze(parseSealedOperation(cjsonParse(pt)));
+  Object.freeze(wire.origin);
+  const opened: OpenedSealedOp = Object.freeze({ wire: Object.freeze(wire), op });
+  openedResults.add(opened);
+  return opened;
 }
 
 /** How far ahead of the draining device's clock a sealed op's `ts` may be (spec §3.6). */
@@ -190,17 +202,25 @@ export interface SealedDrainContext {
 }
 
 /**
- * Drain admission for an opened sealed op (spec §3.6 draining steps 1-2), in
- * order: `origin.account` is not this device's account (`forbidden`); the
+ * Drain admission for the result of `openSealedOp` (spec §3.6 draining steps
+ * 1-2), so it reads only authenticated header fields. A malformed context or a
+ * value `openSealedOp` did not return is `bad_request`; then, in order:
+ * `origin.account` is not this device's account (`forbidden`); the
  * `sealed_id` was already applied or refused, a replay (`conflict`); `ts`
  * more than `sealed_ttl_s` in the past or more than 300 s in the future
  * (`bad_request`). A device keeps every handled ID until `sealed_ttl_s` after
  * the later of its `ts` and the time it handled it.
  */
-export function checkSealedDrain(wire: SealedOpWire, ctx: SealedDrainContext): void {
+export function checkSealedDrain(opened: OpenedSealedOp, ctx: SealedDrainContext): void {
   const now = asInt(ctx.now, 'now');
   const ttlMs = asInt(ctx.sealedTtlS, 'sealed_ttl_s', 1, Math.floor(Number.MAX_SAFE_INTEGER / 1000)) * 1000;
-  if (wire.origin.account !== ctx.account) fail('forbidden', 'sealed op belongs to another account');
+  if (typeof ctx.seen !== 'function') fail('bad_request', 'sealed drain needs the seen set');
+  const account = asString(ctx.account, 'account', MAX_ACCOUNT_LENGTH, 1);
+  if (typeof opened !== 'object' || opened === null || !openedResults.has(opened)) {
+    fail('bad_request', 'sealed drain needs an op opened by openSealedOp');
+  }
+  const { wire } = opened;
+  if (wire.origin.account !== account) fail('forbidden', 'sealed op belongs to another account');
   if (ctx.seen(wire.sealed_id)) fail('conflict', 'sealed op already handled');
   if (now - wire.ts > ttlMs) fail('bad_request', 'sealed op expired');
   if (wire.ts - now > SEALED_MAX_FUTURE_MS) fail('bad_request', 'sealed op ts is in the future');

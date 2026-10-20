@@ -67,7 +67,7 @@
  * - Seal key (§3.6): `deriveSealKeyPair(vk, vaultId, keyEpoch)`, `buildSealKeyDoc`, `signSealKeyDoc`,
  *   `parseSealKeyDoc`, `verifySealKeyDoc(doc, chain, {vaultId, vk?, trustedAnchor?, witnessedCheckpoint?})`, `checkSealKeyDocReplace(stored, incoming)`.
  * - Sealed operations (§3.6): `sealOp(sealPub, args)`, `openSealedOp(sealSecret, wire, {vaultId})`,
- *   `checkSealedDrain(wire, {account, now, sealedTtlS, seen})`, `parseSealedOp`,
+ *   `checkSealedDrain(opened, {account, now, sealedTtlS, seen})` (on the `openSealedOp` result), `parseSealedOp`,
  *   `parseSealedOperation`, `parseSealedOrigin`.
  * - Name tags (§3.7): `nameIndexKey(vk, vaultId, keyEpoch)`, `nameTag(indexKey, name)` (NFC).
  * - Enrollment codes (§3.8): `encodeJoinCode`, `parseJoinCode`, `encodeOfferCode`, `parseOfferCode`, `isCanonicalOrigin`.

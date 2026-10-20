@@ -41,6 +41,8 @@ import {
   x25519Shared,
   type DeviceKx,
   type DeviceSigner,
+  type OpenedSealedOp,
+  type SealedDrainContext,
 } from '../src/index.js';
 import { sealOpWithVectorValues } from '../src/sealed-op.js';
 import { ed25519 } from '@noble/curves/ed25519.js';
@@ -107,14 +109,32 @@ describe('sealed-op.json', () => {
     expect(openSealedOp(b64decode(key(3).seal_sk), a, { vaultId: args.vaultId }).op).toEqual(args.op);
   });
   type DrainCase = { account: string; now: number; sealed_ttl_s: number; seen: string[]; expect_error?: string };
+  const drainOpened = openSealedOp(b64decode(key(v.drain.wire.key_epoch).seal_sk), v.drain.wire, { vaultId: v.drain.wire.vault_id });
   const drain = (c: DrainCase) => () =>
-    checkSealedDrain(parseSealedOp(v.drain.wire), { account: c.account, now: c.now, sealedTtlS: c.sealed_ttl_s, seen: (sid) => c.seen.includes(sid) });
+    checkSealedDrain(drainOpened, { account: c.account, now: c.now, sealedTtlS: c.sealed_ttl_s, seen: (sid) => c.seen.includes(sid) });
   it.each(named(v.drain.cases))('drain admits %s', (_n, c) => expect(drain(c)).not.toThrow());
   it.each(named(v.drain.invalid))('drain refuses %s', (_n, c) => expectCode(drain(c), c.expect_error));
   it('drain refuses a malformed context', () => {
     const base = { ...v.drain.cases[0], seen: [] };
     expectCode(drain({ ...base, sealed_ttl_s: 0 }), 'bad_request');
     expectCode(drain({ ...base, now: -1 }), 'bad_request');
+    expectCode(drain({ ...base, account: '' }), 'bad_request');
+    expectCode(drain({ ...base, account: 'a'.repeat(257) }), 'bad_request');
+    expectCode(() => checkSealedDrain(drainOpened, { account: base.account, now: base.now, sealedTtlS: base.sealed_ttl_s } as unknown as SealedDrainContext), 'bad_request');
+  });
+  it('drain refuses a sealed op that openSealedOp did not return', () => {
+    const ctx = { account: v.drain.cases[0].account, now: v.drain.cases[0].now, sealedTtlS: v.drain.cases[0].sealed_ttl_s, seen: () => false };
+    // An unopened wire, even a well-formed one, carries only unauthenticated header fields.
+    const forged = { wire: parseSealedOp(v.drain.wire), op: drainOpened.op } as OpenedSealedOp;
+    expectCode(() => checkSealedDrain(forged, ctx), 'bad_request');
+    expectCode(() => checkSealedDrain({ ...drainOpened }, ctx), 'bad_request');
+    expect(() => checkSealedDrain(drainOpened, ctx)).not.toThrow();
+  });
+  it('freezes the opened result', () => {
+    expect(Object.isFrozen(drainOpened)).toBe(true);
+    expect(Object.isFrozen(drainOpened.wire)).toBe(true);
+    expect(Object.isFrozen(drainOpened.wire.origin)).toBe(true);
+    expect(Object.isFrozen(drainOpened.op)).toBe(true);
   });
 });
 

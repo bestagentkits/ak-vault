@@ -69,8 +69,8 @@
 //
 // Remote access: seal key and sealed operations (§3.6) DeriveSealKeyPair,
 // BuildSealKeyDoc, ParseSealKeyDoc, VerifySealKeyDoc (against the membership chain),
-// CheckSealKeyDocReplace, SealOp, OpenSealedOp,
-// ParseSealedOp; name tags (§3.7) NameIndexKey, NameTag, NewItemPutBody;
+// CheckSealKeyDocReplace, SealOp, OpenSealedOp (an OpenedSealedOp),
+// CheckSealedDrain (on that OpenedSealedOp), ParseSealedOp; name tags (§3.7) NameIndexKey, NameTag, NewItemPutBody;
 // enrollment codes (§3.8) EncodeJoinCode, ParseJoinCode, EncodeOfferCode,
 // ParseOfferCode, ValidateVaultOrigin; profiles (§5.1) ValidateProfile,
 // CheckProfileProvenance, CarryForwardMeta; relay (§9.7) ParseRelayFrame,

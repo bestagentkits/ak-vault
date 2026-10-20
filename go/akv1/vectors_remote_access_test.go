@@ -165,8 +165,8 @@ func checkSealedOp(t *testing.T, f *rec, n *counter) {
 		}))(t, c.path)
 		eqJSON(t, c.path+" wire", got, c.raw("wire"))
 		eqStr(t, c.path+" plaintext", string(mustOK(CJSON(op))(t, c.path)), c.str("plaintext"))
-		_, pt := mustOK2(OpenSealedOp(keys[epoch].secret, c.raw("wire"), wire.VaultID))(t, c.path+" open")
-		eqJSON(t, c.path+" opened op", pt, op)
+		opened := mustOK(OpenSealedOp(keys[epoch].secret, c.raw("wire"), wire.VaultID))(t, c.path+" open")
+		eqJSON(t, c.path+" opened op", opened.Plaintext(), op)
 		c.done()
 		n.add(1)
 	}
@@ -180,7 +180,7 @@ func checkSealedOp(t *testing.T, f *rec, n *counter) {
 			m["ct"] = B64Encode(make([]byte, c.i64("ct_zero_bytes")))
 			wire = m
 		}
-		_, _, err := OpenSealedOp(keys[c.i64("open_with_epoch")].secret, wire, c.str("vault_id"))
+		_, err := OpenSealedOp(keys[c.i64("open_with_epoch")].secret, wire, c.str("vault_id"))
 		expectCode(t, c, err)
 		c.done()
 		n.add(1)
@@ -206,18 +206,19 @@ func checkSealedOp(t *testing.T, f *rec, n *counter) {
 	if a.Epk == b.Epk || a.SealedID == b.SealedID {
 		t.Error("fresh seals reuse epk or sealed_id")
 	}
-	_, pt := mustOK2(OpenSealedOp(keys[3].secret, a, vaultID))(t, "open fresh")
-	eqJSON(t, "fresh op", pt, del)
+	fresh := mustOK(OpenSealedOp(keys[3].secret, a, vaultID))(t, "open fresh")
+	eqJSON(t, "fresh op", fresh.Plaintext(), del)
 	n.add(1)
 
 	d := f.obj("drain")
 	drainWire := mustOK(ParseSealedOp(d.raw("wire")))(t, d.path+".wire")
+	drainOpened := mustOK(OpenSealedOp(keys[drainWire.KeyEpoch].secret, d.raw("wire"), drainWire.VaultID))(t, d.path+".wire open")
 	drain := func(c *rec) error {
 		seen := map[string]bool{}
 		for _, s := range c.list("seen") {
 			seen[s.(string)] = true
 		}
-		return CheckSealedDrain(drainWire, SealedDrainOptions{
+		return CheckSealedDrain(drainOpened, SealedDrainOptions{
 			Account: c.str("account"), Now: c.i64("now"), SealedTTLS: c.i64("sealed_ttl_s"),
 			Seen: func(id string) bool { return seen[id] },
 		})
@@ -235,17 +236,6 @@ func checkSealedOp(t *testing.T, f *rec, n *counter) {
 		n.add(1)
 	}
 	d.done()
-}
-
-// mustOK2 is mustOK for three-value results.
-func mustOK2[A, B any](a A, b B, err error) func(t *testing.T, what string) (A, B) {
-	return func(t *testing.T, what string) (A, B) {
-		t.Helper()
-		if err != nil {
-			t.Fatalf("%s: unexpected error: %v", what, err)
-		}
-		return a, b
-	}
 }
 
 func checkNameTag(t *testing.T, f *rec, n *counter) {

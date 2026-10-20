@@ -136,10 +136,11 @@ export function sealedOpVectors(): Record<string, unknown> {
     negative(name, code, { op }, () => seal(name, op as SealedOperation));
   // Drain admission for the opened `set` case, as the device of ORIGIN.account sees it.
   const TTL_S = 3600;
+  const drainOpened = openSealedOp(sealPair(w.key_epoch).secretKey, w, { vaultId: w.vault_id });
   type Drain = { name: string; account?: string; now: number; seen?: string[] };
   const drainCase = (c: Drain) => {
     const ctx = { account: c.account ?? ORIGIN.account, now: c.now, sealed_ttl_s: TTL_S, seen: c.seen ?? [] };
-    const run = () => checkSealedDrain(w, { account: ctx.account, now: ctx.now, sealedTtlS: TTL_S, seen: (sid) => ctx.seen.includes(sid) });
+    const run = () => checkSealedDrain(drainOpened, { account: ctx.account, now: ctx.now, sealedTtlS: TTL_S, seen: (sid) => ctx.seen.includes(sid) });
     return { name: c.name, ...ctx, run };
   };
   const drainOk = (c: Drain) => {
@@ -160,7 +161,7 @@ export function sealedOpVectors(): Record<string, unknown> {
       'cases: sealOp with the given ephemeral_secret, nonce wire.n and sealed_id MUST reproduce wire byte for byte, and openSealedOp(SealSK[key_epoch], wire, {vault_id}) MUST yield op. ' +
       'openSealedOp order: parse (v or alg unknown: unsupported_version; exact keys, IDs, epk 32 B, n 24 B, ct 16..65552 B, origin {kind "mcp", account 1..256, client_id 1..256 and grant_id 1..64 printable ASCII}, ts: bad_request); vault_id other than expected (bad_request); all-zero shared secret (bad_request); AEAD failure (decrypt_failed); pt not canonical, unknown op, set without value, delete with value or sensitivity, unknown keys (bad_request). ' +
       'invalid: open the wire with SealSK of open_with_epoch and MUST fail with expect_error; a wire with ct_zero_bytes replaces ct with b64 of that many zero bytes. seal_invalid: sealOp MUST refuse op with expect_error (an op with value_fill uses value = value_fill repeated value_length times). ' +
-      'drain: checkSealedDrain(drain.wire, {account, now, sealed_ttl_s, seen}) for an opened op, in order: origin.account other than account (forbidden); sealed_id in seen, a replay (conflict); now - ts > sealed_ttl_s * 1000 (bad_request); ts - now > 300000 (bad_request). drain.cases MUST pass; drain.invalid MUST fail with expect_error.',
+      'drain: opened = openSealedOp(SealSK[drain.wire.key_epoch], drain.wire, {vault_id: drain.wire.vault_id}); checkSealedDrain(opened, {account, now, sealed_ttl_s, seen}) takes only that authenticated result, in order: origin.account other than account (forbidden); sealed_id in seen, a replay (conflict); now - ts > sealed_ttl_s * 1000 (bad_request); ts - now > 300000 (bad_request). drain.cases MUST pass; drain.invalid MUST fail with expect_error.',
     origin: ORIGIN,
     cases: [set, ok('set_without_sensitivity', { op: 'set', name: 'Grüße API', value: '' }), ok('delete', { op: 'delete', name: 'OLD_TOKEN' }), ok('set_epoch1', { op: 'set', name: 'A', value: 'v1' }, 1)],
     invalid: [

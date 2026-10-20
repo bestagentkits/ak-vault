@@ -298,10 +298,11 @@ are applied only by that account's own devices. For each operation, in order:
    it keeps every such ID until at least `sealed_ttl_s` after the later of its `ts`
    and the time it handled it, so an ID is never forgotten while its `ts` still
    passes the age check), and refuse a `ts` more than `sealed_ttl_s` in the past or
-   more than 300 s in the future by its own clock. `checkSealedDrain(wire, {account,
-   now, sealedTtlS, seen})` runs steps 1 and 2 on an opened operation: another
-   account → `forbidden`, an applied or refused `sealed_id` → `conflict`, a `ts`
-   out of bounds → `bad_request`;
+   more than 300 s in the future by its own clock. `checkSealedDrain(opened,
+   {account, now, sealedTtlS, seen})` runs steps 1 and 2 on the result of
+   `openSealedOp`, never on a raw wire, so it reads only authenticated header fields:
+   another account → `forbidden`, an applied or refused `sealed_id` → `conflict`, a
+   `ts` out of bounds → `bad_request`;
 3. resolve `name` against all its own decrypted live items: those whose payload
    `name` equals `name` after NFC normalization of both. More than one match, any
    match that is a policy item (§8.1), or a `delete` with no match → refuse. A `set`

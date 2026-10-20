@@ -107,21 +107,28 @@ func sealFixture(t *testing.T, pt SealedOpPlaintext) (SealKeyPair, SealOpArgs) {
 }
 
 func TestCheckSealedDrainContext(t *testing.T) {
-	_, args := sealFixture(t, SealedOpPlaintext{Op: SealedOpDelete, Name: "A"})
+	pair, args := sealFixture(t, SealedOpPlaintext{Op: SealedOpDelete, Name: "A"})
 	op := mustOK(SealOp(args))(t, "seal")
+	opened := mustOK(OpenSealedOp(pair.Secret, op.JSONValue(), args.VaultID))(t, "open")
 	never := func(string) bool { return false }
 	ok := SealedDrainOptions{Account: "acct-1", Now: op.TS, SealedTTLS: 60, Seen: never}
-	if err := CheckSealedDrain(op, ok); err != nil {
+	if err := CheckSealedDrain(opened, ok); err != nil {
 		t.Fatalf("fresh op: %v", err)
 	}
 	for name, o := range map[string]SealedDrainOptions{
-		"zero ttl":     {Account: "acct-1", Now: op.TS, SealedTTLS: 0, Seen: never},
-		"negative now": {Account: "acct-1", Now: -1, SealedTTLS: 60, Seen: never},
-		"no seen set":  {Account: "acct-1", Now: op.TS, SealedTTLS: 60},
+		"zero ttl":      {Account: "acct-1", Now: op.TS, SealedTTLS: 0, Seen: never},
+		"negative now":  {Account: "acct-1", Now: -1, SealedTTLS: 60, Seen: never},
+		"no seen set":   {Account: "acct-1", Now: op.TS, SealedTTLS: 60},
+		"empty account": {Account: "", Now: op.TS, SealedTTLS: 60, Seen: never},
+		"long account":  {Account: strings.Repeat("a", MaxAccountLength+1), Now: op.TS, SealedTTLS: 60, Seen: never},
 	} {
-		if CodeOf(CheckSealedDrain(op, o)) != CodeBadRequest {
+		if CodeOf(CheckSealedDrain(opened, o)) != CodeBadRequest {
 			t.Errorf("%s: want bad_request", name)
 		}
+	}
+	// Only OpenSealedOp produces an OpenedSealedOp; the zero value is refused.
+	if CodeOf(CheckSealedDrain(OpenedSealedOp{}, ok)) != CodeBadRequest {
+		t.Error("zero OpenedSealedOp: want bad_request")
 	}
 }
 
@@ -133,14 +140,15 @@ func TestSealedOpRoundTripsAndRefusals(t *testing.T) {
 	} {
 		pair, args := sealFixture(t, pt)
 		op := mustOK(SealOp(args))(t, "seal")
-		_, got := mustOK3(OpenSealedOp(pair.Secret, op.JSONValue(), args.VaultID))(t, "open")
-		eqJSON(t, "plaintext", got, pt)
+		opened := mustOK(OpenSealedOp(pair.Secret, op.JSONValue(), args.VaultID))(t, "open")
+		eqJSON(t, "plaintext", opened.Plaintext(), pt)
+		eqJSON(t, "wire", opened.Wire(), op)
 	}
 
 	pair, args := sealFixture(t, SealedOpPlaintext{Op: SealedOpSet, Name: "N", Value: "v"})
 	op := mustOK(SealOp(args))(t, "seal")
 	open := func(m map[string]any) error {
-		_, _, err := OpenSealedOp(pair.Secret, m, args.VaultID)
+		_, err := OpenSealedOp(pair.Secret, m, args.VaultID)
 		return err
 	}
 	mutate := func(fn func(m map[string]any)) map[string]any {
@@ -150,7 +158,7 @@ func TestSealedOpRoundTripsAndRefusals(t *testing.T) {
 		return m
 	}
 	wrongEpoch := mustOK(DeriveSealKeyPair(fixedBytes(0x21, 32), fixedID(0x11), 2))(t, "pair2")
-	_, _, err := OpenSealedOp(wrongEpoch.Secret, op.JSONValue(), args.VaultID)
+	_, err := OpenSealedOp(wrongEpoch.Secret, op.JSONValue(), args.VaultID)
 	wantCode(t, "wrong epoch key", err, CodeDecryptFailed)
 	wantCode(t, "tampered account", open(mutate(func(m map[string]any) { m["origin"].(map[string]any)["account"] = "acct-2" })), CodeDecryptFailed)
 	wantCode(t, "tampered client", open(mutate(func(m map[string]any) { m["origin"].(map[string]any)["client_id"] = "client-b" })), CodeDecryptFailed)
@@ -186,16 +194,6 @@ func TestSealedOpRoundTripsAndRefusals(t *testing.T) {
 	_, big := sealFixture(t, SealedOpPlaintext{Op: SealedOpSet, Name: "N", Value: strings.Repeat("a", 65520)})
 	_, err = SealOp(big)
 	wantCode(t, "oversize plaintext", err, CodeBadRequest)
-}
-
-func mustOK3[A, B any](a A, b B, err error) func(t *testing.T, what string) (A, B) {
-	return func(t *testing.T, what string) (A, B) {
-		t.Helper()
-		if err != nil {
-			t.Fatalf("%s: unexpected error: %v", what, err)
-		}
-		return a, b
-	}
 }
 
 func TestNameTags(t *testing.T) {

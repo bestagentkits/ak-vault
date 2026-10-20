@@ -289,43 +289,58 @@ func SealOp(args SealOpArgs) (SealedOp, error) {
 	return s, nil
 }
 
+// OpenedSealedOp is the authenticated result of OpenSealedOp: the wire whose
+// header the AEAD bound and its decrypted operation. Its fields are unexported
+// so only OpenSealedOp produces one, and CheckSealedDrain never reads header
+// fields that did not authenticate.
+type OpenedSealedOp struct {
+	wire      SealedOp
+	plaintext SealedOpPlaintext
+}
+
+// Wire returns the authenticated sealed operation.
+func (o OpenedSealedOp) Wire() SealedOp { return o.wire }
+
+// Plaintext returns the decrypted operation.
+func (o OpenedSealedOp) Plaintext() SealedOpPlaintext { return o.plaintext }
+
 // OpenSealedOp parses and decrypts an untrusted sealed operation with
 // SealSK[e], in the order of spec §3.6: wire shape (unsupported_version /
 // bad_request), vault_id ≠ vaultID (bad_request), all-zero shared secret
 // (bad_request), AEAD failure (decrypt_failed), plaintext not canonical or
 // invalid (bad_request).
-func OpenSealedOp(sealSecret []byte, wire any, vaultID string) (SealedOp, SealedOpPlaintext, error) {
+func OpenSealedOp(sealSecret []byte, wire any, vaultID string) (OpenedSealedOp, error) {
 	s, err := ParseSealedOp(wire)
 	if err != nil {
-		return SealedOp{}, SealedOpPlaintext{}, err
+		return OpenedSealedOp{}, err
 	}
 	if s.VaultID != vaultID {
-		return SealedOp{}, SealedOpPlaintext{}, badRequest("sealed op belongs to another vault")
+		return OpenedSealedOp{}, badRequest("sealed op belongs to another vault")
 	}
 	sealPub, err := KxPublicKey(sealSecret)
 	if err != nil {
-		return SealedOp{}, SealedOpPlaintext{}, err
+		return OpenedSealedOp{}, err
 	}
 	epk, _ := B64Decode(s.Epk)
 	shared, err := X25519Shared(sealSecret, epk)
 	if err != nil {
-		return SealedOp{}, SealedOpPlaintext{}, err
+		return OpenedSealedOp{}, err
 	}
 	nonce, _ := B64Decode(s.N)
 	ct, _ := B64Decode(s.Ct)
 	ptBytes, err := XC20POpen(deriveSealKey(shared, epk, sealPub), nonce, ct, sealedOpAAD(s))
 	if err != nil {
-		return SealedOp{}, SealedOpPlaintext{}, err
+		return OpenedSealedOp{}, err
 	}
 	v, err := CJSONParse(ptBytes)
 	if err != nil {
-		return SealedOp{}, SealedOpPlaintext{}, err
+		return OpenedSealedOp{}, err
 	}
 	pt, err := ParseSealedOpPlaintext(v)
 	if err != nil {
-		return SealedOp{}, SealedOpPlaintext{}, err
+		return OpenedSealedOp{}, err
 	}
-	return s, pt, nil
+	return OpenedSealedOp{wire: s, plaintext: pt}, nil
 }
 
 // SealedMaxFutureMs is how far ahead of the draining device's clock a sealed
@@ -341,13 +356,14 @@ type SealedDrainOptions struct {
 	Seen func(sealedID string) bool
 }
 
-// CheckSealedDrain is drain admission for an opened sealed operation (spec
-// §3.6 draining steps 1-2), in order: origin.account is not this device's
-// account (forbidden); the sealed_id was already applied or refused, a
-// replay (conflict); ts more than sealed_ttl_s in the past or more than 300 s
-// in the future (bad_request). A device keeps every handled ID until
+// CheckSealedDrain is drain admission for the result of OpenSealedOp (spec
+// §3.6 draining steps 1-2), so it reads only authenticated header fields. A
+// malformed context or a zero OpenedSealedOp is bad_request; then, in order:
+// origin.account is not this device's account (forbidden); the sealed_id was
+// already applied or refused, a replay (conflict); ts more than sealed_ttl_s
+// in the past or more than 300 s in the future (bad_request). A device keeps every handled ID until
 // sealed_ttl_s after the later of its ts and the time it handled it.
-func CheckSealedDrain(s SealedOp, opts SealedDrainOptions) error {
+func CheckSealedDrain(opened OpenedSealedOp, opts SealedDrainOptions) error {
 	if opts.Now < 0 || opts.Now > MaxSafeInteger {
 		return badRequest("now is out of range")
 	}
@@ -357,6 +373,13 @@ func CheckSealedDrain(s SealedOp, opts SealedDrainOptions) error {
 	if opts.Seen == nil {
 		return badRequest("sealed drain needs the seen set")
 	}
+	if _, err := asString(opts.Account, "account", MaxAccountLength, 1); err != nil {
+		return err
+	}
+	if opened.wire.SealedID == "" {
+		return badRequest("sealed drain needs an op opened by OpenSealedOp")
+	}
+	s := opened.wire
 	if s.Origin.Account != opts.Account {
 		return newErr(CodeForbidden, "sealed op belongs to another account")
 	}
