@@ -184,8 +184,11 @@ export class AccountRelay extends DurableObject<Env> {
   }
 
   private async onReauth(ws: WebSocket, conn: Connection, frame: ReauthFrame): Promise<void> {
-    if (conn.hello !== 'ready') return this.close(ws, conn, CLOSE.badFrame);
     const now = Date.now();
+    // `reauth` MUST arrive before the token in force expires (spec §9.7); the alarm
+    // may fire late, so a late frame cannot revive the connection.
+    if (!live(conn, now)) return this.close(ws, conn, CLOSE.unauthorized);
+    if (conn.hello !== 'ready') return this.close(ws, conn, CLOSE.badFrame);
     const windowOpen = now < conn.reauthWindowEnd;
     const reauths = (windowOpen ? conn.reauths : 0) + 1;
     if (reauths > L.relay_reauth_per_token_lifetime) return this.close(ws, conn, CLOSE.tooFast);
@@ -247,7 +250,8 @@ export class AccountRelay extends DurableObject<Env> {
   /** Vault IDs announced by the account's online devices, sorted. */
   async knownVaults(): Promise<string[]> {
     const vaults = new Set<string>();
-    for (const [, c] of this.openSockets()) if (c.hello === 'ready') for (const v of c.vaults) vaults.add(v);
+    const now = Date.now();
+    for (const [, c] of this.openSockets()) if (c.hello === 'ready' && live(c, now)) for (const v of c.vaults) vaults.add(v);
     return [...vaults].sort();
   }
 
@@ -265,7 +269,9 @@ export class AccountRelay extends DurableObject<Env> {
     }
     if (!Array.isArray(call.caller?.scopes) || !call.caller.scopes.includes(TOOL_SCOPE[tool])) return { kind: 'denied' };
 
-    const ready = this.openSockets().filter(([, c]) => c.hello === 'ready');
+    // Between `exp` and the alarm firing, a connection whose token expired is not eligible.
+    const now = Date.now();
+    const ready = this.openSockets().filter(([, c]) => c.hello === 'ready' && live(c, now));
     let vaultId = call.vaultId;
     if (vaultId === undefined) {
       const known = new Set(ready.flatMap(([, c]) => c.vaults));
@@ -367,7 +373,7 @@ export class AccountRelay extends DurableObject<Env> {
   override async alarm(): Promise<void> {
     const now = Date.now();
     for (const [ws, c] of this.openSockets()) {
-      if (now >= c.exp * 1000) this.close(ws, c, CLOSE.unauthorized);
+      if (!live(c, now)) this.close(ws, c, CLOSE.unauthorized);
       else if (c.hello !== 'ready' && now >= c.connectedAt + L.relay_hello_timeout_ms) this.close(ws, c, CLOSE.badFrame);
     }
     await this.scheduleAlarm();
@@ -491,6 +497,11 @@ export class AccountRelay extends DurableObject<Env> {
     }
     logRelayEvent({ event: 'close', code, sub: conn.sub });
   }
+}
+
+/** The connection's token in force has not expired. */
+function live(conn: Connection, nowMs: number): boolean {
+  return nowMs < conn.exp * 1000;
 }
 
 function refuse(code: 'bad_request' | 'unauthorized' | 'rate_limited'): Response {

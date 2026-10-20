@@ -111,13 +111,26 @@ describe('relay reauth', () => {
     const fx = await VaultFixture.create();
     const conn = await readyRelay(fx.owner, [fx.vaultId]);
     const stub = relayStub(env, fx.owner.account);
-    await runInDurableObject(stub, async (_instance, state) => {
-      for (const ws of state.getWebSockets()) ws.serializeAttachment({ ...(ws.deserializeAttachment() as object), exp: Math.floor(Date.now() / 1000) - 1 });
-    });
+    await expireTokenInForce(fx.owner.account);
     expect(await runDurableObjectAlarm(stub)).toBe(true);
     expect((await conn.closedWith()).code).toBe(4401);
   });
+
+  it('a reauth after the token in force expired closes 4401 even before the alarm fires', async () => {
+    const fx = await VaultFixture.create();
+    const conn = await readyRelay(fx.owner, [fx.vaultId]);
+    await expireTokenInForce(fx.owner.account);
+    await conn.reauth(await relayToken(fx.owner));
+    expect((await conn.closedWith()).code).toBe(4401);
+  });
 });
+
+/** Mark every open relay connection of `account` as holding an expired token, without running the alarm. */
+async function expireTokenInForce(account: string): Promise<void> {
+  await runInDurableObject(relayStub(env, account), async (_instance, state) => {
+    for (const ws of state.getWebSockets()) ws.serializeAttachment({ ...(ws.deserializeAttachment() as object), exp: Math.floor(Date.now() / 1000) - 1 });
+  });
+}
 
 describe('relay dispatch', () => {
   it('relays a call to the device and returns its verified result', async () => {
@@ -218,6 +231,18 @@ describe('relay dispatch', () => {
     expect((await sendRevocation({ revoke_sids: [fx.owner.sid] })).status).toBe(200);
     expect(await relayStub(env, fx.owner.account).dispatch(listCall({ vaultId: fx.vaultId }))).toEqual({ kind: 'no_device_online' });
     expect((await conn.closedWith()).code).toBe(4401);
+  });
+
+  it('neither relays to nor announces a connection whose token expired before the alarm fired', async () => {
+    const fx = await VaultFixture.create();
+    const conn = await readyRelay(fx.owner, [fx.vaultId]);
+    const stub = relayStub(env, fx.owner.account);
+    expect(await stub.knownVaults()).toEqual([fx.vaultId]);
+    await expireTokenInForce(fx.owner.account);
+    expect(await stub.knownVaults()).toEqual([]);
+    expect(await stub.dispatch(listCall({ vaultId: fx.vaultId }))).toEqual({ kind: 'no_device_online' });
+    expect(await stub.dispatch(listCall())).toEqual({ kind: 'no_device_online' });
+    conn.close();
   });
 
   it('checks membership before each call: a removed device closes 4403 when no vault remains', async () => {
