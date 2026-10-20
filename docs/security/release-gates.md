@@ -222,6 +222,12 @@ in production needs every box below, at the exact commit, plus an owner decision
       screen and in the vault guide, matching the
       [threat model](./threat-model.md#explicit-limitations).
 
+Staging status (2026-10-20): the live staging run did not pass any box above. The
+staging Worker does not report `remote_access=true`, so the remote suites skipped
+and the leak scan was blocked. The boxes stay open until the remote-access build is
+deployed to staging and the [e2e suites](../../e2e/remote-access/README.md) run live.
+Details are in the [red-team evidence](./red-team-evidence.md#remote-access-staging-run-2026-10-20).
+
 ## Staging soak
 
 The owner decided on 2026-10-16
