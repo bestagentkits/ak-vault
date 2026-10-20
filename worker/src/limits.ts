@@ -74,6 +74,39 @@ export const LIMITS = {
   proof_jti_ttl_seconds: 120,
 } as const;
 
+/**
+ * Remote-access limits (spec §9.6, §9.7, §10). `GET /v1/meta` publishes them
+ * beside `LIMITS` only where remote access is enabled, so a writer sends the
+ * `name_tag` wrapper only when it sees `lookup_tags_max`.
+ */
+export const REMOTE_ACCESS_LIMITS = {
+  /** Max UTF-8 bytes of one relay text frame. */
+  relay_frame_max_bytes: 131_072,
+  /** The device's `hello` must arrive this soon after the upgrade. */
+  relay_hello_timeout_ms: 10_000,
+  /** Max outstanding calls per device connection. */
+  relay_calls_inflight_per_device: 4,
+  /** Max open relay connections per account. */
+  relay_devices_per_account: 8,
+  /** Max `reauth` frames per token lifetime of one connection (more closes it 4429). */
+  relay_reauth_per_token_lifetime: 3,
+  /** Time a device has to answer a call; `run` gets its own. */
+  relay_call_deadline_ms: 60_000,
+  relay_run_deadline_ms: 120_000,
+  /** Max unacknowledged sealed operations per vault. */
+  sealed_queue_max: 256,
+  /** A sealed operation is dropped this long after its `ts`. */
+  sealed_ttl_s: 7 * 24 * 60 * 60,
+  /** `GET /sealed` page size (default and maximum). */
+  sealed_page_max: 50,
+  /** Max `(tag, key_epoch)` pairs per `GET /lookup`. */
+  lookup_tags_max: 8,
+  /** MCP call budgets per minute, per (account, client), per (account, client) for `run`, and per account. */
+  mcp_calls_per_minute_per_client: 60,
+  mcp_run_calls_per_minute_per_client: 10,
+  mcp_calls_per_minute_per_account: 300,
+} as const;
+
 export const PROTOCOL_VERSIONS = ['akv1'] as const;
 
 /** Worker build version reported by `/healthz` and `/v1/meta`. */

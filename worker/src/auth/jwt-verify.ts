@@ -7,9 +7,11 @@
  * required. `scope` must be a non-empty subset of {vault:read, vault:write}.
  * `session_kind` is optional: absent means `email_otp` (the only kind issued before
  * the claim existed); a present value outside SESSION_KINDS is refused.
+ * MCP access tokens (`<origin>/mcp`, spec §9.8) have their own verifier and claim set.
  * Every failure is `unauthorized`; nothing from the token is echoed.
  */
-import { b64decode, b64decodeLength, utf8Decode, utf8Encode } from '@ak-vault/protocol';
+import { MCP_SCOPES, b64decode, b64decodeLength, utf8Decode, utf8Encode, type McpScope } from '@ak-vault/protocol';
+import { mcpResource } from '../env.js';
 import { ApiError } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
 import { getIssuerKey } from './jwks.js';
@@ -20,8 +22,10 @@ export type Scope = (typeof SCOPES)[number];
 /**
  * How the session behind a token signed in. Only `email_otp` is a human session
  * that may take the recovery-identity path; the others never may (spec §9.1).
+ * `browser` is the vault dashboard: a member device refused on genesis,
+ * membership, recovery, seal-key publication, the sealed queue and the relay.
  */
-export const SESSION_KINDS = ['email_otp', 'api_key_device', 'machine'] as const;
+export const SESSION_KINDS = ['email_otp', 'api_key_device', 'machine', 'browser'] as const;
 export type SessionKind = (typeof SESSION_KINDS)[number];
 
 export interface VerifiedClaims {
@@ -93,8 +97,18 @@ function parseSessionKind(value: unknown): SessionKind {
   return value as SessionKind;
 }
 
-/** Verify a bearer token and return its claims. `nowMs` is injectable for tests. */
-export async function verifyToken(token: string, config: TokenConfig, nowMs = Date.now()): Promise<VerifiedClaims> {
+interface CheckedJwt {
+  header: Record<string, unknown>;
+  claims: Record<string, unknown>;
+  iat: number;
+  exp: number;
+}
+
+/**
+ * Checks shared by every token kind: header, ES256 signature under a current
+ * JWKS key, exact issuer and `audience`, and `exp`/`nbf`/`iat` with skew.
+ */
+async function verifyJwt(token: string, config: TokenConfig, audience: string, nowMs: number): Promise<CheckedJwt> {
   if (token.length === 0 || token.length > MAX_TOKEN_LENGTH) deny();
   const parts = token.split('.');
   if (parts.length !== 3) deny();
@@ -119,7 +133,7 @@ export async function verifyToken(token: string, config: TokenConfig, nowMs = Da
 
   const claims = decodeJsonPart(payloadPart);
   if (claims['iss'] !== config.VAULT_ISSUER) deny();
-  if (!audienceMatches(claims['aud'], config.VAULT_AUDIENCE)) deny();
+  if (!audienceMatches(claims['aud'], audience)) deny();
   const now = Math.floor(nowMs / 1000);
   const skew = LIMITS.clock_skew_seconds;
   const exp = numericDate(claims['exp']);
@@ -128,6 +142,16 @@ export async function verifyToken(token: string, config: TokenConfig, nowMs = Da
   if (exp <= now - skew) deny();
   if (nbf > now + skew) deny();
   if (iat > now + skew) deny();
+  return { header, claims, iat, exp };
+}
+
+/**
+ * Verify a device sync token (spec §9 item 1) for the deployment's own audience
+ * and return its claims. `nowMs` is injectable for tests. The `<origin>/mcp` and
+ * `<origin>/app` audiences fail the exact audience check like any other.
+ */
+export async function verifyToken(token: string, config: TokenConfig, nowMs = Date.now()): Promise<VerifiedClaims> {
+  const { claims, iat, exp } = await verifyJwt(token, config, config.VAULT_AUDIENCE, nowMs);
   const did = boundedString(claims['did']);
   try {
     b64decodeLength(did, 16); // a device ID is b64 of 16 bytes, canonical encoding only
@@ -143,6 +167,64 @@ export async function verifyToken(token: string, config: TokenConfig, nowMs = Da
     exp,
     scope: parseScope(claims['scope']),
     kind: parseSessionKind(claims['session_kind']),
+  };
+}
+
+/** Claims of a verified MCP access token (spec §9.8). It has no `did` and no `session_kind`. */
+export interface McpClaims {
+  sub: string;
+  client_id: string;
+  grant_id: string;
+  /** Equals `grant_id`, so revoking a grant reuses the webhook's `sids` list. */
+  sid: string;
+  jti: string;
+  iat: number;
+  exp: number;
+  scope: McpScope[];
+}
+
+/** Exactly the claims an MCP access token carries (spec §9.8). */
+const MCP_CLAIMS = ['iss', 'aud', 'sub', 'client_id', 'grant_id', 'sid', 'scope', 'jti', 'iat', 'nbf', 'exp'];
+const MCP_MAX_LIFETIME_SECONDS = 600;
+
+function parseMcpScope(value: unknown): McpScope[] {
+  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_CLAIM_LENGTH) deny();
+  const out = new Set<McpScope>();
+  for (const part of value.split(' ')) {
+    if (!(MCP_SCOPES as readonly string[]).includes(part)) deny();
+    out.add(part as McpScope);
+  }
+  return [...out];
+}
+
+function printableAscii(value: unknown, max: number): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > max || !/^[\x20-\x7e]+$/.test(value)) deny();
+  return value;
+}
+
+/**
+ * Verify an MCP access token for `<origin>/mcp` (spec §9.8): header `typ`
+ * `at+jwt`, exactly the listed claims (so a sync token's `did` or `session_kind`
+ * is refused), `sid` = `grant_id`, `exp` at most `iat` + 600 s and `scope` a
+ * non-empty subset of the MCP scopes. Every failure is `unauthorized`.
+ */
+export async function verifyMcpToken(token: string, config: TokenConfig, nowMs = Date.now()): Promise<McpClaims> {
+  const { header, claims, iat, exp } = await verifyJwt(token, config, mcpResource(config), nowMs);
+  if (header['typ'] !== 'at+jwt') deny();
+  const keys = Object.keys(claims);
+  if (keys.length !== MCP_CLAIMS.length || !keys.every((k) => MCP_CLAIMS.includes(k))) deny();
+  if (exp - iat > MCP_MAX_LIFETIME_SECONDS || exp <= iat) deny();
+  const grantId = printableAscii(claims['grant_id'], 64);
+  if (claims['sid'] !== grantId) deny();
+  return {
+    sub: boundedString(claims['sub']),
+    client_id: printableAscii(claims['client_id'], 256),
+    grant_id: grantId,
+    sid: grantId,
+    jti: boundedString(claims['jti']),
+    iat,
+    exp,
+    scope: parseMcpScope(claims['scope']),
   };
 }
 

@@ -11,7 +11,8 @@ import type { Env } from '../env.js';
 export interface RevocationQuery {
   sub: string;
   sid: string;
-  did: string;
+  /** Absent for tokens bound to no device (MCP access tokens). */
+  did?: string;
   iat: number;
 }
 
@@ -43,7 +44,7 @@ export class RevocationRegistry extends DurableObject<Env> {
   /** True when the session, the device, or a token this old for `sub` is revoked. */
   isRevoked(q: RevocationQuery): boolean {
     if (this.sql.exec('SELECT 1 FROM revoked_sids WHERE sid = ?', q.sid).toArray().length > 0) return true;
-    if (this.sql.exec('SELECT 1 FROM revoked_dids WHERE did = ?', q.did).toArray().length > 0) return true;
+    if (q.did !== undefined && this.sql.exec('SELECT 1 FROM revoked_dids WHERE did = ?', q.did).toArray().length > 0) return true;
     const row = this.sql.exec<{ min_iat: number }>('SELECT min_iat FROM min_iat WHERE sub = ?', q.sub).toArray()[0];
     return row !== undefined && q.iat < row.min_iat;
   }

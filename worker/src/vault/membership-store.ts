@@ -50,8 +50,12 @@ export class MembershipStore {
     const requiredRekey = current.rekey_required && (event as { type?: unknown } | null)?.type === 'rekey';
     const lastSeq = LIMITS.membership_events_per_vault - (requiredRekey ? 1 : 2);
     if (current.seq + 1 > lastSeq) throw new ApiError('quota_exceeded', { status: 403 });
-    const events = this.sql.exec<{ event_json: string }>('SELECT event_json FROM membership_events ORDER BY seq').toArray().map((r) => parseJson(r.event_json));
-    return verifyMembershipChain([...events, event], { vaultId: current.vault_id, trustedAnchor: current.trust_anchor });
+    return verifyMembershipChain([...this.chain(), event], { vaultId: current.vault_id, trustedAnchor: current.trust_anchor });
+  }
+
+  /** Every stored event, genesis first (for verifiers that replay the chain). */
+  chain(): unknown[] {
+    return this.sql.exec<{ event_json: string }>('SELECT event_json FROM membership_events ORDER BY seq').toArray().map((r) => parseJson(r.event_json));
   }
 
   /** Persist a verified event and its resulting state (caller holds the transaction). */

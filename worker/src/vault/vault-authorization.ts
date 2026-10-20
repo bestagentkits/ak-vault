@@ -27,7 +27,7 @@ import { ApiError } from '../http/errors.js';
 import { MembershipStore } from './membership-store.js';
 import { parseBodyObject, requireKeys } from './request-body.js';
 import { enforceRole, memberDevice, requireScope, verifyRequestProof, type RoleRule } from './request-guard.js';
-import type { VaultOp, VaultRequest } from './vault-request.js';
+import { isMutation, type VaultOp, type VaultRequest } from './vault-request.js';
 
 const READ: readonly Scope[] = ['vault:read'];
 const WRITE: readonly Scope[] = ['vault:write'];
@@ -49,7 +49,25 @@ const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: r
   'audit.post': { scope: WRITE, role: 'writer' },
   'recovery.get': { scope: READ, role: 'human_owner' },
   'recovery.put': { scope: WRITE, role: 'human_owner' },
+  // Remote access (spec §9.6).
+  'lookup.get': { scope: READ, role: 'any_device' },
+  'sealkey.get': { scope: READ, role: 'any_device' },
+  'sealkey.put': { scope: WRITE, role: 'human_owner' },
+  'sealed.get': { scope: READ, role: 'writer' },
+  'sealed.ack': { scope: WRITE, role: 'writer' },
 };
+
+/**
+ * Ops a `browser` (dashboard) session may never call, whatever its device's role
+ * (spec §9 item 1, ADR 0002 D1). The recovery-identity reads are refused to every
+ * non-`email_otp` session by `requireHumanSession`; the relay refuses `browser`
+ * at its upgrade.
+ */
+const BROWSER_REFUSED: ReadonlySet<VaultOp> = new Set<VaultOp>(['genesis', 'membership.post', 'recovery.get', 'recovery.put', 'sealkey.put', 'sealed.get', 'sealed.ack']);
+
+function refuseBrowserSession(req: VaultRequest): void {
+  if (req.claims.kind === 'browser' && BROWSER_REFUSED.has(req.op)) throw new ApiError('forbidden');
+}
 
 /** Fail closed: outside membership only an `email_otp` session is admitted (spec §9.4). */
 function requireHumanSession(req: VaultRequest): void {
@@ -77,6 +95,7 @@ export function preflightGenesis(req: VaultRequest): void {
 }
 
 function authorizeGenesis(req: VaultRequest, sql: SqlStorage | null): Authorized {
+  refuseBrowserSession(req);
   const body = parseBodyObject(req.body);
   requireKeys(body, ['event'], ['wraps']);
   const state = MembershipStore.verifyGenesis(body['event'], req.vaultId);
@@ -138,6 +157,7 @@ function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: Membe
 }
 
 export function authorize(req: VaultRequest, sql: SqlStorage, store: MembershipStore): Authorized {
+  refuseBrowserSession(req);
   if (req.op === 'genesis') return authorizeGenesis(req, sql);
   if (req.op === 'membership.post') return authorizeMembershipPost(req, sql, store);
   const state = store.requireState();
@@ -150,6 +170,5 @@ export function authorize(req: VaultRequest, sql: SqlStorage, store: MembershipS
   const policy = POLICY[req.op];
   requireScope(req.claims.scope, policy.scope);
   enforceRole(device, policy.role);
-  const mutating = req.op.endsWith('.post') || req.op.endsWith('.put');
-  return { state, device, body: mutating ? parseBodyObject(req.body) : null };
+  return { state, device, body: isMutation(req.op) ? parseBodyObject(req.body) : null };
 }

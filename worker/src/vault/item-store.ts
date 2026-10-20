@@ -25,6 +25,7 @@ import { ApiError, okResult, type ApiResult } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
 import type { JsonObject } from '@ak-vault/protocol';
 import { appendLogHead } from './change-log-heads.js';
+import { checkNameTag, parseItemPutBody, setItemNameTag } from './lookup-store.js';
 
 /** `meta` key holding `{records, bytes}` totals for the per-vault record caps. */
 export const RECORD_USAGE_KEY = 'record_usage';
@@ -104,11 +105,17 @@ function insertRecord(sql: SqlStorage, record: SignedRecord, kind: 'applied' | '
   return row.log_seq;
 }
 
-/** `PUT /items/:iid` with a signed record. Caller holds the transaction. */
-export function putRecord(sql: SqlStorage, state: MembershipState, did: string, itemId: string, body: unknown): ApiResult {
-  const record = verifyRecord(body, state);
+/**
+ * `PUT /items/:iid` with a signed record, bare or in the `{record, name_tag}`
+ * wrapper (spec §3.7). The tag is stored only when the record is applied; an
+ * applied record without one clears the item's tag. Caller holds the transaction.
+ */
+export function putRecord(sql: SqlStorage, state: MembershipState, did: string, itemId: string, body: JsonObject, opts: { remoteAccess: boolean }): ApiResult {
+  const { record: rawRecord, nameTag } = parseItemPutBody(body, opts.remoteAccess);
+  const record = verifyRecord(rawRecord, state);
   if (record.item_id !== itemId) throw new ApiError('bad_request', { message: 'record item_id does not match the path' });
   if (record.author !== did) throw new ApiError('forbidden', { message: 'record author is not the authenticated device' });
+  checkNameTag(nameTag, record);
   authorizeRecordWrite(state, record);
   if (cjson(record.env as unknown as JsonObject).length > LIMITS.envelope_max_bytes) throw new ApiError('quota_exceeded');
 
@@ -145,6 +152,7 @@ export function putRecord(sql: SqlStorage, state: MembershipState, did: string, 
     logSeq,
   );
   for (const conflictId of record.resolves) sql.exec('UPDATE conflicts SET resolved_revision = ? WHERE conflict_id = ?', outcome.revision, conflictId);
+  setItemNameTag(sql, itemId, outcome.revision, nameTag);
   return okResult({ revision: outcome.revision, tombstone: next.tombstone, log_seq: logSeq }, 200);
 }
 
