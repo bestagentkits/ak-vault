@@ -5,9 +5,6 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "ak-vault",
   "main": "src/index.ts",
-  // Runs before every deploy and dev run: the hook that builds the /app dashboard
-  // bundle into ./public (a no-op until the dashboard ships).
-  "build": { "command": "pnpm run build:app" },
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
   "preview_urls": false,
