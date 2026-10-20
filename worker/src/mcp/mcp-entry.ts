@@ -5,8 +5,8 @@
  * here only where remote access is enabled and adds the security headers.
  *
  * Not served yet: every path answers `404 not_found`. The endpoint verifies MCP
- * tokens with `verifyMcpToken`, checks revocation with `assertNotRevoked` (no
- * `did`), relays through `AccountRelay.dispatch` and seals with
+ * tokens with `verifyMcpToken`, checks revocation with `assertGrantNotRevoked`
+ * (by `sid` = grant ID; no `did`), relays through `AccountRelay.dispatch` and seals with
  * `VaultDurableObject.enqueueSealed`.
  */
 import type { Env } from '../env.js';

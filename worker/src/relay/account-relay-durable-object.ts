@@ -36,7 +36,7 @@ import {
   type Role,
 } from '@ak-vault/protocol';
 import { verifyToken } from '../auth/jwt-verify.js';
-import { isRevoked } from '../auth/revocation-check.js';
+import { isDeviceRevoked } from '../auth/revocation-check.js';
 import type { Env } from '../env.js';
 import { ApiError, errorResult } from '../http/errors.js';
 import { logRelayEvent } from '../http/operational-logger.js';
@@ -200,7 +200,7 @@ export class AccountRelay extends DurableObject<Env> {
     }
     if (claims.sub !== conn.sub || claims.did !== conn.did) return this.closeCurrent(ws, conn.cid, CLOSE.unauthorized);
     if (relaySessionRefusal(claims)) return this.closeCurrent(ws, conn.cid, CLOSE.forbidden);
-    if (await isRevoked(this.env, claims)) return this.closeCurrent(ws, conn.cid, CLOSE.unauthorized);
+    if (await isDeviceRevoked(this.env, claims)) return this.closeCurrent(ws, conn.cid, CLOSE.unauthorized);
     if (!verifyRelayProof(this.sql, { proof: frame.proof, token: frame.token, htu: conn.htu, did: conn.did, signPub: conn.signPub, nowMs: now })) {
       return this.closeCurrent(ws, conn.cid, CLOSE.unauthorized);
     }
@@ -282,7 +282,7 @@ export class AccountRelay extends DurableObject<Env> {
         busy = true;
         continue;
       }
-      if (await isRevoked(this.env, { sub: initial.sub, sid: initial.sid, did: initial.did, iat: initial.iat })) {
+      if (await isDeviceRevoked(this.env, initial)) {
         this.closeCurrent(ws, initial.cid, CLOSE.unauthorized);
         continue;
       }

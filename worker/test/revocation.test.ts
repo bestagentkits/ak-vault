@@ -1,6 +1,8 @@
 /** Live revocation: webhook authentication and its effect on the next request, plus registry failure. */
+import { env } from 'cloudflare:workers';
 import { randomId, utf8Encode } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';
+import { REVOCATION_REGISTRY_NAME, assertDeviceNotRevoked, assertGrantNotRevoked, isDeviceRevoked, isGrantRevoked } from '../src/auth/revocation-check.js';
 import { call } from './helpers/api-client.js';
 import { mintToken } from './helpers/issuer.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
@@ -66,6 +68,58 @@ describe('revocation webhook', () => {
   it('fails closed when no secret is configured, and stays on with the kill switch', async () => {
     expect((await sendRevocation({ revoke_sids: ['s'] }, { env: { REVOCATION_WEBHOOK_SECRET: '' } })).status).toBe(503);
     expect((await sendRevocation({ revoke_sids: [`sid-${randomId()}`] }, { env: { VAULT_SYNC_ENABLED: 'false' } })).status).toBe(200);
+  });
+});
+
+describe('registry checks by token kind', () => {
+  const registry = () => env.REVOCATIONS.get(env.REVOCATIONS.idFromName(REVOCATION_REGISTRY_NAME));
+  const now = () => Math.floor(Date.now() / 1000);
+
+  it('an MCP grant is revoked by its sid and by min_iat, and a revoked device is not consulted', async () => {
+    const sub = `acct-${randomId()}`;
+    const grant = `grant-${randomId()}`;
+    const did = randomId();
+    expect(await registry().isGrantRevoked({ sub, sid: grant, iat: now() })).toBe(false);
+    await expect(assertGrantNotRevoked(env, { sub, sid: grant, iat: now() })).resolves.toBeUndefined();
+
+    // The grant query carries no did, so a device revocation never reaches it.
+    expect((await sendRevocation({ revoke_dids: [did] })).status).toBe(200);
+    expect(await registry().isGrantRevoked({ sub, sid: grant, iat: now() })).toBe(false);
+
+    expect((await sendRevocation({ revoke_sids: [grant] })).status).toBe(200);
+    expect(await registry().isGrantRevoked({ sub, sid: grant, iat: now() })).toBe(true);
+    await expect(assertGrantNotRevoked(env, { sub, sid: grant, iat: now() })).rejects.toMatchObject({ code: 'unauthorized', status: 401 });
+
+    const other = `grant-${randomId()}`;
+    expect((await sendRevocation({ min_iat: [{ sub, iat: now() - 10 }] })).status).toBe(200);
+    expect(await registry().isGrantRevoked({ sub, sid: other, iat: now() - 30 })).toBe(true);
+    expect(await registry().isGrantRevoked({ sub, sid: other, iat: now() })).toBe(false);
+    expect(await registry().isGrantRevoked({ sub: `acct-${randomId()}`, sid: other, iat: now() - 30 })).toBe(false);
+  });
+
+  it('a device token is still refused by its revoked did, its sid or min_iat', async () => {
+    const sub = `acct-${randomId()}`;
+    const did = randomId();
+    const sid = `sid-${randomId()}`;
+    expect(await isDeviceRevoked(env, { sub, sid, did, iat: now() })).toBe(false);
+    expect((await sendRevocation({ revoke_dids: [did] })).status).toBe(200);
+    expect(await isDeviceRevoked(env, { sub, sid, did, iat: now() })).toBe(true);
+    await expect(assertDeviceNotRevoked(env, { sub, sid, did, iat: now() })).rejects.toMatchObject({ code: 'unauthorized', status: 401 });
+    // The same session without a device is a grant check, which a device revocation does not reach.
+    expect(await isGrantRevoked(env, { sub, sid, iat: now() })).toBe(false);
+  });
+
+  it('both checks answer 503 when the registry cannot be reached', async () => {
+    const broken = {
+      REVOCATIONS: {
+        idFromName: () => {
+          throw new Error('registry unavailable');
+        },
+      } as unknown as typeof env.REVOCATIONS,
+    };
+    const subject = { sub: 'acct', sid: 'sid', iat: now() };
+    await expect(assertGrantNotRevoked(broken, subject)).rejects.toMatchObject({ code: 'unauthorized', status: 503 });
+    await expect(assertDeviceNotRevoked(broken, { ...subject, did: randomId() })).rejects.toMatchObject({ code: 'unauthorized', status: 503 });
   });
 });
 

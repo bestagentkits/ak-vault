@@ -7,7 +7,7 @@
  * checks plus the relay session rules, then hands the upgrade to the account's relay
  * object, which verifies the proof and owns the connection.
  */
-import { assertNotRevoked } from '../auth/revocation-check.js';
+import { assertDeviceNotRevoked } from '../auth/revocation-check.js';
 import { bearerToken, verifyToken } from '../auth/jwt-verify.js';
 import { remoteAccessEnabled, type Env } from '../env.js';
 import { ApiError, type ApiResult } from '../http/errors.js';
@@ -42,7 +42,7 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
 
   const token = bearerToken(request);
   const claims = await verifyToken(token, env);
-  await assertNotRevoked(env, claims);
+  await assertDeviceNotRevoked(env, claims);
   const body = await readBodyCapped(request, LIMITS.request_body_max_bytes);
   const idempotencyKey = request.headers.get('Idempotency-Key');
   if (isMutation(route.op) && !idempotencyKey) throw new ApiError('bad_request', { message: 'a valid Idempotency-Key header is required' });
@@ -89,7 +89,7 @@ export async function handleRelayUpgrade(request: Request, env: Env, info: Route
   const refusal = relaySessionRefusal(claims);
   if (refusal === 'kind') throw new ApiError('forbidden', { message: 'this session kind cannot hold a relay connection' });
   if (refusal === 'scope') throw new ApiError('forbidden', { message: 'the relay needs vault:read and vault:write' });
-  await assertNotRevoked(env, claims);
+  await assertDeviceNotRevoked(env, claims);
   const signPub = request.headers.get('AKV-Device-Key');
   if (!deviceKeyMatches(signPub, claims.did)) throw new ApiError('unauthorized', { message: 'AKV-Device-Key does not match the token device' });
   const proof = request.headers.get('AKV-Proof');

@@ -206,7 +206,8 @@ function printableAscii(value: unknown, max: number): string {
  * Verify an MCP access token for `<origin>/mcp` (spec §9.8): header `typ`
  * `at+jwt`, exactly the listed claims (so a sync token's `did` or `session_kind`
  * is refused), `sid` = `grant_id`, `exp` at most `iat` + 600 s and `scope` a
- * non-empty subset of the MCP scopes. Every failure is `unauthorized`.
+ * non-empty subset of the MCP scopes. Every failure is `unauthorized`. Live
+ * revocation is separate: `assertGrantNotRevoked` (by `sid`), never the device check.
  */
 export async function verifyMcpToken(token: string, config: TokenConfig, nowMs = Date.now()): Promise<McpClaims> {
   const { header, claims, iat, exp } = await verifyJwt(token, config, mcpResource(config), nowMs);
