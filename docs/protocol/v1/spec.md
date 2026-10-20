@@ -1068,16 +1068,28 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   of {`vault-mcp:read`, `vault-mcp:write`, `vault-mcp:use`}. There is no `did` and no
   `session_kind`. The Worker checks issuer, audience, algorithm, key, times, and live
   revocation of `sid` and `sub` per request (item 3), then that `sub` is a member of
-  the selected vault. The `/v1` routes refuse this token (item 1) and `/mcp` refuses
-  every other audience.
+  the selected vault; a vault that does not exist and a vault `sub` is not a member
+  of both answer the tool error `invalid_args`, alike, so the answer never says
+  whether the vault exists. The `/v1` routes refuse this token (item 1) and `/mcp`
+  refuses every other audience.
 - **Discovery.** RFC 9728 protected-resource metadata at
   `GET /.well-known/oauth-protected-resource/mcp` names the resource `<origin>/mcp`,
-  the authorization server (the token issuer) and the scopes above. A missing or
-  invalid token answers `401` with a `WWW-Authenticate: Bearer` header carrying
-  `resource_metadata`.
+  the authorization server (the token issuer) and the scopes above; no other
+  metadata path is served. A missing or invalid token answers `401` with a
+  `WWW-Authenticate: Bearer` header carrying `resource_metadata`, plus
+  `error="invalid_token"` when a bearer token was presented and refused.
 - **Protocol.** MCP revision 2026-07-28, stateless: POST only (other methods `405`),
-  `MCP-Protocol-Version` required, `server/discover`, no `Mcp-Session-Id`. A
-  2025-11-25 client's `initialize` is answered statelessly, without a session ID.
+  `server/discover`, no `Mcp-Session-Id`. A 2026-07-28 request names its version in
+  `MCP-Protocol-Version`; an unsupported value answers `400` `-32022` with the
+  request's `id`. A request without the header is served as 2025-11-25, statelessly:
+  a 2025-11-25 client's `initialize` is answered without a session ID.
+- **Rate limits.** Every JSON-RPC request spends one call from the
+  `mcp_calls_per_minute_per_client` and `mcp_calls_per_minute_per_account` budgets
+  (§10), and a `run` call also from `mcp_run_calls_per_minute_per_client`. A refused
+  `tools/call` of a known tool within the token's scopes is the tool error
+  `rate_limited` with `retry_after_s`; any other refused request is HTTP
+  `429 rate_limited` with `Retry-After` and the §10 error body. A call refused as
+  `rate_limited` writes no audit row.
 - **Tools** map one to one onto the relay tools (§9.7) with the same scopes. Each
   takes the relay `args` plus an optional `vault_id`. Without it the Worker uses the
   one vault the account's online relay connections list. When they list more than
