@@ -1,10 +1,13 @@
 /**
- * Pull, verify and index the vault, all in memory. Every session replays from
- * the start: the membership chain from the offer's trust anchor, the offer
+ * Pull, verify and index the vault, all in memory. A session's first pull replays
+ * from the start: the membership chain from the offer's trust anchor, the offer
  * checkpoint (signature, membership head, state digest at its log position),
  * this device's `device_add` with the SAS digest, the wraps delivered to it and
  * every later rekey's wraps against their signed digests, then the whole change
- * log against the removal fences and the heads this device kept.
+ * log against the removal fences and the heads this device kept. Later pulls in
+ * the same session continue from the snapshot's own cursor and fetch only the new
+ * log entries; they fall back to the full replay whenever that cannot be proved
+ * equivalent (a rekey, a removal fence below the cursor, any verification failure).
  *
  * The index is a metadata projection: each live head is decrypted, its `value`
  * is dropped on the spot, and only name, metadata and the provenance-checked
@@ -91,6 +94,24 @@ export interface VaultSnapshot {
   /** Live items the dashboard does not list (policy items, other schemas, invalid names). */
   hidden: number;
   witnessed: WitnessedState;
+  /** Replay state a later pull continues from. In memory only, like the rest of the snapshot. */
+  replay: ReplayBase;
+}
+
+/** What a replay leaves behind: enough to verify and apply only the entries after `head`. */
+export interface ReplayBase {
+  head: { log_seq: number; log_head: string };
+  /** Membership the log was verified against; its removals' signed heads are the kept heads. */
+  state: MembershipState;
+  profiles: Map<string, Map<number, ProfileAt>>;
+}
+
+/** An incremental pull cannot be proved equivalent to a full replay; the caller replays in full. */
+export class FullPullNeeded extends Error {
+  constructor() {
+    super('full pull needed');
+    this.name = 'FullPullNeeded';
+  }
 }
 
 /** Map a protocol failure to the dashboard's codes (rollback is reported on its own). */
@@ -124,9 +145,15 @@ interface ChangeEntry {
   record: unknown;
 }
 
-async function fetchChanges(client: AkvClient, vaultId: string): Promise<ChangeEntry[]> {
+interface ChangeFeed {
+  entries: ChangeEntry[];
+  /** The server's claimed tip from the last page. Never trusted: a mismatch only forces a full replay. */
+  head: { log_seq: number; log_head: string } | null;
+}
+
+async function fetchChanges(client: AkvClient, vaultId: string, from = 0): Promise<ChangeFeed> {
   const entries: ChangeEntry[] = [];
-  let cursor = 0;
+  let cursor = from;
   for (let page = 0; page < MAX_PAGES; page++) {
     const body = asRecord(await client.get(`/v1/vaults/${encodeURIComponent(vaultId)}/changes?cursor=${cursor}&limit=${CHANGES_PAGE}`));
     const batch = body['changes'];
@@ -135,7 +162,12 @@ async function fetchChanges(client: AkvClient, vaultId: string): Promise<ChangeE
       const c = asRecord(raw);
       entries.push({ log_seq: c['log_seq'], conflict_id: c['conflict_id'] ?? null, record: c['record'] });
     }
-    if (body['has_more'] !== true) return entries;
+    if (body['has_more'] !== true) {
+      const h = body['head'];
+      const claimed = typeof h === 'object' && h !== null ? (h as Record<string, unknown>) : null;
+      const head = claimed && typeof claimed['log_seq'] === 'number' && typeof claimed['log_head'] === 'string' ? { log_seq: claimed['log_seq'], log_head: claimed['log_head'] } : null;
+      return { entries, head };
+    }
     const next = body['next_cursor'];
     if (typeof next !== 'number' || !Number.isSafeInteger(next) || next <= cursor) throw new AppError('server');
     cursor = next;
@@ -282,35 +314,48 @@ export function openHead(snapshot: VaultSnapshot, itemId: string): ItemPayload {
   return payload;
 }
 
-interface ProfileAt {
+export interface ProfileAt {
   profile: Profile;
   origins: Partial<Record<ProfileKey, ProfileOrigin>>;
 }
 
-/** Replay the verified log into item states; check the offer checkpoint's state digest on the way. */
+/**
+ * Replay the verified log into item states; check the offer checkpoint's state
+ * digest on the way. With `prior`, `entries` continue from `prior.head`: the kept
+ * heads are the witnessed position and every removal fence the prior pull had
+ * already verified; a removal fence below the cursor that it had not is
+ * {@link FullPullNeeded}, because records past that fence need re-checking.
+ */
 export function replayLog(
   entries: readonly ChangeEntry[],
   state: MembershipState,
   enrollment: Enrollment,
   vaultKeys: Map<number, Uint8Array>,
   selfId: string,
-): Pick<VaultSnapshot, 'itemStates' | 'heads' | 'items' | 'unreadable' | 'hidden'> & { logHead: { log_seq: number; log_head: string } } {
+  prior?: Pick<VaultSnapshot, 'itemStates' | 'heads'> & { replay: ReplayBase },
+): Pick<VaultSnapshot, 'itemStates' | 'heads' | 'items' | 'unreadable' | 'hidden' | 'replay'> & { logHead: { log_seq: number; log_head: string } } {
   const kept = new Map<number, string>();
+  if (prior) {
+    for (const r of prior.replay.state.removals) if (r.log_fence > 0) kept.set(r.log_fence, r.log_head);
+    for (const r of state.removals) if (r.log_fence > 0 && r.log_fence < prior.replay.head.log_seq && !kept.has(r.log_fence)) throw new FullPullNeeded();
+  }
   if (enrollment.witnessed && enrollment.witnessed.log_seq > 0) kept.set(enrollment.witnessed.log_seq, enrollment.witnessed.log_head);
   let verified;
   try {
-    verified = verifyChangeLog(entries, state, { complete: true, keptHeads: kept });
+    verified = verifyChangeLog(entries, state, { complete: true, keptHeads: kept, ...(prior ? { from: prior.replay.head } : {}) });
   } catch (err) {
     throw verificationError(err);
   }
   const cp = enrollment.offerCheckpoint;
   if (verified.head.log_seq < cp.log_seq) throw new AppError('rollback');
 
-  const itemStates = new Map<string, ItemState>();
-  const heads = new Map<string, SignedRecord>();
-  const profiles = new Map<string, Map<number, ProfileAt>>();
+  const itemStates = new Map<string, ItemState>(prior?.itemStates);
+  const heads = new Map<string, SignedRecord>(prior?.heads);
+  const profiles = new Map<string, Map<number, ProfileAt>>(prior?.replay.profiles);
+  const ownedProfiles = new Set<string>();
   const digestAt = (n: number) => {
-    if (n === cp.log_seq && computeStateDigest(itemStates.values()) !== cp.state_digest) throw new AppError('rollback');
+    // A continuation starts past the offer checkpoint, which the first pull already checked.
+    if (!prior && n === cp.log_seq && computeStateDigest(itemStates.values()) !== cp.state_digest) throw new AppError('rollback');
   };
   digestAt(0);
   verified.records.forEach((record, i) => {
@@ -327,8 +372,12 @@ export function replayLog(
     itemStates.set(record.item_id, applied.state);
     if (applied.outcome.status === 'applied') {
       heads.set(record.item_id, record);
-      const byRevision = profiles.get(record.item_id) ?? new Map<number, ProfileAt>();
-      profiles.set(record.item_id, byRevision);
+      // Copy on first write so a failed pull leaves the prior snapshot's profiles untouched.
+      if (!ownedProfiles.has(record.item_id)) {
+        profiles.set(record.item_id, new Map(profiles.get(record.item_id)));
+        ownedProfiles.add(record.item_id);
+      }
+      const byRevision = profiles.get(record.item_id)!;
       const revision = applied.outcome.revision;
       if (record.tombstone) {
         byRevision.set(revision, { profile: {}, origins: {} });
@@ -347,7 +396,7 @@ export function replayLog(
         }
       }
     }
-    digestAt(i + 1);
+    digestAt(prior ? prior.replay.head.log_seq + i + 1 : i + 1);
   });
 
   const items: ItemView[] = [];
@@ -367,7 +416,7 @@ export function replayLog(
     else hidden++;
   }
   items.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.itemId < b.itemId ? -1 : 1));
-  return { itemStates, heads, items, unreadable, hidden, logHead: verified.head };
+  return { itemStates, heads, items, unreadable, hidden, logHead: verified.head, replay: { head: verified.head, state, profiles } };
 }
 
 export interface PullResult {
@@ -375,16 +424,39 @@ export interface PullResult {
   enrollment: Enrollment;
 }
 
-/** Pull and verify everything for an enrolled (or awaiting approval) device. */
-export async function pullVault(client: AkvClient, device: StoredDevice, kx: DeviceKx): Promise<PullResult> {
+/**
+ * Pull and verify everything for an enrolled (or awaiting approval) device. With
+ * `prior`, the snapshot this session already verified, only the log entries after
+ * it are fetched; anything that cannot be proved equivalent, or any verification
+ * failure on that path, repeats as the full replay, whose verdict is final.
+ */
+export async function pullVault(client: AkvClient, device: StoredDevice, kx: DeviceKx, prior?: VaultSnapshot | null): Promise<PullResult> {
   const enrollment = device.enrollment;
   if (!enrollment) throw new AppError('enroll_not_approved');
   const events = await fetchMembership(client, enrollment.vaultId);
   const { state, parsed, addSeq } = verifyEnrollmentChain(events, device, enrollment);
   const selfId = deviceIdOf(device.keys);
+  // A kept position below the cursor is not re-checked by a continuation, so replay in full.
+  const w = enrollment.witnessed;
+  const base = prior && prior.vaultId === enrollment.vaultId && (!w || w.log_seq >= prior.replay.head.log_seq) ? prior : null;
+  if (base) {
+    try {
+      const vaultKeys = state.key_epoch === base.state.key_epoch ? base.vaultKeys : await loadVaultKeys(client, enrollment.vaultId, selfId, parsed, addSeq, kx);
+      const feed = await fetchChanges(client, enrollment.vaultId, base.replay.head.log_seq);
+      const replay = replayLog(feed.entries, state, enrollment, vaultKeys, selfId, base);
+      // Nothing new proves nothing about a server whose log shrank or diverged below the cursor: its tip must be ours.
+      if (!feed.head || feed.head.log_seq !== replay.logHead.log_seq || feed.head.log_head !== replay.logHead.log_head) throw new FullPullNeeded();
+      return finishPull(enrollment, state, selfId, vaultKeys, replay);
+    } catch (err) {
+      if (!(err instanceof FullPullNeeded) && !(err instanceof AppError && (err.code === 'vault_verification_failed' || err.code === 'rollback'))) throw err;
+    }
+  }
   const vaultKeys = await loadVaultKeys(client, enrollment.vaultId, selfId, parsed, addSeq, kx);
-  const entries = await fetchChanges(client, enrollment.vaultId);
-  const replay = replayLog(entries, state, enrollment, vaultKeys, selfId);
+  const { entries } = await fetchChanges(client, enrollment.vaultId);
+  return finishPull(enrollment, state, selfId, vaultKeys, replayLog(entries, state, enrollment, vaultKeys, selfId));
+}
+
+function finishPull(enrollment: Enrollment, state: MembershipState, selfId: string, vaultKeys: Map<number, Uint8Array>, replay: ReturnType<typeof replayLog>): PullResult {
   const witnessed: WitnessedState = {
     membership_seq: state.seq,
     membership_head: state.head,
@@ -396,7 +468,7 @@ export async function pullVault(client: AkvClient, device: StoredDevice, kx: Dev
   return {
     snapshot: {
       vaultId: enrollment.vaultId, self, state, vaultKeys,
-      itemStates: replay.itemStates, heads: replay.heads, items: replay.items, unreadable: replay.unreadable, hidden: replay.hidden, witnessed,
+      itemStates: replay.itemStates, heads: replay.heads, items: replay.items, unreadable: replay.unreadable, hidden: replay.hidden, witnessed, replay: replay.replay,
     },
     enrollment: { ...enrollment, confirmed: true, witnessed },
   };

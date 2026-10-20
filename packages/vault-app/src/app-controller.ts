@@ -8,7 +8,7 @@
 import { b64encode, type DeviceKx, type DeviceSigner } from '@ak-vault/protocol';
 import { AppError, appErrorCode, type AppErrorCode } from './app-error.js';
 import { loadAppConfig, type AppConfig } from './config.js';
-import { isWitnessedOlder, type DeviceStore, type StoredDevice } from './keys/device-store.js';
+import { isWitnessedFork, isWitnessedOlder, type DeviceStore, type StoredDevice } from './keys/device-store.js';
 import { deviceIdOf, deviceKx, deviceSigner, generateDeviceKeys } from './keys/webcrypto-device-keys.js';
 import {
   beginSignIn,
@@ -60,6 +60,9 @@ export interface ControllerDeps {
 /** Web Lock name for creating an account's device. */
 export const DEVICE_LOCK_PREFIX = 'akv-device:';
 
+/** The server's `Date` header and this device's clock may differ by this much (ms) before tokens and proofs fail. */
+export const MAX_CLOCK_SKEW_MS = 60_000;
+
 /** Refresh a token this long before it expires (seconds). */
 const EXPIRY_MARGIN_S = 30;
 
@@ -76,9 +79,26 @@ export class AppController {
   private client: AkvClient | null = null;
   private snapshot: VaultSnapshot | null = null;
   private readonly now: () => number;
+  /** `deps.fetchFn` plus a note of the vault origin's clock, read from its `Date` header. */
+  private readonly fetchFn: typeof fetch;
+  private skewMs = 0;
 
   constructor(private readonly deps: ControllerDeps) {
     this.now = deps.now ?? Date.now;
+    this.fetchFn = async (input, init) => {
+      const res = await deps.fetchFn(input, init);
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.startsWith(`${deps.origin}/`)) {
+        const server = Date.parse(res.headers.get('Date') ?? '');
+        if (Number.isFinite(server)) this.skewMs = server - this.now();
+      }
+      return res;
+    };
+  }
+
+  /** True when the vault origin's clock, as last seen, is far enough from ours to fail time checks. */
+  private clockSkewed(): boolean {
+    return Math.abs(this.skewMs) > MAX_CLOCK_SKEW_MS;
   }
 
   subscribe(fn: (s: Screen) => void): () => void {
@@ -99,23 +119,24 @@ export class AppController {
   /** Start: load config and AS metadata, then finish a sign-in if this is the callback. */
   async boot(url: URL): Promise<void> {
     try {
-      this.config = await loadAppConfig(this.deps.fetchFn, this.deps.origin);
-      this.as = await discoverAuthServer(this.deps.fetchFn, this.config.issuer);
+      this.config = await loadAppConfig(this.fetchFn, this.deps.origin);
+      this.as = await discoverAuthServer(this.fetchFn, this.config.issuer);
     } catch (err) {
       this.show({ kind: 'fatal', code: appErrorCode(err, 'config_invalid') });
       return;
     }
     if (!isAuthorizationResponse(url)) {
       this.deps.pending.take();
-      this.show({ kind: 'signed_out', notice: null });
+      this.show({ kind: 'signed_out', notice: this.clockSkewed() ? { kind: 'error', code: 'clock_skew' } : null });
       return;
     }
     // The code and state leave the address bar and history before anything else runs.
     this.deps.replaceUrl(this.config.redirectUri);
     try {
-      this.session = await completeSignIn(url, { config: this.config, as: this.as, store: this.deps.pending, fetchFn: this.deps.fetchFn, now: this.now() });
+      this.session = await completeSignIn(url, { config: this.config, as: this.as, store: this.deps.pending, fetchFn: this.fetchFn, now: this.now() });
     } catch (err) {
-      this.show({ kind: 'signed_out', notice: { kind: 'error', code: appErrorCode(err, 'signin_refused') } });
+      const code = appErrorCode(err, 'signin_refused');
+      this.show({ kind: 'signed_out', notice: { kind: 'error', code: this.clockSkewed() && code === 'signin_refused' ? 'clock_skew' : code } });
       return;
     }
     await this.openDevice();
@@ -148,7 +169,7 @@ export class AppController {
     this.signer = null;
     this.kx = null;
     this.device = null;
-    if (session && this.config && this.as) await revokeSession(session, { config: this.config, as: this.as, fetchFn: this.deps.fetchFn, keepalive });
+    if (session && this.config && this.as) await revokeSession(session, { config: this.config, as: this.as, fetchFn: this.fetchFn, keepalive });
   }
 
   /** Load or create this account's device and route to enrollment or the vault. */
@@ -159,7 +180,7 @@ export class AppController {
       this.device = device;
       this.signer = deviceSigner(device.keys, this.deps.subtle);
       this.kx = deviceKx(device.keys, this.deps.subtle);
-      this.client = createAkvClient({ origin: this.deps.origin, getToken: (fresh) => this.getSyncToken(fresh), signer: this.signer, fetchFn: this.deps.fetchFn, now: this.now });
+      this.client = createAkvClient({ origin: this.deps.origin, getToken: (fresh) => this.getSyncToken(fresh), signer: this.signer, fetchFn: this.fetchFn, now: this.now });
       // Bind the device key to this sign-in now, so a mismatch shows before enrollment.
       await this.getSyncToken(true);
     } catch (err) {
@@ -206,7 +227,7 @@ export class AppController {
     if (!fresh && this.syncToken && this.syncToken.expiresAt - EXPIRY_MARGIN_S > nowS) return this.syncToken;
     if (!this.session || !this.device || !this.signer || !this.config || !this.as) throw new AppError('signin_required');
     if (this.session.expiresAt - EXPIRY_MARGIN_S <= nowS) {
-      this.session = await refreshSession(this.session, { config: this.config, as: this.as, fetchFn: this.deps.fetchFn, now: this.now() });
+      this.session = await refreshSession(this.session, { config: this.config, as: this.as, fetchFn: this.fetchFn, now: this.now() });
     }
     this.syncToken = await exchangeSyncToken({
       config: this.config,
@@ -214,7 +235,7 @@ export class AppController {
       deviceId: deviceIdOf(this.device.keys),
       signPub: b64encode(this.device.keys.signPub),
       signer: this.signer,
-      fetchFn: this.deps.fetchFn,
+      fetchFn: this.fetchFn,
       now: this.now(),
     });
     return this.syncToken;
@@ -255,39 +276,57 @@ export class AppController {
   }
 
   private async sync(notice: Notice | null): Promise<void> {
-    const device = this.device;
-    if (!device || !this.client || !this.kx) return;
-    const pendingApproval = !device.enrollment?.confirmed;
+    if (!this.device || !this.client || !this.kx) return;
+    const pendingApproval = !this.device.enrollment?.confirmed;
     try {
-      const { snapshot, enrollment } = await pullVault(this.client, device, this.kx);
+      // Another tab may have stored a newer position since this one last pulled.
+      const device = await this.withStoredPosition(this.device);
+      this.device = device;
+      const { snapshot, enrollment } = await pullVault(this.client, device, this.kx, this.snapshot);
       // Pulls can overlap (a refresh during a write's sync). The device may have
       // been dropped meanwhile, or a later pull may already have finished.
       const latest = this.device;
       if (!latest || latest.account !== device.account || deviceIdOf(latest.keys) !== deviceIdOf(device.keys)) return;
       const floor = latest.enrollment?.witnessed;
-      if (this.snapshot && floor && enrollment.witnessed && isWitnessedOlder(enrollment.witnessed, floor)) {
-        // Older than what is shown and stored: keep the newer snapshot and position.
-        this.showVault(notice, null);
-        return;
+      if (floor && enrollment.witnessed) {
+        if (isWitnessedFork(enrollment.witnessed, floor)) throw new AppError('fork');
+        if (this.snapshot && isWitnessedOlder(enrollment.witnessed, floor)) {
+          // Older than what is shown and stored: keep the newer snapshot and position.
+          this.showVault(notice, null);
+          return;
+        }
       }
       const next: StoredDevice = { ...latest, enrollment };
-      // Never persist a position older than the stored one (another tab may have advanced it).
-      const stored = await this.deps.devices.get(device.account);
-      const storedFloor = stored && deviceIdOf(stored.keys) === deviceIdOf(next.keys) ? stored.enrollment?.witnessed : null;
-      if (!storedFloor || !enrollment.witnessed || !isWitnessedOlder(enrollment.witnessed, storedFloor)) await this.deps.devices.put(next);
-      this.device = next;
+      // One transaction compares against the stored position and writes, so an older pull never lands.
+      const saved = await this.deps.devices.advance(next);
+      if (saved.outcome === 'fork') throw new AppError('fork');
+      const storedWitnessed = saved.stored?.enrollment?.witnessed;
+      this.device = saved.outcome === 'older' && storedWitnessed ? { ...next, enrollment: { ...enrollment, witnessed: storedWitnessed } } : next;
       this.snapshot = snapshot;
       this.showVault(notice, null);
     } catch (err) {
       if (pendingApproval) {
         const code = isVaultApiError(err, 'forbidden') ? 'enroll_not_approved' : appErrorCode(err, 'server');
         if (code === 'enroll_not_approved' || code === 'enroll_sas_mismatch' || code === 'network' || code === 'server') {
+          const device = this.device!;
           this.show({ kind: 'approve', sas: device.enrollment!.sas, deviceId: deviceIdOf(device.keys), notice: { kind: 'error', code } });
           return;
         }
       }
       await this.fail(err);
     }
+  }
+
+  /** The device with the furthest verified position of this tab's and the store's (same device and enrollment only). */
+  private async withStoredPosition(device: StoredDevice): Promise<StoredDevice> {
+    const stored = await this.deps.devices.get(device.account);
+    const have = device.enrollment;
+    const there = stored?.enrollment;
+    if (!stored || !have || !there?.witnessed) return device;
+    if (deviceIdOf(stored.keys) !== deviceIdOf(device.keys) || there.vaultId !== have.vaultId || there.nonceI !== have.nonceI || stored.nonceJ !== device.nonceJ) return device;
+    // A fork at an equal position is left for the pull's own check to report.
+    if (have.witnessed && !isWitnessedOlder(have.witnessed, there.witnessed)) return device;
+    return { ...device, enrollment: { ...have, witnessed: there.witnessed } };
   }
 
   private showVault(notice: Notice | null, matches: string[] | null, busy = false): void {
@@ -349,6 +388,8 @@ export class AppController {
   private async fail(err: unknown): Promise<void> {
     let code = appErrorCode(err, 'server');
     if (isVaultApiError(err)) code = err.code === 'forbidden' ? 'device_removed' : err.code === 'unauthorized' ? 'signin_required' : err.code === 'rekey_required' ? 'rekey_required' : 'server';
+    // Time-bound checks fail on a skewed clock and look like a lost sign-in: say so instead of looping.
+    if (this.clockSkewed() && (code === 'signin_required' || code === 'signin_refused' || code === 'token_exchange_failed')) code = 'clock_skew';
     if (code === 'device_removed') {
       const account = this.device?.account ?? this.session?.claims.sub;
       if (account) await this.deps.devices.delete(account).catch(() => undefined);
@@ -356,7 +397,7 @@ export class AppController {
       this.show({ kind: 'removed' });
       return;
     }
-    if (code === 'signin_required' || code === 'signin_refused') {
+    if (code === 'signin_required' || code === 'signin_refused' || code === 'clock_skew') {
       await this.dropSession(false);
       this.show({ kind: 'signed_out', notice: { kind: 'error', code } });
       return;

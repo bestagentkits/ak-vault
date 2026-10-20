@@ -126,6 +126,10 @@ export class FakeWorld {
     /** Replace the membership chain served. */
     membership: null as MembershipEvent[] | null,
     omitIss: false,
+    /** Offset of the vault origin's `Date` header from this machine's clock (a skewed device clock). */
+    dateOffsetMs: 0,
+    /** Answer every vault request 401, as a proof timestamp outside the window would be. */
+    rejectProofs: false,
   };
 
   constructor() {
@@ -260,7 +264,12 @@ export class FakeWorld {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = (init.method ?? 'GET').toUpperCase();
     const requestBody = typeof init.body === 'string' ? init.body : '';
-    const res = await this.route(new URL(url), method, requestBody, new Headers(init.headers));
+    let res = await this.route(new URL(url), method, requestBody, new Headers(init.headers));
+    if (this.hostile.dateOffsetMs !== 0 && new URL(url).origin === ORIGIN) {
+      const headers = new Headers(res.headers);
+      headers.set('Date', new Date(Date.now() + this.hostile.dateOffsetMs).toUTCString());
+      res = new Response(await res.text(), { status: res.status, headers });
+    }
     const responseBody = await res.clone().text();
     this.exchanges.push({ method, url, requestBody, responseBody, status: res.status });
     return res;
@@ -336,7 +345,7 @@ export class FakeWorld {
   private routeVault(url: URL, method: string, body: string, headers: Headers): Response {
     const token = (headers.get('Authorization') ?? '').replace(/^Bearer /, '');
     const who = this.syncTokens.get(token);
-    if (!who) return apiError(401, 'unauthorized');
+    if (!who || this.hostile.rejectProofs) return apiError(401, 'unauthorized');
     const st = this.state();
     const device = st.devices.find((d) => d.device_id === who.did && d.account === who.sub);
     if (!device) return apiError(403, 'forbidden');
@@ -373,7 +382,7 @@ export class FakeWorld {
         changes: page.map((e) => ({ ...e, kind: 'item', item_id: e.record.item_id, revision: 0, resolved_revision: null, log_head: '' })),
         next_cursor: page.length ? page[page.length - 1]!.log_seq : cursor,
         has_more: served.some((e) => e.log_seq > (page.length ? page[page.length - 1]!.log_seq : cursor)),
-        head: {},
+        head: { log_seq: served.length, log_head: this.logHeads[served.length] ?? '' },
       });
     }
     if (method === 'GET' && coll === 'lookup') {

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { b64encode, randomBytes, type MembershipEvent } from '@ak-vault/protocol';
 import { ACCOUNT, FakeWorld, ISSUER, ORIGIN } from './helpers/fake-world.js';
 import { Browser, allByTestId, byTestId } from './helpers/dashboard-page.js';
+import type { StoredDevice, WitnessedState } from '../src/keys/device-store.js';
 
 const SENTINEL = 'sentinel-value-7f3a9c1e5b';
 
@@ -86,6 +87,35 @@ describe('sign-in', () => {
     await again.controller.lock();
     expect(world.revoked.length).toBe(2);
     expect(again.controller.current()).toMatchObject({ kind: 'signed_out', notice: { code: 'locked' } });
+  });
+});
+
+describe('clock skew', () => {
+  it('says the clock is off instead of sending the user around the sign-in', async () => {
+    const world = new FakeWorld();
+    world.hostile.dateOffsetMs = 5 * 60_000;
+    const page = await new Browser(world).load();
+    expect(page.controller.current()).toMatchObject({ kind: 'signed_out', notice: { kind: 'error', code: 'clock_skew' } });
+    expect(page.root.textContent).toContain('clock');
+  });
+
+  it('turns a session the vault refuses into the clock message only while skewed', async () => {
+    for (const [offset, code] of [[5 * 60_000, 'clock_skew'], [0, 'signin_required']] as const) {
+      const world = new FakeWorld();
+      const b = new Browser(world);
+      await b.enroll();
+      world.hostile.dateOffsetMs = offset;
+      world.hostile.rejectProofs = true;
+      const page = await b.signIn();
+      expect(page.controller.current()).toMatchObject({ kind: 'signed_out', notice: { kind: 'error', code } });
+    }
+  });
+
+  it('tolerates a skew within a minute', async () => {
+    const world = new FakeWorld();
+    world.hostile.dateOffsetMs = 30_000;
+    const page = await new Browser(world).load();
+    expect(page.controller.current()).toMatchObject({ kind: 'signed_out', notice: null });
   });
 });
 
@@ -291,6 +321,70 @@ describe('vault', () => {
     await older;
     expect(b.devices.entries.get(ACCOUNT)!.enrollment!.witnessed).toEqual(newer);
     expect(names(page.root)).toEqual(['one', 'two']);
+  });
+
+  it('pulls only the new log entries after the first pull, and still sees every change', async () => {
+    const world = new FakeWorld();
+    for (let i = 0; i < 5; i++) world.ownerSet(`item-${i}`, 'a');
+    const b = new Browser(world);
+    const { page } = await b.enroll();
+    const cursors = () => world.exchanges.filter((e) => e.url.includes('/changes')).map((e) => Number(new URL(e.url).searchParams.get('cursor')));
+    expect(cursors()).toEqual([0]);
+    world.ownerSet('item-5', 'b');
+    await page.controller.refresh();
+    expect(cursors()).toEqual([0, 5]);
+    expect(names(page.root)).toEqual(['item-0', 'item-1', 'item-2', 'item-3', 'item-4', 'item-5']);
+    // A write of this browser's own, then the refresh after it, also continues from the cursor.
+    expect(await page.controller.set('item-6', SENTINEL)).toBe(true);
+    expect(cursors().at(-1)).toBe(6);
+    expect(names(page.root)).toContain('item-6');
+    // A delete of this browser's own (a tombstone) is applied on top of the cached replay.
+    const cur = page.controller.current();
+    const doomed = cur.kind === 'vault' ? cur.items.find((i) => i.name === 'item-0')!.itemId : '';
+    expect(await page.controller.remove(doomed)).toBe(true);
+    expect(names(page.root)).not.toContain('item-0');
+    expect(b.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!.log_seq).toBe(world.log.length);
+  });
+
+  it('refuses a server whose log shrank below the cursor of an incremental pull', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    world.ownerSet('two', 'b');
+    const { page } = await new Browser(world).enroll();
+    world.hostile.truncateLog = 1;
+    await page.controller.refresh();
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+  });
+
+  it('adopts a newer position another tab stored before it pulls again', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const tabA = new Browser(world);
+    const { page: pageA } = await tabA.enroll();
+    world.ownerSet('two', 'b');
+    // A second tab of the same profile signs in and verifies the newer position.
+    const tabB = new Browser(world, { devices: tabA.devices });
+    await tabB.signIn();
+    expect(tabA.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!.log_seq).toBe(2);
+    // The first tab still holds position 1. A server that now serves only position 1 must be refused.
+    world.hostile.truncateLog = 1;
+    await pageA.controller.refresh();
+    expect(pageA.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+  });
+
+  it('raises an integrity alarm when two pulls reach the same position with different heads', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const b = new Browser(world);
+    const { page } = await b.enroll();
+    const stored = b.devices.entries.get(ACCOUNT)!;
+    const w = stored.enrollment!.witnessed!;
+    // Another tab stored a different head at the position this pull reaches again.
+    const forked: StoredDevice = { ...stored, enrollment: { ...stored.enrollment!, witnessed: { ...w, log_head: `${w.log_head.slice(0, -2)}AA` } satisfies WitnessedState } };
+    b.devices.entries.set(ACCOUNT, forked);
+    await page.controller.refresh();
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'fork' });
+    expect(b.devices.entries.get(ACCOUNT)).toEqual(forked);
   });
 
   it('deletes an item with a signed tombstone after an explicit confirm', async () => {
