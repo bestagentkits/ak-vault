@@ -70,6 +70,10 @@ old clients keep verifying every chain they verify today.
    carries `{value, by, at, src}`. A changed field must name the record author and
    time; an unchanged field keeps its prior provenance. A violating field is dropped
    and audited, and a field another device wrote is shown as `sync` (untrusted).
+   The own/local label comes only from the device's own write history: a field is
+   its own only if this device wrote it in a record it authored, or carried it
+   unchanged with a stored origin (`prevOrigins`) of that same label. Any field kept
+   under `prev = null` stays `sync` while it is carried unchanged.
    Profile never widens a grant. This lifts the agentkit#2299 profile decision
    (approved 2026-10-16) onto the wire (spec §5.1).
 6. **D6: OAuth resources and token contracts.** ak-web derives two resources from
