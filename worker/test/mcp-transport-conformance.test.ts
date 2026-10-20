@@ -55,10 +55,18 @@ describe('MCP transport (2026-07-28)', () => {
     for (const tool of tools) if (tool.name !== 'secrets_set' && tool.name !== 'secrets_delete') expect(tool.description).toContain('never returned');
   });
 
-  it('refuses an unsupported protocol version with -32022 and the supported list', async () => {
-    const res = await modern(await token(), 'server/discover', {}, { version: '2024-11-05' });
+  it('refuses an unsupported protocol version with -32022, the supported list and the request id', async () => {
+    const t = await token();
+    const res = await modern(t, 'server/discover', {}, { version: '2024-11-05' });
     expect(res.status).toBe(400);
+    expect(res.json.id).toBe(1);
     expect(res.json.error).toEqual({ code: -32022, message: 'Unsupported protocol version', data: { supported: ['2026-07-28', '2025-11-25'], requested: '2024-11-05' } });
+    const stringId = await mcpPost(t, { jsonrpc: '2.0', id: 'req-7', method: 'ping', params: {} }, { version: '2099-01-01' });
+    expect(stringId.json).toMatchObject({ id: 'req-7', error: { code: -32022 } });
+    // An unparseable body has no id to echo: `id` is null (JSON-RPC 2.0 §5).
+    const unparseable = await mcpPost(t, null, { version: '2099-01-01', rawBody: '{"jsonrpc":' });
+    expect(unparseable.status).toBe(400);
+    expect(unparseable.json).toMatchObject({ id: null, error: { code: -32022 } });
   });
 
   it('refuses missing or mismatched Mcp-Method / Mcp-Name headers with 400 -32020', async () => {

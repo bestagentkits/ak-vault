@@ -1,14 +1,17 @@
 /**
  * Remote MCP endpoint (spec §9.8): `POST /mcp` and the RFC 9728 protected-resource
- * metadata at `/.well-known/oauth-protected-resource` and
- * `/.well-known/oauth-protected-resource/mcp`. The Worker entry routes these paths
- * here only where remote access is enabled and adds the security headers.
+ * metadata at `/.well-known/oauth-protected-resource/mcp`. The Worker entry routes
+ * these paths here only where remote access is enabled and adds the security headers.
  *
  * `/mcp` is stateless Streamable HTTP, MCP 2026-07-28, with 2025-11-25 clients
  * answered statelessly (`initialize` works, no `Mcp-Session-Id` is ever issued).
  * Order: method -> Origin -> kill switch -> MCP token and live revocation ->
- * headers and protocol version -> body (capped) -> one JSON-RPC message -> method.
- * `tools/call` also checks the tool's scope (403 `insufficient_scope`). Responses
+ * headers and protocol version -> body (capped) -> one JSON-RPC message -> rate
+ * budget -> method. Every request is charged to the client's and the account's
+ * budgets once (a `tools/call` that reaches its tool is charged with that tool, so
+ * `run` also spends its own budget); a refused non-tool request is `429
+ * rate_limited`. `tools/call` also checks the tool's scope (403
+ * `insufficient_scope`). Responses
  * are `application/json`; no CORS headers, so browsers cannot read them
  * cross-origin.
  */
@@ -20,9 +23,10 @@ import { readBodyCapped } from '../http/read-body-capped.js';
 import { jsonResponse, resultResponse } from '../http/responses.js';
 import { LIMITS, WORKER_VERSION } from '../limits.js';
 import { syncEnabled } from '../routes/meta-routes.js';
-import { RPC, accepted, parseMessage, rpcError, rpcResult, type JsonRpcRequest } from './json-rpc.js';
+import { relayStub } from '../relay/relay-rpc.js';
+import { RPC, accepted, parseMessage, rpcError, rpcResult, type JsonRpcId, type JsonRpcRequest } from './json-rpc.js';
 import { authenticateMcp, hasScope, insufficientScope } from './mcp-auth.js';
-import { PRM_PATHS, handleProtectedResourceMetadata } from './protected-resource-metadata.js';
+import { PRM_MCP_PATH, handleProtectedResourceMetadata } from './protected-resource-metadata.js';
 import {
   LEGACY_VERSION,
   META_CLIENT_CAPABILITIES,
@@ -44,7 +48,7 @@ const CAPABILITIES = { tools: { listChanged: false } };
 
 export async function handleMcp(request: Request, env: Env): Promise<Response> {
   const { pathname } = new URL(request.url);
-  if (PRM_PATHS.includes(pathname)) return handleProtectedResourceMetadata(request, env);
+  if (pathname === PRM_MCP_PATH) return handleProtectedResourceMetadata(request, env);
   return handleEndpoint(request, env);
 }
 
@@ -106,7 +110,8 @@ async function handleEndpoint(request: Request, env: Env): Promise<Response> {
 
   const resolved = resolveVersion(request.headers.get(PROTOCOL_VERSION_HEADER));
   if (!resolved.ok) {
-    return rpcError(null, RPC.unsupportedProtocolVersion, 'Unsupported protocol version', 400, { supported: [...SUPPORTED_VERSIONS], requested: resolved.requested });
+    const id = await requestIdOf(request);
+    return rpcError(id, RPC.unsupportedProtocolVersion, 'Unsupported protocol version', 400, { supported: [...SUPPORTED_VERSIONS], requested: resolved.requested });
   }
   const version = resolved.version;
   if (mediaType(request.headers.get('Content-Type')) !== 'application/json') return plainError(415, 'bad_request', 'Content-Type must be application/json');
@@ -124,7 +129,39 @@ async function handleEndpoint(request: Request, env: Env): Promise<Response> {
     const refusal = modernHeaderRefusal(request, message, version);
     if (refusal) return refusal;
   }
+  if (message.method !== 'tools/call') {
+    const limited = await rateRefusal(env, auth.claims);
+    if (limited) return limited;
+  }
   return dispatchMethod(env, auth.claims, version, message);
+}
+
+/**
+ * The JSON-RPC `id` of a request whose protocol version is refused, so the client
+ * can correlate the `-32022` answer; null when the body is unreadable, unparseable
+ * or a notification.
+ */
+async function requestIdOf(request: Request): Promise<JsonRpcId | null> {
+  let body: Uint8Array;
+  try {
+    body = await readBodyCapped(request, LIMITS.request_body_max_bytes);
+  } catch {
+    // An oversize or unreadable body has no id to echo; the version refusal still stands.
+    return null;
+  }
+  const parsed = parseMessage(body);
+  if (!parsed.ok) return parsed.id;
+  return parsed.message.kind === 'request' ? parsed.message.id : null;
+}
+
+/**
+ * Charge one request that does not reach a tool to the client's and the account's
+ * per-minute budgets; `429 rate_limited` with `Retry-After` once either is spent.
+ */
+async function rateRefusal(env: Env, claims: McpClaims): Promise<Response | null> {
+  const rate = await relayStub(env, claims.sub).takeRate(claims.client_id, null);
+  if (rate.ok) return null;
+  return resultResponse(errorResult(new ApiError('rate_limited', { headers: { 'Retry-After': String(rate.retryAfterS ?? 60) } })));
 }
 
 /** 2026-07-28 request metadata: headers mirror the body, and `_meta` names the version (400 otherwise). */
@@ -173,11 +210,14 @@ async function toolsCall(env: Env, claims: McpClaims, version: ProtocolVersion, 
   const { id, params } = message;
   const name = params['name'];
   const tool = typeof name === 'string' ? relayToolOf(name) : null;
-  if (tool === null) return rpcError(id, RPC.invalidParams, 'Unknown tool', 200);
   const args = params['arguments'] ?? {};
-  if (!isObject(args)) return rpcError(id, RPC.invalidParams, 'Invalid params: arguments must be an object', 200);
+  // A call refused before its tool runs is still charged, as a non-tool request.
+  const refuse = async (refusal: Response) => (await rateRefusal(env, claims)) ?? refusal;
+  if (tool === null) return refuse(rpcError(id, RPC.invalidParams, 'Unknown tool', 200));
+  if (!isObject(args)) return refuse(rpcError(id, RPC.invalidParams, 'Invalid params: arguments must be an object', 200));
   const needed = scopeOf(tool);
-  if (!hasScope(claims, needed)) return insufficientScope(env, claims, needed);
+  if (!hasScope(claims, needed)) return refuse(insufficientScope(env, claims, needed));
+  // `callTool` charges the call with its tool and answers a refusal as a tool error.
   const result = await callTool(env, claims, tool, args);
   return rpcResult(id, complete(version, { ...result }));
 }

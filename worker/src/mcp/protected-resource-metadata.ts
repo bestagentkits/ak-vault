@@ -8,13 +8,16 @@ import { MCP_SCOPES, type McpScope } from '@ak-vault/protocol';
 import { mcpResource, type Env } from '../env.js';
 import { jsonResponse } from '../http/responses.js';
 
-export const PRM_PATH = '/.well-known/oauth-protected-resource';
-export const PRM_MCP_PATH = `${PRM_PATH}/mcp`;
-export const PRM_PATHS: readonly string[] = [PRM_PATH, PRM_MCP_PATH];
+/**
+ * The only metadata path (RFC 9728 §3.1: the well-known prefix plus the resource path
+ * `/mcp`). The bare `/.well-known/oauth-protected-resource` would describe the origin,
+ * not `<origin>/mcp`, so it is not served.
+ */
+export const PRM_MCP_PATH = '/.well-known/oauth-protected-resource/mcp';
 
 type MetadataEnv = Pick<Env, 'VAULT_AUDIENCE' | 'VAULT_ISSUER'>;
 
-/** The URL clients fetch the metadata from (the path-suffixed form, tried first by MCP clients). */
+/** The URL clients fetch the metadata from, named in every `resource_metadata` challenge. */
 export function resourceMetadataUrl(env: Pick<Env, 'VAULT_AUDIENCE'>): string {
   return `${env.VAULT_AUDIENCE}${PRM_MCP_PATH}`;
 }
@@ -29,7 +32,7 @@ export function protectedResourceMetadata(env: MetadataEnv): Record<string, unkn
   };
 }
 
-/** `GET`/`HEAD` of either metadata path; any other method is `405`. */
+/** `GET`/`HEAD` of the metadata path; any other method is `405`. */
 export function handleProtectedResourceMetadata(request: Request, env: MetadataEnv): Response {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return jsonResponse({ error: { code: 'bad_request', message: 'method not allowed' } }, 405, { Allow: 'GET, HEAD' });
@@ -38,9 +41,14 @@ export function handleProtectedResourceMetadata(request: Request, env: MetadataE
   return request.method === 'HEAD' ? new Response(null, { status: 200, headers: response.headers }) : response;
 }
 
-/** Challenge for a missing, invalid, expired or revoked token. */
-export function bearerChallenge(env: Pick<Env, 'VAULT_AUDIENCE'>): string {
-  return `Bearer resource_metadata="${resourceMetadataUrl(env)}", scope="vault-mcp:read"`;
+/**
+ * Challenge for a missing, invalid, expired or revoked token. A bearer token that
+ * was presented and refused adds `error="invalid_token"` (RFC 6750 §3.1); a request
+ * without one gets the bare challenge, with no error code.
+ */
+export function bearerChallenge(env: Pick<Env, 'VAULT_AUDIENCE'>, tokenPresented = false): string {
+  const error = tokenPresented ? 'error="invalid_token", ' : '';
+  return `Bearer ${error}resource_metadata="${resourceMetadataUrl(env)}", scope="vault-mcp:read"`;
 }
 
 /** Challenge for a valid token whose scopes do not cover the call (RFC 6750 §3.1). */

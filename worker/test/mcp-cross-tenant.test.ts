@@ -3,8 +3,11 @@
  * vaults. Naming another account's vault looks exactly like naming a vault that
  * does not exist, never reaches that account's device and never seals into it.
  */
+import { env } from 'cloudflare:workers';
+import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { randomId } from '@ak-vault/protocol';
+import type { VaultDurableObject } from '../src/vault/vault-durable-object.js';
 import { answerNext, callTool, mintMcpToken, publishSealKey, structured } from './helpers/mcp-client.js';
 import { readyRelay } from './helpers/relay-client.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
@@ -43,6 +46,25 @@ describe('MCP cross-tenant isolation', () => {
     expect(frame['vault_id']).toBe(b.vaultId);
     expect(structured(await pending)).toEqual({ items: [] });
     connB.close();
+  });
+
+  it('a vault chosen from the single online device that the account cannot use is invalid_args without naming vault_id as the cause', async () => {
+    const fx = await VaultFixture.create();
+    const conn = await readyRelay(fx.owner, [fx.vaultId]);
+    const token = await mintMcpToken({ sub: fx.owner.account });
+    // The account loses its membership after the device listed the vault (RPC reaches prototype methods only).
+    const proto = await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(fx.vaultId)), (instance: VaultDurableObject) => Object.getPrototypeOf(instance) as { accountRole: VaultDurableObject['accountRole'] });
+    const original = proto.accountRole;
+    proto.accountRole = async () => null;
+    try {
+      const auto = await callTool(token, 'secrets_list');
+      expect(auto.json.result.structuredContent).toEqual({ code: 'invalid_args', message: 'The vault your online device holds is not one this account can use. Pass vault_id.' });
+      const named = await callTool(token, 'secrets_list', { vault_id: fx.vaultId });
+      expect(named.json.result.structuredContent).toEqual({ code: 'invalid_args', message: 'vault_id does not name a vault this account can use.' });
+    } finally {
+      proto.accountRole = original;
+      conn.close();
+    }
   });
 
   it("a token for one account cannot seal into another account's personal vault", async () => {

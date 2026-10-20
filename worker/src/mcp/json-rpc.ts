@@ -79,9 +79,8 @@ export function rpcResult(id: JsonRpcId, result: Record<string, unknown>): Respo
 export function rpcError(id: JsonRpcId | null, code: number, message: string, status: number, data?: Record<string, unknown>): Response {
   const error: Record<string, unknown> = { code, message };
   if (data !== undefined) error['data'] = data;
-  const body: Record<string, unknown> = { jsonrpc: '2.0', error };
-  if (id !== null) body['id'] = id;
-  return jsonResponse(body, status, MCP_HEADERS);
+  // JSON-RPC 2.0 §5: an error response always has `id`, null when the request's could not be read.
+  return jsonResponse({ jsonrpc: '2.0', id, error }, status, MCP_HEADERS);
 }
 
 /** A notification the server accepts: `202 Accepted` with no body. */

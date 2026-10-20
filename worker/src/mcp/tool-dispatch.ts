@@ -45,6 +45,7 @@ const MESSAGES: Record<ToolErrorCode, string> = {
 const NO_SEAL_KEY = 'No device is online and the vault has no seal key for writes yet. Run `ak secrets sync now` once on an owner device, or start `ak secrets sync now --watch --relay`.';
 const VAULT_REQUIRED = 'Pass vault_id: your online devices hold several vaults, or none is online to choose one.';
 const VAULT_UNKNOWN = 'vault_id does not name a vault this account can use.';
+const VAULT_AUTO_UNKNOWN = 'The vault your online device holds is not one this account can use. Pass vault_id.';
 
 function toolResult(structured: Record<string, unknown>, isError: boolean): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(structured) }], structuredContent: structured, isError };
@@ -173,7 +174,7 @@ async function execute(env: Env, claims: McpClaims, tool: RelayTool, rawArgs: un
   // Membership of the account in the selected vault (spec §9.8). An unknown vault and
   // another account's vault answer alike, so the reply never says whether one exists.
   const role = await vaultStub(env, vaultId).accountRole(claims.sub);
-  if (role === null) return fail('invalid_args', { message: VAULT_UNKNOWN });
+  if (role === null) return fail('invalid_args', { message: split.vaultId === undefined ? VAULT_AUTO_UNKNOWN : VAULT_UNKNOWN });
 
   const deadlineMs = tool === 'run' ? REMOTE_ACCESS_LIMITS.relay_run_deadline_ms : REMOTE_ACCESS_LIMITS.relay_call_deadline_ms;
   const outcome = await relay.dispatch({
@@ -202,10 +203,14 @@ export async function callTool(env: Env, claims: McpClaims, tool: RelayTool, raw
   const ms = Date.now() - started;
   const clientHash = clientLogTag(claims.client_id);
   let audited = false;
-  try {
-    audited = await relayStub(env, claims.sub).recordAudit({ clientHash, tool, outcome: outcome.code, ms });
-  } catch {
-    audited = false;
+  // A call refused as rate_limited stores no audit row, so audit storage stays bounded
+  // by the rate budgets rather than by raw request throughput; the log line still runs.
+  if (outcome.code !== 'rate_limited') {
+    try {
+      audited = await relayStub(env, claims.sub).recordAudit({ clientHash, tool, outcome: outcome.code, ms });
+    } catch {
+      audited = false;
+    }
   }
   logMcpCall({ tool, outcome: outcome.code, ms, client: clientHash, account: accountLogTag(claims.sub), audited });
   return outcome.result;
