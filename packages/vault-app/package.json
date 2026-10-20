@@ -1,0 +1,24 @@
+{
+  "name": "@ak-vault/vault-app",
+  "version": "0.1.0",
+  "description": "Vault dashboard served at /app: a browser that is an enrolled akv1 device",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsx scripts/build-app.ts",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ak-vault/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "happy-dom": "^21.0.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  }
+}
