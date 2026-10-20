@@ -93,7 +93,10 @@ export const REMOTE_ACCESS_LIMITS = {
   /** Time a device has to answer a call; `run` gets its own. */
   relay_call_deadline_ms: 60_000,
   relay_run_deadline_ms: 120_000,
-  /** Max unacknowledged sealed operations per vault. */
+  /**
+   * Max sealed operations held per vault: pending ones plus acknowledged ones whose
+   * ID is kept until `sealed_ttl_s` to refuse a replay.
+   */
   sealed_queue_max: 256,
   /** A sealed operation is dropped this long after its `ts`. */
   sealed_ttl_s: 7 * 24 * 60 * 60,

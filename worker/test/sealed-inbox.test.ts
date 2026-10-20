@@ -131,13 +131,24 @@ describe('sealed inbox', () => {
     expect((await ack(fx, fx.owner, expiring.sealed_id)).status).toBe(404);
   });
 
-  it('answers sealed_queue_full at sealed_queue_max pending ops', async () => {
+  it('answers sealed_queue_full at sealed_queue_max held ops, acknowledged ones included, until they expire', async () => {
     const fx = await VaultFixture.create();
-    for (let i = 0; i < REMOTE_ACCESS_LIMITS.sealed_queue_max; i++) expect(await enqueue(fx, sealFor(fx))).toBe('queued');
-    expect(await enqueue(fx, sealFor(fx))).toBe('sealed_queue_full');
-    const first = (await fx.get(fx.owner, '/sealed?limit=1')).json.sealed[0].op as SealedOpWire;
+    const now = Date.now();
+    // The first op expires 60 s from now; the rest live for the full TTL.
+    const first = sealFor(fx, { ts: now - TTL_MS + 60_000 });
+    expect(await enqueue(fx, first, now)).toBe('queued');
+    for (let i = 1; i < REMOTE_ACCESS_LIMITS.sealed_queue_max; i++) expect(await enqueue(fx, sealFor(fx, { ts: now }), now)).toBe('queued');
+    expect(await enqueue(fx, sealFor(fx, { ts: now }), now)).toBe('sealed_queue_full');
+
+    // Acknowledging keeps the ID for replay refusal, so the slot stays taken.
     expect((await ack(fx, fx.owner, first.sealed_id)).status).toBe(200);
-    expect(await enqueue(fx, sealFor(fx))).toBe('queued');
+    expect(await enqueue(fx, sealFor(fx, { ts: now }), now)).toBe('sealed_queue_full');
+    expect(await enqueue(fx, first, now)).toBe('refused');
+
+    // Once the acknowledged op expires its slot frees up.
+    const later = now + 60_001;
+    expect(await enqueue(fx, sealFor(fx, { ts: later }), later)).toBe('queued');
+    expect(await enqueue(fx, sealFor(fx, { ts: later }), later)).toBe('sealed_queue_full');
   });
 
   it('pages in seq order with after and limit, and validates the query', async () => {
