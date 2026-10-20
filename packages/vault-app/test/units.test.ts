@@ -14,7 +14,7 @@ import {
 } from '@ak-vault/protocol';
 import { parseAppConfig } from '../src/config.js';
 import { deviceKx, deviceSigner, generateDeviceKeys, isDeviceKeyMaterial, signPubB64 } from '../src/keys/webcrypto-device-keys.js';
-import { memoryDeviceStore } from '../src/keys/device-store.js';
+import { decideAdvance, isWitnessedFork, memoryDeviceStore, mergeWitnessed, type StoredDevice, type WitnessedState } from '../src/keys/device-store.js';
 import { beginSignIn, parseAuthServerMetadata, pkceChallenge } from '../src/oauth/pkce-client.js';
 import { validItemName } from '../src/sync/item-names.js';
 import { nextMeta } from '../src/sync/write-ops.js';
@@ -128,5 +128,44 @@ describe('write metadata', () => {
   it('applies the CLI name rules', () => {
     for (const ok of ['GITHUB_TOKEN', 'prod db password', 'ключ']) expect(validItemName(ok)).toBe(true);
     for (const bad of ['', ' lead', 'trail ', 'a/b', 'nul\u0000', 'bidi‮', 'line ', 'esc\u001b[31m', '\ud800']) expect(validItemName(bad), JSON.stringify(bad)).toBe(false);
+  });
+});
+
+describe('sync position compare-and-save', () => {
+  const at = (log_seq: number, log_head: string, membership_seq = 3): WitnessedState => ({ membership_seq, membership_head: 'm3', log_seq, log_head, key_epoch: 1 });
+
+  async function enrolled(witnessed: WitnessedState | null): Promise<StoredDevice> {
+    const keys = await generateDeviceKeys();
+    const enrollment = { origin: ORIGIN, vaultId: 'v', initiator: 'i', nonceI: 'ni', trustAnchor: 't', offerCheckpoint: null as never, sas: '123456', confirmed: true, witnessed };
+    return { v: 1, account: 'a', keys, label: 'x', nonceJ: 'nj', enrollment };
+  }
+  const withPosition = (d: StoredDevice, w: WitnessedState): StoredDevice => ({ ...d, enrollment: { ...d.enrollment!, witnessed: w } });
+
+  it('saves an equal or newer position, refuses an older one and flags a fork', async () => {
+    const base = await enrolled(at(5, 'h5'));
+    expect(decideAdvance(base, withPosition(base, at(5, 'h5'))).outcome).toBe('saved');
+    expect(decideAdvance(base, withPosition(base, at(6, 'h6'))).outcome).toBe('saved');
+    expect(decideAdvance(base, withPosition(base, at(4, 'h4'))).outcome).toBe('older');
+    expect(decideAdvance(base, withPosition(base, at(5, 'other'))).outcome).toBe('fork');
+    expect(isWitnessedFork(at(5, 'a', 3), at(6, 'b', 3))).toBe(false);
+  });
+
+  it('refuses to write for a missing, re-enrolled or different device', async () => {
+    const base = await enrolled(at(5, 'h5'));
+    const next = withPosition(base, at(6, 'h6'));
+    expect(decideAdvance(null, next).outcome).toBe('stale');
+    expect(decideAdvance({ ...base, enrollment: null }, next).outcome).toBe('stale');
+    expect(decideAdvance({ ...base, nonceJ: 'restarted' }, next).outcome).toBe('stale');
+    expect(decideAdvance({ ...base, keys: await generateDeviceKeys() }, next).outcome).toBe('stale');
+  });
+
+  it('keeps each component\'s furthest counter when two pulls are ahead on different ones', async () => {
+    const base = await enrolled(at(8, 'l8', 5));
+    const merged = mergeWitnessed(at(8, 'l8', 5), { ...at(6, 'l6', 6), membership_head: 'm6' });
+    expect(merged).toEqual({ membership_seq: 6, membership_head: 'm6', log_seq: 8, log_head: 'l8', key_epoch: 1 });
+    const result = decideAdvance(base, withPosition(base, { ...at(6, 'l6', 6), membership_head: 'm6' }));
+    expect(result.outcome).toBe('saved');
+    expect(result.position).toEqual(merged);
+    expect(mergeWitnessed(at(5, 'x'), at(5, 'y'))).toBeNull();
   });
 });

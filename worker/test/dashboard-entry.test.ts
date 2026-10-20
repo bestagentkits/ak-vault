@@ -91,6 +91,17 @@ describe('dashboard entry', () => {
     expect(`sha384-${btoa(String.fromCharCode(...digest))}`).toBe(integrity);
   });
 
+  it('redirects the bare /app to /app/ without a cookie, and not when remote access is off', async () => {
+    const res = await fetchRaw('/app', { redirect: 'manual' });
+    expect(res.status).toBeGreaterThanOrEqual(300);
+    expect(res.status).toBeLessThan(400);
+    expect(new URL(res.headers.get('Location') ?? '', BASE).pathname).toBe('/app/');
+    expect(res.headers.get('Cache-Control')).toContain('no-store');
+    expect(res.headers.get('Set-Cookie')).toBeNull();
+    const off = await fetchRaw('/app', { redirect: 'manual' }, { VAULT_REMOTE_ACCESS_ENABLED: 'false' });
+    expect(off.status).toBe(404);
+  });
+
   it('answers unknown dashboard paths and other methods with JSON not_found, never the landing site', async () => {
     for (const path of ['/app/x', '/app/assets/missing.js', '/app/404.html', '/app/robots.txt']) {
       const res = await fetchRaw(path);
