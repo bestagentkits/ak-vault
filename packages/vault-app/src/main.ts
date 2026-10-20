@@ -39,6 +39,8 @@ function main(): void {
     subtle: window.crypto.subtle,
     navigate: (url) => window.location.assign(url),
     replaceUrl: (url) => window.history.replaceState(null, '', url),
+    // Absent in old browsers and insecure contexts; generation then runs unlocked.
+    ...(typeof navigator.locks?.request === 'function' ? { locks: navigator.locks } : {}),
   });
   const vs = newViewState();
   const rerender = () => render(root, controller, controller.current(), vs, rerender);

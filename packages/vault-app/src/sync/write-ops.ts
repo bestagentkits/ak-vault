@@ -137,30 +137,11 @@ export async function deleteItem(args: { client: AkvClient; snapshot: VaultSnaps
 }
 
 /**
- * Exact-name search through the server's blind index (spec §3.7): the tag of
- * `name` under each epoch key this device holds (newest first, at most the
- * lookup bound), mapped back to verified items. The server learns only tags.
+ * Exact-name search over the verified snapshot. Every name this device can read
+ * is already in memory, so the search stays local: the server's blind-index
+ * lookup would only tell it which item was looked for, and when.
  */
-export async function lookupByName(args: { client: AkvClient; snapshot: VaultSnapshot; name: string; maxPairs?: number }): Promise<string[]> {
-  const { snapshot } = args;
-  if (!validItemName(args.name)) throw new AppError('invalid_name');
-  const epochs = [...snapshot.vaultKeys.keys()].sort((a, b) => b - a).slice(0, args.maxPairs ?? 8);
-  if (epochs.length === 0) return [];
-  const q = new URLSearchParams();
-  for (const e of epochs) {
-    q.append('tag', nameTag(nameIndexKey(snapshot.vaultKeys.get(e)!, snapshot.vaultId, e), args.name));
-    q.append('key_epoch', String(e));
-  }
-  const res = (await args.client.get(`/v1/vaults/${encodeURIComponent(snapshot.vaultId)}/lookup?${q.toString()}`)) as Record<string, unknown> | null;
-  const hits = res?.['hits'];
-  if (!Array.isArray(hits)) throw new AppError('server');
-  const verified = new Map(snapshot.items.map((i) => [i.itemId, i]));
-  const out: string[] = [];
-  for (const hit of hits as unknown[]) {
-    const id = (hit as Record<string, unknown> | null)?.['item_id'];
-    const item = typeof id === 'string' ? verified.get(id) : undefined;
-    // A hit counts only when the verified head carries that exact name.
-    if (item && item.name === args.name && !out.includes(item.itemId)) out.push(item.itemId);
-  }
-  return out;
+export function findByName(snapshot: VaultSnapshot, name: string): string[] {
+  if (!validItemName(name)) throw new AppError('invalid_name');
+  return itemsNamed(snapshot, name);
 }

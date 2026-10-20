@@ -1,12 +1,20 @@
 /**
  * Screens. Every string from an item, a profile or a code is inserted as text.
- * Values are write-only: the value field is a password input with autofill and
- * spellcheck off, cleared on submit, and no screen has a reveal or copy action.
+ * Values are write-only: the value field is a CSS-masked text input (never a
+ * password input, so no password manager offers to save it) with autofill,
+ * spellcheck and manager capture off, cleared on submit, and no screen has a
+ * reveal or copy action.
  */
 import type { AppController, Notice, Screen } from '../app-controller.js';
 import type { ItemView } from '../sync/vault-sync.js';
 import { h, replaceChildren, type Child } from './dom.js';
 import { messageFor } from './messages.js';
+
+/** Keep the browser and password managers from storing, suggesting or correcting a field. */
+export const NO_CAPTURE = {
+  autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off',
+  'data-1p-ignore': 'true', 'data-lpignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
+} as const;
 
 /** View-local state that survives a re-render (never a value). */
 export interface ViewState {
@@ -136,8 +144,10 @@ function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () =
 }
 
 function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs: ViewState, rerender: () => void): HTMLElement[] {
-  const nameInput = h('input', { id: 'set-name', name: 'name', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', maxlength: '4096', required: true, 'data-testid': 'set-name' }) as HTMLInputElement;
-  const valueInput = h('input', { id: 'set-value', name: 'value', type: 'password', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', required: true, 'data-testid': 'set-value' }) as HTMLInputElement;
+  const nameInput = h('input', { id: 'set-name', name: 'name', type: 'text', maxlength: '4096', required: true, 'data-testid': 'set-name', ...NO_CAPTURE }) as HTMLInputElement;
+  // A plain-text control masked by CSS, never type=password: a password field
+  // beside a name field reads as a login form and invites "save password".
+  const valueInput = h('input', { id: 'set-value', type: 'text', class: 'masked', required: true, 'data-testid': 'set-value', ...NO_CAPTURE }) as HTMLInputElement;
   const filterInput = h('input', { id: 'filter', type: 'search', autocomplete: 'off', spellcheck: 'false', placeholder: 'Filter by name or metadata', 'data-testid': 'filter' }) as HTMLInputElement;
   filterInput.value = vs.filter;
   filterInput.addEventListener('input', () => {

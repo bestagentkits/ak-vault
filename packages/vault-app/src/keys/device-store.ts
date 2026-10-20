@@ -17,6 +17,14 @@ export interface WitnessedState {
   key_epoch: number;
 }
 
+/**
+ * True when `a` is behind `b` on any counter. Verified positions only move
+ * forward, so a stored position is replaced only by one at least as far along.
+ */
+export function isWitnessedOlder(a: WitnessedState, b: WitnessedState): boolean {
+  return a.membership_seq < b.membership_seq || a.log_seq < b.log_seq || a.key_epoch < b.key_epoch;
+}
+
 export interface Enrollment {
   origin: string;
   vaultId: string;

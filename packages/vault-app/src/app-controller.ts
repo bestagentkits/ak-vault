@@ -8,7 +8,7 @@
 import { b64encode, type DeviceKx, type DeviceSigner } from '@ak-vault/protocol';
 import { AppError, appErrorCode, type AppErrorCode } from './app-error.js';
 import { loadAppConfig, type AppConfig } from './config.js';
-import type { DeviceStore, StoredDevice } from './keys/device-store.js';
+import { isWitnessedOlder, type DeviceStore, type StoredDevice } from './keys/device-store.js';
 import { deviceIdOf, deviceKx, deviceSigner, generateDeviceKeys } from './keys/webcrypto-device-keys.js';
 import {
   beginSignIn,
@@ -24,7 +24,7 @@ import {
 import { createAkvClient, isVaultApiError, type AkvClient } from './sync/akv-client.js';
 import { acceptOffer, DEFAULT_DEVICE_LABEL, joinCodeFor, newJoinNonce, sanitizeLabel } from './sync/enroll.js';
 import { pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
-import { deleteItem, lookupByName, setItem } from './sync/write-ops.js';
+import { deleteItem, findByName, setItem } from './sync/write-ops.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
 
 export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'signed_out' };
@@ -48,8 +48,17 @@ export interface ControllerDeps {
   navigate(url: string): void;
   /** Replace the current URL without a navigation (drops the code and state). */
   replaceUrl(url: string): void;
+  /**
+   * Web Locks, shared by every tab of this origin. First-time device key
+   * generation runs under a lock so two tabs cannot each create a device.
+   * Without it (an old browser) generation runs unlocked.
+   */
+  locks?: Pick<LockManager, 'request'>;
   now?: () => number;
 }
+
+/** Web Lock name for creating an account's device. */
+export const DEVICE_LOCK_PREFIX = 'akv-device:';
 
 /** Refresh a token this long before it expires (seconds). */
 const EXPIRY_MARGIN_S = 30;
@@ -146,12 +155,7 @@ export class AppController {
   private async openDevice(): Promise<void> {
     const session = this.session!;
     try {
-      let device = await this.deps.devices.get(session.claims.sub);
-      if (!device) {
-        const keys = await generateDeviceKeys(this.deps.subtle);
-        device = { v: 1, account: session.claims.sub, keys, label: sanitizeLabel(DEFAULT_DEVICE_LABEL), nonceJ: newJoinNonce(), enrollment: null };
-        await this.deps.devices.put(device);
-      }
+      const device = (await this.deps.devices.get(session.claims.sub)) ?? (await this.createDevice(session.claims.sub));
       this.device = device;
       this.signer = deviceSigner(device.keys, this.deps.subtle);
       this.kx = deviceKx(device.keys, this.deps.subtle);
@@ -163,6 +167,24 @@ export class AppController {
       return;
     }
     await this.route();
+  }
+
+  /**
+   * Create this account's device under the cross-tab lock, re-reading inside
+   * it: a tab that waited finds the device the first tab stored and uses it.
+   */
+  private async createDevice(account: string): Promise<StoredDevice> {
+    const create = async (): Promise<StoredDevice> => {
+      const existing = await this.deps.devices.get(account);
+      if (existing) return existing;
+      const keys = await generateDeviceKeys(this.deps.subtle);
+      const device: StoredDevice = { v: 1, account, keys, label: sanitizeLabel(DEFAULT_DEVICE_LABEL), nonceJ: newJoinNonce(), enrollment: null };
+      await this.deps.devices.put(device);
+      return device;
+    };
+    const locks = this.deps.locks;
+    if (!locks) return create();
+    return locks.request(`${DEVICE_LOCK_PREFIX}${account}`, { mode: 'exclusive' }, create);
   }
 
   private async route(notice: Notice | null = null): Promise<void> {
@@ -238,8 +260,21 @@ export class AppController {
     const pendingApproval = !device.enrollment?.confirmed;
     try {
       const { snapshot, enrollment } = await pullVault(this.client, device, this.kx);
-      const next = { ...device, enrollment };
-      await this.deps.devices.put(next);
+      // Pulls can overlap (a refresh during a write's sync). The device may have
+      // been dropped meanwhile, or a later pull may already have finished.
+      const latest = this.device;
+      if (!latest || latest.account !== device.account || deviceIdOf(latest.keys) !== deviceIdOf(device.keys)) return;
+      const floor = latest.enrollment?.witnessed;
+      if (this.snapshot && floor && enrollment.witnessed && isWitnessedOlder(enrollment.witnessed, floor)) {
+        // Older than what is shown and stored: keep the newer snapshot and position.
+        this.showVault(notice, null);
+        return;
+      }
+      const next: StoredDevice = { ...latest, enrollment };
+      // Never persist a position older than the stored one (another tab may have advanced it).
+      const stored = await this.deps.devices.get(device.account);
+      const storedFloor = stored && deviceIdOf(stored.keys) === deviceIdOf(next.keys) ? stored.enrollment?.witnessed : null;
+      if (!storedFloor || !enrollment.witnessed || !isWitnessedOlder(enrollment.witnessed, storedFloor)) await this.deps.devices.put(next);
       this.device = next;
       this.snapshot = snapshot;
       this.showVault(notice, null);
@@ -263,15 +298,15 @@ export class AppController {
     });
   }
 
-  /** Exact-name search through the blind index; an empty query clears it. */
+  /** Exact-name search over the verified snapshot, with no server request; an empty query clears it. */
   async search(name: string): Promise<void> {
-    if (!this.snapshot || !this.client) return;
+    if (!this.snapshot) return;
     if (name === '') {
       this.showVault(null, null);
       return;
     }
     try {
-      this.showVault(null, await lookupByName({ client: this.client, snapshot: this.snapshot, name }));
+      this.showVault(null, findByName(this.snapshot, name));
     } catch (err) {
       await this.writeFailed(err);
     }

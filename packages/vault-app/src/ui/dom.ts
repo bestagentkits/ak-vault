@@ -9,6 +9,8 @@
 const ALLOWED_ATTRS = new Set([
   'class', 'id', 'type', 'name', 'for', 'role', 'autocomplete', 'autocapitalize', 'spellcheck', 'inputmode', 'placeholder',
   'maxlength', 'rows', 'disabled', 'readonly', 'required', 'title', 'aria-label', 'aria-live', 'aria-describedby', 'aria-busy', 'data-testid',
+  // Password-manager opt-outs (1Password, LastPass, Bitwarden, Dashlane and others).
+  'data-1p-ignore', 'data-lpignore', 'data-bwignore', 'data-form-type',
 ]);
 
 export type Child = Node | string | null | undefined | false;

@@ -152,6 +152,38 @@ describe('enrollment', () => {
     expect(b.devices.entries.get('acct-mallory')!.enrollment).toBeNull();
   });
 
+  it('creates one device when two tabs sign in for the first time together', async () => {
+    // happy-dom has no navigator.locks, so this stands in for it: one exclusive
+    // holder per name, waiters run in request order, as the Web Locks API does.
+    const tails = new Map<string, Promise<unknown>>();
+    const requested: string[] = [];
+    const locks = {
+      request: (name: string, _opts: LockOptions, cb: (lock: Lock | null) => Promise<unknown>) => {
+        requested.push(name);
+        const run = (tails.get(name) ?? Promise.resolve()).then(() => cb(null));
+        tails.set(name, run.catch(() => undefined));
+        return run;
+      },
+    } as unknown as Pick<LockManager, 'request'>;
+    const world = new FakeWorld();
+    const tab1 = new Browser(world, { locks });
+    const tab2 = new Browser(world, { locks, devices: tab1.devices });
+    const callbacks: URL[] = [];
+    for (const tab of [tab1, tab2]) {
+      const start = await tab.load();
+      await start.controller.signIn();
+      callbacks.push(world.authorize(start.navigated.at(-1)!));
+    }
+    const [p1, p2] = await Promise.all([tab1.load(callbacks[0]!), tab2.load(callbacks[1]!)]);
+    const s1 = p1.controller.current();
+    const s2 = p2.controller.current();
+    expect(s1.kind).toBe('join');
+    expect(s2.kind).toBe('join');
+    expect((s1 as { deviceId: string }).deviceId).toBe((s2 as { deviceId: string }).deviceId);
+    expect(tab1.devices.entries.size).toBe(1);
+    expect(requested).toEqual([`akv-device:${ACCOUNT}`, `akv-device:${ACCOUNT}`]);
+  });
+
   it('refuses a sync token minted for another account', async () => {
     const world = new FakeWorld();
     world.hostile.syncSub = 'acct-mallory';
@@ -171,7 +203,6 @@ describe('vault', () => {
     expect(page.root.innerHTML).not.toContain(SENTINEL);
     expect(document.documentElement.outerHTML).not.toContain(SENTINEL);
     expect((byTestId(page.root, 'set-value') as HTMLInputElement).value).toBe('');
-    expect(byTestId(page.root, 'set-value').getAttribute('type')).toBe('password');
     for (const e of world.exchanges) {
       expect(e.requestBody, e.url).not.toContain(SENTINEL);
       expect(e.responseBody, e.url).not.toContain(SENTINEL);
@@ -198,10 +229,68 @@ describe('vault', () => {
     expect(payload.value).toBe('v1');
     expect(payload.meta['schema']).toBe('agentkit.secret/v1');
     expect(typeof payload.meta['created_ms']).toBe('number');
-    // Exact-name lookup goes through the blind index.
+    // Exact-name search runs over the verified names in memory: no request leaves the page.
+    const before = world.exchanges.length;
     await page.controller.search('api-key');
     expect(page.controller.current()).toMatchObject({ kind: 'vault', matches: [entry.item_id] });
-    expect(world.exchanges.some((e) => e.url.includes('/lookup?tag='))).toBe(true);
+    await page.controller.search('no-such-item');
+    expect(page.controller.current()).toMatchObject({ kind: 'vault', matches: [] });
+    expect(world.exchanges.length).toBe(before);
+    expect(world.exchanges.some((e) => e.url.includes('/lookup'))).toBe(false);
+  });
+
+  it('keeps the value field out of the password manager and clears it on submit', async () => {
+    const world = new FakeWorld();
+    const { page } = await new Browser(world).enroll();
+    const value = byTestId(page.root, 'set-value') as HTMLInputElement;
+    expect(value.tagName).toBe('INPUT');
+    expect(value.getAttribute('type')).toBe('text');
+    expect(page.root.querySelector('input[type="password"]')).toBeNull();
+    expect(value.classList.contains('masked')).toBe(true);
+    const name = byTestId(page.root, 'set-name');
+    for (const el of [value, name]) {
+      expect(el.getAttribute('autocomplete')).toBe('off');
+      expect(el.getAttribute('spellcheck')).toBe('false');
+      expect(el.getAttribute('autocapitalize')).toBe('off');
+      expect(el.hasAttribute('data-1p-ignore')).toBe(true);
+      expect(el.getAttribute('data-lpignore')).toBe('true');
+      expect(el.hasAttribute('data-bwignore')).toBe(true);
+      expect(el.getAttribute('data-form-type')).toBe('other');
+    }
+    (name as HTMLInputElement).value = 'typed-name';
+    value.value = SENTINEL;
+    (value.form as HTMLFormElement).dispatchEvent(new Event('submit', { cancelable: true }));
+    expect(value.value).toBe('');
+    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ kind: 'vault', notice: { code: 'saved' } }));
+    expect(names(page.root)).toEqual(['typed-name']);
+    expect(page.root.innerHTML).not.toContain(SENTINEL);
+  });
+
+  it('never replaces a newer verified position with an older pull that finishes last', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const b = new Browser(world);
+    const { page } = await b.enroll();
+    // Hold the first change-log response of the next pull until a later pull finished.
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let holding = true;
+    b.afterFetch = async (url) => {
+      if (holding && url.includes('/changes')) {
+        holding = false;
+        await held;
+      }
+    };
+    const older = page.controller.refresh();
+    await vi.waitFor(() => expect(holding).toBe(false));
+    world.ownerSet('two', 'b');
+    await page.controller.refresh();
+    const newer = b.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!;
+    expect(names(page.root)).toEqual(['one', 'two']);
+    release();
+    await older;
+    expect(b.devices.entries.get(ACCOUNT)!.enrollment!.witnessed).toEqual(newer);
+    expect(names(page.root)).toEqual(['one', 'two']);
   });
 
   it('deletes an item with a signed tombstone after an explicit confirm', async () => {
