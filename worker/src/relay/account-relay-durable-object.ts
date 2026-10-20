@@ -294,7 +294,8 @@ export class AccountRelay extends DurableObject<Env> {
       }
       const role = await this.deviceRole(vaultId, initial);
       const conn = this.connection(ws);
-      if (!conn || conn.cid !== initial.cid || !this.isOpen(ws)) continue;
+      // The lookups above awaited: the token in force may have expired meanwhile.
+      if (!conn || conn.cid !== initial.cid || !this.isOpen(ws) || !live(conn, Date.now())) continue;
       if (role === null) {
         const vaults = conn.vaults.filter((v) => v !== vaultId);
         if (vaults.length === 0) this.close(ws, conn, CLOSE.forbidden);
