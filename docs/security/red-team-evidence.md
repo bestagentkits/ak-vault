@@ -187,29 +187,26 @@ analytics counted, and one attempt was repeated because tail never connected.
 
 ## Remote access staging run (2026-10-20)
 
-Scenarios 16 to 21 are not executed against staging yet. The staging Worker does
-not run the remote-access build: its healthz has no `remote_access` field, `/mcp`
-and `/app` answer 404, and the last staging deploy was 2026-10-16. The deploy run
-for the Phase 11 head (`1dfb66d`) was cancelled and was not re-run. The target
-therefore produced no remote-access evidence, and no staging item in
-[remote access gates](./release-gates.md#remote-access-gates) is ticked.
-
-Commands and results (target `https://vault-staging.agentkit.best`):
+Run against `https://vault-staging.agentkit.best` after the staging Worker was
+redeployed with the remote-access build. Scenarios 16 to 21 are not yet executed:
+they need ak-web's OAuth configuration and a signed-in staging test account.
 
 | Check | Command | Result |
 |---|---|---|
-| Public smoke | `node worker/node_modules/tsx/dist/cli.mjs worker/scripts/staging-smoke.ts https://vault-staging.agentkit.best --remote-access` | Blocked at step 1 (`remote_access` not true), exit 3. No other step ran. |
-| Playwright list | `pnpm --filter ./e2e/remote-access e2e:list` | 36 tests load. |
-| Playwright live | `pnpm --filter ./e2e/remote-access e2e` | 36 skipped with the gate reason; no test ran. |
-| Leak scan | same run, `wrangler tail --env staging` | BLOCKED: tail exited before the run (Cloudflare authentication). Not a clean scan. |
+| Public smoke | `node worker/node_modules/tsx/dist/cli.mjs worker/scripts/staging-smoke.ts https://vault-staging.agentkit.best --remote-access` | Pass: healthz `remote_access=true`, MCP challenge, path-suffixed PRM, origin-level PRM 404. Five steps pending (ak-web metadata, session-token steps, revoked client, leak scan). Exit 0. |
+| Playwright live | `pnpm --filter ./e2e/remote-access e2e` | 15 passed, 21 skipped, 0 failed. |
+| Leak scan | same run, `wrangler tail --env staging` | Scanned 21 tail chunks, 0 sentinel hits. |
 
-Local validation (`wrangler dev --env staging --local` on `127.0.0.1:8787`, with
-`remote_access` on) is not evidence for staging. It ran 14 tests, failed 6 and
-skipped 16. The failures are local-target artifacts: the protected-resource
-document names the staging audience, and the dashboard sign-in needs ak-web's
-staging authorization server. The challenge `resource_metadata` still names the
-local origin, which the source does not explain; it is open and does not reach
-staging, where the request origin is the audience.
+Live passes (15): the unauthenticated lookup refusal shape; the `/app/` CSP and
+isolation headers, SRI on every script and stylesheet, and the root document's
+default CSP; a foreign page cannot act on the vault with visitor credentials; four
+forged-token audience refusals on `/mcp`; the MCP challenge, invalid-token
+challenge, stateless 405 for GET and DELETE, the challenge's PRM URL, the
+path-suffixed PRM document and the origin-level PRM 404.
+
+Skipped (21), all with a stated reason: 19 need the ak-web authorization server,
+which answers 503 (env blocker: OAuth signing configuration); 2 need a signed-in
+staging test account (`VAULT_E2E_STORAGE_STATE`). Skipped checks are not evidence.
 
 Scenario 13 rerun: not run. It needs synced profiles, which this change does not
 add.
