@@ -302,7 +302,9 @@ are applied only by that account's own devices. For each operation, in order:
    {account, now, sealedTtlS, seen})` runs steps 1 and 2 on the result of
    `openSealedOp`, never on a raw wire, so it reads only authenticated header fields:
    another account → `forbidden`, an applied or refused `sealed_id` → `conflict`, a
-   `ts` out of bounds → `bad_request`;
+   `ts` out of bounds → `bad_request`. Before step 1 it refuses with `bad_request`
+   a malformed context (an `account` outside 1..256 UTF-16 code units, no `seen`
+   set) and any value `openSealedOp` did not return;
 3. resolve `name` against all its own decrypted live items: those whose payload
    `name` equals `name` after NFC normalization of both. More than one match, any
    match that is a policy item (§8.1), or a `delete` with no match → refuse. A `set`

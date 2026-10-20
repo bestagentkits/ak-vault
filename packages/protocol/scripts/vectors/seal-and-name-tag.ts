@@ -10,9 +10,12 @@ import {
   nameIndexKey,
   nameTag,
   openSealedOp,
+  parseSealedOp,
   signSealKeyDoc,
   verifySealKeyDoc,
   x25519Shared,
+  type OpenedSealedOp,
+  type SealedDrainContext,
   type SealedOperation,
   type SealedOpWire,
   type SealedOrigin,
@@ -137,11 +140,15 @@ export function sealedOpVectors(): Record<string, unknown> {
   // Drain admission for the opened `set` case, as the device of ORIGIN.account sees it.
   const TTL_S = 3600;
   const drainOpened = openSealedOp(sealPair(w.key_epoch).secretKey, w, { vaultId: w.vault_id });
-  type Drain = { name: string; account?: string; now: number; seen?: string[] };
+  type Drain = { name: string; account?: string; now: number; seen?: string[]; seen_missing?: true; unopened?: true };
+  // `unopened` swaps in a value `openSealedOp` did not return; `seen_missing` omits the seen set.
   const drainCase = (c: Drain) => {
     const ctx = { account: c.account ?? ORIGIN.account, now: c.now, sealed_ttl_s: TTL_S, seen: c.seen ?? [] };
-    const run = () => checkSealedDrain(drainOpened, { account: ctx.account, now: ctx.now, sealedTtlS: TTL_S, seen: (sid) => ctx.seen.includes(sid) });
-    return { name: c.name, ...ctx, run };
+    const flags = { ...(c.seen_missing ? { seen_missing: true } : {}), ...(c.unopened ? { unopened: true } : {}) };
+    const opened = c.unopened ? ({ wire: parseSealedOp(w), op: drainOpened.op } as OpenedSealedOp) : drainOpened;
+    const seen = c.seen_missing ? undefined : (sid: string) => ctx.seen.includes(sid);
+    const run = () => checkSealedDrain(opened, { account: ctx.account, now: ctx.now, sealedTtlS: TTL_S, seen } as SealedDrainContext);
+    return { name: c.name, ...ctx, ...flags, run };
   };
   const drainOk = (c: Drain) => {
     const { run, ...rest } = drainCase(c);
@@ -161,7 +168,7 @@ export function sealedOpVectors(): Record<string, unknown> {
       'cases: sealOp with the given ephemeral_secret, nonce wire.n and sealed_id MUST reproduce wire byte for byte, and openSealedOp(SealSK[key_epoch], wire, {vault_id}) MUST yield op. ' +
       'openSealedOp order: parse (v or alg unknown: unsupported_version; exact keys, IDs, epk 32 B, n 24 B, ct 16..65552 B, origin {kind "mcp", account 1..256, client_id 1..256 and grant_id 1..64 printable ASCII}, ts: bad_request); vault_id other than expected (bad_request); all-zero shared secret (bad_request); AEAD failure (decrypt_failed); pt not canonical, unknown op, set without value, delete with value or sensitivity, unknown keys (bad_request). ' +
       'invalid: open the wire with SealSK of open_with_epoch and MUST fail with expect_error; a wire with ct_zero_bytes replaces ct with b64 of that many zero bytes. seal_invalid: sealOp MUST refuse op with expect_error (an op with value_fill uses value = value_fill repeated value_length times). ' +
-      'drain: opened = openSealedOp(SealSK[drain.wire.key_epoch], drain.wire, {vault_id: drain.wire.vault_id}); checkSealedDrain(opened, {account, now, sealed_ttl_s, seen}) takes only that authenticated result, in order: origin.account other than account (forbidden); sealed_id in seen, a replay (conflict); now - ts > sealed_ttl_s * 1000 (bad_request); ts - now > 300000 (bad_request). drain.cases MUST pass; drain.invalid MUST fail with expect_error.',
+      'drain: opened = openSealedOp(SealSK[drain.wire.key_epoch], drain.wire, {vault_id: drain.wire.vault_id}); checkSealedDrain(opened, {account, now, sealed_ttl_s, seen}) takes only that authenticated result, in order: origin.account other than account (forbidden); sealed_id in seen, a replay (conflict); now - ts > sealed_ttl_s * 1000 (bad_request); ts - now > 300000 (bad_request). drain.cases MUST pass; drain.invalid MUST fail with expect_error. Before any admission check, an account outside 1..256 UTF-16 code units, a missing seen set (seen_missing) or an op that openSealedOp did not return (unopened: a value built by hand from drain.wire, the zero value in Go) is bad_request.',
     origin: ORIGIN,
     cases: [set, ok('set_without_sensitivity', { op: 'set', name: 'Grüße API', value: '' }), ok('delete', { op: 'delete', name: 'OLD_TOKEN' }), ok('set_epoch1', { op: 'set', name: 'A', value: 'v1' }, 1)],
     invalid: [
@@ -207,6 +214,10 @@ export function sealedOpVectors(): Record<string, unknown> {
         drainBad('forbidden', { name: 'other_account_replay', account: 'acct_bob', now: w.ts, seen: [w.sealed_id] }),
         drainBad('bad_request', { name: 'expired', now: w.ts + TTL_S * 1000 + 1 }),
         drainBad('bad_request', { name: 'too_far_future', now: w.ts - 300_001 }),
+        drainBad('bad_request', { name: 'empty_account', account: '', now: w.ts }),
+        drainBad('bad_request', { name: 'account_too_long', account: 'a'.repeat(257), now: w.ts }),
+        drainBad('bad_request', { name: 'seen_missing', now: w.ts, seen_missing: true }),
+        drainBad('bad_request', { name: 'unopened_op', now: w.ts, unopened: true }),
       ],
     },
   };

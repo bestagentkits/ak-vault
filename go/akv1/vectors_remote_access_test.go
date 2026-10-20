@@ -218,10 +218,19 @@ func checkSealedOp(t *testing.T, f *rec, n *counter) {
 		for _, s := range c.list("seen") {
 			seen[s.(string)] = true
 		}
-		return CheckSealedDrain(drainOpened, SealedDrainOptions{
+		opts := SealedDrainOptions{
 			Account: c.str("account"), Now: c.i64("now"), SealedTTLS: c.i64("sealed_ttl_s"),
 			Seen: func(id string) bool { return seen[id] },
-		})
+		}
+		if c.has("seen_missing") && c.boolean("seen_missing") {
+			opts.Seen = nil
+		}
+		opened := drainOpened
+		if c.has("unopened") && c.boolean("unopened") {
+			// Only OpenSealedOp builds an OpenedSealedOp outside the package: the zero value.
+			opened = OpenedSealedOp{}
+		}
+		return CheckSealedDrain(opened, opts)
 	}
 	for _, c := range d.recs("cases") {
 		if err := drain(c); err != nil {
