@@ -1059,7 +1059,8 @@ are refused.
 
 `POST /mcp` is the Worker's remote MCP endpoint, served only where remote access is
 enabled. It is not a `/v1` route and runs no `AKV-Proof` check; its credential is an
-MCP access token.
+MCP access token. It obeys the sync kill switch: while the switch is off, `/mcp`
+answers `503 sync_disabled` (§10 error body) before any token check.
 
 - **Token.** ES256 JWT, header `typ` `at+jwt`, exactly the claims `iss`, `aud` =
   `<origin>/mcp`, `sub`, `client_id`, `grant_id`, `sid` (= `grant_id`), `scope`, `jti`,
@@ -1079,17 +1080,19 @@ MCP access token.
   2025-11-25 client's `initialize` is answered statelessly, without a session ID.
 - **Tools** map one to one onto the relay tools (§9.7) with the same scopes. Each
   takes the relay `args` plus an optional `vault_id`. Without it the Worker uses the
-  one vault the account's online relay connections list; when they list none or more
-  than one, the call needs `vault_id` (`invalid_args`), so a sealed write always
-  names its vault. The Worker relays the call to
+  one vault the account's online relay connections list. When they list more than
+  one, the call needs `vault_id` (`invalid_args`). When none is online, a read or
+  `use` tool answers `no_device_online` with the relay hint, and `set` or `delete`
+  needs `vault_id` (`invalid_args`), so a sealed write always names its vault. The
+  Worker relays the call to
   one online opted-in device of `sub` that listed that vault and tool in `hello`.
 - **Sealed fallback.** With no such device, `set` and `delete` are sealed (§3.6) and
   answer `{"status":"queued","sealed_id"}`; every other tool answers
   `no_device_online`.
 - **Errors.** A device `error.code`, `no_device_online`, `device_timeout`,
   `sealed_queue_full` and `rate_limited` are MCP tool errors (`isError` true) carrying
-  `{"code"}`; a token or scope failure is an HTTP `401` or `403` with the §10 error
-  body. Messages never echo arguments.
+  `{"code"}`; a token or scope failure is an HTTP `401` or `403`, and the kill switch
+  an HTTP `503 sync_disabled`, with the §10 error body. Messages never echo arguments.
 
 ## 10. Errors and limits
 
@@ -1117,7 +1120,8 @@ The last `membership_events_per_vault` slot is kept for a `rekey` that clears
 
 Remote access adds three codes, all returned only by the MCP endpoint as tool errors
 (§9.8) and never as the HTTP status of a `/v1` route: `no_device_online` (no opted-in
-device of the account holds the vault, and the call cannot be sealed),
+device of the account holds the vault, or none is online for a read or `use` call
+without `vault_id`, and the call cannot be sealed),
 `device_timeout` (the device missed `deadline_ms`) and `sealed_queue_full` (the vault
 already holds `sealed_queue_max` operations, acknowledged ones kept for replay refusal
 included). `worker/src/limits.ts` owns the relay and MCP limits and `GET /v1/meta`
