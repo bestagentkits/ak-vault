@@ -56,7 +56,7 @@ All encryption, decryption and signing of vault data happens in clients, using a
 - **Clients (agentkit CLI and Desktop):** device signing and exchange keys; encrypt, sign, verify, decrypt; the local vault stays authoritative.
 - **Cloudflare Worker (this project):** token, device proof and revocation checks; versioned protocol and test vectors; production sync live as a pre-release preview, before the review.
 - **Durable Object per vault (storage):** SQLite-backed, one per vault; revisions, conflicts, tombstones; ciphertext and minimal metadata.
-- **ak-web (accounts):** issues device-bound ES256 tokens and feeds revocations to the Worker; the browser never decrypts vault data.
+- **ak-web (accounts):** issues device-bound ES256 tokens and feeds revocations to the Worker; it never sees vault data. The CLI and other device apps decrypt locally. The staging vault dashboard (pre-release, not for production credentials) is an enrolled device that also decrypts in the page, with non-extractable keys. The server never decrypts; the one exception is remote MCP on staging, whose calls pass plaintext through Worker memory ([remote access](https://vault.agentkit.best/security/#remote-access)).
 
 The Worker never receives the key ak-web uses to sign CLI sessions. Every request carries a token plus a signature from the device's own key, bound to that exact request.
 

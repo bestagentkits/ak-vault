@@ -1,14 +1,14 @@
 ---
 title: "ak-vault guide: from .env to an encrypted vault"
 url: https://vault.agentkit.best/guide/
-status: "Local vault available. Sync commands in preview; agent-discovery commands planned, not available yet. Browser dashboard and remote MCP on staging only, pre-release, not for production credentials."
+status: "Local vault available. Sync commands in preview; agent-discovery commands in agentkit dev builds, coming in the next release. Browser dashboard and remote MCP on staging only, pre-release, not for production credentials."
 ---
 
 # From `.env` to a vault, step by step
 
-Part 1 works today with the AgentKit CLI. Part 2 describes the preview sync commands and Part 3 the planned agent commands; each step is marked and its syntax may change before release. Parts 5 to 7 cover the browser dashboard and remote MCP, which run on staging only: pre-release, not for production credentials.
+Part 1 works today with the AgentKit CLI. Part 2 describes the preview sync commands and Part 3 the agent commands (discovery in agentkit dev builds, the rest planned); each step is marked and its syntax may change before release. Parts 5 to 7 cover the browser dashboard and remote MCP, which run on staging only: pre-release, not for production credentials.
 
-**Legend:** *available* works in the current `ak` CLI. *preview* ships hidden in the released CLI but is not a supported workflow; syntax may change. *planned* is designed but not released; do not script against it yet. Sync is not generally available: the production sync API is live as a pre-release preview, enabled before the owner's review. The owner accepted the review gate on 2026-10-16 with no written findings; it is not an independent third-party review.
+**Legend:** *available* works in the current `ak` CLI. *preview* ships hidden in the released CLI but is not a supported workflow; syntax may change. *dev builds* is in agentkit dev builds and coming in the next release, not in a released version. *planned* is designed but not released; do not script against it yet. Sync is not generally available: the production sync API is live as a pre-release preview, enabled before the owner's review. The owner accepted the review gate on 2026-10-16 with no written findings; it is not an independent third-party review.
 
 ## Part 1: Keep secrets in the local vault (available)
 
@@ -54,13 +54,13 @@ The end-to-end encrypted sync described on this site. A pre-release preview is l
 4. **Enroll a second device with a six-digit code** (preview). Start enrollment on the new device and approve it on one you already trust. Both screens show the same six digits; approve only if they match. A mismatch aborts. See [how the code is derived](https://vault.agentkit.best/how-it-works/index.md).
 5. **Check that it worked** (preview). The new device verifies the signed member list before it unwraps anything. Change a secret on one device and expect it on the other within about a minute on a healthy connection (a design target, not a measured result).
 
-## Part 3: Let agents discover and use secrets (planned)
+## Part 3: Let agents discover and use secrets (dev builds and planned)
 
-Planned commands that let an agent find and request secrets without ever seeing values it was not granted.
+Commands that let an agent find and request secrets without ever seeing values it was not granted. Discovery is in agentkit dev builds; `request` and `run` are planned.
 
-1. **Let agents find secrets by description** (planned). `search` and `describe` let an agent find the right secret from its encrypted description without seeing any value.
+1. **Let agents find secrets by description** (dev builds). `search` finds secrets by their metadata and `describe` shows one secret's profile and where each field came from, never a value. Both are available in agentkit dev builds and coming in the next release; no released version has them yet.
    ```sh
-   # PLANNED: not available yet, syntax may change
+   # DEV BUILDS: available in agentkit dev builds, coming in the next release; syntax may change
    ak secrets search "openai"
    ak secrets describe OPENAI_API_KEY
    ```
@@ -114,23 +114,25 @@ The dashboard is a device of your vault, like a second laptop. It creates its ow
 3. **Keep one of your devices online for reads and use** (planned: requires an `ak` version with relay support, not released yet). Reads, `request` and `run` are answered by one of your own devices that holds a relay connection open: it decrypts locally, applies its own grants and approvals, and answers. With no device online they answer `no_device_online`. `run` starts only commands that an `exec` grant pinned on that device allows, and removes the values it released from the output; output that a command encoded, split or printed in part is not caught.
 4. **Writes with no device online are queued, sealed** (planned: the seal key and draining also need an `ak` version with relay support). With no device online, `secrets_set` and `secrets_delete` must name the `vault_id`. The server seals the operation to your vault's seal key and queues it (status `queued`) until one of your devices applies it as a normal signed write. The queue is write-only: nothing reads a queued value back. It works only for an owner or editor of the vault, only after an owner device has published the seal key, and not while a rekey is pending. A full queue answers `sealed_queue_full`.
 5. **Know what the server sees.** The server stores no plaintext and holds no vault key, but a remote MCP call is not end-to-end encrypted: plaintext passes through the server's memory after TLS ends. That is the value an AI tool sends with a set, until the server seals it or relays it to your device, and the names, metadata and redacted `run` output your device sends back on their way to the AI tool. It is never logged, stored or put in an error. AI tools do not check device signatures, so they trust the server for what a result says. See [ADR 0002](https://github.com/bestagentkits/ak-vault/blob/main/docs/adr/0002-browser-device-relay-and-remote-mcp.md), decision D7.
-6. **Disconnect.** In your AgentKit account, open Connected Apps and disconnect **AgentKit Vault (AI tools)**. The next request with that grant is refused.
+6. **Disconnect.** In your AgentKit account, open Connected apps and disconnect **AgentKit Vault (AI tools)**. The next request with that grant is refused.
 
 Call budgets per AI tool and per account, relay deadlines and the queue size and lifetime are owned by [`worker/src/limits.ts`](https://github.com/bestagentkits/ak-vault/blob/main/worker/src/limits.ts) and published by `GET /v1/meta` where remote access is on.
 
 ## Part 7: Remove a browser (staging)
 
-1. **Find its device ID.** The dashboard header shows the first eight characters as "Device …", and the CLI lists every device.
+**Staging only: pre-release, not for production credentials.**
+
+1. **Find its device ID** (preview). The dashboard header shows the first eight characters as "Device …", and the CLI lists every device.
    ```sh
    # PREVIEW: hidden in the released CLI, unsupported, syntax may change
    ak secrets devices list
    ```
-2. **Remove it and rotate the vault key** (preview, from an owner device). Removal moves the vault to a new key so the browser cannot read new writes. It asks for the vault password and the current recovery key. Use `--reason lost`, `stolen` or `compromised` when that fits better. It cannot take back what the browser already decrypted: if the browser may be compromised, rotate those secrets at their provider. When the removed browser next syncs, it is refused and deletes its own device key.
+2. **Remove it and rotate the vault key** (preview). Run it from an owner device. Removal moves the vault to a new key so the browser cannot read new writes. It asks for the vault password and the current recovery key. Use `--reason lost`, `stolen` or `compromised` when that fits better. It cannot take back what the browser already decrypted: if the browser may be compromised, rotate those secrets at their provider. When the removed browser next syncs, it is refused and deletes its own device key.
    ```sh
    # PREVIEW: hidden in the released CLI, unsupported, syntax may change
    ak secrets devices remove <device-prefix> --reason retired
    ```
-3. **End its sign-in.** If Connected Apps lists **AgentKit Vault dashboard**, disconnect it too.
+3. **End its sign-in.** If Connected apps lists **AgentKit Vault dashboard**, disconnect it too.
 
 ## Keep reading
 

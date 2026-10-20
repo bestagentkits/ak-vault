@@ -217,7 +217,7 @@ An MCP client acting against its user (a prompt-injected agent, a leaked grant):
 
 1. Find it by the hashed `client` and `account` tags in the `/mcp` log lines. Never
    ask for or paste raw client IDs, grant IDs or account identifiers in the issue.
-2. The account owner disconnects the app in ak-web (account, Connected Apps). ak-web
+2. The account owner disconnects the app in ak-web (account page, Connected apps). ak-web
    then sends the grant ID in `revoke_sids` to the revocation webhook, and the next
    `/mcp` request with that grant is refused.
 3. Per-client and per-account call budgets bound the damage meanwhile

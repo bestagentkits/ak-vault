@@ -261,7 +261,7 @@
             <div class="arch-link" aria-hidden="true"><span></span></div>
             <div class="arch-node is-here"><span class="repo">ak-vault · storage</span><h3>Durable Object per vault</h3><ul><li>SQLite-backed, one per vault</li><li>Revisions, conflicts, tombstones</li><li>Ciphertext and minimal metadata</li></ul></div>
           </div>
-          <div class="arch-node arch-side"><span class="repo">ak-web · accounts</span><h3>Sign-in and dashboard</h3><ul><li>Issues device-bound ES256 tokens and feeds revocations to the Worker</li><li>The browser never decrypts vault data</li></ul></div>
+          <div class="arch-node arch-side"><span class="repo">ak-web · accounts</span><h3>Sign-in and dashboard</h3><ul><li>Issues device-bound ES256 tokens and feeds revocations to the Worker; never sees vault data</li><li>The CLI and other device apps decrypt locally. The staging vault dashboard (pre-release, not for production credentials) is an enrolled device that also decrypts in the page, with non-extractable keys</li><li>The server never decrypts; the one exception is remote MCP on staging, whose calls pass plaintext through Worker memory (<a href="/security/#remote-access">remote access</a>)</li></ul></div>
           <figcaption id="arch-cap">The Worker never receives the key ak-web uses to sign CLI sessions. Every request carries a token plus a signature from the device's own key, bound to that exact request.</figcaption>
         </figure>
         <dl class="primitives mt-5 reveal" aria-label="Cryptographic primitives">

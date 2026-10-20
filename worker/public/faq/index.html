@@ -80,7 +80,7 @@
           "name": "Can AgentKit read my secrets?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the data classification. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met."
+            "text": "The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the data classification. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met. On staging only (pre-release, not for production credentials), remote MCP narrows this: during a call, plaintext passes through the server's memory, though it is never stored or logged."
           }
         },
         {
@@ -297,7 +297,7 @@
         <div class="faq-group reveal" id="privacy">
           <h2>Security and privacy</h2>
           <div class="faq">
-            <details><summary>Can AgentKit read my secrets?</summary><div><p>The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the <a href="/how-it-works/#data">data classification</a>. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met.</p></div></details>
+            <details><summary>Can AgentKit read my secrets?</summary><div><p>The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the <a href="/how-it-works/#data">data classification</a>. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met. On staging only (pre-release, not for production credentials), remote MCP narrows this: during a call, plaintext passes through the server's memory, though it is never stored or logged (<a href="/security/#remote-access">remote access</a>).</p></div></details>
             <details><summary>What can the server see?</summary><div><p>Random vault and item IDs, revisions, tombstone flags, key epochs, ciphertext sizes, timestamps, device public keys, roles, token claims and request metadata such as IP address and timing. Secret names, descriptions and values are encrypted.</p></div></details>
             <details><summary>What if the server is malicious or hacked?</summary><div><p>It cannot decrypt, and signed records, an owner-signed member list and checkpoints let devices detect tampering, rollback and forks. It can still withhold updates a device has never seen (a freeze attack) and observe metadata. <a href="/security/#t-server">See the threat card</a>.</p></div></details>
             <details><summary>Which cryptography does it use?</summary><div><p>XChaCha20-Poly1305, Ed25519, X25519, HKDF-SHA256 and Argon2id from audited libraries, plus ES256 tokens for transport. There is no custom cryptography, and an unknown algorithm is refused.</p></div></details>

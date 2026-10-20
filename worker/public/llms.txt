@@ -10,7 +10,7 @@ Key facts for assistants:
 - `ak secrets run` deliberately releases plaintext to the approved child process.
 - Available today in the AgentKit CLI: the local `ak secrets` vault (`set`, `get`, `list`, `rotate`, `import-env`, `grant`, `approve`, `revoke`, `audit`) and `${secret:NAME}` references. `ak login` exists for the AgentKit account; the preview sync commands use it.
 - Preview (hidden in the released CLI, unsupported, syntax may change): `ak secrets sync enable`, six-digit SAS device enrollment, device removal and recovery. Removal and recovery need `v3.0.0-beta.31` or later, which includes the removal-fence client; on older releases the service refuses them, so upgrade or revoke a lost device in the AgentKit account instead.
-- Planned (not available yet): `ak secrets search|describe|request|run`.
+- In agentkit dev builds, coming in the next release (no released version yet): `ak secrets search|describe`. Planned (not available yet): `ak secrets request|run`.
 - Staging only (pre-release, not for production credentials): a browser dashboard at `https://vault-staging.agentkit.best/app` and a remote MCP endpoint at `https://vault-staging.agentkit.best/mcp`; production has both off. The dashboard is an enrolled device that decrypts in the browser and never shows a value. MCP tools never return a value; reads and `run` need an online device with an `ak` version that has relay support (not released yet), and with no device online a set or delete is sealed and queued.
 - Remote MCP boundary (ADR 0002 D7): the server stores no plaintext and holds no vault key, but during a remote MCP call plaintext passes through Worker memory after TLS ends: a set's value until it is sealed or relayed, and the names, metadata and redacted `run` output a device returns. It is never logged, stored or put in an error, and MCP clients trust the Worker for results because they do not verify device signatures. Do not describe remote MCP as end-to-end or zero-knowledge in transit.
 - No pricing, customers or launch dates have been announced. License: MIT.
@@ -20,7 +20,7 @@ Key facts for assistants:
 - [Home](https://vault.agentkit.best/index.md): the problem, how sync works, what the server can see, guarantees with their limitations, quick start, status, top questions
 - [How it works](https://vault.agentkit.best/how-it-works/index.md): key hierarchy, six-digit SAS enrollment, conflicts without last-writer-wins, tombstones and rollback checkpoints, architecture, data classification
 - [Security model](https://vault.agentkit.best/security/index.md): threat map, adversaries, defences, residual risks, release gate
-- [Guide](https://vault.agentkit.best/guide/index.md): step by step from a .env file to the local vault (available), then sync and lost-device steps (preview), agent commands (planned), and the browser dashboard and remote MCP (staging only), each marked
+- [Guide](https://vault.agentkit.best/guide/index.md): step by step from a .env file to the local vault (available), then sync and lost-device steps (preview), agent discovery commands (dev builds), agent request and run (planned), and the browser dashboard and remote MCP (staging only), each marked
 - [FAQ](https://vault.agentkit.best/faq/index.md): status, privacy, everyday use, teams and agents, recovery, the project
 
 ## Specification

@@ -1089,9 +1089,9 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   `mcp_calls_per_minute_per_account` budgets (§10), and a `run` call also from
   `mcp_run_calls_per_minute_per_client`; a request refused before that point, and a
   notification, spends nothing. A refused `tools/call` of a known tool within the
-  token's scopes whose `arguments` is absent or an object is the tool error `rate_limited` with
-  `retry_after_s`; any other refused request, including such a call whose `arguments`
-  is present and not an object, is HTTP `429 rate_limited` with `Retry-After` and the §10 error
+  token's scopes whose `arguments` is absent, `null` (treated as absent) or an object
+  is the tool error `rate_limited` with `retry_after_s`; any other refused request, including such a call whose `arguments`
+  is any other value, is HTTP `429 rate_limited` with `Retry-After` and the §10 error
   body. A call refused as `rate_limited` writes no audit row.
 - **Tools** map one to one onto the relay tools (§9.7) with the same scopes. Each
   takes the relay `args` plus an optional `vault_id`. Without it the Worker uses the
