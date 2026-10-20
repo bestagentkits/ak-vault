@@ -8,13 +8,15 @@ name: Deploy
 # Staging and production queue in separate job-level concurrency groups: a run
 # waiting for the production reviewer holds only `deploy-production`, so newer
 # merges keep deploying to staging instead of replacing each other as the single
-# pending run of one shared group. A newer production job replaces an older
-# pending one (the newest main commit is what gets approved); a running deploy
-# is never cancelled.
+# pending run of one shared group. At most one production job waits behind the
+# one holding the group, and a newer one replaces it; a running deploy is never
+# cancelled. Before approving production, check that the waiting run's commit is
+# still the head of `main`.
 # Missing credentials fail the job instead of finishing green without a deploy.
 # The repository variable DEPLOY_FREEZE (unset or `false` = not frozen) stops
-# every deploy during an incident; the production job re-checks it after the
-# reviewer's approval, because a run can wait there for hours. Any other value
+# every deploy during an incident; the staging and production jobs re-check it
+# when they start, because a run can wait in a queue or at the reviewer's
+# approval for hours. Any other value
 # refuses (fail closed). Procedure: docs/operations/runbooks.md#deploy-freeze.
 on:
   workflow_run:
@@ -79,6 +81,19 @@ jobs:
       group: deploy-staging
       cancel-in-progress: false
     steps:
+      - name: Refuse while deploys are frozen
+        env:
+          DEPLOY_FREEZE: ${{ vars.DEPLOY_FREEZE }}
+        run: |
+          case "${DEPLOY_FREEZE}" in
+            ""|false) ;;
+            true)
+              echo "::error::DEPLOY_FREEZE is true: deploys are frozen for an incident; refusing to deploy staging (see docs/operations/runbooks.md#deploy-freeze)"
+              exit 1 ;;
+            *)
+              echo "::error::DEPLOY_FREEZE has an unrecognised value; expected true, false or unset; refusing to deploy staging"
+              exit 1 ;;
+          esac
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.gate.outputs.sha }}
