@@ -264,6 +264,13 @@ Record freezing and unfreezing on the incident issue. Merges to `main` still lan
 while frozen; their deploys fail at the gate and are not retried, so after
 unfreezing run the Deploy workflow on `main` once.
 
+The production job also refuses when its commit is no longer the head of `main`
+(or when the head cannot be read). If `main` moved while a run waited for
+approval, approving it fails with an error naming the newer head instead of
+overwriting a newer deploy: reject that run and approve the one for the newer
+commit. A red or still-running CI on the head of `main` therefore blocks
+production until a fix lands; for urgent recovery use the rollback runbook below.
+
 ## Worker rollback
 
 Use when a deploy introduced a fault and the previous version is known good.
