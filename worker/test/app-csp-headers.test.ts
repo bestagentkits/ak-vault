@@ -12,6 +12,7 @@ describe('dashboard security headers', () => {
     expect(directives).toContain("script-src 'self'");
     expect(directives).toContain("frame-ancestors 'none'");
     expect(directives).toContain("require-trusted-types-for 'script'");
+    expect(directives).toContain("trusted-types 'none'");
     expect(directives).toContain(`connect-src 'self' ${new URL(env.VAULT_ISSUER).origin}`);
     expect(csp).not.toContain('unsafe-inline');
     expect(csp).not.toContain('unsafe-eval');
@@ -25,11 +26,12 @@ describe('dashboard security headers', () => {
       expect(res.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
       expect(res.headers.get('X-Frame-Options')).toBe('DENY');
       expect(res.headers.get('Strict-Transport-Security')).toContain('max-age=');
+      expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
     });
   }
 
   it('the dashboard document is never cached', async () => {
-    for (const path of ['/app', '/app/', '/app/index.html']) expect((await fetchRaw(path)).headers.get('Cache-Control')).toBe('no-store');
+    for (const path of ['/app', '/app/', '/app/index.html']) expect((await fetchRaw(path)).headers.get('Cache-Control'), path).toBe('no-store, no-transform');
   });
 
   it('other paths keep the default CSP and no cross-origin isolation headers', async () => {

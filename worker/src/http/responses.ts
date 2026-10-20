@@ -34,6 +34,8 @@ export function appContentSecurityPolicy(env: Pick<Env, 'VAULT_ISSUER'>): string
     "form-action 'none'",
     "object-src 'none'",
     "require-trusted-types-for 'script'",
+    // The bundle writes text only (`textContent`), so no Trusted Types policy may exist at all.
+    "trusted-types 'none'",
   ].join('; ');
 }
 
@@ -73,7 +75,10 @@ export function withSecurityHeaders(response: Response, path?: { pathname: strin
     out.headers.set('Content-Security-Policy', cspFor(path.pathname, path.env));
     out.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
     out.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
-    if (isAppDocument(path.pathname)) out.headers.set('Cache-Control', 'no-store');
+    // The OAuth callback URL carries a code and state; no request from the dashboard sends a referrer.
+    out.headers.set('Referrer-Policy', 'no-referrer');
+    // `no-transform` also keeps the proxy from injecting a beacon script into the document.
+    if (isAppDocument(path.pathname)) out.headers.set('Cache-Control', 'no-store, no-transform');
   }
   return out;
 }

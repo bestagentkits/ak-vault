@@ -33,7 +33,7 @@ describe('remote access flag', () => {
       const relay = await upgrade(fx.owner, { env: off });
       expect(relay.status).toBe(404);
       expect(await relay.json()).toEqual({ error: { code: 'not_found', message: 'not found' } });
-      for (const path of ['/mcp', '/.well-known/oauth-protected-resource/mcp', '/app', '/app/', '/app/index.html', '/app/assets/x.js']) {
+      for (const path of ['/mcp', '/.well-known/oauth-protected-resource/mcp', '/app', '/app/', '/app/index.html', '/app/assets/x.js', '/app/client.json', '/app/config.json']) {
         const res = await fetchRaw(path, {}, off);
         expect(res.status, path).toBe(404);
         expect(((await res.json()) as { error: { code: string } }).error.code).toBe('not_found');
@@ -70,8 +70,8 @@ describe('remote access flag', () => {
     expect(on.remote_access).toBe(true);
   });
 
-  it('on routes /app to its handler (not yet served: 404 JSON) and never to the landing site', async () => {
-    for (const path of ['/app', '/app/x']) {
+  it('on routes unknown /app paths to the dashboard handler (404 JSON) and never to the landing site', async () => {
+    for (const path of ['/app/x']) {
       const res = await fetchRaw(path);
       expect(res.status, path).toBe(404);
       expect(res.headers.get('Content-Type')).toContain('application/json');
