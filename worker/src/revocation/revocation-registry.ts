@@ -8,10 +8,18 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env.js';
 
+/** A device-bound sync token: its session, its device and its age all apply. */
 export interface RevocationQuery {
   sub: string;
   sid: string;
   did: string;
+  iat: number;
+}
+
+/** An MCP access token: bound to a grant (`sid` = grant ID), never to a device. */
+export interface GrantRevocationQuery {
+  sub: string;
+  sid: string;
   iat: number;
 }
 
@@ -44,8 +52,13 @@ export class RevocationRegistry extends DurableObject<Env> {
   isRevoked(q: RevocationQuery): boolean {
     if (this.sql.exec('SELECT 1 FROM revoked_sids WHERE sid = ?', q.sid).toArray().length > 0) return true;
     if (this.sql.exec('SELECT 1 FROM revoked_dids WHERE did = ?', q.did).toArray().length > 0) return true;
-    const row = this.sql.exec<{ min_iat: number }>('SELECT min_iat FROM min_iat WHERE sub = ?', q.sub).toArray()[0];
-    return row !== undefined && q.iat < row.min_iat;
+    return belowMinIat(this.sql, q.sub, q.iat);
+  }
+
+  /** True when the grant (`sid`) or a token this old for `sub` is revoked. No device applies. */
+  isGrantRevoked(q: GrantRevocationQuery): boolean {
+    if (this.sql.exec('SELECT 1 FROM revoked_sids WHERE sid = ?', q.sid).toArray().length > 0) return true;
+    return belowMinIat(this.sql, q.sub, q.iat);
   }
 
   /** Apply a verified webhook batch atomically. Returns 'duplicate' for a replayed event ID. */
@@ -66,4 +79,10 @@ export class RevocationRegistry extends DurableObject<Env> {
       return 'applied';
     });
   }
+}
+
+/** Kept outside the class so it is not exposed as an RPC method. */
+function belowMinIat(sql: SqlStorage, sub: string, iat: number): boolean {
+  const row = sql.exec<{ min_iat: number }>('SELECT min_iat FROM min_iat WHERE sub = ?', sub).toArray()[0];
+  return row !== undefined && iat < row.min_iat;
 }

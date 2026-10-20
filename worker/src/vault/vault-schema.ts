@@ -44,4 +44,18 @@ export const VAULT_SCHEMA = `
   CREATE TABLE IF NOT EXISTS rate_counters (did TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);
   -- Requests refused before or during authorization, counted apart so they never spend rate_counters.
   CREATE TABLE IF NOT EXISTS refused_rate_counters (did TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);
+  -- Remote access (spec §3.6, §3.7). name_tags: the device-computed tag sent beside each item's current
+  -- head (unsigned, untrusted; the server never computes one). seal_keys: one owner-signed seal-key
+  -- document per key epoch. sealed_ops: opaque sealed writes queued for the account's own devices; an
+  -- acknowledged row keeps only its ID and outcome (ciphertext cleared) until it expires, so a replayed
+  -- sealed_id is refused for its whole lifetime.
+  CREATE TABLE IF NOT EXISTS name_tags (item_id TEXT PRIMARY KEY, key_epoch INTEGER NOT NULL, tag TEXT NOT NULL, revision INTEGER NOT NULL);
+  CREATE INDEX IF NOT EXISTS name_tags_lookup ON name_tags (tag, key_epoch);
+  CREATE TABLE IF NOT EXISTS seal_keys (key_epoch INTEGER PRIMARY KEY, doc TEXT NOT NULL, membership_seq INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS sealed_ops (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT, sealed_id TEXT NOT NULL UNIQUE, account TEXT NOT NULL,
+    wire TEXT, outcome TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS sealed_ops_pending ON sealed_ops (account, seq) WHERE outcome IS NULL;
+  CREATE INDEX IF NOT EXISTS sealed_ops_expiry ON sealed_ops (expires_at);
 `;

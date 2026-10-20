@@ -19,6 +19,12 @@ export const VAULT_OPS = [
   'audit.post',
   'recovery.get',
   'recovery.put',
+  // Remote access (spec §9.6), routed only where it is enabled.
+  'lookup.get',
+  'sealkey.get',
+  'sealkey.put',
+  'sealed.get',
+  'sealed.ack',
 ] as const;
 export type VaultOp = (typeof VAULT_OPS)[number];
 
@@ -26,12 +32,16 @@ export interface VaultRequest {
   op: VaultOp;
   vaultId: string;
   itemId?: string;
+  /** `sealed_id` path segment of `POST …/sealed/{sealed_id}/ack`. */
+  sealedId?: string;
   method: string;
   /** Exact request URL compared with the proof `htu`. */
   htu: string;
   /** Path used in the idempotency request hash. */
   path: string;
   query: Record<string, string>;
+  /** Every query parameter in order, repeats included (`lookup` pairs `tag` with `key_epoch`). */
+  queryList: [string, string][];
   token: string;
   proof: string;
   idempotencyKey: string | null;
@@ -40,9 +50,11 @@ export interface VaultRequest {
   body: Uint8Array;
   claims: VerifiedClaims;
   nowMs: number;
+  /** Whether the deployment enables remote access (gates the item PUT `name_tag` wrapper). */
+  remoteAccess: boolean;
 }
 
 /** Ops that mutate state: Idempotency-Key is required and the handler runs in one transaction. */
 export function isMutation(op: VaultOp): boolean {
-  return op === 'genesis' || op.endsWith('.post') || op.endsWith('.put');
+  return op === 'genesis' || op === 'sealed.ack' || op.endsWith('.post') || op.endsWith('.put');
 }

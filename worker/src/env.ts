@@ -1,4 +1,5 @@
 /** Worker bindings. Names and values are owned by `wrangler.jsonc`. */
+import type { AccountRelay } from './relay/account-relay-durable-object.js';
 import type { RevocationRegistry } from './revocation/revocation-registry.js';
 import type { VaultDurableObject } from './vault/vault-durable-object.js';
 
@@ -6,8 +7,15 @@ export interface Env {
   ASSETS: Fetcher;
   VAULT: DurableObjectNamespace<VaultDurableObject>;
   REVOCATIONS: DurableObjectNamespace<RevocationRegistry>;
+  /** One relay object per account (`acct:<sub>`), spec §9.7. */
+  RELAY: DurableObjectNamespace<AccountRelay>;
   /** Kill switch: the sync API serves only when exactly "true". */
   VAULT_SYNC_ENABLED: string;
+  /**
+   * Remote access (ADR 0002): `/app`, `/mcp`, protected-resource metadata, `/v1/relay`
+   * and the lookup, seal-key and sealed-queue routes serve only when exactly "true".
+   */
+  VAULT_REMOTE_ACCESS_ENABLED?: string;
   VAULT_ISSUER: string;
   VAULT_AUDIENCE: string;
   /** JWKS endpoint; used when `VAULT_JWKS_JSON` is unset. */
@@ -23,6 +31,26 @@ export interface Env {
    * default: the route then answers 404. Set only for a restore, then delete.
    */
   VAULT_OPERATOR_SECRET?: string;
+}
+
+/** Whether the remote-access routes serve (fail closed: anything but "true" is off). */
+export function remoteAccessEnabled(env: Pick<Env, 'VAULT_REMOTE_ACCESS_ENABLED'>): boolean {
+  return env.VAULT_REMOTE_ACCESS_ENABLED === 'true';
+}
+
+/** The remote MCP resource, `<origin>/mcp` (spec §9.8). */
+export function mcpResource(env: Pick<Env, 'VAULT_AUDIENCE'>): string {
+  return `${env.VAULT_AUDIENCE}/mcp`;
+}
+
+/** The dashboard sign-in resource, `<origin>/app` (ADR 0002 D6). */
+export function appResource(env: Pick<Env, 'VAULT_AUDIENCE'>): string {
+  return `${env.VAULT_AUDIENCE}/app`;
+}
+
+/** Origin of the token issuer (the authorization server the dashboard talks to). */
+export function issuerOrigin(env: Pick<Env, 'VAULT_ISSUER'>): string {
+  return new URL(env.VAULT_ISSUER).origin;
 }
 
 type WorkerEnv = Env;

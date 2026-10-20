@@ -15,7 +15,7 @@
  * author/owner, scope, proof signature, Idempotency-Key) passes. Only a valid genesis creates state.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { randomId } from '@ak-vault/protocol';
+import { randomId, type MembershipState, type Role, type SealKeyDoc } from '@ak-vault/protocol';
 import type { Env } from '../env.js';
 import { ApiError, errorResult, okResult, toApiError, type ApiResult } from '../http/errors.js';
 import { appendAudit, readAudit } from './audit-store.js';
@@ -28,6 +28,9 @@ import { handleGenesis, handleMembershipGet, handleMembershipPost, handleWrapsGe
 import { MembershipStore } from './membership-store.js';
 import { bookmarkForTime, currentBookmark, scheduleRestore } from './point-in-time-restore.js';
 import { getRecovery, putRecovery } from './recovery-store.js';
+import { lookupNameTags } from './lookup-store.js';
+import { currentSealKey, getSealKey, putSealKey } from './seal-key-store.js';
+import { ackSealedOp, enqueueSealedOp, listSealedOps, type EnqueueSealedResult } from './sealed-store.js';
 import { enforceRateLimit, requireRateBudget } from './request-guard.js';
 import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
 import { isMutation, type VaultRequest } from './vault-request.js';
@@ -170,6 +173,60 @@ export class VaultDurableObject extends DurableObject<Env> {
     return { instance: this.instanceId, restorePending: this.restorePending };
   }
 
+  /*
+   * Remote-access RPC (ADR 0002), called only by Worker code after it has
+   * authenticated its caller: the relay (`hello`, `reauth`, before each call) and
+   * the MCP handler (membership, sealing). None of them creates storage for a
+   * vault that does not exist, and each answers "no" while a restore is pending.
+   */
+
+  /** Current state when the vault exists and no restore is pending, else null. */
+  private remoteState(): MembershipState | null {
+    try {
+      if (this.restorePending || !this.vaultExists()) return null;
+      return this.membership.state();
+    } catch {
+      return null; // a vault this revision refuses (see MembershipStore.state) is never a remote target
+    }
+  }
+
+  /**
+   * The role of `did` when it is a current `human` device of account `sub` (also a
+   * current member) whose `sign_pub` is `signPub`, else null (spec §9.7 `hello`
+   * and per-call checks).
+   */
+  async memberDeviceRole(did: string, sub: string, signPub: string): Promise<Role | null> {
+    const state = this.remoteState();
+    if (!state) return null;
+    const device = state.devices.find((d) => d.device_id === did);
+    if (!device || device.account !== sub || device.kind !== 'human' || device.sign_pub !== signPub) return null;
+    if (!state.members.some((m) => m.account === sub)) return null;
+    return device.role;
+  }
+
+  /** The role of account `sub` when it is a current member, else null (MCP membership check, spec §9.8). */
+  async accountRole(sub: string): Promise<Role | null> {
+    return this.remoteState()?.members.find((m) => m.account === sub)?.role ?? null;
+  }
+
+  /**
+   * The seal-key document the MCP handler may seal to: the current key epoch's,
+   * and none while `rekey_required` is set (a removed device may still derive
+   * that epoch's seal key, spec §3.6).
+   */
+  async getSealKey(): Promise<SealKeyDoc | null> {
+    const state = this.remoteState();
+    if (!state || state.rekey_required) return null;
+    return currentSealKey(this.sql, state);
+  }
+
+  /** Queue a sealed operation built by the MCP handler (the only way one enters the queue). */
+  async enqueueSealed(wire: unknown, nowMs: number = Date.now()): Promise<EnqueueSealedResult> {
+    const state = this.remoteState();
+    if (!state) return 'refused';
+    return this.ctx.storage.transactionSync(() => enqueueSealedOp(this.sql, state, wire, nowMs));
+  }
+
   private read(req: VaultRequest, auth: Authorized): ApiResult {
     switch (req.op) {
       case 'membership.get':
@@ -186,6 +243,12 @@ export class VaultDurableObject extends DurableObject<Env> {
         return readAudit(this.sql, auth.state, req);
       case 'recovery.get':
         return getRecovery(this.sql);
+      case 'lookup.get':
+        return lookupNameTags(this.sql, auth.state, req);
+      case 'sealkey.get':
+        return getSealKey(this.sql, auth.state);
+      case 'sealed.get':
+        return listSealedOps(this.sql, req);
       default:
         throw new ApiError('not_found');
     }
@@ -199,7 +262,11 @@ export class VaultDurableObject extends DurableObject<Env> {
       case 'membership.post':
         return handleMembershipPost(this.sql, this.membership, req.vaultId, body, auth.next ?? this.membership.verifyAppend(body['event']));
       case 'item.put':
-        return putRecord(this.sql, auth.state, req.claims.did, req.itemId!, body);
+        return putRecord(this.sql, auth.state, req.claims.did, req.itemId!, body, { remoteAccess: req.remoteAccess });
+      case 'sealkey.put':
+        return putSealKey(this.sql, auth.state, req.claims.did, this.membership.chain(), body);
+      case 'sealed.ack':
+        return ackSealedOp(this.sql, req, body);
       case 'checkpoints.post':
         return postCheckpoint(this.sql, this.membership, auth.state, req.claims.did, body);
       case 'audit.post':

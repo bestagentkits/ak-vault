@@ -24,10 +24,14 @@
   "durable_objects": {
     "bindings": [
       { "name": "VAULT", "class_name": "VaultDurableObject" },
-      { "name": "REVOCATIONS", "class_name": "RevocationRegistry" }
+      { "name": "REVOCATIONS", "class_name": "RevocationRegistry" },
+      { "name": "RELAY", "class_name": "AccountRelay" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["VaultDurableObject", "RevocationRegistry"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["VaultDurableObject", "RevocationRegistry"] },
+    { "tag": "v2", "new_sqlite_classes": ["AccountRelay"] }
+  ],
   "vars": {
     // Kill switch: production sync is on by owner decision (2026-10-16, issue #8),
     // enabled before the owner's review (accepted 2026-10-16; not an independent
@@ -38,7 +42,10 @@
     "VAULT_AUDIENCE": "https://vault.agentkit.best",
     // ak-web's OAuth server JWKS (jwks_uri in /.well-known/oauth-authorization-server).
     // Its keys also sign other resources' tokens; the exact audience above keeps those out.
-    "VAULT_JWKS_URL": "https://agentkit.best/.well-known/jwks.json"
+    "VAULT_JWKS_URL": "https://agentkit.best/.well-known/jwks.json",
+    // Remote access (device relay, /mcp, /app dashboard) stays off in production until
+    // its release gate passes; every remote-access route answers 404 while off.
+    "VAULT_REMOTE_ACCESS_ENABLED": "false"
   },
   "env": {
     "staging": {
@@ -49,7 +56,8 @@
       "durable_objects": {
         "bindings": [
           { "name": "VAULT", "class_name": "VaultDurableObject" },
-          { "name": "REVOCATIONS", "class_name": "RevocationRegistry" }
+          { "name": "REVOCATIONS", "class_name": "RevocationRegistry" },
+          { "name": "RELAY", "class_name": "AccountRelay" }
         ]
       },
       "vars": {
@@ -59,7 +67,8 @@
         // Distinct from production so a token minted for one environment is refused by the other.
         "VAULT_AUDIENCE": "https://vault-staging.agentkit.best",
         // ak-web staging's JWKS; its keys are separate from production's.
-        "VAULT_JWKS_URL": "https://staging.agentkit.best/.well-known/jwks.json"
+        "VAULT_JWKS_URL": "https://staging.agentkit.best/.well-known/jwks.json",
+        "VAULT_REMOTE_ACCESS_ENABLED": "true"
       }
     }
   }

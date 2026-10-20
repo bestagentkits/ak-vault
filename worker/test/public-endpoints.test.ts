@@ -1,6 +1,6 @@
 /** Public surface: /healthz, /v1/meta, kill switch, landing site and its headers. */
 import { describe, expect, it } from 'vitest';
-import { LIMITS } from '../src/limits.js';
+import { LIMITS, REMOTE_ACCESS_LIMITS } from '../src/limits.js';
 import { fetchRaw } from './helpers/api-client.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
@@ -10,14 +10,15 @@ describe('health and meta', () => {
   it('GET /healthz reports version, protocol and sync state', async () => {
     const res = await fetchRaw('/healthz');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, version: expect.any(String), protocol: 'akv1', sync_enabled: true });
+    expect(await res.json()).toEqual({ ok: true, version: expect.any(String), protocol: 'akv1', sync_enabled: true, remote_access: true });
   });
 
   it('GET /v1/meta publishes the limits owner verbatim', async () => {
     const res = await fetchRaw('/v1/meta');
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { limits: unknown; protocol_versions: string[]; sync_enabled: boolean };
-    expect(body.limits).toEqual(LIMITS);
+    const body = (await res.json()) as { limits: unknown; protocol_versions: string[]; sync_enabled: boolean; remote_access: boolean };
+    expect(body.limits).toEqual({ ...LIMITS, ...REMOTE_ACCESS_LIMITS });
+    expect(body.remote_access).toBe(true);
     expect(body.protocol_versions).toEqual(['akv1']);
     expect(body.sync_enabled).toBe(true);
   });
