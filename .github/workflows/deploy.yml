@@ -10,6 +10,8 @@ name: Deploy
 # every deploy during an incident; the production job re-checks it after the
 # reviewer's approval, because a run can wait there for hours. Any other value
 # refuses (fail closed). Procedure: docs/operations/runbooks.md#deploy-freeze.
+# After that check, production also refuses when its commit is no longer the head
+# of main, so a stale approved run cannot overwrite a newer deploy.
 on:
   workflow_run:
     workflows: [CI]
@@ -115,6 +117,23 @@ jobs:
               echo "::error::DEPLOY_FREEZE has an unrecognised value; expected true, false or unset; refusing to deploy production"
               exit 1 ;;
           esac
+      # A run can wait for the reviewer for hours, and a manual run can race a
+      # merge, so an older commit must never replace a newer one. Fails closed
+      # when the head of main cannot be read.
+      - name: Refuse when the commit is no longer the head of main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          head=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha') || head=""
+          if [ -z "$head" ]; then
+            echo "::error::could not read the head of main; refusing to deploy production"
+            exit 1
+          fi
+          if [ "$head" != "$SHA" ]; then
+            echo "::error::${SHA} is no longer the head of main (now ${head}); refusing to deploy production. Reject this run and approve the Deploy run for the newer commit instead"
+            exit 1
+          fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.gate.outputs.sha }}
