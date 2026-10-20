@@ -247,8 +247,9 @@ they expire, so a replay is refused, and they count toward the limit
 
 The repository variable `DEPLOY_FREEZE` stops the
 [Deploy workflow](../../.github/workflows/deploy.yml): while it is `true` the gate job
-fails with an error and deploys neither staging nor production, and the production
-job checks it again after the reviewer's approval. Unset or `false` means not
+fails with an error and deploys neither staging nor production, and the staging and
+production jobs check it again when they start (production after the reviewer's
+approval), so a run already queued behind another deploy refuses too. Unset or `false` means not
 frozen; any other value also refuses. Use it during an incident whenever a deploy
 from `main` could undo a kill switch or a rollback. Set it at the repository level,
 not on an environment.
