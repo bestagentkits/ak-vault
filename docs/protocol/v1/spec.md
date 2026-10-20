@@ -1089,9 +1089,9 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   `mcp_calls_per_minute_per_account` budgets (§10), and a `run` call also from
   `mcp_run_calls_per_minute_per_client`; a request refused before that point, and a
   notification, spends nothing. A refused `tools/call` of a known tool within the
-  token's scopes whose `arguments` is an object is the tool error `rate_limited` with
+  token's scopes whose `arguments` is absent or an object is the tool error `rate_limited` with
   `retry_after_s`; any other refused request, including such a call whose `arguments`
-  is not an object, is HTTP `429 rate_limited` with `Retry-After` and the §10 error
+  is present and not an object, is HTTP `429 rate_limited` with `Retry-After` and the §10 error
   body. A call refused as `rate_limited` writes no audit row.
 - **Tools** map one to one onto the relay tools (§9.7) with the same scopes. Each
   takes the relay `args` plus an optional `vault_id`. Without it the Worker uses the
@@ -1106,8 +1106,8 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   `no_device_online`.
 - **Errors.** A device `error.code`, `no_device_online`, `device_timeout`,
   `sealed_queue_full` and `rate_limited` are MCP tool errors (`isError` true) carrying
-  `{"code"}`; a token or scope failure is an HTTP `401` or `403`, a refused request
-  that is not such a tool call (see rate limits) an HTTP `429 rate_limited`, and the
+  `{"code"}`; a token or scope failure is an HTTP `401` or `403`, a rate-limited
+  request that is not such a tool call (see rate limits) an HTTP `429 rate_limited`, and the
   kill switch an HTTP `503 sync_disabled`, with the §10 error body. Messages never
   echo arguments.
 

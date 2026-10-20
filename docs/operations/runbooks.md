@@ -158,7 +158,8 @@ echoing them, and only after `pnpm install` (as CI does).
 `VAULT_REMOTE_ACCESS_ENABLED` gates the vault dashboard (`/app`), remote MCP
 (`/mcp` and its protected-resource metadata), the device relay (`/v1/relay`) and the
 lookup, seal-key and sealed-queue routes. Any value other than exactly `true` turns
-them off, and each then answers `404`. It is on for staging and off for production in
+them off, and each then answers `404` (the `/v1/vaults/…` ones answer
+`503 sync_disabled` instead while sync is also off). It is on for staging and off for production in
 `worker/wrangler.jsonc`; remote access is staging only, pre-release, and not for
 production credentials. The sync kill switch also stops it: with sync off, `/mcp`
 answers `503 sync_disabled`. Route behavior is owned by `worker/src/index.ts`,
