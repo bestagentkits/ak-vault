@@ -48,7 +48,7 @@ describe('dashboard entry', () => {
   it('serves the public configuration derived from deployed vars only', async () => {
     const res = await fetchRaw('/app/config.json');
     expect(res.status).toBe(200);
-    expect(res.headers.get('Cache-Control')).toContain('no-store');
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
     expect(await res.json()).toEqual({
       v: 1,
       issuer: env.VAULT_ISSUER,

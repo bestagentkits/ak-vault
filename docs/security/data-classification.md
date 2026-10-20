@@ -76,7 +76,7 @@ name or a value.
 | Pending sign-in: `state`, PKCE verifier, creation time | `sessionStorage`, removed when the callback reads it, refused after 10 minutes | Surviving the redirect to the authorization server |
 | Tokens, vault keys, item names, values, metadata, profile fields | Page memory only | Dropped on lock, sign-out and page exit; there is **no** local cache of vault contents, so every visit verifies from the server |
 
-Clearing site data removes the device; the owner device then removes it from the
+Clearing site data removes the device; an owner should then remove it from the
 vault. IndexedDB is readable by script running in the page, which is why the
 [strict CSP](./threat-model.md) matters.
 

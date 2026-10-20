@@ -8,7 +8,7 @@
 import { b64encode, type DeviceKx, type DeviceSigner } from '@ak-vault/protocol';
 import { AppError, appErrorCode, type AppErrorCode } from './app-error.js';
 import { loadAppConfig, type AppConfig } from './config.js';
-import { isWitnessedFork, isWitnessedOlder, type DeviceStore, type StoredDevice } from './keys/device-store.js';
+import { isWitnessedOlder, mergeWitnessed, type DeviceStore, type StoredDevice, type WitnessedState } from './keys/device-store.js';
 import { deviceIdOf, deviceKx, deviceSigner, generateDeviceKeys } from './keys/webcrypto-device-keys.js';
 import {
   beginSignIn,
@@ -136,7 +136,7 @@ export class AppController {
       this.session = await completeSignIn(url, { config: this.config, as: this.as, store: this.deps.pending, fetchFn: this.fetchFn, now: this.now() });
     } catch (err) {
       const code = appErrorCode(err, 'signin_refused');
-      this.show({ kind: 'signed_out', notice: { kind: 'error', code: this.clockSkewed() && code === 'signin_refused' ? 'clock_skew' : code } });
+      this.show({ kind: 'signed_out', notice: { kind: 'error', code: this.clockSkewed() && (code === 'signin_refused' || code === 'token_exchange_failed') ? 'clock_skew' : code } });
       return;
     }
     await this.openDevice();
@@ -276,45 +276,66 @@ export class AppController {
   }
 
   private async sync(notice: Notice | null): Promise<void> {
-    if (!this.device || !this.client || !this.kx) return;
-    const pendingApproval = !this.device.enrollment?.confirmed;
+    // Everything the pull needs is captured now: a lock or sign-out during an await drops the fields.
+    const start = this.device;
+    const client = this.client;
+    const kx = this.kx;
+    if (!start || !client || !kx) return;
+    const pendingApproval = !start.enrollment?.confirmed;
     try {
       // Another tab may have stored a newer position since this one last pulled.
-      const device = await this.withStoredPosition(this.device);
-      this.device = device;
-      const { snapshot, enrollment } = await pullVault(this.client, device, this.kx, this.snapshot);
-      // Pulls can overlap (a refresh during a write's sync). The device may have
-      // been dropped meanwhile, or a later pull may already have finished.
+      const device = await this.withStoredPosition(start);
+      if (!this.sameDevice(device)) return;
+      const { snapshot, enrollment } = await pullVault(client, device, kx, this.snapshot);
+      // Pulls can overlap (a refresh during a write's sync): the device may have been dropped, or a
+      // later pull may already have finished and advanced the position this one must not undo.
       const latest = this.device;
-      if (!latest || latest.account !== device.account || deviceIdOf(latest.keys) !== deviceIdOf(device.keys)) return;
-      const floor = latest.enrollment?.witnessed;
+      if (!latest || !this.sameDevice(device)) return;
+      const floor = this.floorOf(latest, device);
+      if (floor === 'fork') throw new AppError('fork');
       if (floor && enrollment.witnessed) {
-        if (isWitnessedFork(enrollment.witnessed, floor)) throw new AppError('fork');
+        if (mergeWitnessed(floor, enrollment.witnessed) === null) throw new AppError('fork');
         if (this.snapshot && isWitnessedOlder(enrollment.witnessed, floor)) {
           // Older than what is shown and stored: keep the newer snapshot and position.
           this.showVault(notice, null);
           return;
         }
       }
-      const next: StoredDevice = { ...latest, enrollment };
-      // One transaction compares against the stored position and writes, so an older pull never lands.
-      const saved = await this.deps.devices.advance(next);
+      // One transaction merges with the stored position and writes, so an older pull never lands.
+      const saved = await this.deps.devices.advance({ ...latest, enrollment });
+      if (!this.sameDevice(device)) return;
       if (saved.outcome === 'fork') throw new AppError('fork');
-      const storedWitnessed = saved.stored?.enrollment?.witnessed;
-      this.device = saved.outcome === 'older' && storedWitnessed ? { ...next, enrollment: { ...enrollment, witnessed: storedWitnessed } } : next;
-      this.snapshot = snapshot;
+      // The entry is gone or re-enrolled elsewhere: this view no longer matches what is stored.
+      if (saved.outcome === 'stale') throw new AppError('signin_required');
+      const position = saved.position ?? enrollment.witnessed;
+      this.device = { ...latest, enrollment: { ...enrollment, witnessed: position } };
+      // Another tab is further along: keep the newer view already shown, if any.
+      if (!(saved.outcome === 'older' && this.snapshot)) this.snapshot = snapshot;
       this.showVault(notice, null);
     } catch (err) {
-      if (pendingApproval) {
+      if (pendingApproval && this.device) {
         const code = isVaultApiError(err, 'forbidden') ? 'enroll_not_approved' : appErrorCode(err, 'server');
         if (code === 'enroll_not_approved' || code === 'enroll_sas_mismatch' || code === 'network' || code === 'server') {
-          const device = this.device!;
-          this.show({ kind: 'approve', sas: device.enrollment!.sas, deviceId: deviceIdOf(device.keys), notice: { kind: 'error', code } });
+          this.show({ kind: 'approve', sas: start.enrollment!.sas, deviceId: deviceIdOf(start.keys), notice: { kind: 'error', code } });
           return;
         }
       }
       await this.fail(err);
     }
+  }
+
+  /** True while the device this pull started with is still the one held (not dropped, not another account's). */
+  private sameDevice(device: StoredDevice): boolean {
+    const held = this.device;
+    return held !== null && held.account === device.account && deviceIdOf(held.keys) === deviceIdOf(device.keys);
+  }
+
+  /** The furthest position this tab holds: the pull's starting device and whatever a finished pull stored since. */
+  private floorOf(latest: StoredDevice, started: StoredDevice): WitnessedState | 'fork' | null {
+    const a = latest.enrollment?.witnessed;
+    const b = started.enrollment?.witnessed;
+    if (!a || !b) return a ?? b ?? null;
+    return mergeWitnessed(a, b) ?? 'fork';
   }
 
   /** The device with the furthest verified position of this tab's and the store's (same device and enrollment only). */
@@ -324,9 +345,9 @@ export class AppController {
     const there = stored?.enrollment;
     if (!stored || !have || !there?.witnessed) return device;
     if (deviceIdOf(stored.keys) !== deviceIdOf(device.keys) || there.vaultId !== have.vaultId || there.nonceI !== have.nonceI || stored.nonceJ !== device.nonceJ) return device;
-    // A fork at an equal position is left for the pull's own check to report.
-    if (have.witnessed && !isWitnessedOlder(have.witnessed, there.witnessed)) return device;
-    return { ...device, enrollment: { ...have, witnessed: there.witnessed } };
+    // A counter at the same value with another head is left for the compare-and-save to report as a fork.
+    const merged = have.witnessed ? mergeWitnessed(have.witnessed, there.witnessed) : there.witnessed;
+    return merged ? { ...device, enrollment: { ...have, witnessed: merged } } : device;
   }
 
   private showVault(notice: Notice | null, matches: string[] | null, busy = false): void {

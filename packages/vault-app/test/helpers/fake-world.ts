@@ -187,11 +187,12 @@ export class FakeWorld {
     this.wraps.set(ev.seq, ws);
   }
 
-  removeDevice(deviceId: string): void {
+  /** Remove a device; `fence` defaults to the current log position (a hostile server may accept an older one). */
+  removeDevice(deviceId: string, fence = this.log.length): void {
     const st = this.state();
     const ev = nextMembershipEvent(st, {
       type: 'device_remove', ts: Date.now(), author: this.owner.record.device_id,
-      body: { device_id: deviceId, reason: 'retired', log_fence: this.log.length, log_head: this.logHeads[this.log.length]! },
+      body: { device_id: deviceId, reason: 'retired', log_fence: fence, log_head: this.logHeads[fence]! },
     }, this.owner.signSecret);
     this.events.push(ev);
   }

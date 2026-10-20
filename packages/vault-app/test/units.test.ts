@@ -14,7 +14,7 @@ import {
 } from '@ak-vault/protocol';
 import { parseAppConfig } from '../src/config.js';
 import { deviceKx, deviceSigner, generateDeviceKeys, isDeviceKeyMaterial, signPubB64 } from '../src/keys/webcrypto-device-keys.js';
-import { decideAdvance, isWitnessedFork, memoryDeviceStore, type StoredDevice, type WitnessedState } from '../src/keys/device-store.js';
+import { decideAdvance, isWitnessedFork, memoryDeviceStore, mergeWitnessed, type StoredDevice, type WitnessedState } from '../src/keys/device-store.js';
 import { beginSignIn, parseAuthServerMetadata, pkceChallenge } from '../src/oauth/pkce-client.js';
 import { validItemName } from '../src/sync/item-names.js';
 import { nextMeta } from '../src/sync/write-ops.js';
@@ -157,5 +157,15 @@ describe('sync position compare-and-save', () => {
     expect(decideAdvance({ ...base, enrollment: null }, next).outcome).toBe('stale');
     expect(decideAdvance({ ...base, nonceJ: 'restarted' }, next).outcome).toBe('stale');
     expect(decideAdvance({ ...base, keys: await generateDeviceKeys() }, next).outcome).toBe('stale');
+  });
+
+  it('keeps each component\'s furthest counter when two pulls are ahead on different ones', async () => {
+    const base = await enrolled(at(8, 'l8', 5));
+    const merged = mergeWitnessed(at(8, 'l8', 5), { ...at(6, 'l6', 6), membership_head: 'm6' });
+    expect(merged).toEqual({ membership_seq: 6, membership_head: 'm6', log_seq: 8, log_head: 'l8', key_epoch: 1 });
+    const result = decideAdvance(base, withPosition(base, { ...at(6, 'l6', 6), membership_head: 'm6' }));
+    expect(result.outcome).toBe('saved');
+    expect(result.position).toEqual(merged);
+    expect(mergeWitnessed(at(5, 'x'), at(5, 'y'))).toBeNull();
   });
 });

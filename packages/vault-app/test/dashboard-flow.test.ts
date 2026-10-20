@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { b64encode, randomBytes, type MembershipEvent } from '@ak-vault/protocol';
 import { ACCOUNT, FakeWorld, ISSUER, ORIGIN } from './helpers/fake-world.js';
 import { Browser, allByTestId, byTestId } from './helpers/dashboard-page.js';
+import { deviceIdOf } from '../src/keys/webcrypto-device-keys.js';
 import type { StoredDevice, WitnessedState } from '../src/keys/device-store.js';
 
 const SENTINEL = 'sentinel-value-7f3a9c1e5b';
@@ -344,6 +345,86 @@ describe('vault', () => {
     expect(await page.controller.remove(doomed)).toBe(true);
     expect(names(page.root)).not.toContain('item-0');
     expect(b.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!.log_seq).toBe(world.log.length);
+  });
+
+  it('replays in full when a removal learned later is fenced below the cursor, and refuses the removed device\'s later records', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const a = new Browser(world);
+    const { page } = await a.enroll();
+    // A second device of the account joins and writes after position 1.
+    const other = new Browser(world);
+    const second = await other.enroll();
+    expect(await second.page.controller.set('from-second', SENTINEL)).toBe(true);
+    await page.controller.refresh();
+    expect(names(page.root)).toEqual(['from-second', 'one']);
+    const cursor = world.log.length;
+    // The owner removes the second device with a fence below what the first browser already holds.
+    world.removeDevice(deviceIdOf(other.devices.entries.get(ACCOUNT)!.keys), 1);
+    const before = world.exchanges.length;
+    await page.controller.refresh();
+    expect(world.exchanges.slice(before).filter((e) => e.url.includes('/changes')).map((e) => new URL(e.url).searchParams.get('cursor'))).toContain('0');
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'vault_verification_failed' });
+    expect(cursor).toBeGreaterThan(1);
+  });
+
+  it('does not let a second removal at an already seen fence hide records past it', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const a = new Browser(world);
+    const { page } = await a.enroll();
+    const second = new Browser(world);
+    const writer = await second.enroll();
+    const third = new Browser(world);
+    await third.enroll();
+    expect(await writer.page.controller.set('from-second', SENTINEL)).toBe(true);
+    const idOf = (b: Browser) => deviceIdOf(b.devices.entries.get(ACCOUNT)!.keys);
+    // The first removal fences at 1; the first browser verifies in full and learns it.
+    world.removeDevice(idOf(third), 1);
+    await page.controller.refresh();
+    expect(names(page.root)).toEqual(['from-second', 'one']);
+    // A second removal at the same fence makes the writer's record (position 2) invalid.
+    world.removeDevice(idOf(second), 1);
+    await page.controller.refresh();
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'vault_verification_failed' });
+  });
+
+  it('keeps pulling incrementally across a removal fenced at the current position', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const a = new Browser(world);
+    const { page } = await a.enroll();
+    const other = new Browser(world);
+    await other.enroll();
+    world.ownerSet('two', 'b');
+    world.removeDevice(deviceIdOf(other.devices.entries.get(ACCOUNT)!.keys));
+    const before = world.exchanges.length;
+    await page.controller.refresh();
+    const cursors = world.exchanges.slice(before).filter((e) => e.url.includes('/changes')).map((e) => new URL(e.url).searchParams.get('cursor'));
+    expect(cursors).toEqual(['1']);
+    expect(names(page.root)).toEqual(['one', 'two']);
+  });
+
+  it('does not bring a locked page back to life when a pull was in flight', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const b = new Browser(world);
+    const { page } = await b.enroll();
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let holding = true;
+    b.afterFetch = async (url) => {
+      if (holding && url.includes('/changes')) {
+        holding = false;
+        await held;
+      }
+    };
+    const pull = page.controller.refresh();
+    await vi.waitFor(() => expect(holding).toBe(false));
+    await page.controller.lock();
+    release();
+    await pull;
+    expect(page.controller.current()).toMatchObject({ kind: 'signed_out', notice: { kind: 'info', code: 'locked' } });
   });
 
   it('refuses a server whose log shrank below the cursor of an incremental pull', async () => {

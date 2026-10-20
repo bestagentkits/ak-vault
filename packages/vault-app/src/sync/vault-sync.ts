@@ -323,7 +323,7 @@ export interface ProfileAt {
  * Replay the verified log into item states; check the offer checkpoint's state
  * digest on the way. With `prior`, `entries` continue from `prior.head`: the kept
  * heads are the witnessed position and every removal fence the prior pull had
- * already verified; a removal fence below the cursor that it had not is
+ * already verified; a removal it had not seen, fenced below the cursor, is
  * {@link FullPullNeeded}, because records past that fence need re-checking.
  */
 export function replayLog(
@@ -336,8 +336,12 @@ export function replayLog(
 ): Pick<VaultSnapshot, 'itemStates' | 'heads' | 'items' | 'unreadable' | 'hidden' | 'replay'> & { logHead: { log_seq: number; log_head: string } } {
   const kept = new Map<number, string>();
   if (prior) {
+    // Records the cursor already passed were checked against the removals known then. A removal
+    // this pull learned about, fenced below the cursor, changes what those records may be: replay in full.
+    const removalKey = (r: MembershipState['removals'][number]) => `${r.sign_pub}:${r.removed_seq}`;
+    const known = new Set(prior.replay.state.removals.map(removalKey));
     for (const r of prior.replay.state.removals) if (r.log_fence > 0) kept.set(r.log_fence, r.log_head);
-    for (const r of state.removals) if (r.log_fence > 0 && r.log_fence < prior.replay.head.log_seq && !kept.has(r.log_fence)) throw new FullPullNeeded();
+    for (const r of state.removals) if (!known.has(removalKey(r)) && r.log_fence < prior.replay.head.log_seq) throw new FullPullNeeded();
   }
   if (enrollment.witnessed && enrollment.witnessed.log_seq > 0) kept.set(enrollment.witnessed.log_seq, enrollment.witnessed.log_head);
   let verified;

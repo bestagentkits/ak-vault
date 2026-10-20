@@ -33,31 +33,51 @@ export function isWitnessedFork(a: WitnessedState, b: WitnessedState): boolean {
   return (a.membership_seq === b.membership_seq && a.membership_head !== b.membership_head) || (a.log_seq === b.log_seq && a.log_head !== b.log_head);
 }
 
+/**
+ * Component-wise furthest position: membership, log and key epoch each keep the
+ * higher counter with its head. Two verified pulls can be ahead on different
+ * components (membership is read before the log), and each chain was verified on
+ * its own, so neither component may be forgotten. Null when a component reached
+ * the same counter with a different head (a fork).
+ */
+export function mergeWitnessed(a: WitnessedState, b: WitnessedState): WitnessedState | null {
+  if (isWitnessedFork(a, b)) return null;
+  const m = a.membership_seq >= b.membership_seq ? a : b;
+  const l = a.log_seq >= b.log_seq ? a : b;
+  return { membership_seq: m.membership_seq, membership_head: m.membership_head, log_seq: l.log_seq, log_head: l.log_head, key_epoch: Math.max(a.key_epoch, b.key_epoch) };
+}
+
+function sameWitnessed(a: WitnessedState, b: WitnessedState): boolean {
+  return a.membership_seq === b.membership_seq && a.membership_head === b.membership_head && a.log_seq === b.log_seq && a.log_head === b.log_head && a.key_epoch === b.key_epoch;
+}
+
 /** Result of {@link DeviceStore.advance}; `stored` is what the store held when it decided. */
 export interface AdvanceResult {
-  /** `saved`: written. `older`: a newer position is stored, nothing written. `fork`: same position, other head, nothing written. `stale`: the entry is gone or re-enrolled, nothing written. */
+  /** `saved`: written (the merged position). `older`: nothing newer than the stored position, nothing written. `fork`: a counter reached again with another head, nothing written. `stale`: the entry is gone or re-enrolled, nothing written. */
   outcome: 'saved' | 'older' | 'fork' | 'stale';
   stored: StoredDevice | null;
+  /** The position the store holds after the call (null for `stale`). */
+  position: WitnessedState | null;
 }
 
 /**
- * Decide, from the stored entry alone, whether `next` may replace its position.
- * Pure so the memory and IndexedDB stores share one rule. Only the enrollment of
- * the same device and enrollment may advance; the rest of the entry is kept.
+ * Decide, from the stored entry alone, how `next` changes its position. Pure so
+ * the memory and IndexedDB stores share one rule. Only the enrollment of the same
+ * device and enrollment may advance; the rest of the entry is kept.
  */
-export function decideAdvance(stored: StoredDevice | null, next: StoredDevice): { outcome: AdvanceResult['outcome']; write: StoredDevice | null } {
+export function decideAdvance(stored: StoredDevice | null, next: StoredDevice): { outcome: AdvanceResult['outcome']; write: StoredDevice | null; position: WitnessedState | null } {
   const enrollment = next.enrollment;
   const current = stored?.enrollment;
   if (!stored || !enrollment || !current || deviceIdOf(stored.keys) !== deviceIdOf(next.keys) || current.vaultId !== enrollment.vaultId || current.nonceI !== enrollment.nonceI || stored.nonceJ !== next.nonceJ) {
-    return { outcome: 'stale', write: null };
+    return { outcome: 'stale', write: null, position: null };
   }
   const have = current.witnessed;
   const want = enrollment.witnessed;
-  if (have && want) {
-    if (isWitnessedFork(want, have)) return { outcome: 'fork', write: null };
-    if (isWitnessedOlder(want, have)) return { outcome: 'older', write: null };
-  }
-  return { outcome: 'saved', write: { ...stored, enrollment } };
+  if (!want) return { outcome: 'older', write: null, position: have };
+  const merged = have ? mergeWitnessed(have, want) : want;
+  if (!merged) return { outcome: 'fork', write: null, position: have };
+  if (have && sameWitnessed(merged, have) && !sameWitnessed(want, have)) return { outcome: 'older', write: null, position: have };
+  return { outcome: 'saved', write: { ...stored, enrollment: { ...enrollment, witnessed: merged } }, position: merged };
 }
 
 export interface Enrollment {
@@ -156,9 +176,9 @@ export function memoryDeviceStore(): DeviceStore & { entries: Map<string, Stored
     },
     async advance(next) {
       const stored = parseStoredDevice(entries.get(next.account) ?? null, next.account);
-      const { outcome, write } = decideAdvance(stored, next);
+      const { outcome, write, position } = decideAdvance(stored, next);
       if (write) entries.set(next.account, structuredClone(write));
-      return { outcome, stored };
+      return { outcome, stored, position };
     },
     async delete(account) {
       entries.delete(account);
@@ -221,8 +241,8 @@ async function advanceInTransaction(factory: IDBFactory, next: StoredDevice): Pr
       // The write is issued inside the read's own callback, where the transaction is certainly active.
       read.onsuccess = () => {
         const stored = parseStoredDevice(read.result, next.account);
-        const { outcome, write } = decideAdvance(stored, next);
-        result = { outcome, stored };
+        const { outcome, write, position } = decideAdvance(stored, next);
+        result = { outcome, stored, position };
         if (write) store.put(write);
       };
     });

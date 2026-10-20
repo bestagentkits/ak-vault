@@ -15,9 +15,10 @@ never shows, copies or stores a value; tokens and vault keys stay in memory.
 A visit's first pull verifies the whole membership chain and change log. Later
 pulls in the same visit (after a write or a refresh) fetch only the log entries
 after the cursor this browser computed itself, and repeat the full replay when
-anything does not line up. The verified position is saved by one IndexedDB
-transaction that never stores an older position; a position reached again with a
-different head is shown as an integrity alarm. A device clock more than 60 seconds
+anything does not line up (a removal it had not seen, a mismatch with the server's
+claimed tip, a verification failure). The verified position is merged and saved by
+one IndexedDB transaction, so no counter moves backward; a counter reached again
+with a different head is refused and shown as an integrity alarm. A device clock more than 60 seconds
 from the vault's `Date` header is reported as such. What the browser keeps locally
 is listed in [data classification](../../docs/security/data-classification.md).
 
