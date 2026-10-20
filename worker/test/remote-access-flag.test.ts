@@ -68,10 +68,21 @@ describe('remote access flag', () => {
     expect(on.remote_access).toBe(true);
   });
 
-  it('on routes /mcp and /app to their handlers (not yet served: 404 JSON) and never to the landing site', async () => {
-    for (const path of ['/mcp', '/.well-known/oauth-protected-resource', '/app', '/app/x']) {
+  it('on routes /app to its handler (not yet served: 404 JSON) and never to the landing site', async () => {
+    for (const path of ['/app', '/app/x']) {
       const res = await fetchRaw(path);
       expect(res.status, path).toBe(404);
+      expect(res.headers.get('Content-Type')).toContain('application/json');
+    }
+  });
+
+  it('on serves /mcp (401 challenge) and protected-resource metadata, never the landing site', async () => {
+    const mcp = await fetchRaw('/mcp', { method: 'POST' });
+    expect(mcp.status).toBe(401);
+    expect(mcp.headers.get('WWW-Authenticate')).toContain('resource_metadata=');
+    for (const path of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp']) {
+      const res = await fetchRaw(path);
+      expect(res.status, path).toBe(200);
       expect(res.headers.get('Content-Type')).toContain('application/json');
     }
   });
