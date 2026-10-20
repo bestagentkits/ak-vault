@@ -122,9 +122,9 @@
       <div class="container">
         <span class="badge badge-ok hero-badge reveal"><span class="dot" aria-hidden="true"></span>Local vault available · sync preview</span>
         <h1 id="page-title" class="reveal">From <code>.env</code> to a vault, <span class="grad">step by step</span>.</h1>
-        <p class="lede reveal">Part 1 works today with the AgentKit CLI. Part 2 describes the preview sync commands and Part 3 the planned agent commands; each step is marked and its syntax may change before release.</p>
+        <p class="lede reveal">Part 1 works today with the AgentKit CLI. Part 2 describes the preview sync commands and Part 3 the planned agent commands; each step is marked and its syntax may change before release. Parts 5 to 7 cover the browser dashboard and remote MCP, which run on staging only: pre-release, not for production credentials.</p>
         <nav class="toc reveal" aria-label="On this page">
-          <a href="#local">1 · Local vault</a><a href="#sync">2 · Sync a device</a><a href="#agents">3 · Agents</a><a href="#lost">4 · Lost device</a>
+          <a href="#local">1 · Local vault</a><a href="#sync">2 · Sync a device</a><a href="#agents">3 · Agents</a><a href="#lost">4 · Lost device</a><a href="#browser">5 · Browser</a><a href="#mcp">6 · Remote MCP</a><a href="#remove-browser">7 · Remove a browser</a>
         </nav>
       </div>
     </section>
@@ -265,7 +265,80 @@
       </div>
     </section>
 
-    <section class="section" aria-labelledby="next-title">
+    <section class="section" id="browser" aria-labelledby="browser-title">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow">Part 5</span>
+          <h2 id="browser-title">Use your vault from the browser <span class="badge badge-review">staging</span></h2>
+          <p><strong>Staging only: pre-release, not for production credentials.</strong> The dashboard runs at <code>https://vault-staging.agentkit.best/app</code> with an AgentKit staging account. Production has it switched off.</p>
+          <p>The dashboard is a device of your vault, like a second laptop. It creates its own device keys in the browser, keeps them in IndexedDB as non-extractable keys, and decrypts in the page, so the server still receives only ciphertext from it. Version 1 enrollment adds devices only to an account that owns the vault, so the dashboard is for vault owners; an editor of a shared vault cannot add a browser.</p>
+        </div>
+        <ol class="steps reveal">
+            <li class="is-planned"><div class="step-head"><h3>Sign in</h3><span class="badge badge-review">staging</span></div><div class="step-body"><p>Open the dashboard and sign in with your AgentKit account. There is no passphrase: every visit unlocks with a fresh sign-in. <strong>Lock</strong>, or leaving the page, drops the session and the decrypted view from memory and ends the sign-in; the device keys stay in this browser.</p></div></li>
+            <li class="is-planned"><div class="step-head"><h3>Approve the browser from an owner device</h3><span class="badge badge-review">staging</span></div><div class="step-body"><p>Uses the preview sync commands from Part 2. The first sign-in shows a join code starting <code>akj1-</code>. On a device that already owns the vault, run the command below. It prints an offer code: paste it into the browser, which then shows a six-digit code. Answer <code>y</code> in the terminal only if both codes match, then choose <strong>I approved it, continue</strong>. Approval needs you at a terminal; it is refused for an agent and with <code>--json</code>.</p>
+                <div class="terminal">
+              <div class="terminal-bar"><span class="title">shell · preview</span>
+                <button class="copy-btn" type="button" data-copy-target="#g-browser-approve" aria-label="Copy the device approval command"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
+<pre tabindex="0"><code id="g-browser-approve"><span class="c"># PREVIEW: hidden in the released CLI, unsupported, syntax may change</span>
+<span class="p">$ </span>ak secrets devices approve &lt;join code&gt;</code></pre>
+            </div></div></li>
+            <li class="is-planned"><div class="step-head"><h3>What the dashboard can do</h3><span class="badge badge-review">staging</span></div><div class="step-body"><p>List secrets with their metadata (sensitivity, dates and profile fields, each marked with where it came from), filter by name or metadata, find an exact name, set a value and delete a secret. Filtering and search run in the browser over the copy it verified; no query goes to the server.</p></div></li>
+            <li class="is-planned"><div class="step-head"><h3>What it never does</h3></div><div class="step-body"><p>It never shows, copies or stores a value: the value field is write-only and is cleared when you save. It signs no checkpoints and resolves no conflicts; it shows how many conflicts are open, and you resolve them from the CLI. It cannot change membership, read the recovery bundle, publish the seal key or apply queued writes: the server refuses those for a browser session.</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="mcp" aria-labelledby="mcp-title">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow">Part 6</span>
+          <h2 id="mcp-title">Connect an AI tool with remote MCP <span class="badge badge-review">staging</span></h2>
+          <p><strong>Staging only: pre-release, not for production credentials.</strong> Remote MCP lets a hosted AI tool search, describe, set and use your secrets without a local CLI. It never returns a secret value.</p>
+        </div>
+        <ol class="steps reveal">
+            <li class="is-planned"><div class="step-head"><h3>Add the server</h3><span class="badge badge-review">staging</span></div><div class="step-body"><p>In your AI tool's MCP or connector settings, add <code>https://vault-staging.agentkit.best/mcp</code>. The tool finds the sign-in server through <code>/.well-known/oauth-protected-resource/mcp</code> and sends you to AgentKit to sign in and approve the access it asks for.</p></div></li>
+            <li class="is-planned"><div class="step-head"><h3>Choose what it may do</h3></div><div class="step-body"><p>Each scope in plain words, with the tools it unlocks:</p>
+              <ul>
+                <li><code>vault-mcp:read</code>: see the names and descriptions of your secrets, never their values (<code>secrets_search</code>, <code>secrets_list</code>, <code>secrets_describe</code>).</li>
+                <li><code>vault-mcp:write</code>: add, replace or delete secrets; it can write a value but never read one back (<code>secrets_set</code>, <code>secrets_delete</code>).</li>
+                <li><code>vault-mcp:use</code>: ask to use a secret, and run commands you approved on your own device with it; values go to that command only, never to the AI tool (<code>secrets_request</code>, <code>secrets_run</code>).</li>
+              </ul></div></li>
+            <li class="is-planned"><div class="step-head"><h3>Keep one of your devices online for reads and use</h3><span class="badge badge-planned">planned</span></div><div class="step-body"><p>Requires an <code>ak</code> version with relay support, not released yet. Reads, <code>request</code> and <code>run</code> are answered by one of your own devices that holds a relay connection open: it decrypts locally, applies its own grants and approvals, and answers. With no device online they answer <code>no_device_online</code>. <code>run</code> starts only commands that an <code>exec</code> grant pinned on that device allows, and removes the values it released from the output; output that a command encoded, split or printed in part is not caught.</p></div></li>
+            <li class="is-planned"><div class="step-head"><h3>Writes with no device online are queued, sealed</h3><span class="badge badge-planned">planned</span></div><div class="step-body"><p>The seal key and draining also need an <code>ak</code> version with relay support. With no device online, <code>secrets_set</code> and <code>secrets_delete</code> must name the <code>vault_id</code>. The server seals the operation to your vault's seal key and queues it (status <code>queued</code>) until one of your devices applies it as a normal signed write. The queue is write-only: nothing reads a queued value back. It works only for an owner or editor of the vault, only after an owner device has published the seal key, and not while a rekey is pending. A full queue answers <code>sealed_queue_full</code>.</p></div></li>
+            <li class="is-planned"><div class="step-head"><h3>Know what the server sees</h3></div><div class="step-body"><p>The server stores no plaintext and holds no vault key, but a remote MCP call is not end-to-end encrypted: plaintext passes through the server's memory after TLS ends. That is the value an AI tool sends with a set, until the server seals it or relays it to your device, and the names, metadata and redacted <code>run</code> output your device sends back on their way to the AI tool. It is never logged, stored or put in an error. AI tools do not check device signatures, so they trust the server for what a result says. See <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/adr/0002-browser-device-relay-and-remote-mcp.md">ADR 0002</a>, decision D7.</p></div></li>
+            <li class="is-planned"><div class="step-head"><h3>Disconnect</h3></div><div class="step-body"><p>In your AgentKit account, open Connected Apps and disconnect <strong>AgentKit Vault (AI tools)</strong>. The next request with that grant is refused.</p></div></li>
+        </ol>
+        <p class="reveal">Call budgets per AI tool and per account, relay deadlines and the queue size and lifetime are owned by <a href="https://github.com/bestagentkits/ak-vault/blob/main/worker/src/limits.ts"><code>worker/src/limits.ts</code></a> and published by <code>GET /v1/meta</code> where remote access is on.</p>
+      </div>
+    </section>
+
+    <section class="section" id="remove-browser" aria-labelledby="remove-browser-title">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow">Part 7</span>
+          <h2 id="remove-browser-title">Remove a browser <span class="badge badge-review">staging</span></h2>
+        </div>
+        <ol class="steps reveal">
+            <li class="is-planned"><div class="step-head"><h3>Find its device ID</h3><span class="badge badge-planned">preview</span></div><div class="step-body"><p>The dashboard header shows the first eight characters as "Device …", and the CLI lists every device.</p>
+                <div class="terminal">
+              <div class="terminal-bar"><span class="title">shell · preview</span>
+                <button class="copy-btn" type="button" data-copy-target="#g-devices-list" aria-label="Copy the device list command"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
+<pre tabindex="0"><code id="g-devices-list"><span class="c"># PREVIEW: hidden in the released CLI, unsupported, syntax may change</span>
+<span class="p">$ </span>ak secrets devices list</code></pre>
+            </div></div></li>
+            <li class="is-planned"><div class="step-head"><h3>Remove it and rotate the vault key</h3><span class="badge badge-planned">preview</span></div><div class="step-body"><p>Run it from an owner device. Removal moves the vault to a new key so the browser cannot read new writes. It asks for the vault password and the current recovery key. Use <code>--reason lost</code>, <code>stolen</code> or <code>compromised</code> when that fits better. It cannot take back what the browser already decrypted: if the browser may be compromised, rotate those secrets at their provider. When the removed browser next syncs, it is refused and deletes its own device key.</p>
+                <div class="terminal">
+              <div class="terminal-bar"><span class="title">shell · preview</span>
+                <button class="copy-btn" type="button" data-copy-target="#g-devices-remove" aria-label="Copy the device removal command"><svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span data-label>Copy</span></button></div>
+<pre tabindex="0"><code id="g-devices-remove"><span class="c"># PREVIEW: hidden in the released CLI, unsupported, syntax may change</span>
+<span class="p">$ </span>ak secrets devices remove &lt;device-prefix&gt; --reason retired</code></pre>
+            </div></div></li>
+            <li class="is-planned"><div class="step-head"><h3>End its sign-in</h3></div><div class="step-body"><p>If Connected Apps lists <strong>AgentKit Vault dashboard</strong>, disconnect it too.</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section section-alt" aria-labelledby="next-title">
       <div class="container">
         <h2 id="next-title" class="visually-hidden">Keep reading</h2>
         <div class="next-grid" data-stagger><a class="card spot lift next-card reveal" href="/how-it-works/"><h3>How it works</h3><p>Keys, six-digit enrollment, conflicts and rollback, with diagrams.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a><a class="card spot lift next-card reveal" href="/security/"><h3>Security model</h3><p>Each adversary, its defence in protocol v1 and the risk that stays with you.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a><a class="card spot lift next-card reveal" href="/faq/"><h3>FAQ</h3><p>Straight answers on status, privacy, agents, teams and recovery.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a><a class="card spot lift next-card reveal" href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md"><h3>Protocol v1 spec</h3><p>The normative wire specification, on GitHub.</p><span class="go">Read<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a></div>

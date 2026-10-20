@@ -1,12 +1,12 @@
 ---
 title: "ak-vault guide: from .env to an encrypted vault"
 url: https://vault.agentkit.best/guide/
-status: "Local vault available. Sync commands in preview; agent-discovery commands planned, not available yet."
+status: "Local vault available. Sync commands in preview; agent-discovery commands planned, not available yet. Browser dashboard and remote MCP on staging only, pre-release, not for production credentials."
 ---
 
 # From `.env` to a vault, step by step
 
-Part 1 works today with the AgentKit CLI. Part 2 describes the preview sync commands and Part 3 the planned agent commands; each step is marked and its syntax may change before release.
+Part 1 works today with the AgentKit CLI. Part 2 describes the preview sync commands and Part 3 the planned agent commands; each step is marked and its syntax may change before release. Parts 5 to 7 cover the browser dashboard and remote MCP, which run on staging only: pre-release, not for production credentials.
 
 **Legend:** *available* works in the current `ak` CLI. *preview* ships hidden in the released CLI but is not a supported workflow; syntax may change. *planned* is designed but not released; do not script against it yet. Sync is not generally available: the production sync API is live as a pre-release preview, enabled before the owner's review. The owner accepted the review gate on 2026-10-16 with no written findings; it is not an independent third-party review.
 
@@ -86,6 +86,51 @@ Some of this works today on the local vault; the device-removal and recovery ste
    ak secrets revoke --agent sha256:<fingerprint> --all
    ```
 4. **Lost every device? Recover with your password or recovery key** (preview; needs `v3.0.0-beta.31` or later, see step 1). A fresh device can enroll itself through the encrypted recovery bundle, which also carries the owner's public trust anchor and the newest witnessed checkpoint so it does not have to trust the server.
+
+## Part 5: Use your vault from the browser (staging)
+
+**Staging only: pre-release, not for production credentials.** The dashboard runs at `https://vault-staging.agentkit.best/app` with an AgentKit staging account. Production has it switched off.
+
+The dashboard is a device of your vault, like a second laptop. It creates its own device keys in the browser, keeps them in IndexedDB as non-extractable keys, and decrypts in the page, so the server still receives only ciphertext from it. Version 1 enrollment adds devices only to an account that owns the vault, so the dashboard is for vault owners; an editor of a shared vault cannot add a browser.
+
+1. **Sign in** (staging). Open the dashboard and sign in with your AgentKit account. There is no passphrase: every visit unlocks with a fresh sign-in. **Lock**, or leaving the page, drops the session and the decrypted view from memory and ends the sign-in; the device keys stay in this browser.
+2. **Approve the browser from an owner device** (staging; uses the preview sync commands from Part 2). The first sign-in shows a join code starting `akj1-`. On a device that already owns the vault, run the command below. It prints an offer code: paste it into the browser, which then shows a six-digit code. Answer `y` in the terminal only if both codes match, then choose **I approved it, continue**. Approval needs you at a terminal; it is refused for an agent and with `--json`.
+   ```sh
+   # PREVIEW: hidden in the released CLI, unsupported, syntax may change
+   ak secrets devices approve <join code>
+   ```
+3. **What the dashboard can do** (staging). List secrets with their metadata (sensitivity, dates and profile fields, each marked with where it came from), filter by name or metadata, find an exact name, set a value and delete a secret. Filtering and search run in the browser over the copy it verified; no query goes to the server.
+4. **What it never does.** It never shows, copies or stores a value: the value field is write-only and is cleared when you save. It signs no checkpoints and resolves no conflicts; it shows how many conflicts are open, and you resolve them from the CLI. It cannot change membership, read the recovery bundle, publish the seal key or apply queued writes: the server refuses those for a browser session.
+
+## Part 6: Connect an AI tool with remote MCP (staging)
+
+**Staging only: pre-release, not for production credentials.** Remote MCP lets a hosted AI tool search, describe, set and use your secrets without a local CLI. It never returns a secret value.
+
+1. **Add the server** (staging). In your AI tool's MCP or connector settings, add `https://vault-staging.agentkit.best/mcp`. The tool finds the sign-in server through `/.well-known/oauth-protected-resource/mcp` and sends you to AgentKit to sign in and approve the access it asks for.
+2. **Choose what it may do.** Each scope in plain words, with the tools it unlocks:
+   - `vault-mcp:read`: see the names and descriptions of your secrets, never their values (`secrets_search`, `secrets_list`, `secrets_describe`).
+   - `vault-mcp:write`: add, replace or delete secrets; it can write a value but never read one back (`secrets_set`, `secrets_delete`).
+   - `vault-mcp:use`: ask to use a secret, and run commands you approved on your own device with it; values go to that command only, never to the AI tool (`secrets_request`, `secrets_run`).
+3. **Keep one of your devices online for reads and use** (planned: requires an `ak` version with relay support, not released yet). Reads, `request` and `run` are answered by one of your own devices that holds a relay connection open: it decrypts locally, applies its own grants and approvals, and answers. With no device online they answer `no_device_online`. `run` starts only commands that an `exec` grant pinned on that device allows, and removes the values it released from the output; output that a command encoded, split or printed in part is not caught.
+4. **Writes with no device online are queued, sealed** (planned: the seal key and draining also need an `ak` version with relay support). With no device online, `secrets_set` and `secrets_delete` must name the `vault_id`. The server seals the operation to your vault's seal key and queues it (status `queued`) until one of your devices applies it as a normal signed write. The queue is write-only: nothing reads a queued value back. It works only for an owner or editor of the vault, only after an owner device has published the seal key, and not while a rekey is pending. A full queue answers `sealed_queue_full`.
+5. **Know what the server sees.** The server stores no plaintext and holds no vault key, but a remote MCP call is not end-to-end encrypted: plaintext passes through the server's memory after TLS ends. That is the value an AI tool sends with a set, until the server seals it or relays it to your device, and the names, metadata and redacted `run` output your device sends back on their way to the AI tool. It is never logged, stored or put in an error. AI tools do not check device signatures, so they trust the server for what a result says. See [ADR 0002](https://github.com/bestagentkits/ak-vault/blob/main/docs/adr/0002-browser-device-relay-and-remote-mcp.md), decision D7.
+6. **Disconnect.** In your AgentKit account, open Connected Apps and disconnect **AgentKit Vault (AI tools)**. The next request with that grant is refused.
+
+Call budgets per AI tool and per account, relay deadlines and the queue size and lifetime are owned by [`worker/src/limits.ts`](https://github.com/bestagentkits/ak-vault/blob/main/worker/src/limits.ts) and published by `GET /v1/meta` where remote access is on.
+
+## Part 7: Remove a browser (staging)
+
+1. **Find its device ID.** The dashboard header shows the first eight characters as "Device …", and the CLI lists every device.
+   ```sh
+   # PREVIEW: hidden in the released CLI, unsupported, syntax may change
+   ak secrets devices list
+   ```
+2. **Remove it and rotate the vault key** (preview, from an owner device). Removal moves the vault to a new key so the browser cannot read new writes. It asks for the vault password and the current recovery key. Use `--reason lost`, `stolen` or `compromised` when that fits better. It cannot take back what the browser already decrypted: if the browser may be compromised, rotate those secrets at their provider. When the removed browser next syncs, it is refused and deletes its own device key.
+   ```sh
+   # PREVIEW: hidden in the released CLI, unsupported, syntax may change
+   ak secrets devices remove <device-prefix> --reason retired
+   ```
+3. **End its sign-in.** If Connected Apps lists **AgentKit Vault dashboard**, disconnect it too.
 
 ## Keep reading
 
