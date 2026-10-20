@@ -1,0 +1,2 @@
+# The committed dashboard bundle is compared byte for byte with a fresh build.
+worker/public/app/** -text
