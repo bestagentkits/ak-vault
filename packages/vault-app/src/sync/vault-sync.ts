@@ -7,7 +7,10 @@
  * log against the removal fences and the heads this device kept. Later pulls in
  * the same session continue from the snapshot's own cursor and fetch only the new
  * log entries; they fall back to the full replay whenever that cannot be proved
- * equivalent (a rekey, a removal fence below the cursor, any verification failure).
+ * equivalent (a removal learned later and fenced below the cursor, a mismatch with
+ * the server's claimed tip, any verification failure). Either way the snapshot's
+ * own verified position is a kept head, so a server that switches histories is
+ * refused, never followed.
  *
  * The index is a metadata projection: each live head is decrypted, its `value`
  * is dropped on the spot, and only name, metadata and the provenance-checked
@@ -333,6 +336,8 @@ export function replayLog(
   vaultKeys: Map<number, Uint8Array>,
   selfId: string,
   prior?: Pick<VaultSnapshot, 'itemStates' | 'heads'> & { replay: ReplayBase },
+  /** This tab's own verified log position; kept even when the replay starts from the beginning. */
+  own?: ReplayBase['head'],
 ): Pick<VaultSnapshot, 'itemStates' | 'heads' | 'items' | 'unreadable' | 'hidden' | 'replay'> & { logHead: { log_seq: number; log_head: string } } {
   const kept = new Map<number, string>();
   if (prior) {
@@ -343,6 +348,7 @@ export function replayLog(
     for (const r of prior.replay.state.removals) if (r.log_fence > 0) kept.set(r.log_fence, r.log_head);
     for (const r of state.removals) if (!known.has(removalKey(r)) && r.log_fence < prior.replay.head.log_seq) throw new FullPullNeeded();
   }
+  if (own && own.log_seq > 0) kept.set(own.log_seq, own.log_head);
   if (enrollment.witnessed && enrollment.witnessed.log_seq > 0) kept.set(enrollment.witnessed.log_seq, enrollment.witnessed.log_head);
   let verified;
   try {
@@ -440,6 +446,12 @@ export async function pullVault(client: AkvClient, device: StoredDevice, kx: Dev
   const events = await fetchMembership(client, enrollment.vaultId);
   const { state, parsed, addSeq } = verifyEnrollmentChain(events, device, enrollment);
   const selfId = deviceIdOf(device.keys);
+  const mine = prior && prior.vaultId === enrollment.vaultId ? prior : null;
+  if (mine) {
+    // The chain must still contain the membership head this tab verified, whatever another tab stored.
+    const own = parsed[mine.witnessed.membership_seq];
+    if (!own || membershipEventHash(own) !== mine.witnessed.membership_head || state.key_epoch < mine.witnessed.key_epoch) throw new AppError('rollback');
+  }
   // A kept position below the cursor is not re-checked by a continuation, so replay in full.
   const w = enrollment.witnessed;
   const base = prior && prior.vaultId === enrollment.vaultId && (!w || w.log_seq >= prior.replay.head.log_seq) ? prior : null;
@@ -457,7 +469,7 @@ export async function pullVault(client: AkvClient, device: StoredDevice, kx: Dev
   }
   const vaultKeys = await loadVaultKeys(client, enrollment.vaultId, selfId, parsed, addSeq, kx);
   const { entries } = await fetchChanges(client, enrollment.vaultId);
-  return finishPull(enrollment, state, selfId, vaultKeys, replayLog(entries, state, enrollment, vaultKeys, selfId));
+  return finishPull(enrollment, state, selfId, vaultKeys, replayLog(entries, state, enrollment, vaultKeys, selfId, undefined, mine?.replay.head));
 }
 
 function finishPull(enrollment: Enrollment, state: MembershipState, selfId: string, vaultKeys: Map<number, Uint8Array>, replay: ReturnType<typeof replayLog>): PullResult {

@@ -313,6 +313,8 @@ export class AppController {
       if (!(saved.outcome === 'older' && this.snapshot)) this.snapshot = snapshot;
       this.showVault(notice, null);
     } catch (err) {
+      // Locked, signed out or replaced while the pull was in flight: that state stands, not this pull's error.
+      if (!this.sameDevice(start)) return;
       if (pendingApproval && this.device) {
         const code = isVaultApiError(err, 'forbidden') ? 'enroll_not_approved' : appErrorCode(err, 'server');
         if (code === 'enroll_not_approved' || code === 'enroll_sas_mismatch' || code === 'network' || code === 'server') {

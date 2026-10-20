@@ -405,18 +405,18 @@ describe('vault', () => {
     expect(names(page.root)).toEqual(['one', 'two']);
   });
 
-  it('does not bring a locked page back to life when a pull was in flight', async () => {
+  it.each(['/membership', '/changes'])('keeps the locked screen when a pull held at %s finishes after the lock', async (held) => {
     const world = new FakeWorld();
     world.ownerSet('one', 'a');
     const b = new Browser(world);
     const { page } = await b.enroll();
     let release!: () => void;
-    const held = new Promise<void>((r) => { release = r; });
+    const gate = new Promise<void>((r) => { release = r; });
     let holding = true;
     b.afterFetch = async (url) => {
-      if (holding && url.includes('/changes')) {
+      if (holding && url.includes(held)) {
         holding = false;
-        await held;
+        await gate;
       }
     };
     const pull = page.controller.refresh();
@@ -425,6 +425,24 @@ describe('vault', () => {
     release();
     await pull;
     expect(page.controller.current()).toMatchObject({ kind: 'signed_out', notice: { kind: 'info', code: 'locked' } });
+  });
+
+  it('refuses a server that switched to another history after another tab saved a further position on it', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    world.ownerSet('two', 'b');
+    const b = new Browser(world);
+    const { page } = await b.enroll();
+    // The server now shows a different history from position 2 on, and a second tab verified it to position 3.
+    world.log.length = 1;
+    world.logHeads.length = 2;
+    world.ownerSet('other-1', 'c');
+    world.ownerSet('other-2', 'd');
+    const stored = b.devices.entries.get(ACCOUNT)!;
+    const w = stored.enrollment!.witnessed!;
+    b.devices.entries.set(ACCOUNT, { ...stored, enrollment: { ...stored.enrollment!, witnessed: { ...w, log_seq: 3, log_head: world.logHeads[3]! } } });
+    await page.controller.refresh();
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
   });
 
   it('refuses a server whose log shrank below the cursor of an incremental pull', async () => {
