@@ -1085,13 +1085,16 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   `MCP-Protocol-Version`; an unsupported value answers `400` `-32022` with the
   request's `id`. A request without the header is served as 2025-11-25, statelessly:
   a 2025-11-25 client's `initialize` is answered without a session ID.
-- **Rate limits.** Every JSON-RPC request spends one call from the
-  `mcp_calls_per_minute_per_client` and `mcp_calls_per_minute_per_account` budgets
-  (§10), and a `run` call also from `mcp_run_calls_per_minute_per_client`. A refused
-  `tools/call` of a known tool within the token's scopes is the tool error
-  `rate_limited` with `retry_after_s`; any other refused request is HTTP
-  `429 rate_limited` with `Retry-After` and the §10 error body. A call refused as
-  `rate_limited` writes no audit row.
+- **Rate limits.** Every JSON-RPC request that passes transport validation (method,
+  `Origin`, kill switch, token and revocation, headers and protocol version, body and
+  JSON-RPC parsing) spends one call from the `mcp_calls_per_minute_per_client` and
+  `mcp_calls_per_minute_per_account` budgets (§10), and a `run` call also from
+  `mcp_run_calls_per_minute_per_client`; a request refused before that point, and a
+  notification, spends nothing. A refused `tools/call` of a known tool within the
+  token's scopes whose `arguments` is absent, `null` (treated as absent) or an object
+  is the tool error `rate_limited` with `retry_after_s`; any other refused request, including such a call whose `arguments`
+  is any other value, is HTTP `429 rate_limited` with `Retry-After` and the §10 error
+  body. A call refused as `rate_limited` writes no audit row.
 - **Tools** map one to one onto the relay tools (§9.7) with the same scopes. Each
   takes the relay `args` plus an optional `vault_id`. Without it the Worker uses the
   one vault the account's online relay connections list. When they list more than
@@ -1105,8 +1108,10 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   `no_device_online`.
 - **Errors.** A device `error.code`, `no_device_online`, `device_timeout`,
   `sealed_queue_full` and `rate_limited` are MCP tool errors (`isError` true) carrying
-  `{"code"}`; a token or scope failure is an HTTP `401` or `403`, and the kill switch
-  an HTTP `503 sync_disabled`, with the §10 error body. Messages never echo arguments.
+  `{"code"}`; a token or scope failure is an HTTP `401` or `403`, a rate-limited
+  request that is not such a tool call (see rate limits) an HTTP `429 rate_limited`, and the
+  kill switch an HTTP `503 sync_disabled`, with the §10 error body. Messages never
+  echo arguments.
 
 ## 10. Errors and limits
 

@@ -30,7 +30,7 @@ Yes. The Worker, the TypeScript and Go protocol implementations and the cross-la
 
 ### Can AgentKit read my secrets?
 
-The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the [data classification](https://vault.agentkit.best/how-it-works/#data). Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met.
+The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the [data classification](https://vault.agentkit.best/how-it-works/#data). Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met. On staging only (pre-release, not for production credentials), remote MCP narrows this: during a call, plaintext passes through the server's memory, though it is never stored or logged ([remote access](https://vault.agentkit.best/security/#remote-access)).
 
 ### What can the server see?
 
