@@ -5,6 +5,12 @@ name: Deploy
 # first, then production behind the protected `production` GitHub Environment
 # (human reviewer, deployment branch main). Cloudflare credentials are exposed
 # only to the deploy step, never to checkout, setup or `pnpm install` scripts.
+# Staging and production queue in separate job-level concurrency groups: a run
+# waiting for the production reviewer holds only `deploy-production`, so newer
+# merges keep deploying to staging instead of replacing each other as the single
+# pending run of one shared group. A newer production job replaces an older
+# pending one (the newest main commit is what gets approved); a running deploy
+# is never cancelled.
 # Missing credentials fail the job instead of finishing green without a deploy.
 # The repository variable DEPLOY_FREEZE (unset or `false` = not frozen) stops
 # every deploy during an incident; the production job re-checks it after the
@@ -19,10 +25,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: deploy
-  cancel-in-progress: false
 
 jobs:
   gate:
@@ -73,6 +75,9 @@ jobs:
     needs: gate
     runs-on: ubuntu-latest
     environment: staging
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -101,6 +106,9 @@ jobs:
     needs: [gate, staging]
     runs-on: ubuntu-latest
     environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     steps:
       - name: Refuse while deploys are frozen
         env:
