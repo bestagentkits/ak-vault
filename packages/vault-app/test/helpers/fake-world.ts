@@ -132,13 +132,13 @@ export class FakeWorld {
     offline: false,
   };
 
-  constructor() {
+  constructor(opts: { shared?: boolean } = {}) {
     const wrap = wrapToDevice({ vk: this.vks.get(1)!, vaultId: this.vaultId, keyEpoch: 1, recipient: this.owner.record });
     const genesis = buildGenesisEvent(
       {
         vault_id: this.vaultId, ts: Date.now(), author: this.owner.record.device_id,
         body: {
-          vault_kind: 'personal', owner_account: ACCOUNT, recovery_sign_pub: this.recovery.record.sign_pub,
+          vault_kind: opts.shared ? 'shared' : 'personal', owner_account: ACCOUNT, recovery_sign_pub: this.recovery.record.sign_pub,
           devices: [this.owner.record as unknown as JsonObject], wraps_digest: wrapsDigest([wrap]),
         },
       },
@@ -195,6 +195,22 @@ export class FakeWorld {
     const ev = nextMembershipEvent(st, { type: 'device_add', ts: Date.now(), author: this.owner.record.device_id, body: { device: keys.record as unknown as JsonObject, sas, wraps_digest: wrapsDigest(ws) } }, this.owner.signSecret);
     this.events.push(ev);
     this.wraps.set(ev.seq, ws);
+  }
+
+  /** Shared vaults: the owner signs another account in with one device and a role. */
+  addMember(keys: DeviceKeys, role: 'owner' | 'editor' | 'reader'): void {
+    const st = this.state();
+    const rec = { ...keys.record, role };
+    const ws = [...this.vks.entries()].map(([e, vk]) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: e, recipient: rec }));
+    const ev = nextMembershipEvent(st, { type: 'member_add', ts: Date.now(), author: this.owner.record.device_id, body: { account: rec.account, role, devices: [rec as unknown as JsonObject], wraps_digest: wrapsDigest(ws) } }, this.owner.signSecret);
+    this.events.push(ev);
+    this.wraps.set(ev.seq, ws);
+  }
+
+  /** The owner signs a role change for an account. */
+  setRole(account: string, role: 'owner' | 'editor' | 'reader'): void {
+    const ev = nextMembershipEvent(this.state(), { type: 'role_set', ts: Date.now(), author: this.owner.record.device_id, body: { account, role } }, this.owner.signSecret);
+    this.events.push(ev);
   }
 
   /** The owner rekeys to a new vault key, wrapping it to every current device, and flags items for rotation. */

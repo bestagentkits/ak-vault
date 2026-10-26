@@ -101,7 +101,7 @@ describe('members screen through the dashboard', () => {
     expect(caps.find((c) => c.includes('Invite an account'))).toContain('cannot');
     expect(caps.find((c) => c.includes('Rekey the vault'))).toContain('cannot');
     expect(caps.find((c) => c.includes('Set a secret'))).toContain('can');
-    expect(byTestId(page.root, 'invitations').textContent).toContain('no pending invitation');
+    expect(byTestId(page.root, 'invitations').textContent).toContain('one owning account');
     expect(page.root.querySelector('[data-testid="rekey-pending"]')).toBeNull();
   });
 
@@ -149,8 +149,39 @@ describe('members screen through the dashboard', () => {
     byTestId(page.root, 'tab-secrets').click();
     world.hostile.forbidWrites = true;
     expect(await page.controller.set('some-name', 'v')).toBe(false);
-    expect(page.controller.current()).toMatchObject({ kind: 'vault', notice: { kind: 'error', code: 'role_forbidden' } });
+    // The chain still grants the role, so the refusal is not blamed on it.
+    expect(page.controller.current()).toMatchObject({ kind: 'vault', notice: { kind: 'error', code: 'write_refused' } });
     expect(b.devices.entries.size).toBe(1);
+  });
+
+  it('re-pulls after a refused write and shows a real demotion as read-only, keeping the device', async () => {
+    const world = new FakeWorld({ shared: true });
+    const bob = createDeviceKeys({ account: 'acct-bob', role: 'owner', kind: 'human' });
+    world.addMember(bob, 'owner');
+    world.ownerSet('keep-me', SENTINEL);
+    const { page, b } = await open(world);
+    expect(byTestId(page.root, 'invitations').textContent).toContain('no pending invitation');
+    byTestId(page.root, 'tab-secrets').click();
+    world.setRole(ACCOUNT, 'reader');
+    world.hostile.forbidWrites = true;
+    const before = world.exchanges.length;
+    expect(await page.controller.set('some-name', 'v')).toBe(false);
+    expect(world.exchanges.slice(before).some((e) => e.method === 'GET' && e.url.includes('/membership'))).toBe(true);
+    expect(page.controller.current()).toMatchObject({ kind: 'vault', canWrite: false, notice: { code: 'role_forbidden' } });
+    expect(byTestId(page.root, 'read-only')).toBeTruthy();
+    expect((page.root.querySelector('form.set button[type="submit"]') as HTMLButtonElement).disabled).toBe(true);
+    expect((byTestId(page.root, 'delete') as HTMLButtonElement).disabled).toBe(true);
+    expect(b.devices.entries.size).toBe(1);
+    byTestId(page.root, 'tab-members').click();
+    expect(byTestId(page.root, 'self-role').textContent).toContain('reader');
+    expect(byTestId(page.root, 'no-clawback').textContent).toContain('roles do not limit reading');
+  });
+
+  it('keeps focus on the pressed tab and marks it pressed', async () => {
+    const { page } = await open();
+    const tab = byTestId(page.root, 'tab-members');
+    expect(tab.getAttribute('aria-pressed')).toBe('true');
+    expect(document.activeElement).toBe(tab);
   });
 
   it('still shows the removed view when the refused write was because the device was removed', async () => {

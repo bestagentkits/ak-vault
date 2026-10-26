@@ -25,14 +25,14 @@ const CAPABILITY_LABEL: Record<CapabilityId, string> = {
 const REASON_TEXT: Record<CapabilityReason, string> = {
   role_read_only: 'Your role in this vault is reader.',
   rekey_pending: 'Paused until an owner device rekeys the vault.',
-  browser_session: 'Only an owner device signs membership changes. This browser never does.',
+  browser_session: 'Only an owner’s CLI device signs membership changes; the Worker refuses a browser session (ADR 0002 D1).',
   write_only_dashboard: 'The dashboard is write-only by design.',
 };
 
 const ROLE_TEXT = {
   owner: 'Owner: can write, and owner devices sign membership changes.',
   editor: 'Editor: can write items; cannot change membership.',
-  reader: 'Reader: can list metadata only.',
+  reader: 'Reader: cannot write items. Like every member, a reader’s devices can decrypt every item; roles are not read boundaries.',
 } as const;
 
 const KIND_TEXT = { personal: 'personal vault', shared: 'shared vault', ci: 'CI vault' } as const;
@@ -42,7 +42,6 @@ function memberRow(m: MemberView): HTMLElement {
     h('span', { class: 'badge' }, [m.role]),
     m.you ? h('span', { class: 'badge' }, ['you']) : null,
     m.ownerAccount ? h('span', { class: 'badge' }, ['creator']) : null,
-    h('span', { class: 'badge badge-active' }, ['active']),
   ];
   const devices = m.devices.map((d) =>
     h('li', { 'data-testid': 'device' }, [`Device ${d.shortId} (${d.kind === 'human' ? 'person' : 'machine'})`, d.thisBrowser ? ' — this browser' : '']),
@@ -67,7 +66,7 @@ function keyStateSection(m: MembershipView): HTMLElement {
   ];
   if (m.rekeyRequired) {
     lines.push(
-      h('p', { class: 'notice notice-error', role: 'status', 'data-testid': 'rekey-pending' }, [
+      h('p', { class: 'notice notice-error', 'data-testid': 'rekey-pending' }, [
         'Rekey pending: a device or member was removed and no owner device has rekeyed yet. Writes are paused for everyone until an owner device rekeys. This browser cannot do it.',
       ]),
     );
@@ -75,7 +74,7 @@ function keyStateSection(m: MembershipView): HTMLElement {
   if (m.rotation.names.length > 0 || m.rotation.unlisted > 0) {
     lines.push(
       h('div', { 'data-testid': 'needs-rotate' }, [
-        h('p', {}, ['Needs rotation: these items were readable by a removed member. Rotate each one at its provider.']),
+        h('p', {}, ['Needs rotation: these items were readable by a removed member. Rotate each one at its provider. This list does not clear when you rotate.']),
         m.rotation.names.length > 0 ? h('ul', {}, m.rotation.names.map((n) => h('li', {}, [n]))) : null,
         m.rotation.unlisted > 0 ? h('p', { class: 'muted' }, [`${m.rotation.unlisted} more flagged item(s) are not listed in this browser.`]) : null,
       ]),
@@ -83,7 +82,7 @@ function keyStateSection(m: MembershipView): HTMLElement {
   }
   lines.push(
     h('p', { class: 'muted', 'data-testid': 'no-clawback' }, [
-      'Removing a member ends their access to future changes. It cannot take back what they already read: rotating the vault key does not revoke provider keys that were disclosed to them. Rotate those at the provider.',
+      'Once an owner device has rekeyed, a removed member no longer receives future changes. It cannot take back what they already read: rotating the vault key does not revoke provider keys that were disclosed to them. Rotate those at the provider. The vault key is shared by every member: any member device can decrypt every item, and roles do not limit reading.',
     ]),
   );
   return h('section', { 'aria-labelledby': 'h-keys' }, [h('h3', { id: 'h-keys' }, ['Keys and rotation']), ...lines]);
@@ -107,7 +106,9 @@ export function membersScreen(m: MembershipView): HTMLElement {
     h('section', { 'aria-labelledby': 'h-invites' }, [
       h('h3', { id: 'h-invites' }, ['Invitations']),
       h('p', { 'data-testid': 'invitations' }, [
-        'Protocol v1 has no pending invitation: nothing waits on the server. An account becomes a member only when an owner device signs it in, and it appears above on your next refresh. Inviting, removing, changing roles and rekeying happen on an owner device, not in this browser.',
+        m.vaultKind === 'shared'
+          ? 'Protocol v1 has no pending invitation: nothing waits on the server. An account becomes a member only when an owner device signs it in, and it appears above on your next refresh. Inviting, removing, changing roles and rekeying happen on an owner device, not in this browser.'
+          : 'This vault has one owning account: only shared vaults can add other accounts. Devices of your account are added with an owner device (ak secrets devices approve).',
       ]),
     ]),
     h('section', { 'aria-labelledby': 'h-caps' }, [h('h3', { id: 'h-caps' }, ['What this browser can do']), h('ul', { class: 'caps' }, m.capabilities.map(capabilityRow))]),

@@ -339,7 +339,12 @@ export class AppController {
     // A refused write may mean a stale role (an owner demoted this account since the last pull).
     // Pull again before judging: a removed device is found by the pull itself, anything else keeps its keys.
     if (isVaultApiError(err, 'forbidden')) {
-      await this.sync({ kind: 'error', code: 'role_forbidden' });
+      await this.sync(null);
+      // The pull showed the vault (a removed device went to `fail`). Judge the refusal by the role it verified.
+      if (this.screen.kind === 'vault' && this.snapshot) {
+        const role = buildMembershipView(this.snapshot.state, this.snapshot.self.device_id, new Map()).selfRole;
+        this.showVault({ kind: 'error', code: roleCanWrite(role) ? 'write_refused' : 'role_forbidden' }, null);
+      }
       return;
     }
     const code = appErrorCode(err, 'server');

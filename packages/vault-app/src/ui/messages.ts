@@ -21,6 +21,7 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   conflict: 'Another device changed this item at the same time. The list was refreshed; review it and try again.',
   rekey_required: 'An owner device must rekey this vault before changes are accepted.',
   role_forbidden: 'Your role in this vault does not allow that change. The membership view was refreshed.',
+  write_refused: 'The server refused that change. The membership view was refreshed; sign in again if this repeats.',
   invalid_name: 'Names must not be empty, start or end with spaces, or contain "/" or control characters.',
   value_too_large: 'That value is too large or contains invalid text.',
   not_found: 'That item no longer exists.',

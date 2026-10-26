@@ -112,7 +112,8 @@ function matchesFilter(item: ItemView, filter: string): boolean {
 }
 
 function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () => void, busy: boolean, canWrite: boolean): HTMLElement {
-  const confirming = vs.confirmDelete === item.itemId;
+  // A role change can land while a delete awaits its confirm: stop offering it.
+  const confirming = vs.confirmDelete === item.itemId && canWrite;
   const meta: Child[] = [
     h('span', { class: `badge badge-${item.sensitivity}` }, [item.sensitivity === 'high' ? 'high sensitivity' : 'normal']),
     item.createdMs !== null ? h('span', {}, [`created ${fmtDate(item.createdMs)}`]) : null,
@@ -151,9 +152,11 @@ function tabs(vs: ViewState, rerender: () => void): HTMLElement {
       click: () => {
         vs.tab = id;
         rerender();
+        // The screen is rebuilt: put keyboard focus back on the pressed tab.
+        (document.querySelector(`[data-testid="tab-${id}"]`) as HTMLElement | null)?.focus();
       },
     });
-  return h('nav', { class: 'row', 'aria-label': 'Vault sections' }, [tab('secrets', 'Secrets'), tab('members', 'Members and access')]);
+  return h('div', { class: 'row', role: 'group', 'aria-label': 'Vault sections' }, [tab('secrets', 'Secrets'), tab('members', 'Members and access')]);
 }
 
 function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs: ViewState, rerender: () => void): HTMLElement[] {
