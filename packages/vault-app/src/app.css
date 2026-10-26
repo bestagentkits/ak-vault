@@ -58,3 +58,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .profile dt { color: var(--muted); }
 .profile dd { margin: 0; word-break: break-word; }
 .origin, .muted, .count { color: var(--muted); font-size: 0.85rem; }
+.tabs { margin-top: 0.75rem; }
+button.tab[aria-pressed="true"] { color: #fff; background: var(--accent); border-color: var(--accent); }
+.access h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; }
+.members, .devices, .caps { list-style: none; padding: 0; margin: 0; }
+.member { padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+.member-head { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.devices { padding-left: 0.75rem; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+.badge-role-owner { border-color: var(--accent); color: var(--accent); }
+.cap { padding: 0.3rem 0; }
+.cap-no .badge { color: var(--muted); }
+.cap-yes .badge { border-color: var(--ok); color: var(--ok); }
+@media (max-width: 30rem) { .bar { flex-wrap: wrap; } .item-head { flex-direction: column; align-items: flex-start; } }

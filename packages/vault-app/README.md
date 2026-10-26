@@ -10,6 +10,15 @@ keys in IndexedDB. An owner device approves it with a SAS join code
 It lists and searches metadata, sets values (write-only) and deletes items. It
 never shows, copies or stores a value; tokens and vault keys stay in memory.
 
+The **Vault access** tab shows members, roles, devices, key epoch, rekey and
+needs-rotate state and what this browser session can do. It is derived only from
+the membership chain this browser verified (no extra request, no server-supplied
+list) and has no action that posts a membership event: member add, removal, role
+change and rekey need an owner device, and the Worker refuses them from a
+`browser` session. v1 has no invitation state, so none is shown. A 403 on a write
+re-pulls the chain, so a changed role shows as a read-only view and a removal ends
+at the removed screen; the two are never confused.
+
 ## Build
 
 The deploy step runs no bundler, so the built files are committed:

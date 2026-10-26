@@ -96,6 +96,8 @@ export function memoryPendingStore(): PendingStore & { value: PendingSignIn | nu
 
 export class FakeWorld {
   readonly owner: DeviceKeys = createDeviceKeys({ account: ACCOUNT, role: 'owner', kind: 'human' });
+  /** The owner device that authors membership mutations below (a test may hand over to another owner). */
+  actor: DeviceKeys;
   readonly recovery: DeviceKeys = createDeviceKeys({ account: ACCOUNT, role: 'owner', kind: 'human' });
   readonly vaultId = randomId();
   readonly vks = new Map<number, Uint8Array>([[1, randomBytes(32)]]);
@@ -128,13 +130,14 @@ export class FakeWorld {
     omitIss: false,
   };
 
-  constructor() {
+  constructor(readonly kind: 'personal' | 'shared' = 'personal') {
+    this.actor = this.owner;
     const wrap = wrapToDevice({ vk: this.vks.get(1)!, vaultId: this.vaultId, keyEpoch: 1, recipient: this.owner.record });
     const genesis = buildGenesisEvent(
       {
         vault_id: this.vaultId, ts: Date.now(), author: this.owner.record.device_id,
         body: {
-          vault_kind: 'personal', owner_account: ACCOUNT, recovery_sign_pub: this.recovery.record.sign_pub,
+          vault_kind: this.kind, owner_account: ACCOUNT, recovery_sign_pub: this.recovery.record.sign_pub,
           devices: [this.owner.record as unknown as JsonObject], wraps_digest: wrapsDigest([wrap]),
         },
       },
@@ -181,6 +184,42 @@ export class FakeWorld {
     const ev = nextMembershipEvent(st, { type: 'device_add', ts: Date.now(), author: this.owner.record.device_id, body: { device: join.device as unknown as JsonObject, sas, wraps_digest: wrapsDigest(ws) } }, this.owner.signSecret);
     this.events.push(ev);
     this.wraps.set(ev.seq, ws);
+  }
+
+  /** Owner-signed `member_add` of a new account with one device (shared vaults only). */
+  addMember(account: string, role: 'owner' | 'editor' | 'reader'): DeviceKeys {
+    const keys = createDeviceKeys({ account, role, kind: 'human' });
+    const st = this.state();
+    const ws = [...this.vks.entries()].map(([e, vk]) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: e, recipient: keys.record }));
+    const ev = nextMembershipEvent(st, { type: 'member_add', ts: Date.now(), author: this.actor.record.device_id, body: { account, role, devices: [keys.record as unknown as JsonObject], wraps_digest: wrapsDigest(ws) } }, this.actor.signSecret);
+    this.events.push(ev);
+    this.wraps.set(ev.seq, ws);
+    return keys;
+  }
+
+  setRole(account: string, role: 'owner' | 'editor' | 'reader'): void {
+    const ev = nextMembershipEvent(this.state(), { type: 'role_set', ts: Date.now(), author: this.actor.record.device_id, body: { account, role } }, this.actor.signSecret);
+    this.events.push(ev);
+  }
+
+  removeMember(account: string): void {
+    const ev = nextMembershipEvent(this.state(), {
+      type: 'member_remove', ts: Date.now(), author: this.actor.record.device_id,
+      body: { account, log_fence: this.log.length, log_head: this.logHeads[this.log.length]! },
+    }, this.actor.signSecret);
+    this.events.push(ev);
+  }
+
+  /** Owner-signed rekey to a fresh key for every remaining device. */
+  rekey(needsRotate: string[] = []): void {
+    const st = this.state();
+    const epoch = st.key_epoch + 1;
+    const vk = randomBytes(32);
+    const ws = st.devices.map((d) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: epoch, recipient: d }));
+    const ev = nextMembershipEvent(st, { type: 'rekey', ts: Date.now(), author: this.actor.record.device_id, body: { new_key_epoch: epoch, wraps_digest: wrapsDigest(ws), needs_rotate: needsRotate } }, this.actor.signSecret);
+    this.events.push(ev);
+    this.wraps.set(ev.seq, ws);
+    this.vks.set(epoch, vk);
   }
 
   removeDevice(deviceId: string): void {

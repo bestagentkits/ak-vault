@@ -23,6 +23,7 @@ import {
 } from './oauth/pkce-client.js';
 import { createAkvClient, isVaultApiError, type AkvClient } from './sync/akv-client.js';
 import { acceptOffer, DEFAULT_DEVICE_LABEL, joinCodeFor, newJoinNonce, sanitizeLabel } from './sync/enroll.js';
+import { diffAccess, membershipViewOf, type AccessChange, type MembershipView } from './sync/membership-view.js';
 import { pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
 import { deleteItem, findByName, setItem } from './sync/write-ops.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
@@ -35,7 +36,11 @@ export type Screen =
   | { kind: 'signed_out'; notice: Notice | null }
   | { kind: 'join'; joinCode: string; deviceId: string; notice: Notice | null }
   | { kind: 'approve'; sas: string; deviceId: string; notice: Notice | null }
-  | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; deviceId: string; notice: Notice | null; busy: boolean }
+  | {
+    kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; deviceId: string; notice: Notice | null; busy: boolean;
+    /** Membership as this browser verified it, when it did so, and what changed since the previous verified pull. */
+    access: MembershipView; verifiedAtMs: number; changes: AccessChange[];
+  }
   | { kind: 'removed' };
 
 export interface ControllerDeps {
@@ -75,6 +80,8 @@ export class AppController {
   private kx: DeviceKx | null = null;
   private client: AkvClient | null = null;
   private snapshot: VaultSnapshot | null = null;
+  private verifiedAtMs = 0;
+  private changes: AccessChange[] = [];
   private readonly now: () => number;
 
   constructor(private readonly deps: ControllerDeps) {
@@ -276,7 +283,10 @@ export class AppController {
       const storedFloor = stored && deviceIdOf(stored.keys) === deviceIdOf(next.keys) ? stored.enrollment?.witnessed : null;
       if (!storedFloor || !enrollment.witnessed || !isWitnessedOlder(enrollment.witnessed, storedFloor)) await this.deps.devices.put(next);
       this.device = next;
+      const before = this.snapshot ? membershipViewOf(this.snapshot.state, this.snapshot.self.device_id) : null;
       this.snapshot = snapshot;
+      this.verifiedAtMs = this.now();
+      this.changes = before ? diffAccess(before, membershipViewOf(snapshot.state, snapshot.self.device_id)) : [];
       this.showVault(notice, null);
     } catch (err) {
       if (pendingApproval) {
@@ -295,6 +305,7 @@ export class AppController {
     this.show({
       kind: 'vault', items: s.items, matches, unreadable: s.unreadable, hidden: s.hidden, rekeyRequired: s.state.rekey_required,
       deviceId: s.self.device_id, notice, busy,
+      access: membershipViewOf(s.state, s.self.device_id), verifiedAtMs: this.verifiedAtMs, changes: this.changes,
     });
   }
 
@@ -334,6 +345,13 @@ export class AppController {
   }
 
   private async writeFailed(err: unknown): Promise<void> {
+    // A 403 on a write is a removed device or a role that changed since the last pull
+    // (stale role). Pull again: a removed device ends at the removed screen, a changed
+    // role shows the new access with a fixed explanation.
+    if (isVaultApiError(err, 'forbidden')) {
+      await this.sync({ kind: 'error', code: 'role_forbidden' });
+      return;
+    }
     const code = appErrorCode(err, 'server');
     const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'quota_exceeded', 'network', 'server'];
     if (!isVaultApiError(err) && recoverable.includes(code)) {

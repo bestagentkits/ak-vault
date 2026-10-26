@@ -32,6 +32,31 @@ describe('browser session kind', () => {
     expect((await call(fx.owner, 'PUT', `/v1/vaults/${fx.vaultId}/recovery`, { bundle: {} }, BROWSER)).status).toBe(403);
   });
 
+  it('cannot add, remove or re-role a member or rekey a shared vault, and the chain does not move', async () => {
+    const fx = await VaultFixture.create('shared');
+    const editor = await fx.addDevice({ account: `acct-${randomId()}`, role: 'editor' });
+    const seq = fx.state.seq;
+
+    const candidate = fx.newDevice({ account: `acct-${randomId()}`, role: 'editor' });
+    const add = fx.enrollEvent(candidate);
+    expect(add.event.type).toBe('member_add');
+    expect((await fx.append(add.event, add.wraps, fx.owner, BROWSER)).status).toBe(403);
+
+    const roleSet = fx.buildEvent('role_set', { account: editor.account, role: 'reader' });
+    expect((await fx.append(roleSet, undefined, fx.owner, BROWSER)).status).toBe(403);
+
+    const removal = fx.buildEvent('member_remove', { account: editor.account, ...(await fx.fence()) });
+    expect((await fx.append(removal, undefined, fx.owner, BROWSER)).status).toBe(403);
+
+    const rekey = fx.rekeyEvent();
+    expect((await fx.append(rekey.event, rekey.wraps, fx.owner, BROWSER)).status).toBe(403);
+
+    // Nothing was applied: the same events still succeed from a CLI (non-browser) session, in order.
+    const log = await fx.get(fx.owner, `/membership?from=0&limit=1000`, BROWSER);
+    expect(log.json.events).toHaveLength(seq + 1);
+    expect((await fx.append(add.event, add.wraps)).status).toBe(201);
+  });
+
   it('cannot publish a seal key or drain or acknowledge sealed ops', async () => {
     const fx = await VaultFixture.create();
     const doc = buildSealKeyDoc({ vk: fx.vk.get(1)!, vaultId: fx.vaultId, keyEpoch: 1, membershipSeq: fx.state.seq, author: fx.owner.keys.record.device_id, ts: Date.now() }, fx.owner.keys.signSecret);

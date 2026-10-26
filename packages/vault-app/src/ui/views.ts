@@ -7,6 +7,7 @@
  */
 import type { AppController, Notice, Screen } from '../app-controller.js';
 import type { ItemView } from '../sync/vault-sync.js';
+import { accessSection } from './access-view.js';
 import { h, replaceChildren, type Child } from './dom.js';
 import { messageFor } from './messages.js';
 
@@ -20,10 +21,11 @@ export const NO_CAPTURE = {
 export interface ViewState {
   filter: string;
   confirmDelete: string | null;
+  tab: 'secrets' | 'access';
 }
 
 export function newViewState(): ViewState {
-  return { filter: '', confirmDelete: null };
+  return { filter: '', confirmDelete: null, tab: 'secrets' };
 }
 
 function noticeEl(notice: Notice | null): Child {
@@ -109,7 +111,7 @@ function matchesFilter(item: ItemView, filter: string): boolean {
   return fields.some((t) => t.toLowerCase().includes(f));
 }
 
-function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () => void, busy: boolean): HTMLElement {
+function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () => void, busy: boolean, canWrite: boolean, needsRotate: boolean): HTMLElement {
   const confirming = vs.confirmDelete === item.itemId;
   const meta: Child[] = [
     h('span', { class: `badge badge-${item.sensitivity}` }, [item.sensitivity === 'high' ? 'high sensitivity' : 'normal']),
@@ -117,6 +119,7 @@ function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () =
     item.rotatedMs !== null ? h('span', {}, [`rotated ${fmtDate(item.rotatedMs)}`]) : null,
     item.creator ? h('span', {}, [`by ${item.creator}`]) : null,
     item.rotateTtlDays !== null ? h('span', {}, [`rotate every ${item.rotateTtlDays} days`]) : null,
+    needsRotate ? h('span', { class: 'badge badge-conflict', title: 'A removed member could read this item. Rotate it at the provider.', 'data-testid': 'item-needs-rotate' }, ['needs rotation']) : null,
     item.openConflicts > 0 ? h('span', { class: 'badge badge-conflict' }, [`${item.openConflicts} unresolved conflict${item.openConflicts > 1 ? 's' : ''}`]) : null,
   ];
   const profile = item.profile.length
@@ -125,7 +128,9 @@ function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () =
       h('dd', {}, [Array.isArray(p.value) ? p.value.join(', ') : p.value, h('span', { class: 'origin', title: 'Where this field came from' }, [` (${p.origin})`])]),
     ]))
     : null;
-  const actions = confirming
+  const actions = !canWrite
+    ? null
+    : confirming
     ? h('div', { class: 'row' }, [
       h('button', { type: 'button', class: 'danger', disabled: busy, 'data-testid': 'confirm-delete' }, ['Delete for every device'], {
         click: () => {
@@ -158,8 +163,11 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
     again?.setSelectionRange(again.value.length, again.value.length);
   });
 
+  const rotateIds = new Set(s.access.needsRotate);
   const shown = s.items.filter((i) => (s.matches ? s.matches.includes(i.itemId) : true) && matchesFilter(i, vs.filter));
-  const setForm = h('form', { class: 'set', 'aria-busy': s.busy ? 'true' : 'false' }, [
+  const setForm = !s.access.canWrite
+    ? h('p', { class: 'muted', 'data-testid': 'read-only' }, ['Your role in this vault is reader: you can browse metadata but not write.'])
+    : h('form', { class: 'set', 'aria-busy': s.busy ? 'true' : 'false' }, [
     h('h2', {}, ['Set a secret']),
     h('label', { for: 'set-name' }, ['Name']),
     nameInput,
@@ -177,13 +185,19 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
     },
   });
 
+  const tab = (id: ViewState['tab'], label: string): HTMLElement =>
+    h('button', { type: 'button', class: vs.tab === id ? 'tab' : 'tab secondary', 'aria-pressed': vs.tab === id ? 'true' : 'false', 'data-testid': `tab-${id}` }, [label], {
+      click: () => { vs.tab = id; rerender(); },
+    });
   return [
     header(c, s.deviceId),
     h('main', {}, [
       noticeEl(s.notice),
       s.rekeyRequired ? h('p', { class: 'notice notice-error', role: 'status' }, [messageFor('rekey_required')]) : null,
-      setForm,
-      h('section', {}, [
+      h('nav', { class: 'row tabs', 'aria-label': 'Dashboard sections' }, [tab('secrets', 'Secrets'), tab('access', 'Vault access')]),
+      vs.tab === 'access' ? accessSection(s.access, s.verifiedAtMs, s.changes) : null,
+      vs.tab === 'secrets' ? setForm : null,
+      vs.tab === 'secrets' ? h('section', {}, [
         h('div', { class: 'row' }, [
           filterInput,
           h('button', { type: 'button', class: 'secondary', title: 'Find the item with exactly this name', 'data-testid': 'exact' }, ['Exact name'], {
@@ -193,10 +207,10 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
           h('button', { type: 'button', class: 'secondary', disabled: s.busy, 'data-testid': 'refresh' }, ['Refresh'], { click: () => void c.refresh() }),
         ]),
         h('p', { class: 'count', 'aria-live': 'polite' }, [`${shown.length} of ${s.items.length} items`]),
-        h('ul', { class: 'items' }, shown.map((i) => itemRow(c, i, vs, rerender, s.busy))),
+        h('ul', { class: 'items' }, shown.map((i) => itemRow(c, i, vs, rerender, s.busy, s.access.canWrite, rotateIds.has(i.itemId)))),
         s.unreadable > 0 ? h('p', { class: 'muted' }, [`${s.unreadable} item(s) use a key this browser was never given.`]) : null,
         s.hidden > 0 ? h('p', { class: 'muted' }, [`${s.hidden} item(s) are policies or other kinds the dashboard does not list.`]) : null,
-      ]),
+      ]) : null,
     ]),
   ];
 }
