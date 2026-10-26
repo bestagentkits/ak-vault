@@ -272,6 +272,7 @@ var vectorHandlers = map[string]fileHandler{
 	"sealed-op.json":        checkSealedOp,
 	"name-tag.json":         checkNameTag,
 	"enroll-codes.json":     checkEnrollCodes,
+	"enroll-commit.json":    checkEnrollCommit,
 	"profile.json":          checkProfile,
 	"relay-frames.json":     checkRelayFrames,
 }

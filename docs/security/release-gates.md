@@ -208,6 +208,11 @@ in production needs every box below, at the exact commit, plus an owner decision
 - [ ] Go and TypeScript reproduce `seal-key.json`, `sealed-op.json`, `name-tag.json`,
       `enroll-codes.json`, `profile.json` and `relay-frames.json`, including every
       negative case ([spec §3.6–§3.8, §5.1, §9.7](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)).
+- [ ] Committed enrollment: Go and TypeScript reproduce `enroll-commit.json` including the
+      ground nonce refusal ([spec §3.9](../protocol/v1/spec.md#39-committed-enrollment-codes));
+      the `ak` CLI and the dashboard enroll with `akj2-`/`ako2-`/`akr2-` and the owner
+      device refuses `akj1-`, so [threat model X9](./threat-model.md) can drop its
+      uncommitted-SAS limitation.
 - [ ] Relay: Worker tests for the closed frame set and close codes, signed `hello` and
       `result`, `reauth` before expiry, revocation and membership checked before each
       call (a device removed mid-connection gets no further call), a replaced

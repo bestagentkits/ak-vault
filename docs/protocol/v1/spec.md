@@ -193,6 +193,13 @@ SAS transcript = `cjson({"ctx":"akv1/sas","vault_id","initiator":device_id,"join
 `b64(sha256(transcript))`. A mismatch aborts enrollment. The joiner and the
 initiator exchange the transcript inputs as enrollment codes (§3.8).
 
+**Limit of this SAS.** Both nonces travel in the clear and nothing commits to either
+before the other is known, so a party that can alter the codes learns one nonce and
+searches for the other (about 10^6 hashes) until the six digits match the honest
+side's display. This SAS therefore does not authenticate an enrollment against an
+attacker on the code channel. §3.9 adds the commitment that closes the search and
+supersedes this transcript for new enrollments.
+
 ### 3.6 Seal key and sealed operations
 
 A **sealed operation** lets the Worker queue a write that a remote MCP client asked
@@ -420,25 +427,101 @@ author's `sign_pub`, §4), the checkpoint signature and its non-rollback against
 chain (§6), and that the `device_add` adding it carries `sas` = `b64(sha256(transcript))`
 for its own device record before it trusts any wrap.
 
-**Authenticity of the code channel.** v1 does not commit to the nonces before they are
-revealed: the join code carries `nonce_j` and the offer code carries `nonce_i`, and
+**Authenticity of the code channel.** The `akj1-`/`ako1-` codes do not commit to the
+nonces before they are revealed: the join code carries `nonce_j` and the offer code carries `nonce_i`, and
 neither is bound to the other. The six-digit SAS (about 20 bits) therefore authenticates
 the exchange only while the two codes travel between the two devices without an active
 attacker on that path. An attacker who carries both codes can read `nonce_j`, put its own
 device towards the owner, learn the owner's digits, then choose the nonce it hands the
-joiner and grind about 10^6 SHA-256 values until both sides show the same six digits. v1
-therefore requires an authentic code channel: the user copies the codes between two
+joiner and grind about 10^6 SHA-256 values until both sides show the same six digits. These
+codes therefore require an authentic code channel: the user copies the codes between two
 terminals or screens they control. A service that relays the codes for the user (the
-Worker, ak-web or another service) is outside what v1 protects, and an implementation
-MUST NOT offer such a flow on v1 codes. A relayed flow needs a commit-reveal exchange in which the
-joiner commits to `nonce_j` before it sees `nonce_i` and reveals it only afterwards, which
-is a wire change under the spec-change procedure.
+Worker, ak-web or another service) is outside what these codes protect, and an
+implementation MUST NOT offer such a flow on `akj1-`/`ako1-` codes. A relayed flow MUST use
+the committed codes of §3.9 on both sides, in which the joiner commits to `nonce_j` before
+it sees `nonce_i` and reveals it only afterwards, and MUST NOT fall back to these codes.
 
 Vectors (`enroll-codes.json`): byte-exact round trips of a join and an offer code in
 the format shipped CLIs produce; a code split by whitespace parses; oversize, wrong
 prefix, wrong `ctx`, an extra or missing key, non-canonical JSON, a non-owner or
 machine device, a non-ASCII label and a non-canonical origin → `bad_request`; `v` 2 →
 `unsupported_version`.
+
+These `akj1-`/`ako1-` codes carry the uncommitted SAS and its limit (§3.5). They stay
+accepted because shipped CLIs and the dashboard produce them; a new implementation
+MUST also implement the committed codes of §3.9 and SHOULD offer them first.
+
+### 3.9 Committed enrollment codes
+
+Committed enrollment replaces the uncommitted exchange of §3.8 with three codes and a
+commitment, so the six-digit SAS cannot be ground. The joiner chooses `nonce_j`
+(16 random bytes) and commits to it before it sees `nonce_i`; it reveals `nonce_j`
+only after it holds the offer. Same envelope as §3.8: a prefix followed by
+`b64(cjson(obj))`, `v` 1, no signature checked while parsing, and the same
+`White_Space`, size, key-set and context rules. Contexts use the `akv1/` prefix.
+
+```
+commit = b64(sha256(cjson({"ctx":"akv1/enroll-nonce-j","nonce_j":"<b64 16B>"})))
+join   = "akj2-" || b64(cjson({"v":1,"ctx":"akv1/enroll-join","account":…,"device":<device record>,"nonce_j_commit":commit,"label":…}))
+offer  = "ako2-" || b64(cjson({"v":1,"ctx":"akv1/enroll-offer","vault_origin":…,"vault_id":…,"initiator":device_id,
+                                "joiner":device_id,"nonce_i":"<b64 16B>","nonce_j_commit":commit,
+                                "trust_anchor":"<b64 32B Ed25519 sign_pub>","checkpoint":<signed checkpoint>}))
+reveal = "akr2-" || b64(cjson({"v":1,"ctx":"akv1/enroll-reveal","vault_id":…,"joiner":device_id,"nonce_j":"<b64 16B>"}))
+```
+
+`join` and `offer` follow the §3.8 field rules with `nonce_j_commit` a 32-byte value in
+place of `nonce_j`; `reveal` has `vault_id` and `joiner` as IDs and a 16-byte `nonce_j`.
+Order:
+
+1. The joiner prints `join` and keeps `nonce_j`.
+2. The owner device parses it, chooses `nonce_i`, and answers with `offer`, echoing
+   `nonce_j_commit`. It does not yet have `nonce_j` and shows no SAS.
+3. The joiner accepts the offer only if `joiner` is its own device ID and
+   `nonce_j_commit` is its own commitment, then prints `reveal` and shows its SAS.
+4. The owner device accepts `reveal` only if `vault_id` and `joiner` are those of the
+   pending enrollment and `verifyNonceJReveal` passes (`nonce_j` hashes to the stored
+   commitment; otherwise `forbidden`, and no SAS is computed). It then shows its SAS.
+   An owner device holds at most one pending enrollment per joiner and discards it on
+   the first failed reveal.
+
+```
+transcript = cjson({"ctx":"akv1/sas2","vault_id","vault_origin","trust_anchor",
+                    "initiator":device_id,"joiner":device,"nonce_i","nonce_j"})
+code       = uint32be(sha256(transcript)[0:4]) mod 10^6, shown as 6 digits
+device_add.body.sas = b64(sha256(transcript))
+```
+
+The owner device MUST NOT sign `device_add` until the human confirms that both
+displays show the same digits over a channel other than the one that carried the codes.
+The joiner's final check of §3.8 uses this transcript: the `device_add` that adds it
+carries `sas` = `b64(sha256(transcript))` for its own device record, with the
+`vault_origin` and `trust_anchor` of the offer it accepted. The origin and anchor are in
+the transcript, so a substituted anchor or origin changes the digits.
+
+Why the search fails. A forger that replaces the join fixes its own key and a
+commitment before the owner device reveals `nonce_i`, so the owner's digits are not
+known to the forger when it fixes `nonce_j`. A forger that replaces the offer must pick
+`nonce_i` without knowing the honest `nonce_j`, which only the commitment hides. Each
+attempt therefore matches with probability 10^-6 and costs a fresh enrollment that the
+owner sees fail. An implementation SHOULD stop after three mismatches. A SAS shorter
+than the key material still cannot stop an attacker who is given unlimited attempts;
+this construction bounds each attempt, not the number the humans tolerate.
+
+Compatibility. §3.8 codes remain accepted (§3.8). A joiner that printed an `akj2-`
+join accepts only `ako2-`, and an owner device MAY refuse `akj1-` (a policy switch, not
+a wire rule). An attacker who swaps an `akj2-` join for an `akj1-` join downgrades the
+exchange to the uncommitted SAS if the owner device accepts both; the owner device and
+the joiner SHOULD display which form was used, and the owner SHOULD refuse `akj1-` when
+the joiner is known to support committed codes.
+
+Vectors (`enroll-commit.json`): byte-exact round trips of all three codes; the
+commitment, matching and mismatching reveals (`forbidden`); the SAS transcript, code and
+digest as known answers, with each field (origin, anchor, initiator, joiner, both
+nonces) changing the digest; a ground nonce that reproduces the six digits but is refused
+against the forger's commitment (`forbidden`); and wrong prefix, legacy context, extra or
+missing key, a plain `nonce_j` in the join, a short commitment or nonce, a non-owner or
+machine device, a non-canonical origin, another vault's checkpoint → `bad_request`;
+`v` 2 → `unsupported_version`.
 
 ## 4. Membership log (owner-signed, hash-chained)
 
@@ -1392,7 +1475,7 @@ under an earlier revision does not verify and is reset rather than migrated.
   client applied policy items, so no existing data changes meaning.
 - **2026-10 (issue #101, bestagentkits/ak-web#628):** remote access, all additive: the
   seal key and sealed operations (§3.6), name tags and the `{record, name_tag}` item
-  PUT wrapper (§3.7), enrollment code formats (§3.8), the profile layout and its
+  PUT wrapper (§3.7), enrollment code formats (§3.8, §3.9), the profile layout and its
   provenance check (§5.1), the `browser` session kind (§9 item 1), the remote-access
   routes (§9.6), the relay (§9.7) and their errors and limits (§10). A bare record
   PUT, every existing route and every existing body keep their meaning, so clients

@@ -12,6 +12,7 @@ import { deviceAddWrapsVectors } from './device-add-wraps.js';
 import { removalFenceVectors } from './removal-fence.js';
 import { nameTagVectors, sealedOpVectors, sealKeyVectors } from './seal-and-name-tag.js';
 import { enrollCodeVectors } from './enroll-codes.js';
+import { enrollCommitVectors } from './enroll-commit.js';
 import { profileVectors } from './profile-provenance.js';
 import { relayFrameVectors } from './relay-frames.js';
 
@@ -39,6 +40,7 @@ const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'sealed-op.json': sealedOpVectors,
   'name-tag.json': nameTagVectors,
   'enroll-codes.json': enrollCodeVectors,
+  'enroll-commit.json': enrollCommitVectors,
   'profile.json': profileVectors,
   'relay-frames.json': relayFrameVectors,
 };
