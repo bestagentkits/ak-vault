@@ -28,6 +28,8 @@ export const APP_ERROR_CODES = [
   'not_found',
   'item_unreadable',
   'duplicate_name',
+  'history_unavailable',
+  'restore_current',
   'quota_exceeded',
   'invalid_rotation',
   'rotation_value_unchanged',

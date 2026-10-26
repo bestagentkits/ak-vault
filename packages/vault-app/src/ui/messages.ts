@@ -27,6 +27,8 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   not_found: 'That item no longer exists.',
   item_unreadable: 'This browser does not hold the key for that item.',
   duplicate_name: 'More than one item has that name. Resolve it from the CLI first.',
+  history_unavailable: 'That revision or branch cannot be used from this browser: it is not readable here, is a deletion, or is no longer current. Nothing was written. Use `ak secrets sync settle` or a device that holds the key.',
+  restore_current: 'That revision already has the current value. Nothing was written.',
   quota_exceeded: 'The vault is full.',
   invalid_rotation: 'That rotation interval is not valid. Use a whole number of days from 1 to 36500, or clear it.',
   rotation_value_unchanged: 'That is the value already in the vault, so nothing was rotated. Create a new credential at the provider and enter it here.',
@@ -42,6 +44,8 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   settings_saved: 'Rotation settings saved.',
   saved: 'Saved. The value was encrypted in this browser and is not shown.',
   deleted: 'Deleted.',
+  restored: 'Restored as a new revision. The value was encrypted in this browser and is not shown. Rotate or revoke the credential at its provider if it may be exposed.',
+  resolved: 'Conflicting branches marked resolved with a new revision. The branches stay in the signed history.',
 };
 
 export function messageFor(code: AppErrorCode | Notice['code']): string {
