@@ -8,6 +8,7 @@
 import type { AppController, Notice, Screen } from '../app-controller.js';
 import type { ItemView } from '../sync/vault-sync.js';
 import { h, replaceChildren, type Child } from './dom.js';
+import { membersScreen } from './members-view.js';
 import { messageFor } from './messages.js';
 
 /** Keep the browser and password managers from storing, suggesting or correcting a field. */
@@ -20,10 +21,11 @@ export const NO_CAPTURE = {
 export interface ViewState {
   filter: string;
   confirmDelete: string | null;
+  tab: 'secrets' | 'members';
 }
 
 export function newViewState(): ViewState {
-  return { filter: '', confirmDelete: null };
+  return { filter: '', confirmDelete: null, tab: 'secrets' };
 }
 
 function noticeEl(notice: Notice | null): Child {
@@ -109,8 +111,9 @@ function matchesFilter(item: ItemView, filter: string): boolean {
   return fields.some((t) => t.toLowerCase().includes(f));
 }
 
-function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () => void, busy: boolean): HTMLElement {
-  const confirming = vs.confirmDelete === item.itemId;
+function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () => void, busy: boolean, canWrite: boolean): HTMLElement {
+  // A role change can land while a delete awaits its confirm: stop offering it.
+  const confirming = vs.confirmDelete === item.itemId && canWrite;
   const meta: Child[] = [
     h('span', { class: `badge badge-${item.sensitivity}` }, [item.sensitivity === 'high' ? 'high sensitivity' : 'normal']),
     item.createdMs !== null ? h('span', {}, [`created ${fmtDate(item.createdMs)}`]) : null,
@@ -135,12 +138,25 @@ function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () =
       }),
       h('button', { type: 'button', class: 'secondary' }, ['Cancel'], { click: () => { vs.confirmDelete = null; rerender(); } }),
     ])
-    : h('button', { type: 'button', class: 'secondary', disabled: busy, 'data-testid': 'delete' }, ['Delete'], { click: () => { vs.confirmDelete = item.itemId; rerender(); } });
+    : h('button', { type: 'button', class: 'secondary', disabled: busy || !canWrite, 'data-testid': 'delete' }, ['Delete'], { click: () => { vs.confirmDelete = item.itemId; rerender(); } });
   return h('li', { class: 'item', 'data-testid': 'item' }, [
     h('div', { class: 'item-head' }, [h('span', { class: 'name', 'data-testid': 'item-name' }, [item.name]), actions]),
     h('div', { class: 'meta' }, meta),
     profile,
   ]);
+}
+
+function tabs(vs: ViewState, rerender: () => void): HTMLElement {
+  const tab = (id: ViewState['tab'], label: string): HTMLElement =>
+    h('button', { type: 'button', class: vs.tab === id ? '' : 'secondary', 'aria-pressed': vs.tab === id ? 'true' : 'false', 'data-testid': `tab-${id}` }, [label], {
+      click: () => {
+        vs.tab = id;
+        rerender();
+        // The screen is rebuilt: put keyboard focus back on the pressed tab.
+        (document.querySelector(`[data-testid="tab-${id}"]`) as HTMLElement | null)?.focus();
+      },
+    });
+  return h('div', { class: 'row', role: 'group', 'aria-label': 'Vault sections' }, [tab('secrets', 'Secrets'), tab('members', 'Members and access')]);
 }
 
 function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs: ViewState, rerender: () => void): HTMLElement[] {
@@ -165,7 +181,7 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
     nameInput,
     h('label', { for: 'set-value' }, ['Value (write-only: it is encrypted here and never shown again)']),
     valueInput,
-    h('button', { type: 'submit', disabled: s.busy || s.rekeyRequired }, ['Save']),
+    h('button', { type: 'submit', disabled: s.busy || s.rekeyRequired || !s.canWrite }, ['Save']),
   ], {
     submit: (ev) => {
       ev.preventDefault();
@@ -182,8 +198,11 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
     h('main', {}, [
       noticeEl(s.notice),
       s.rekeyRequired ? h('p', { class: 'notice notice-error', role: 'status' }, [messageFor('rekey_required')]) : null,
-      setForm,
-      h('section', {}, [
+      !s.canWrite ? h('p', { class: 'notice notice-info', role: 'status', 'data-testid': 'read-only' }, ['Your role in this vault is reader, so this browser can list metadata only.']) : null,
+      tabs(vs, rerender),
+      vs.tab === 'members' ? membersScreen(s.membership) : null,
+      vs.tab === 'secrets' ? setForm : null,
+      vs.tab === 'secrets' ? h('section', {}, [
         h('div', { class: 'row' }, [
           filterInput,
           h('button', { type: 'button', class: 'secondary', title: 'Find the item with exactly this name', 'data-testid': 'exact' }, ['Exact name'], {
@@ -193,10 +212,10 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
           h('button', { type: 'button', class: 'secondary', disabled: s.busy, 'data-testid': 'refresh' }, ['Refresh'], { click: () => void c.refresh() }),
         ]),
         h('p', { class: 'count', 'aria-live': 'polite' }, [`${shown.length} of ${s.items.length} items`]),
-        h('ul', { class: 'items' }, shown.map((i) => itemRow(c, i, vs, rerender, s.busy))),
+        h('ul', { class: 'items' }, shown.map((i) => itemRow(c, i, vs, rerender, s.busy, s.canWrite && !s.rekeyRequired))),
         s.unreadable > 0 ? h('p', { class: 'muted' }, [`${s.unreadable} item(s) use a key this browser was never given.`]) : null,
         s.hidden > 0 ? h('p', { class: 'muted' }, [`${s.hidden} item(s) are policies or other kinds the dashboard does not list.`]) : null,
-      ]),
+      ]) : null,
     ]),
   ];
 }

@@ -23,6 +23,7 @@ import {
 } from './oauth/pkce-client.js';
 import { createAkvClient, isVaultApiError, type AkvClient } from './sync/akv-client.js';
 import { acceptOffer, DEFAULT_DEVICE_LABEL, joinCodeFor, newJoinNonce, sanitizeLabel } from './sync/enroll.js';
+import { buildMembershipView, roleCanWrite, type MembershipView } from './sync/membership-view.js';
 import { pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
 import { deleteItem, findByName, setItem } from './sync/write-ops.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
@@ -35,7 +36,7 @@ export type Screen =
   | { kind: 'signed_out'; notice: Notice | null }
   | { kind: 'join'; joinCode: string; deviceId: string; notice: Notice | null }
   | { kind: 'approve'; sas: string; deviceId: string; notice: Notice | null }
-  | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; deviceId: string; notice: Notice | null; busy: boolean }
+  | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; canWrite: boolean; membership: MembershipView; deviceId: string; notice: Notice | null; busy: boolean }
   | { kind: 'removed' };
 
 export interface ControllerDeps {
@@ -292,9 +293,10 @@ export class AppController {
 
   private showVault(notice: Notice | null, matches: string[] | null, busy = false): void {
     const s = this.snapshot!;
+    const membership = buildMembershipView(s.state, s.self.device_id, new Map(s.items.map((i) => [i.itemId, i.name])));
     this.show({
       kind: 'vault', items: s.items, matches, unreadable: s.unreadable, hidden: s.hidden, rekeyRequired: s.state.rekey_required,
-      deviceId: s.self.device_id, notice, busy,
+      canWrite: roleCanWrite(membership.selfRole), membership, deviceId: s.self.device_id, notice, busy,
     });
   }
 
@@ -334,6 +336,17 @@ export class AppController {
   }
 
   private async writeFailed(err: unknown): Promise<void> {
+    // A refused write may mean a stale role (an owner demoted this account since the last pull).
+    // Pull again before judging: a removed device is found by the pull itself, anything else keeps its keys.
+    if (isVaultApiError(err, 'forbidden')) {
+      await this.sync(null);
+      // The pull showed the vault (a removed device went to `fail`). Judge the refusal by the role it verified.
+      if (this.screen.kind === 'vault' && this.snapshot) {
+        const role = buildMembershipView(this.snapshot.state, this.snapshot.self.device_id, new Map()).selfRole;
+        this.showVault({ kind: 'error', code: roleCanWrite(role) ? 'write_refused' : 'role_forbidden' }, null);
+      }
+      return;
+    }
     const code = appErrorCode(err, 'server');
     const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'quota_exceeded', 'network', 'server'];
     if (!isVaultApiError(err) && recoverable.includes(code)) {

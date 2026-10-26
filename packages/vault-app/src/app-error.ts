@@ -21,6 +21,8 @@ export const APP_ERROR_CODES = [
   'rollback',
   'conflict',
   'rekey_required',
+  'role_forbidden',
+  'write_refused',
   'invalid_name',
   'value_too_large',
   'not_found',
