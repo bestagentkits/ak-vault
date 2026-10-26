@@ -1,6 +1,7 @@
 /** Drive the real controller and views against a FakeWorld, one "page load" at a time. */
 import { AppController } from '../../src/app-controller.js';
 import { memoryDeviceStore } from '../../src/keys/device-store.js';
+import { memoryWriteRequestStore } from '../../src/sync/write-intent.js';
 import { newViewState, render } from '../../src/ui/views.js';
 import { FakeWorld, ORIGIN, memoryPendingStore } from './fake-world.js';
 
@@ -19,6 +20,8 @@ export interface BrowserOptions {
 
 export class Browser {
   readonly pending = memoryPendingStore();
+  /** Survives page loads like sessionStorage does across the sign-in redirect. */
+  readonly writeRequest = memoryWriteRequestStore();
   readonly devices: ReturnType<typeof memoryDeviceStore>;
   readonly locks: Pick<LockManager, 'request'> | undefined;
   /** Runs after the world answered and before the page sees the response (to reorder responses). */
@@ -50,6 +53,7 @@ export class Browser {
       fetchFn: this.fetch as typeof fetch,
       pending: this.pending,
       devices: this.devices,
+      writeRequest: this.writeRequest,
       subtle: crypto.subtle,
       navigate: (u) => navigated.push(u),
       replaceUrl: (u) => replaced.push(u),

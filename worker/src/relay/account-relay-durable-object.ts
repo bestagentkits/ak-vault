@@ -18,6 +18,7 @@ import { DurableObject } from 'cloudflare:workers';
 import {
   RELAY_TOOLS,
   TOOL_SCOPE,
+  b64decodeLength,
   b64encode,
   cjson,
   isAkvError,
@@ -36,13 +37,23 @@ import {
   type Role,
 } from '@ak-vault/protocol';
 import { verifyToken } from '../auth/jwt-verify.js';
-import { isDeviceRevoked } from '../auth/revocation-check.js';
+import { isDeviceRevoked, isGrantRevoked } from '../auth/revocation-check.js';
 import type { Env } from '../env.js';
 import { ApiError, errorResult } from '../http/errors.js';
 import { logRelayEvent } from '../http/operational-logger.js';
 import { resultResponse } from '../http/responses.js';
 import { REMOTE_ACCESS_LIMITS } from '../limits.js';
-import type { RateDecision, RelayAuditEntry, RelayCall, RelayOutcome } from './relay-rpc.js';
+import type {
+  IntentActionArgs,
+  IntentActionResult,
+  IntentStatusResult,
+  PrepareIntentArgs,
+  PrepareIntentResult,
+  RateDecision,
+  RelayAuditEntry,
+  RelayCall,
+  RelayOutcome,
+} from './relay-rpc.js';
 import {
   CLOSE,
   CLOSE_REASON,
@@ -54,6 +65,19 @@ import {
   type CloseCode,
   type Connection,
 } from './relay-session.js';
+import {
+  INTENT_SCHEMA,
+  claim as claimIntent,
+  getIntent,
+  insertIntent,
+  nextPurgeAt,
+  openIntentCount,
+  processingOverdue,
+  purgeIntents,
+  transition,
+  type IntentRow,
+  type IntentStatus,
+} from './write-intent-store.js';
 
 const L = REMOTE_ACCESS_LIMITS;
 /** Transit allowance on top of the device's `deadline_ms` before a call times out. */
@@ -85,6 +109,7 @@ export class AccountRelay extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS client_rate (bucket TEXT PRIMARY KEY, window INTEGER NOT NULL, count INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS client_audit (ts INTEGER NOT NULL, client_hash TEXT NOT NULL, tool TEXT NOT NULL, outcome TEXT NOT NULL, ms INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS client_audit_ts ON client_audit (ts);
+      ${INTENT_SCHEMA}
     `);
   }
 
@@ -370,11 +395,210 @@ export class AccountRelay extends DurableObject<Env> {
     return true;
   }
 
+
+  // ---------------------------------------------------------------- write requests
+
+  /**
+   * Record a human-only write request for a vault the Worker's MCP handler already
+   * checked (membership, role, scope, seal key). The row binds the MCP grant and
+   * client that asked; `target` is the sealed name. Open requests are capped per account.
+   */
+  async prepareWriteIntent(a: PrepareIntentArgs, nowMs: number = Date.now()): Promise<PrepareIntentResult> {
+    if (
+      !isId(a?.vaultId) ||
+      typeof a.grantId !== 'string' ||
+      a.grantId.length === 0 ||
+      !Number.isSafeInteger(a.grantIat) ||
+      typeof a.clientId !== 'string' ||
+      a.clientId.length === 0 ||
+      (a.op !== 'create' && a.op !== 'replace') ||
+      (a.sensitivity !== undefined && a.sensitivity !== 'normal' && a.sensitivity !== 'high') ||
+      typeof a.target !== 'object' ||
+      a.target === null
+    ) {
+      return { ok: false, code: 'invalid' };
+    }
+    const target = JSON.stringify(a.target);
+    const result = this.ctx.storage.transactionSync((): PrepareIntentResult => {
+      purgeIntents(this.sql, nowMs);
+      if (openIntentCount(this.sql, nowMs) >= L.write_intents_open_per_account) return { ok: false, code: 'too_many_open' };
+      const requestId = b64encode(randomBytes(16));
+      const expiresAt = nowMs + L.write_intent_ttl_s * 1000;
+      insertIntent(this.sql, {
+        rid: requestId,
+        vault_id: a.vaultId,
+        grant_id: a.grantId,
+        grant_iat: a.grantIat,
+        client_id: a.clientId,
+        op: a.op,
+        sensitivity: a.sensitivity ?? null,
+        target,
+        created_at: nowMs,
+        expires_at: expiresAt,
+      });
+      return { ok: true, requestId, expiresAt };
+    });
+    if (result.ok) await this.scheduleAlarm();
+    return result;
+  }
+
+  /**
+   * Status of a request for the MCP client that created it. Null when the request is
+   * unknown, purged, or was made by another grant or client (all answer alike).
+   */
+  async writeIntentStatus(a: { requestId: string; grantId: string; clientId: string }, nowMs: number = Date.now()): Promise<IntentStatusResult | null> {
+    if (!isId(a?.requestId)) return null;
+    const row = getIntent(this.sql, a.requestId);
+    if (!row || row.grant_id !== a.grantId || row.client_id !== a.clientId) return null;
+    const settled = await this.settleIntent(row, nowMs);
+    return { status: settled.status, expiresAt: settled.expires_at };
+  }
+
+  /**
+   * One browser call on a request (`view`, `claim`, `complete`, `fail`, `cancel`).
+   * Order: proof (burns its `jti`) -> per-device rate -> request -> the device is still a
+   * current owner or editor of the request's vault -> the MCP grant is still live ->
+   * settle by time and vault state -> the action, as a compare-and-set on the status.
+   * Every refusal is a stable code; nothing here sees a value or a name.
+   */
+  async writeIntentAction(a: IntentActionArgs, nowMs: number = Date.now()): Promise<IntentActionResult> {
+    const refuse = (code: Extract<IntentActionResult, { ok: false }>['code'], extra?: Record<string, string | number | boolean>, status?: number): IntentActionResult => ({
+      ok: false,
+      code,
+      ...(status === undefined ? {} : { status }),
+      ...(extra ? { extra } : {}),
+    });
+    if (!isId(a?.rid)) return refuse('bad_request');
+    const initial = getIntent(this.sql, a.rid);
+    if (!initial) return refuse('not_found');
+
+    // The device must be a current owner or editor device of the request's vault; its
+    // proof is checked against the key the membership chain enrolled for it.
+    const device = await this.env.VAULT.get(this.env.VAULT.idFromName(initial.vault_id)).memberDevice(a.did, a.sub);
+    if (!device || (device.role !== 'owner' && device.role !== 'editor')) return refuse('forbidden');
+    if (!verifyRelayProof(this.sql, { proof: a.proof, token: a.token, htu: a.htu, did: a.did, signPub: device.signPub, nowMs, htm: a.htm, body: a.body })) return refuse('unauthorized');
+    if (!this.takeIntentRate(a.did, nowMs)) return refuse('rate_limited');
+    let revoked: boolean;
+    try {
+      revoked = await isGrantRevoked(this.env, { sub: a.sub, sid: initial.grant_id, iat: initial.grant_iat });
+    } catch {
+      return refuse('unauthorized', undefined, 503);
+    }
+    if (revoked) {
+      // The grant that asked is gone: nobody may finish what it asked for.
+      this.ctx.storage.transactionSync(() => {
+        transition(this.sql, initial.rid, 'pending_user', 'cancelled', nowMs);
+        transition(this.sql, initial.rid, 'processing', 'cancelled', nowMs);
+      });
+      return refuse('unauthorized');
+    }
+
+    const row = await this.settleIntent(initial, nowMs);
+    const view = (r: IntentRow) => ({ request_id: r.rid, status: r.status, expires_at: r.expires_at });
+    const wrong = (r: IntentRow) => refuse('conflict', { status: r.status });
+    const settledAs = (to: IntentStatus, from: IntentStatus): IntentActionResult => {
+      const won = this.ctx.storage.transactionSync(() => transition(this.sql, row.rid, from, to, nowMs));
+      const now = getIntent(this.sql, row.rid) ?? row;
+      return won ? { ok: true, body: view(now) } : wrong(now);
+    };
+
+    switch (a.action) {
+      case 'view': {
+        if (row.status !== 'pending_user') return wrong(row);
+        return {
+          ok: true,
+          body: { ...view(row), vault_id: row.vault_id, operation: row.op, ...(row.sensitivity ? { sensitivity: row.sensitivity } : {}), target: JSON.parse(row.target) as unknown },
+        };
+      }
+      case 'cancel':
+        return row.status === 'pending_user' ? settledAs('cancelled', 'pending_user') : wrong(row);
+      case 'claim': {
+        if (row.status !== 'pending_user') return wrong(row);
+        if (!isId(a.itemId) || !Number.isSafeInteger(a.baseRevision) || (a.baseRevision as number) < 0) return refuse('bad_request');
+        const base = a.baseRevision as number;
+        let head;
+        try {
+          head = await this.env.VAULT.get(this.env.VAULT.idFromName(row.vault_id)).itemHead(a.itemId);
+        } catch {
+          return refuse('internal');
+        }
+        // The request binds the operation and the revision: a create needs a new item at 0,
+        // a replace needs the live item exactly at the revision the browser read.
+        const fits = row.op === 'create' ? head === null && base === 0 : head !== null && !head.tombstone && head.revision === base;
+        if (!fits) {
+          // The binding no longer holds: end the request as a conflict and refuse this claim.
+          this.ctx.storage.transactionSync(() => transition(this.sql, row.rid, 'pending_user', 'conflict', nowMs));
+          return wrong(getIntent(this.sql, row.rid) ?? row);
+        }
+        const won = this.ctx.storage.transactionSync(() => claimIntent(this.sql, row.rid, a.did, a.itemId as string, base, nowMs));
+        const now = getIntent(this.sql, row.rid) ?? row;
+        return won ? { ok: true, body: view(now) } : wrong(now);
+      }
+      case 'complete':
+        if (row.status === 'completed') return row.did === a.did ? { ok: true, body: view(row) } : refuse('forbidden');
+        if (row.status !== 'processing') return wrong(row);
+        return row.did === a.did ? { ok: true, body: view(row) } : refuse('forbidden');
+      case 'fail': {
+        if (row.status === 'completed') return row.did === a.did ? { ok: true, body: view(row) } : refuse('forbidden');
+        const to: IntentStatus = a.reason === 'conflict' ? 'conflict' : 'failed';
+        if (row.status === 'pending_user') return settledAs(to, 'pending_user');
+        if (row.status !== 'processing') return wrong(row);
+        if (row.did !== a.did) return refuse('forbidden');
+        return settledAs(to, 'processing');
+      }
+    }
+  }
+
+  /** Per-device budget for `/v1/write-intents/*`; a refused call spends nothing. */
+  private takeIntentRate(did: string, nowMs: number): boolean {
+    const window = Math.floor(nowMs / RATE_WINDOW_MS);
+    const bucket = `intent:${did}`;
+    return this.ctx.storage.transactionSync(() => {
+      const count = this.sql.exec<{ count: number }>('SELECT count FROM client_rate WHERE bucket = ? AND window = ?', bucket, window).toArray()[0]?.count ?? 0;
+      if (count >= L.write_intent_calls_per_minute_per_device) return false;
+      this.sql.exec('INSERT INTO client_rate (bucket, window, count) VALUES (?, ?, ?) ON CONFLICT (bucket) DO UPDATE SET window = excluded.window, count = excluded.count', bucket, window, count + 1);
+      return true;
+    });
+  }
+
+  /**
+   * Bring a request up to date: a pending one past its TTL expires; a claimed one is
+   * compared with the vault. The browser's item write is a normal signed record, so
+   * the vault's durable head tells whether it landed: the claiming device authored a
+   * live head at `base_revision + 1` -> `completed`; any other advance -> `conflict`;
+   * no advance after the processing window -> `failed`. An unreadable vault leaves
+   * the row as it is.
+   */
+  private async settleIntent(row: IntentRow, nowMs: number): Promise<IntentRow> {
+    const reload = () => getIntent(this.sql, row.rid) ?? row;
+    if (row.status === 'pending_user') {
+      if (nowMs >= row.expires_at) this.ctx.storage.transactionSync(() => transition(this.sql, row.rid, 'pending_user', 'expired', nowMs));
+      return reload();
+    }
+    if (row.status !== 'processing' || row.item_id === null || row.base_revision === null || row.did === null) return row;
+    let head;
+    try {
+      head = await this.env.VAULT.get(this.env.VAULT.idFromName(row.vault_id)).itemHead(row.item_id);
+    } catch {
+      return reload();
+    }
+    const base = row.base_revision;
+    const wrote = head !== null && !head.tombstone && head.author === row.did && head.revision === base + 1;
+    const raced = head !== null && head.revision > base && !wrote;
+    const to: IntentStatus | null = wrote ? 'completed' : raced ? 'conflict' : processingOverdue(row, nowMs) ? 'failed' : null;
+    if (to) this.ctx.storage.transactionSync(() => transition(this.sql, row.rid, 'processing', to, nowMs));
+    return reload();
+  }
+
   // ---------------------------------------------------------------- alarm
 
-  /** Close connections whose `hello` is overdue (4400) or whose token expired without `reauth` (4401). */
+  /**
+   * Close connections whose `hello` is overdue (4400) or whose token expired without
+   * `reauth` (4401), and purge write requests past retention.
+   */
   override async alarm(): Promise<void> {
     const now = Date.now();
+    purgeIntents(this.sql, now);
     for (const [ws, c] of this.openSockets()) {
       if (!live(c, now)) this.close(ws, c, CLOSE.unauthorized);
       else if (c.hello !== 'ready' && now >= c.connectedAt + L.relay_hello_timeout_ms) this.close(ws, c, CLOSE.badFrame);
@@ -388,6 +612,8 @@ export class AccountRelay extends DurableObject<Env> {
       next = Math.min(next, c.exp * 1000);
       if (c.hello !== 'ready') next = Math.min(next, c.connectedAt + L.relay_hello_timeout_ms);
     }
+    const purgeAt = nextPurgeAt(this.sql);
+    if (purgeAt !== null) next = Math.min(next, Math.max(purgeAt, Date.now() + 1000));
     if (next === Number.POSITIVE_INFINITY) await this.ctx.storage.deleteAlarm();
     else await this.ctx.storage.setAlarm(next);
   }
@@ -499,6 +725,16 @@ export class AccountRelay extends DurableObject<Env> {
       // already closing
     }
     logRelayEvent({ event: 'close', code, sub: conn.sub });
+  }
+}
+
+function isId(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    b64decodeLength(value, 16);
+    return true;
+  } catch {
+    return false;
   }
 }
 

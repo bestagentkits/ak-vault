@@ -204,6 +204,20 @@ export class VaultDurableObject extends DurableObject<Env> {
     return device.role;
   }
 
+  /**
+   * Role and `sign_pub` of `did` when it is a current `human` device of account `sub`
+   * (also a current member), else null. Lets a caller that holds only the token's
+   * `did` verify that device's proof against the key the membership chain enrolled.
+   */
+  async memberDevice(did: string, sub: string): Promise<{ role: Role; signPub: string } | null> {
+    const state = this.remoteState();
+    if (!state) return null;
+    const device = state.devices.find((d) => d.device_id === did);
+    if (!device || device.account !== sub || device.kind !== 'human') return null;
+    if (!state.members.some((m) => m.account === sub)) return null;
+    return { role: device.role, signPub: device.sign_pub };
+  }
+
   /** The role of account `sub` when it is a current member, else null (MCP membership check, spec §9.8). */
   async accountRole(sub: string): Promise<Role | null> {
     return this.remoteState()?.members.find((m) => m.account === sub)?.role ?? null;
@@ -218,6 +232,22 @@ export class VaultDurableObject extends DurableObject<Env> {
     const state = this.remoteState();
     if (!state || state.rekey_required) return null;
     return currentSealKey(this.sql, state);
+  }
+
+  /**
+   * Current head of item `itemId` for the write-request reconcile: revision,
+   * tombstone and the device that authored the head record. Null when the item does
+   * not exist or the vault is not a remote target. Carries no names or values.
+   */
+  async itemHead(itemId: string): Promise<{ revision: number; tombstone: boolean; author: string } | null> {
+    if (!this.remoteState()) return null;
+    const row = this.sql.exec<{ revision: number; tombstone: number; head_log_seq: number }>('SELECT revision, tombstone, head_log_seq FROM items WHERE item_id = ?', itemId).toArray()[0];
+    if (!row) return null;
+    const record = this.sql.exec<{ record_json: string }>('SELECT record_json FROM records WHERE log_seq = ?', row.head_log_seq).toArray()[0];
+    if (!record) return null;
+    const author = (JSON.parse(record.record_json) as { author?: unknown }).author;
+    if (typeof author !== 'string') return null;
+    return { revision: row.revision, tombstone: row.tombstone === 1, author };
   }
 
   /** Queue a sealed operation built by the MCP handler (the only way one enters the queue). */

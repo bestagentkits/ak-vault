@@ -201,6 +201,43 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
   ];
 }
 
+function writeScreen(c: AppController, s: Extract<Screen, { kind: 'write' }>): HTMLElement[] {
+  const { request } = s;
+  const valueInput = h('input', { id: 'write-value', type: 'text', class: 'masked', required: true, 'data-testid': 'write-value', ...NO_CAPTURE }) as HTMLInputElement;
+  const sensitivity = h('select', { id: 'write-sensitivity', name: 'sensitivity', 'data-testid': 'write-sensitivity' }, [h('option', {}, ['normal']), h('option', {}, ['high'])]) as HTMLSelectElement;
+  sensitivity.value = request.sensitivity ?? 'normal';
+  const verb = request.operation === 'create' ? 'create' : 'replace';
+  const expires = new Date(request.expiresAt);
+  return [
+    header(c, s.deviceId),
+    h('main', {}, [
+      noticeEl(s.notice),
+      h('h2', {}, ['An assistant asked you to enter a secret']),
+      h('p', {}, [`It asked to ${verb} this secret. Enter the value only if you expect this request. The assistant never sees what you type: it is encrypted in this browser.`]),
+      h('p', {}, ['Name: ', h('code', { 'data-testid': 'write-name' }, [request.name])]),
+      Number.isNaN(expires.getTime()) ? null : h('p', { class: 'muted' }, [`Open until ${expires.toISOString().slice(0, 16).replace('T', ' ')} UTC.`]),
+      h('form', { class: 'set', 'aria-busy': s.busy ? 'true' : 'false' }, [
+        h('label', { for: 'write-value' }, ['Value (write-only: it is encrypted here and never shown again)']),
+        valueInput,
+        request.operation === 'create' ? h('label', { for: 'write-sensitivity' }, ['Sensitivity']) : null,
+        request.operation === 'create' ? sensitivity : null,
+        h('div', { class: 'row' }, [
+          h('button', { type: 'submit', disabled: s.busy, 'data-testid': 'write-save' }, ['Save']),
+          h('button', { type: 'button', class: 'secondary', disabled: s.busy, 'data-testid': 'write-cancel' }, ['Decline'], { click: () => void c.cancelWrite() }),
+        ]),
+      ], {
+        submit: (ev) => {
+          ev.preventDefault();
+          const value = valueInput.value;
+          // Clear the field before anything else so the value does not linger in the DOM.
+          valueInput.value = '';
+          void c.submitWrite(value, sensitivity.value === 'high' ? 'high' : 'normal');
+        },
+      }),
+    ]),
+  ];
+}
+
 export function render(root: Element, c: AppController, screen: Screen, vs: ViewState, rerender: () => void): void {
   let nodes: HTMLElement[];
   switch (screen.kind) {
@@ -222,6 +259,9 @@ export function render(root: Element, c: AppController, screen: Screen, vs: View
       break;
     case 'vault':
       nodes = vaultScreen(c, screen, vs, rerender);
+      break;
+    case 'write':
+      nodes = writeScreen(c, screen);
       break;
     case 'removed':
       nodes = [header(c, null), h('main', {}, [

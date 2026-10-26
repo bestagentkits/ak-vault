@@ -94,7 +94,18 @@ function itemsNamed(snapshot: VaultSnapshot, name: string): string[] {
  * Set `name` to `value`: a new item, or a new revision of the one live item
  * with that name. Two live items sharing a name are refused (`duplicate_name`).
  */
-export async function setItem(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; name: string; value: string; nowMs?: number }): Promise<WriteResult> {
+export async function setItem(args: {
+  client: AkvClient;
+  snapshot: VaultSnapshot;
+  signer: DeviceSigner;
+  name: string;
+  value: string;
+  nowMs?: number;
+  /** Item ID for a create, chosen up front when a write request binds it before the write. */
+  newItemId?: string;
+  /** Sensitivity of a created item (a replace keeps the stored one). */
+  sensitivity?: ItemPayload['sensitivity'];
+}): Promise<WriteResult> {
   const { snapshot } = args;
   if (!validItemName(args.name)) throw new AppError('invalid_name');
   if (!validItemValue(args.value)) throw new AppError('value_too_large');
@@ -102,10 +113,10 @@ export async function setItem(args: { client: AkvClient; snapshot: VaultSnapshot
   const nowMs = args.nowMs ?? Date.now();
   const matches = itemsNamed(snapshot, args.name);
   if (matches.length > 1) throw new AppError('duplicate_name');
-  const itemId = matches[0] ?? randomId();
+  const itemId = matches[0] ?? args.newItemId ?? randomId();
   let base = 0;
   let meta: JsonObject;
-  let sensitivity: ItemPayload['sensitivity'] = 'normal';
+  let sensitivity: ItemPayload['sensitivity'] = args.sensitivity ?? 'normal';
   if (matches[0]) {
     const prev = openHead(snapshot, itemId);
     base = snapshot.itemStates.get(itemId)!.revision;
@@ -121,6 +132,24 @@ export async function setItem(args: { client: AkvClient; snapshot: VaultSnapshot
   const record = await signRecordAsync({ ...ctx, ts: nowMs, resolves: [], env }, args.signer);
   const tag = nameTag(nameIndexKey(vk, snapshot.vaultId, snapshot.state.key_epoch), args.name);
   return sendRecord(args.client, snapshot, record, tag);
+}
+
+/**
+ * Where a create or replace of `name` would land, from the verified snapshot: the
+ * item and the revision the write is a compare-and-swap on. A create needs the name
+ * to be free, a replace needs exactly one live item with it.
+ */
+export function planWrite(snapshot: VaultSnapshot, name: string, operation: 'create' | 'replace'): { itemId: string | null; baseRevision: number } {
+  if (!validItemName(name)) throw new AppError('invalid_name');
+  const matches = itemsNamed(snapshot, name);
+  if (matches.length > 1) throw new AppError('duplicate_name');
+  if (operation === 'create') {
+    if (matches.length === 1) throw new AppError('conflict');
+    return { itemId: null, baseRevision: 0 };
+  }
+  const itemId = matches[0];
+  if (!itemId) throw new AppError('not_found');
+  return { itemId, baseRevision: snapshot.itemStates.get(itemId)!.revision };
 }
 
 /** Delete a live item with a signed tombstone at its verified head. */

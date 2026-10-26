@@ -27,6 +27,7 @@ export const APP_ERROR_CODES = [
   'item_unreadable',
   'duplicate_name',
   'quota_exceeded',
+  'write_request_gone',
   'network',
   'server',
 ] as const;

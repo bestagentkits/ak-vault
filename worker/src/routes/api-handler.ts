@@ -3,6 +3,9 @@
  * token -> live revocation -> vault Durable Object (rate budget, membership, proof, scope,
  * role, rate charge, idempotency, mutation). Only `/v1/meta` bypasses auth and the kill switch.
  *
+ * `/v1/write-intents/*` (remote access only) is the browser half of a human-only write
+ * request: the same token, revocation and proof checks, then the account's relay object.
+ *
  * `GET /v1/relay` (remote access only) runs the same kill switch, token and revocation
  * checks plus the relay session rules, then hands the upgrade to the account's relay
  * object, which verifies the proof and owns the connection.
@@ -17,6 +20,7 @@ import { relayStub } from '../relay/relay-rpc.js';
 import { RELAY_OPEN_HEADER, deviceKeyMatches, encodeRelayOpen, relaySessionRefusal } from '../relay/relay-session.js';
 import { isMutation } from '../vault/vault-request.js';
 import { matchVaultRoute } from './api-routes.js';
+import { handleWriteIntent, matchWriteIntentRoute } from './write-intent-routes.js';
 import { meta, syncEnabled } from './meta-routes.js';
 
 export interface RouteInfo {
@@ -35,6 +39,11 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
   }
   if (!syncEnabled(env)) throw new ApiError('sync_disabled');
   const remoteAccess = remoteAccessEnabled(env);
+  const intentRoute = remoteAccess ? matchWriteIntentRoute(request.method, url.pathname) : null;
+  if (intentRoute) {
+    info.template = intentRoute.template;
+    return handleWriteIntent(request, env, intentRoute);
+  }
   const route = matchVaultRoute(request.method, url.pathname, { remoteAccess });
   if (!route) throw new ApiError('not_found');
   info.template = route.template;

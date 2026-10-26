@@ -26,6 +26,8 @@ export function isVaultApiError(err: unknown, code?: string): err is VaultApiErr
 export interface AkvClient {
   get(path: string): Promise<unknown>;
   put(path: string, body: unknown): Promise<unknown>;
+  /** POST with an optional JSON body and no idempotency key (write-request actions are CAS transitions). */
+  post(path: string, body?: unknown): Promise<unknown>;
 }
 
 export interface AkvClientDeps {
@@ -53,7 +55,7 @@ export function newIdempotencyKey(): string {
 export function createAkvClient(deps: AkvClientDeps): AkvClient {
   const now = deps.now ?? Date.now;
 
-  async function send(method: 'GET' | 'PUT', path: string, body: unknown, idempotencyKey: string | null): Promise<unknown> {
+  async function send(method: 'GET' | 'PUT' | 'POST', path: string, body: unknown, idempotencyKey: string | null): Promise<unknown> {
     if (!path.startsWith('/v1/')) throw new AppError('server');
     const url = `${deps.origin}${path}`;
     const text = body === undefined ? '' : JSON.stringify(body);
@@ -63,10 +65,10 @@ export function createAkvClient(deps: AkvClientDeps): AkvClient {
       const proof = await buildProofAsync({ htm: method, htu: url, ts: now(), token: token.token, body: bytes }, deps.signer);
       const headers: Record<string, string> = { Authorization: `Bearer ${token.token}`, 'AKV-Proof': proof };
       if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
-      if (method === 'PUT') headers['Content-Type'] = 'application/json';
+      if (body !== undefined) headers['Content-Type'] = 'application/json';
       let res: Response;
       try {
-        res = await deps.fetchFn(url, { method, headers, credentials: 'omit', cache: 'no-store', ...(method === 'PUT' ? { body: text } : {}) });
+        res = await deps.fetchFn(url, { method, headers, credentials: 'omit', cache: 'no-store', ...(body !== undefined ? { body: text } : {}) });
       } catch {
         throw new AppError('network');
       }
@@ -82,5 +84,6 @@ export function createAkvClient(deps: AkvClientDeps): AkvClient {
   return {
     get: (path) => send('GET', path, undefined, null),
     put: (path, body) => send('PUT', path, body, newIdempotencyKey()),
+    post: (path, body) => send('POST', path, body, null),
   };
 }

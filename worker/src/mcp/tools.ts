@@ -1,5 +1,5 @@
 /**
- * The seven MCP tools (spec §9.8): one per relay tool (§9.7), same arguments plus
+ * The seven relay MCP tools (spec §9.8): one per relay tool (§9.7), same arguments plus
  * an optional `vault_id`, same scopes. No tool returns a secret value: reads
  * return names and profile metadata, writes return a status, and `run` returns
  * output the device redacted.
@@ -68,7 +68,7 @@ const DEFINITIONS: Record<RelayTool, Omit<ToolDefinition, 'name'>> = {
   set: {
     title: 'Set a secret',
     description:
-      'Create or replace a secret value (write-only: the value is never shown again). An online device writes it at once; with no device online it is sealed to your vault and queued until a device drains it (status "queued"). The value passes through the vault server in memory only and is never stored or logged in plaintext.',
+      'Create or replace a secret value (write-only: the value is never shown again). The value you pass here appears in this conversation; for any real secret prefer secrets_prepare_write, which takes no value and lets the user type it into their own dashboard. An online device writes it at once; with no device online it is sealed to your vault and queued until a device drains it (status "queued"). The value passes through the vault server in memory only and is never stored or logged in plaintext.',
     inputSchema: schema(
       {
         name: itemName,

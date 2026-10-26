@@ -26,12 +26,14 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   item_unreadable: 'This browser does not hold the key for that item.',
   duplicate_name: 'More than one item has that name. Resolve it from the CLI first.',
   quota_exceeded: 'The vault is full.',
+  write_request_gone: 'That write request is no longer open: it expired, was already used or cancelled, or does not belong to this vault. Ask the assistant to start a new one.',
   network: 'The network request failed. Check your connection and try again.',
   server: 'The server could not complete the request. Try again shortly.',
   locked: 'The dashboard is locked. Sign in to unlock it.',
   signed_out: 'You signed out.',
   saved: 'Saved. The value was encrypted in this browser and is not shown.',
   deleted: 'Deleted.',
+  write_cancelled: 'Cancelled. Nothing was written.',
 };
 
 export function messageFor(code: AppErrorCode | Notice['code']): string {

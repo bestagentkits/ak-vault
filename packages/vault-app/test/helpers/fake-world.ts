@@ -24,6 +24,8 @@ import {
   sasCode,
   sasDigest,
   sealItem,
+  sealOp,
+  deriveSealKeyPair,
   sha256,
   signCheckpoint,
   signRecord,
@@ -206,6 +208,65 @@ export class FakeWorld {
     return itemId;
   }
 
+  /** Human-only write requests the way the Worker keeps them: ciphertext target, binding, status. */
+  readonly intents = new Map<string, { rid: string; operation: 'create' | 'replace'; sensitivity?: 'normal' | 'high'; target: unknown; status: string; did: string | null; itemId: string | null; base: number | null }>();
+
+  /** What `secrets_prepare_write` does: a pending request whose target name is sealed to the vault seal key. */
+  prepareIntent(name: string, operation: 'create' | 'replace', sensitivity?: 'normal' | 'high'): string {
+    const rid = randomId();
+    const epoch = this.state().key_epoch;
+    const sealPub = deriveSealKeyPair(this.vks.get(epoch)!, this.vaultId, epoch).publicKey;
+    const target = sealOp(b64encode(sealPub), {
+      vaultId: this.vaultId, keyEpoch: epoch, origin: { kind: 'mcp', account: ACCOUNT, client_id: 'client-1', grant_id: 'grant-1' }, ts: Date.now(),
+      op: { op: 'set', name, value: '', ...(sensitivity ? { sensitivity } : {}) },
+    });
+    this.intents.set(rid, { rid, operation, ...(sensitivity ? { sensitivity } : {}), target, status: 'pending_user', did: null, itemId: null, base: null });
+    return rid;
+  }
+
+  private routeIntent(parts: string[], method: string, body: string, did: string): Response {
+    const row = this.intents.get(decodeURIComponent(parts[3] ?? ''));
+    if (!row) return apiError(404, 'not_found');
+    const action = parts[4];
+    const view = { request_id: row.rid, status: row.status, expires_at: Date.now() + 600_000 };
+    if (method === 'GET' && !action) {
+      if (row.status !== 'pending_user') return json(409, { error: { code: 'conflict', message: 'synthetic', status: row.status } });
+      return json(200, { ...view, vault_id: this.vaultId, operation: row.operation, ...(row.sensitivity ? { sensitivity: row.sensitivity } : {}), target: row.target });
+    }
+    if (method !== 'POST') return apiError(404, 'not_found');
+    const conflict = () => json(409, { error: { code: 'conflict', message: 'synthetic', status: row.status } });
+    if (action === 'claim') {
+      if (row.status !== 'pending_user') return conflict();
+      const b = JSON.parse(body) as { item_id: string; base_revision: number };
+      const state = this.itemStates.get(b.item_id);
+      const fits = row.operation === 'create' ? !state && b.base_revision === 0 : !!state && !state.tombstone && state.revision === b.base_revision;
+      if (!fits) {
+        row.status = 'conflict';
+        return conflict();
+      }
+      Object.assign(row, { status: 'processing', did, itemId: b.item_id, base: b.base_revision });
+      return json(200, { ...view, status: row.status });
+    }
+    if (action === 'complete') {
+      if (row.status !== 'processing' || row.did !== did) return conflict();
+      const state = this.itemStates.get(row.itemId!);
+      row.status = state && state.revision === row.base! + 1 ? 'completed' : 'failed';
+      return json(200, { ...view, status: row.status });
+    }
+    if (action === 'fail') {
+      if (row.status === 'processing' && row.did !== did) return apiError(403, 'forbidden');
+      if (row.status !== 'pending_user' && row.status !== 'processing') return conflict();
+      row.status = (JSON.parse(body) as { reason: string }).reason === 'conflict' ? 'conflict' : 'failed';
+      return json(200, { ...view, status: row.status });
+    }
+    if (action === 'cancel') {
+      if (row.status !== 'pending_user') return conflict();
+      row.status = 'cancelled';
+      return json(200, { ...view, status: row.status });
+    }
+    return apiError(404, 'not_found');
+  }
+
   private readonly names = new Map<string, string>();
   private nameOf(itemId: string): string | undefined {
     return this.names.get(itemId);
@@ -350,6 +411,7 @@ export class FakeWorld {
       return apiError(401, 'unauthorized');
     }
     const parts = url.pathname.split('/');
+    if (parts[1] === 'v1' && parts[2] === 'write-intents') return this.routeIntent(parts, method, body, who.did);
     if (parts[1] !== 'v1' || parts[2] !== 'vaults' || decodeURIComponent(parts[3] ?? '') !== this.vaultId) return apiError(404, 'not_found');
     const coll = parts[4];
     if (method === 'GET' && coll === 'membership') {

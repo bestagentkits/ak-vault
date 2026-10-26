@@ -40,19 +40,34 @@ describe('MCP transport (2026-07-28)', () => {
     const res = await modern(await token(), 'tools/list');
     expect(res.status).toBe(200);
     const tools = res.json.result.tools as { name: string; inputSchema: { additionalProperties: boolean; properties: Record<string, unknown> }; annotations: Record<string, unknown>; description: string }[];
-    expect(tools.map((t) => t.name)).toEqual(['secrets_search', 'secrets_list', 'secrets_describe', 'secrets_set', 'secrets_delete', 'secrets_request', 'secrets_run']);
+    expect(tools.map((t) => t.name)).toEqual([
+      'secrets_search',
+      'secrets_list',
+      'secrets_describe',
+      'secrets_set',
+      'secrets_delete',
+      'secrets_request',
+      'secrets_run',
+      'secrets_prepare_write',
+      'secrets_write_status',
+    ]);
     for (const tool of tools) {
       expect(tool.inputSchema.additionalProperties, tool.name).toBe(false);
-      expect(tool.inputSchema.properties['vault_id'], tool.name).toBeDefined();
+      // A write request is looked up by its own id, so the status tool takes no vault_id.
+      if (tool.name !== 'secrets_write_status') expect(tool.inputSchema.properties['vault_id'], tool.name).toBeDefined();
       expect(typeof tool.annotations['readOnlyHint']).toBe('boolean');
       expect(tool.annotations['openWorldHint']).toBe(tool.name === 'secrets_run');
     }
+    // The human-only write tools take no value argument.
+    const prepare = tools.find((t) => t.name === 'secrets_prepare_write')!;
+    expect(Object.keys(prepare.inputSchema.properties).sort()).toEqual(['name', 'operation', 'sensitivity', 'vault_id']);
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
     for (const name of ['secrets_search', 'secrets_list', 'secrets_describe']) expect(byName[name]!.annotations['readOnlyHint']).toBe(true);
     expect(byName['secrets_set']!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: false });
     expect(byName['secrets_run']!.description).toContain('exec');
     expect(byName['secrets_request']!.description).toContain('approve');
-    for (const tool of tools) if (tool.name !== 'secrets_set' && tool.name !== 'secrets_delete') expect(tool.description).toContain('never returned');
+    const writers = ['secrets_set', 'secrets_delete', 'secrets_prepare_write', 'secrets_write_status'];
+    for (const tool of tools) if (!writers.includes(tool.name)) expect(tool.description).toContain('never returned');
   });
 
   it('refuses an unsupported protocol version with -32022, the supported list and the request id', async () => {
@@ -180,7 +195,7 @@ describe('MCP transport (2025-11-25, stateless)', () => {
     const list = await legacy(t, 'tools/list');
     expect(list.status).toBe(200);
     expect(list.json.result.resultType).toBeUndefined();
-    expect(list.json.result.tools).toHaveLength(7);
+    expect(list.json.result.tools).toHaveLength(9);
     const ping = await mcpPost(t, { jsonrpc: '2.0', id: 'p', method: 'ping' }, { version: '2025-11-25', headers: { Accept: '' } });
     expect(ping.status).toBe(200);
     expect(ping.json).toEqual({ jsonrpc: '2.0', id: 'p', result: {} });

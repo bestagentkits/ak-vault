@@ -5,7 +5,11 @@
  */
 import type { RelayErrorCode, RelayTool } from '@ak-vault/protocol';
 import type { Env } from '../env.js';
+import type { ApiErrorCode } from '../http/errors.js';
 import type { AccountRelay } from './account-relay-durable-object.js';
+import type { IntentOp, IntentStatus } from './write-intent-store.js';
+
+export type { IntentOp, IntentStatus };
 
 export type { RelayErrorCode, RelayTool };
 
@@ -64,3 +68,48 @@ export interface RelayAuditEntry {
 export function relayStub(env: Pick<Env, 'RELAY'>, sub: string): DurableObjectStub<AccountRelay> {
   return env.RELAY.get(env.RELAY.idFromName(`acct:${sub}`));
 }
+
+/** What `secrets_prepare_write` records: binding facts and the sealed target, never a value. */
+export interface PrepareIntentArgs {
+  vaultId: string;
+  grantId: string;
+  /** The MCP token's `iat`, kept so the grant's revocation is re-checked with the same rule. */
+  grantIat: number;
+  clientId: string;
+  op: IntentOp;
+  sensitivity?: 'normal' | 'high';
+  /** Sealed-op wire object holding the target name, sealed to the vault's seal key. */
+  target: unknown;
+}
+
+export type PrepareIntentResult = { ok: true; requestId: string; expiresAt: number } | { ok: false; code: 'too_many_open' | 'invalid' };
+
+export interface IntentStatusResult {
+  status: IntentStatus;
+  /** Unix ms. */
+  expiresAt: number;
+}
+
+export type IntentAction = 'view' | 'claim' | 'complete' | 'fail' | 'cancel';
+
+/** One browser call to `/v1/write-intents/*`, already past the Worker's token and revocation checks. */
+export interface IntentActionArgs {
+  action: IntentAction;
+  rid: string;
+  sub: string;
+  did: string;
+  token: string;
+  proof: string;
+  htm: string;
+  htu: string;
+  body: Uint8Array;
+  /** `claim`: the item the browser will write and the revision it writes over (0 for a new item). */
+  itemId?: string;
+  baseRevision?: number;
+  /** `fail`: why the browser could not write. */
+  reason?: 'conflict' | 'failed';
+}
+
+export type IntentActionResult =
+  | { ok: true; body: Record<string, unknown> }
+  | { ok: false; code: ApiErrorCode; status?: number; extra?: Record<string, string | number | boolean> };

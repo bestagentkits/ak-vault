@@ -6,6 +6,7 @@
 import { AppController } from './app-controller.js';
 import { indexedDbDeviceStore } from './keys/device-store.js';
 import { sessionPendingStore } from './oauth/pkce-client.js';
+import { sessionWriteRequestStore } from './sync/write-intent.js';
 import { newViewState, render } from './ui/views.js';
 
 export const IDLE_LOCK_MS = 15 * 60 * 1000;
@@ -36,6 +37,7 @@ function main(): void {
     fetchFn: window.fetch.bind(window),
     pending: sessionPendingStore(window.sessionStorage),
     devices: indexedDbDeviceStore(window.indexedDB),
+    writeRequest: sessionWriteRequestStore(window.sessionStorage),
     subtle: window.crypto.subtle,
     navigate: (url) => window.location.assign(url),
     replaceUrl: (url) => window.history.replaceState(null, '', url),
@@ -46,6 +48,7 @@ function main(): void {
   const rerender = () => render(root, controller, controller.current(), vs, rerender);
   controller.subscribe(() => rerender());
   startIdleLock(controller, window);
+  window.addEventListener('hashchange', () => void controller.openWriteLink(new URL(window.location.href)));
   window.addEventListener('pagehide', (ev) => {
     if (!(ev as PageTransitionEvent).persisted) controller.revokeOnExit();
   });

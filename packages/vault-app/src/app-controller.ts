@@ -5,7 +5,7 @@
  * and revokes the sign-in grant. Errors become fixed codes; nothing a server or
  * another device wrote reaches an error message.
  */
-import { b64encode, type DeviceKx, type DeviceSigner } from '@ak-vault/protocol';
+import { b64encode, randomId, type DeviceKx, type DeviceSigner } from '@ak-vault/protocol';
 import { AppError, appErrorCode, type AppErrorCode } from './app-error.js';
 import { loadAppConfig, type AppConfig } from './config.js';
 import { isWitnessedOlder, type DeviceStore, type StoredDevice } from './keys/device-store.js';
@@ -24,10 +24,20 @@ import {
 import { createAkvClient, isVaultApiError, type AkvClient } from './sync/akv-client.js';
 import { acceptOffer, DEFAULT_DEVICE_LABEL, joinCodeFor, newJoinNonce, sanitizeLabel } from './sync/enroll.js';
 import { pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
-import { deleteItem, findByName, setItem } from './sync/write-ops.js';
+import {
+  cancelWriteRequest,
+  claimWriteRequest,
+  completeWriteRequest,
+  failWriteRequest,
+  loadWriteRequest,
+  requestIdFromHash,
+  type WriteRequestStore,
+  type WriteRequestView,
+} from './sync/write-intent.js';
+import { deleteItem, findByName, planWrite, setItem } from './sync/write-ops.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
 
-export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'signed_out' };
+export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'signed_out' | 'write_cancelled' };
 
 export type Screen =
   | { kind: 'loading' }
@@ -36,6 +46,7 @@ export type Screen =
   | { kind: 'join'; joinCode: string; deviceId: string; notice: Notice | null }
   | { kind: 'approve'; sas: string; deviceId: string; notice: Notice | null }
   | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; deviceId: string; notice: Notice | null; busy: boolean }
+  | { kind: 'write'; request: WriteRequestView; deviceId: string; notice: Notice | null; busy: boolean }
   | { kind: 'removed' };
 
 export interface ControllerDeps {
@@ -54,6 +65,8 @@ export interface ControllerDeps {
    * Without it (an old browser) generation runs unlocked.
    */
   locks?: Pick<LockManager, 'request'>;
+  /** Keeps a write request's ID across the sign-in redirect; without it a request is lost at sign-in. */
+  writeRequest?: WriteRequestStore;
   now?: () => number;
 }
 
@@ -107,6 +120,9 @@ export class AppController {
     }
     if (!isAuthorizationResponse(url)) {
       this.deps.pending.take();
+      // A write request link carries its ID in the fragment: keep it for after sign-in and
+      // take it out of the address bar and history.
+      this.acceptWriteFragment(url);
       this.show({ kind: 'signed_out', notice: null });
       return;
     }
@@ -119,6 +135,21 @@ export class AppController {
       return;
     }
     await this.openDevice();
+  }
+
+  /** Remember the request ID in `#write=<id>` and clear the fragment; true when there was one. */
+  private acceptWriteFragment(url: URL): boolean {
+    const rid = requestIdFromHash(url.hash);
+    if (rid === null || !this.config) return false;
+    this.deps.writeRequest?.set(rid);
+    this.deps.replaceUrl(this.config.redirectUri);
+    return true;
+  }
+
+  /** A write request link opened in a page that is already running (a fragment-only navigation). */
+  async openWriteLink(url: URL): Promise<void> {
+    if (!this.acceptWriteFragment(url)) return;
+    if (this.screen.kind === 'vault' && !this.screen.busy) await this.openWrite();
   }
 
   /** Begin a sign-in. A grant still held in memory is revoked first. */
@@ -277,6 +308,10 @@ export class AppController {
       if (!storedFloor || !enrollment.witnessed || !isWitnessedOlder(enrollment.witnessed, storedFloor)) await this.deps.devices.put(next);
       this.device = next;
       this.snapshot = snapshot;
+      if (this.deps.writeRequest?.get()) {
+        await this.openWrite(notice);
+        return;
+      }
       this.showVault(notice, null);
     } catch (err) {
       if (pendingApproval) {
@@ -296,6 +331,98 @@ export class AppController {
       kind: 'vault', items: s.items, matches, unreadable: s.unreadable, hidden: s.hidden, rekeyRequired: s.state.rekey_required,
       deviceId: s.self.device_id, notice, busy,
     });
+  }
+
+  /** Read the pending write request and show its form, or the vault with the reason it cannot be shown. */
+  private async openWrite(notice: Notice | null = null): Promise<void> {
+    const store = this.deps.writeRequest;
+    const rid = store?.get();
+    if (!store || !rid || !this.snapshot || !this.client) return;
+    try {
+      const request = await loadWriteRequest(this.client, this.snapshot, rid);
+      try {
+        planWrite(this.snapshot, request.name, request.operation);
+      } catch (err) {
+        // The vault no longer fits the request (a create of an existing name, a replace of a missing one).
+        await failWriteRequest(this.client, rid, 'conflict').catch(() => undefined);
+        throw err;
+      }
+      this.showWrite(request, notice, false);
+    } catch (err) {
+      store.clear();
+      await this.writeRequestFailed(err, 'failed');
+    }
+  }
+
+  private showWrite(request: WriteRequestView, notice: Notice | null, busy: boolean): void {
+    this.show({ kind: 'write', request, deviceId: this.snapshot!.self.device_id, notice, busy });
+  }
+
+  /**
+   * Type the value for the open write request: bind this device and the item revision
+   * to the request, write the sealed and signed record like any other set, then ask
+   * the server to confirm. The value is used here and dropped; it is never sent to the
+   * request routes.
+   */
+  async submitWrite(value: string, sensitivity: 'normal' | 'high'): Promise<boolean> {
+    const screen = this.screen;
+    const store = this.deps.writeRequest;
+    if (screen.kind !== 'write' || !store || !this.snapshot || !this.client || !this.signer) return false;
+    const { request } = screen;
+    this.showWrite(request, null, true);
+    let claimed = false;
+    try {
+      const plan = planWrite(this.snapshot, request.name, request.operation);
+      const itemId = plan.itemId ?? randomId();
+      await claimWriteRequest(this.client, request.requestId, itemId, plan.baseRevision);
+      claimed = true;
+      await setItem({
+        client: this.client, snapshot: this.snapshot, signer: this.signer, name: request.name, value, nowMs: this.now(),
+        ...(plan.itemId === null ? { newItemId: itemId, sensitivity } : {}),
+      });
+      await completeWriteRequest(this.client, request.requestId);
+    } catch (err) {
+      const reason = appErrorCode(err, 'server') === 'conflict' ? 'conflict' : 'failed';
+      if (claimed) await failWriteRequest(this.client, request.requestId, reason).catch(() => undefined);
+      store.clear();
+      await this.writeRequestFailed(err, reason);
+      return false;
+    }
+    store.clear();
+    await this.sync({ kind: 'info', code: 'saved' });
+    return true;
+  }
+
+  /** The user declined: close the request so the assistant sees `cancelled`. */
+  async cancelWrite(): Promise<void> {
+    const screen = this.screen;
+    const store = this.deps.writeRequest;
+    if (screen.kind !== 'write' || !store || !this.client || !this.snapshot) return;
+    this.showWrite(screen.request, null, true);
+    try {
+      await cancelWriteRequest(this.client, screen.request.requestId);
+    } catch {
+      /* an expired or settled request is already closed */
+    }
+    store.clear();
+    this.showVault({ kind: 'info', code: 'write_cancelled' }, null);
+  }
+
+  private async writeRequestFailed(err: unknown, reason: 'conflict' | 'failed'): Promise<void> {
+    if (isVaultApiError(err)) {
+      // unauthorized is a lost sign-in; every other refusal means the request cannot be used.
+      if (err.code === 'unauthorized') return this.fail(err);
+      const gone = ['not_found', 'conflict', 'forbidden', 'bad_request'].includes(err.code);
+      this.showVault({ kind: 'error', code: gone ? 'write_request_gone' : 'server' }, null);
+      return;
+    }
+    const code = appErrorCode(err, 'server');
+    // A stale snapshot is the usual cause of a conflict: pull again so the vault view is current.
+    if (code === 'conflict' || reason === 'conflict') {
+      await this.sync({ kind: 'error', code });
+      return;
+    }
+    await this.writeFailed(err);
   }
 
   /** Exact-name search over the verified snapshot, with no server request; an empty query clears it. */
@@ -335,7 +462,7 @@ export class AppController {
 
   private async writeFailed(err: unknown): Promise<void> {
     const code = appErrorCode(err, 'server');
-    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'quota_exceeded', 'network', 'server'];
+    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'quota_exceeded', 'write_request_gone', 'network', 'server'];
     if (!isVaultApiError(err) && recoverable.includes(code)) {
       // A conflict means the verified head is stale: pull again, then say why the write did not land.
       if (code === 'conflict') await this.sync({ kind: 'error', code });

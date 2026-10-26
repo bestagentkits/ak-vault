@@ -108,6 +108,16 @@ export const REMOTE_ACCESS_LIMITS = {
   mcp_calls_per_minute_per_client: 60,
   mcp_run_calls_per_minute_per_client: 10,
   mcp_calls_per_minute_per_account: 300,
+  /** A write request (`secrets_prepare_write`) waits this long for the user before it expires. */
+  write_intent_ttl_s: 10 * 60,
+  /** A claimed request must finish its browser write within this window, else it is reconciled against the vault. */
+  write_intent_processing_s: 2 * 60,
+  /** Terminal and expired write requests stay readable this long, then are purged. */
+  write_intent_retention_s: 60 * 60,
+  /** Max unfinished (pending_user or processing) write requests per account. */
+  write_intents_open_per_account: 16,
+  /** Browser calls to `/v1/write-intents/*` per device per minute. */
+  write_intent_calls_per_minute_per_device: 60,
 } as const;
 
 export const PROTOCOL_VERSIONS = ['akv1'] as const;

@@ -111,18 +111,22 @@ export function deviceKeyMatches(signPub: string | null, did: string): signPub i
 const EMPTY = new Uint8Array();
 
 /**
- * Verify a relay proof (htm `GET`, htu the relay URL, `ath` of `token`, `bh` of
- * the empty body) against `signPub` and burn its `jti` for the device. False on
+ * Verify a proof (default htm `GET` and the empty body, the relay's; the write
+ * request routes pass their method and body; htu the exact URL, `ath` of `token`,
+ * `bh` of the body) against `signPub` and burn its `jti` for the device. False on
  * any failure.
  */
-export function verifyRelayProof(sql: SqlStorage, args: { proof: string; token: string; htu: string; did: string; signPub: string; nowMs: number }): boolean {
+export function verifyRelayProof(
+  sql: SqlStorage,
+  args: { proof: string; token: string; htu: string; did: string; signPub: string; nowMs: number; htm?: string; body?: Uint8Array },
+): boolean {
   sql.exec('DELETE FROM proof_jti WHERE expires_at < ?', args.nowMs);
   try {
     const proof = verifyProof(args.proof, {
-      htm: 'GET',
+      htm: args.htm ?? 'GET',
       htu: args.htu,
       token: args.token,
-      body: EMPTY,
+      body: args.body ?? EMPTY,
       now: args.nowMs,
       signPub: args.signPub,
       maxSkewMs: LIMITS.clock_skew_seconds * 1000,

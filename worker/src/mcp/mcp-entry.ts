@@ -38,12 +38,14 @@ import {
   resolveVersion,
   type ProtocolVersion,
 } from './protocol-version.js';
+import { INTENT_SCOPE, INTENT_TOOL_DEFINITIONS, callIntentTool, isIntentTool } from './intent-tools.js';
 import { callTool } from './tool-dispatch.js';
 import { TOOL_DEFINITIONS, relayToolOf, scopeOf } from './tools.js';
 
 const SERVER_INFO = { name: 'ak-vault', title: 'AgentKit Vault', version: WORKER_VERSION };
 const INSTRUCTIONS =
-  'Search, describe and use the secrets in your AgentKit Vault. Secret values are never returned. Reads, requests and run need one of your devices online with `ak secrets sync now --watch --relay`; a set or delete with no device online is sealed and queued until a device applies it.';
+  'Search, describe and use the secrets in your AgentKit Vault. Secret values are never returned. Reads, requests and run need one of your devices online with `ak secrets sync now --watch --relay`; a set or delete with no device online is sealed and queued until a device applies it. To store a real secret, call secrets_prepare_write (no value) and give the user the form_url: they type the value into their own dashboard, never into this conversation.';
+const ALL_TOOL_DEFINITIONS = [...TOOL_DEFINITIONS, ...INTENT_TOOL_DEFINITIONS];
 const CAPABILITIES = { tools: { listChanged: false } };
 
 export async function handleMcp(request: Request, env: Env): Promise<Response> {
@@ -198,7 +200,7 @@ async function dispatchMethod(env: Env, claims: McpClaims, version: ProtocolVers
     case 'ping':
       return rpcResult(id, complete(version, {}));
     case 'tools/list':
-      return rpcResult(id, complete(version, { tools: TOOL_DEFINITIONS }));
+      return rpcResult(id, complete(version, { tools: ALL_TOOL_DEFINITIONS }));
     case 'tools/call':
       return toolsCall(env, claims, version, message);
   }
@@ -213,6 +215,12 @@ async function toolsCall(env: Env, claims: McpClaims, version: ProtocolVersion, 
   const args = params['arguments'] ?? {};
   // A call refused before its tool runs is still charged, as a non-tool request.
   const refuse = async (refusal: Response) => (await rateRefusal(env, claims)) ?? refusal;
+  if (typeof name === 'string' && isIntentTool(name)) {
+    if (!isObject(args)) return refuse(rpcError(id, RPC.invalidParams, 'Invalid params: arguments must be an object', 200));
+    if (!hasScope(claims, INTENT_SCOPE)) return refuse(insufficientScope(env, claims, INTENT_SCOPE));
+    // The tool charges the call itself, as a non-tool request.
+    return rpcResult(id, complete(version, { ...(await callIntentTool(env, claims, name, args)) }));
+  }
   if (tool === null) return refuse(rpcError(id, RPC.invalidParams, 'Unknown tool', 200));
   if (!isObject(args)) return refuse(rpcError(id, RPC.invalidParams, 'Invalid params: arguments must be an object', 200));
   const needed = scopeOf(tool);
