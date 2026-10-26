@@ -87,6 +87,43 @@ Rotation is an ordinary CAS write of a new value under the current epoch. Cleari
 provider-side credential must be rotated as well; writing a new ciphertext of the
 old value protects nothing.
 
+Two things are called rotation and are different. A **rekey** (`key_epoch`) re-wraps
+the vault key for the devices that remain and replaces no credential. A **provider
+credential rotation** replaces the secret at its provider. The dashboard at `/app`
+shows them apart and manages only the second.
+
+### Rotation in the dashboard
+
+State comes from signed, encrypted item metadata and the membership log. The server
+sees none of it, and nothing here decides access.
+
+- **Health.** From `meta.rotated_ms` (else `created_ms`) plus `meta.rotate_ttl_days`:
+  on schedule, due soon (7 days), overdue, or unknown. With no interval or no date the
+  state is unknown; the dashboard never invents a date. An item a rekey listed in
+  `needs_rotate` shows `needs rotation` until it is rewritten with a **new value** under
+  the epoch that rekey installed. Re-saving the same value or editing metadata does
+  not clear it. The check uses writer-supplied dates, so a member with write access
+  can misstate them; it is a display aid, not an authorization input.
+- **Workflow.** `meta.rotation` is `{state: active|paused|failed|cancelled, started_ms,
+  revoked_ms?}`. A value not in that exact shape reads as no workflow. Older writers
+  carry the key forward unchanged.
+- **Separate steps.** (1) The operator creates the new credential at the provider,
+  outside the dashboard and any AI chat. (2) *Vault updated* is true only when the
+  verified head holds a value written after the workflow started (`rotated_ms >=
+  started_ms`), so it follows the pulled revision, not the click. (3) *Old credential
+  revoked* is the operator's own confirmation, accepted only after step 2, and the
+  dashboard cannot check it with the provider. Writing another value clears it. The
+  dashboard never shows "rotated" before step 3 is confirmed.
+- **Writes** use the browser device's signing and sealing path, compare-and-swap on the
+  verified head: a concurrent edit becomes a conflict branch, a vault waiting on a
+  rekey or a device without an owner or editor role is refused, and a replacement
+  equal to the current value is refused. The previous value is never shown.
+- **Limits.** No provider adapters ship; none will rotate or revoke without separate
+  least-privilege credentials and the operator's consent. Anyone who held the old
+  value (a removed member included) still knows it until the provider revokes it. The
+  signed revisions, with their author device and time, are the record of each state
+  change; the dashboard does not append entries to the encrypted audit stream.
+
 ## Password and parameter upgrade
 
 - Changing the password re-wraps the current vault key under a new Argon2id KEK
