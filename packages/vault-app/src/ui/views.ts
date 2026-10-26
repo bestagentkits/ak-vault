@@ -6,6 +6,7 @@
  * reveal or copy action.
  */
 import type { AppController, Notice, Screen } from '../app-controller.js';
+import type { HistoryEntry } from '../sync/history.js';
 import type { ItemView } from '../sync/vault-sync.js';
 import { h, replaceChildren, type Child } from './dom.js';
 import { messageFor } from './messages.js';
@@ -20,10 +21,18 @@ export const NO_CAPTURE = {
 export interface ViewState {
   filter: string;
   confirmDelete: string | null;
+  /** Log position of the revision awaiting restore confirmation. */
+  confirmRestore: number | null;
+  /** `keep`, or the branch ID to adopt, awaiting resolve confirmation. */
+  confirmResolve: string | null;
+  /** How many history entries the list shows (pages of {@link HISTORY_PAGE}). */
+  historyShown: number;
 }
 
+export const HISTORY_PAGE = 20;
+
 export function newViewState(): ViewState {
-  return { filter: '', confirmDelete: null };
+  return { filter: '', confirmDelete: null, confirmRestore: null, confirmResolve: null, historyShown: HISTORY_PAGE };
 }
 
 function noticeEl(notice: Notice | null): Child {
@@ -136,8 +145,16 @@ function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () =
       h('button', { type: 'button', class: 'secondary' }, ['Cancel'], { click: () => { vs.confirmDelete = null; rerender(); } }),
     ])
     : h('button', { type: 'button', class: 'secondary', disabled: busy, 'data-testid': 'delete' }, ['Delete'], { click: () => { vs.confirmDelete = item.itemId; rerender(); } });
+  const history = h('button', { type: 'button', class: 'secondary', disabled: busy, 'data-testid': 'history' }, ['History'], {
+    click: () => {
+      vs.confirmRestore = null;
+      vs.confirmResolve = null;
+      vs.historyShown = HISTORY_PAGE;
+      c.openHistory(item.itemId);
+    },
+  });
   return h('li', { class: 'item', 'data-testid': 'item' }, [
-    h('div', { class: 'item-head' }, [h('span', { class: 'name', 'data-testid': 'item-name' }, [item.name]), actions]),
+    h('div', { class: 'item-head' }, [h('span', { class: 'name', 'data-testid': 'item-name' }, [item.name]), h('span', { class: 'row' }, [history, actions])]),
     h('div', { class: 'meta' }, meta),
     profile,
   ]);
@@ -201,6 +218,103 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
   ];
 }
 
+function fmtTime(ms: number): string {
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? 'unknown time' : `${d.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
+}
+
+const STANDING: Record<HistoryEntry['authorStanding'], string> = {
+  this_browser: 'this browser',
+  current_device: 'current device',
+  removed_device: 'removed device',
+  unknown_device: 'unknown device',
+};
+
+function entryLabel(e: HistoryEntry): string {
+  if (e.kind === 'conflict') return `Conflicting branch on revision ${e.baseRevision}`;
+  return e.tombstone ? `Revision ${e.revision} (deletion)` : `Revision ${e.revision}`;
+}
+
+function entryContent(e: HistoryEntry): string {
+  if (e.content === 'readable') return 'Signature and chain verified; the value is stored encrypted and never shown';
+  if (e.content === 'none') return 'Signature and chain verified; a deletion carries no value';
+  return 'unavailable / unverified content: this browser does not hold the key for epoch ' + e.keyEpoch + ', so only the signed metadata is shown';
+}
+
+function entryRow(c: AppController, itemId: string, e: HistoryEntry, canWrite: boolean, busy: boolean, vs: ViewState, rerender: () => void): HTMLElement {
+  const status = e.status === 'current' ? 'current' : e.status === 'superseded' ? 'earlier' : e.status === 'open' ? 'unresolved' : e.resolvedAtRevision !== null ? `resolved at revision ${e.resolvedAtRevision}` : 'resolved';
+  const confirming = vs.confirmRestore === e.logSeq;
+  const actions: Child[] = [];
+  if (e.restorable && canWrite) {
+    actions.push(confirming
+      ? h('div', { class: 'warn', 'data-testid': 'restore-confirm' }, [
+        h('p', {}, ['This writes the value of this revision as a new revision for every device. It does not undo anything at the provider: the restored credential may already be revoked, expired or exposed, and you may need to rotate or revoke it there.']),
+        h('div', { class: 'row' }, [
+          h('button', { type: 'button', class: 'danger', disabled: busy, 'data-testid': 'confirm-restore' }, ['Restore as new revision'], { click: () => { vs.confirmRestore = null; void c.restore(itemId, e.logSeq); } }),
+          h('button', { type: 'button', class: 'secondary' }, ['Cancel'], { click: () => { vs.confirmRestore = null; rerender(); } }),
+        ]),
+      ])
+      : h('button', { type: 'button', class: 'secondary', disabled: busy, 'data-testid': 'restore' }, ['Restore this value'], { click: () => { vs.confirmRestore = e.logSeq; vs.confirmResolve = null; rerender(); } }));
+  }
+  return h('li', { class: 'history-entry', 'data-testid': 'history-entry' }, [
+    h('div', { class: 'item-head' }, [
+      h('span', { class: 'name', 'data-testid': 'entry-title' }, [entryLabel(e)]),
+      h('span', { class: `badge ${e.status === 'open' ? 'badge-conflict' : ''}` }, [status]),
+    ]),
+    h('div', { class: 'meta' }, [
+      h('span', {}, [fmtTime(e.ts)]),
+      h('span', {}, [`device ${e.author} (${STANDING[e.authorStanding]})`]),
+      h('span', {}, [`key epoch ${e.keyEpoch}`]),
+      e.resolves > 0 ? h('span', {}, [`resolves ${e.resolves} branch${e.resolves > 1 ? 'es' : ''}`]) : null,
+    ]),
+    h('p', { class: 'muted', 'data-testid': 'entry-content' }, [entryContent(e)]),
+    ...actions,
+  ]);
+}
+
+function conflictPanel(c: AppController, s: Extract<Screen, { kind: 'history' }>, vs: ViewState, rerender: () => void): Child {
+  const open = s.history.entries.filter((e) => e.status === 'open');
+  if (open.length === 0) return null;
+  const choices = [{ id: 'keep', label: 'Keep the current value' }, ...open.filter((e) => e.adoptable).map((e) => ({ id: e.conflictId!, label: `Use the value of the branch from device ${e.author}, ${fmtTime(e.ts)}` }))];
+  const confirming = vs.confirmResolve !== null ? choices.find((x) => x.id === vs.confirmResolve) ?? null : null;
+  return h('section', { class: 'warn', 'data-testid': 'conflicts' }, [
+    h('h2', {}, [`${open.length} unresolved conflict${open.length > 1 ? 's' : ''}`]),
+    h('p', {}, ['Another device wrote at the same time, and the server kept its record as a branch instead of overwriting either. Nothing is lost: every branch stays in the signed history. Resolving writes one new revision that lists all open branches as resolved. The CLI offers the same through ', h('code', {}, ['ak secrets sync settle']), '.']),
+    s.canWrite
+      ? confirming
+        ? h('div', {}, [
+          h('p', { 'data-testid': 'resolve-confirm' }, [`${confirming.label}, and mark all ${open.length} open branch${open.length > 1 ? 'es' : ''} resolved for every device?`]),
+          h('div', { class: 'row' }, [
+            h('button', { type: 'button', class: 'danger', disabled: s.busy, 'data-testid': 'confirm-resolve' }, ['Resolve'], { click: () => { const adopt = confirming.id === 'keep' ? null : confirming.id; vs.confirmResolve = null; void c.resolve(s.history.itemId, adopt); } }),
+            h('button', { type: 'button', class: 'secondary' }, ['Cancel'], { click: () => { vs.confirmResolve = null; rerender(); } }),
+          ]),
+        ])
+        : h('div', { class: 'row' }, choices.map((x) => h('button', { type: 'button', class: 'secondary', disabled: s.busy, 'data-testid': 'resolve-choice' }, [x.label], { click: () => { vs.confirmResolve = x.id; vs.confirmRestore = null; rerender(); } })))
+      : null,
+    open.some((e) => !e.adoptable) ? h('p', { class: 'muted' }, ['A branch that is a deletion or that this browser cannot read cannot be adopted here; use the CLI for it.']) : null,
+  ]);
+}
+
+function historyScreen(c: AppController, s: Extract<Screen, { kind: 'history' }>, vs: ViewState, rerender: () => void): HTMLElement[] {
+  const shown = s.history.entries.slice(0, vs.historyShown);
+  return [
+    header(c, s.deviceId),
+    h('main', {}, [
+      noticeEl(s.notice),
+      h('div', { class: 'row' }, [h('button', { type: 'button', class: 'secondary', 'data-testid': 'history-back' }, ['Back to items'], { click: () => { vs.confirmRestore = null; vs.confirmResolve = null; c.closeHistory(); } })]),
+      h('h2', { 'data-testid': 'history-title' }, [`History of ${s.history.name}`]),
+      h('p', { class: 'muted' }, ['Each entry is signed by a device of this vault and chained into the vault log this browser verified. Values are never shown; a restore writes an earlier value as a new revision.']),
+      !s.canWrite ? h('p', { class: 'notice notice-error', role: 'status' }, [messageFor('rekey_required')]) : null,
+      conflictPanel(c, s, vs, rerender),
+      h('ul', { class: 'items', 'data-testid': 'history-list' }, shown.map((e) => entryRow(c, s.history.itemId, e, s.canWrite, s.busy, vs, rerender))),
+      s.history.entries.length > shown.length
+        ? h('button', { type: 'button', class: 'secondary', 'data-testid': 'history-more' }, [`Show ${Math.min(HISTORY_PAGE, s.history.entries.length - shown.length)} more`], { click: () => { vs.historyShown += HISTORY_PAGE; rerender(); } })
+        : null,
+      s.history.omitted > 0 ? h('p', { class: 'muted', 'data-testid': 'history-omitted' }, [`${s.history.omitted} older entr${s.history.omitted > 1 ? 'ies are' : 'y is'} in the signed log but not listed here.`]) : null,
+    ]),
+  ];
+}
+
 export function render(root: Element, c: AppController, screen: Screen, vs: ViewState, rerender: () => void): void {
   let nodes: HTMLElement[];
   switch (screen.kind) {
@@ -222,6 +336,9 @@ export function render(root: Element, c: AppController, screen: Screen, vs: View
       break;
     case 'vault':
       nodes = vaultScreen(c, screen, vs, rerender);
+      break;
+    case 'history':
+      nodes = historyScreen(c, screen, vs, rerender);
       break;
     case 'removed':
       nodes = [header(c, null), h('main', {}, [

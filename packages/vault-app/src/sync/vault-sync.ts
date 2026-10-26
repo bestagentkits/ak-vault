@@ -46,6 +46,7 @@ import type { Enrollment, StoredDevice, WitnessedState } from '../keys/device-st
 import { deviceIdOf } from '../keys/webcrypto-device-keys.js';
 import type { AkvClient } from './akv-client.js';
 import { deviceRecordOf, sasInputOf } from './enroll.js';
+import type { LoggedRecord } from './history.js';
 import { validItemName, validMetaText } from './item-names.js';
 
 export const ITEM_META_SCHEMA = 'agentkit.secret/v1';
@@ -85,6 +86,8 @@ export interface VaultSnapshot {
   vaultKeys: Map<number, Uint8Array>;
   itemStates: Map<string, ItemState>;
   heads: Map<string, SignedRecord>;
+  /** Every verified log entry of each item (applied and preserved), in log order. Ciphertext only. */
+  log: Map<string, LoggedRecord[]>;
   items: ItemView[];
   /** Live items this device cannot open (an epoch it never held, or a bad ciphertext). */
   unreadable: number;
@@ -260,7 +263,7 @@ export function projectItem(
   };
 }
 
-function openRecord(record: SignedRecord, vk: Uint8Array | undefined): ItemPayload | TombstonePayload | null {
+export function openRecord(record: SignedRecord, vk: Uint8Array | undefined): ItemPayload | TombstonePayload | null {
   if (!vk) return null;
   try {
     return openItem({
@@ -294,7 +297,7 @@ export function replayLog(
   enrollment: Enrollment,
   vaultKeys: Map<number, Uint8Array>,
   selfId: string,
-): Pick<VaultSnapshot, 'itemStates' | 'heads' | 'items' | 'unreadable' | 'hidden'> & { logHead: { log_seq: number; log_head: string } } {
+): Pick<VaultSnapshot, 'itemStates' | 'heads' | 'log' | 'items' | 'unreadable' | 'hidden'> & { logHead: { log_seq: number; log_head: string } } {
   const kept = new Map<number, string>();
   if (enrollment.witnessed && enrollment.witnessed.log_seq > 0) kept.set(enrollment.witnessed.log_seq, enrollment.witnessed.log_head);
   let verified;
@@ -308,6 +311,7 @@ export function replayLog(
 
   const itemStates = new Map<string, ItemState>();
   const heads = new Map<string, SignedRecord>();
+  const log = new Map<string, LoggedRecord[]>();
   const profiles = new Map<string, Map<number, ProfileAt>>();
   const digestAt = (n: number) => {
     if (n === cp.log_seq && computeStateDigest(itemStates.values()) !== cp.state_digest) throw new AppError('rollback');
@@ -325,6 +329,9 @@ export function replayLog(
     // The server's label for the entry must be what the replay derives.
     if ((conflictId === undefined) !== (applied.outcome.status === 'applied')) throw new AppError('vault_verification_failed');
     itemStates.set(record.item_id, applied.state);
+    const itemLog = log.get(record.item_id) ?? [];
+    itemLog.push({ logSeq: i + 1, conflictId: conflictId ?? null, record });
+    log.set(record.item_id, itemLog);
     if (applied.outcome.status === 'applied') {
       heads.set(record.item_id, record);
       const byRevision = profiles.get(record.item_id) ?? new Map<number, ProfileAt>();
@@ -367,7 +374,7 @@ export function replayLog(
     else hidden++;
   }
   items.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.itemId < b.itemId ? -1 : 1));
-  return { itemStates, heads, items, unreadable, hidden, logHead: verified.head };
+  return { itemStates, heads, log, items, unreadable, hidden, logHead: verified.head };
 }
 
 export interface PullResult {
@@ -396,7 +403,7 @@ export async function pullVault(client: AkvClient, device: StoredDevice, kx: Dev
   return {
     snapshot: {
       vaultId: enrollment.vaultId, self, state, vaultKeys,
-      itemStates: replay.itemStates, heads: replay.heads, items: replay.items, unreadable: replay.unreadable, hidden: replay.hidden, witnessed,
+      itemStates: replay.itemStates, heads: replay.heads, log: replay.log, items: replay.items, unreadable: replay.unreadable, hidden: replay.hidden, witnessed,
     },
     enrollment: { ...enrollment, confirmed: true, witnessed },
   };

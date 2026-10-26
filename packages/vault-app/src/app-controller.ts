@@ -23,11 +23,12 @@ import {
 } from './oauth/pkce-client.js';
 import { createAkvClient, isVaultApiError, type AkvClient } from './sync/akv-client.js';
 import { acceptOffer, DEFAULT_DEVICE_LABEL, joinCodeFor, newJoinNonce, sanitizeLabel } from './sync/enroll.js';
-import { pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
-import { deleteItem, findByName, setItem } from './sync/write-ops.js';
+import { buildItemHistory, type ItemHistory } from './sync/history.js';
+import { openRecord, pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
+import { deleteItem, findByName, restoreRevision, resolveConflicts, setItem } from './sync/write-ops.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
 
-export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'signed_out' };
+export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'restored' | 'resolved' | 'signed_out' };
 
 export type Screen =
   | { kind: 'loading' }
@@ -36,6 +37,7 @@ export type Screen =
   | { kind: 'join'; joinCode: string; deviceId: string; notice: Notice | null }
   | { kind: 'approve'; sas: string; deviceId: string; notice: Notice | null }
   | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; deviceId: string; notice: Notice | null; busy: boolean }
+  | { kind: 'history'; history: ItemHistory; canWrite: boolean; deviceId: string; notice: Notice | null; busy: boolean }
   | { kind: 'removed' };
 
 export interface ControllerDeps {
@@ -75,6 +77,8 @@ export class AppController {
   private kx: DeviceKx | null = null;
   private client: AkvClient | null = null;
   private snapshot: VaultSnapshot | null = null;
+  /** The item whose history is open; the screen follows it across pulls. */
+  private historyItemId: string | null = null;
   private readonly now: () => number;
 
   constructor(private readonly deps: ControllerDeps) {
@@ -144,6 +148,7 @@ export class AppController {
     this.session = null;
     this.syncToken = null;
     this.snapshot = null;
+    this.historyItemId = null;
     this.client = null;
     this.signer = null;
     this.kx = null;
@@ -292,10 +297,45 @@ export class AppController {
 
   private showVault(notice: Notice | null, matches: string[] | null, busy = false): void {
     const s = this.snapshot!;
+    const history = this.historyItemId === null ? null : this.historyOf(this.historyItemId);
+    if (history) {
+      this.show({ kind: 'history', history, canWrite: this.canWrite(), deviceId: s.self.device_id, notice, busy });
+      return;
+    }
+    this.historyItemId = null;
     this.show({
       kind: 'vault', items: s.items, matches, unreadable: s.unreadable, hidden: s.hidden, rekeyRequired: s.state.rekey_required,
       deviceId: s.self.device_id, notice, busy,
     });
+  }
+
+  private canWrite(): boolean {
+    const s = this.snapshot!;
+    return !s.state.rekey_required && s.self.kind === 'human' && (s.self.role === 'owner' || s.self.role === 'editor');
+  }
+
+  /** The metadata-only history of a live, listed item, from the log this device verified. */
+  private historyOf(itemId: string): ItemHistory | null {
+    const s = this.snapshot!;
+    const item = s.items.find((i) => i.itemId === itemId);
+    const itemState = s.itemStates.get(itemId);
+    if (!item || !itemState) return null;
+    return buildItemHistory({
+      itemId, name: item.name, itemState, log: s.log.get(itemId) ?? [], state: s.state, vaultKeys: s.vaultKeys,
+      selfDeviceId: s.self.device_id, open: openRecord,
+    });
+  }
+
+  openHistory(itemId: string): void {
+    if (!this.snapshot || !this.historyOf(itemId)) return;
+    this.historyItemId = itemId;
+    this.showVault(null, null);
+  }
+
+  closeHistory(): void {
+    if (!this.snapshot) return;
+    this.historyItemId = null;
+    this.showVault(null, null);
   }
 
   /** Exact-name search over the verified snapshot, with no server request; an empty query clears it. */
@@ -320,7 +360,17 @@ export class AppController {
     return this.write('deleted', () => deleteItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, nowMs: this.now() }));
   }
 
-  private async write(done: 'saved' | 'deleted', op: () => Promise<unknown>): Promise<boolean> {
+  /** Write a verified earlier revision's value as a new revision of the item. */
+  async restore(itemId: string, logSeq: number): Promise<boolean> {
+    return this.write('restored', () => restoreRevision({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, logSeq, nowMs: this.now() }));
+  }
+
+  /** Mark every open conflict branch of the item resolved, keeping the current value or adopting one branch's. */
+  async resolve(itemId: string, adopt: string | null): Promise<boolean> {
+    return this.write('resolved', () => resolveConflicts({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, adopt, nowMs: this.now() }));
+  }
+
+  private async write(done: 'saved' | 'deleted' | 'restored' | 'resolved', op: () => Promise<unknown>): Promise<boolean> {
     if (!this.snapshot || !this.client || !this.signer) return false;
     this.showVault(null, null, true);
     try {
@@ -335,7 +385,7 @@ export class AppController {
 
   private async writeFailed(err: unknown): Promise<void> {
     const code = appErrorCode(err, 'server');
-    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'quota_exceeded', 'network', 'server'];
+    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'history_unavailable', 'restore_current', 'quota_exceeded', 'network', 'server'];
     if (!isVaultApiError(err) && recoverable.includes(code)) {
       // A conflict means the verified head is stale: pull again, then say why the write did not land.
       if (code === 'conflict') await this.sync({ kind: 'error', code });

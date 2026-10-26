@@ -60,7 +60,11 @@ termination and are held only for the request or relayed call
 | Redacted `run` output (`stdout`, `stderr`) | Device → Worker → MCP client |
 
 The dashboard at `/app` decrypts in the browser, so its plaintext never reaches the
-Worker; its traffic is the same ciphertext and metadata as any device.
+Worker; its traffic is the same ciphertext and metadata as any device. Its per-item
+history, restore and conflict resolution add no field and no route: they read the
+change log it already verifies and write ordinary signed records. A restored value
+is opened and sealed again in browser memory and is never rendered, copied or sent
+in clear.
 
 ## Handling rules
 

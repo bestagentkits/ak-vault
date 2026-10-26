@@ -25,6 +25,8 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   not_found: 'That item no longer exists.',
   item_unreadable: 'This browser does not hold the key for that item.',
   duplicate_name: 'More than one item has that name. Resolve it from the CLI first.',
+  history_unavailable: 'That revision or branch cannot be used from this browser: it is not readable here, is a deletion, or is no longer current. Nothing was written. Use `ak secrets sync settle` or a device that holds the key.',
+  restore_current: 'That revision already has the current value. Nothing was written.',
   quota_exceeded: 'The vault is full.',
   network: 'The network request failed. Check your connection and try again.',
   server: 'The server could not complete the request. Try again shortly.',
@@ -32,6 +34,8 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   signed_out: 'You signed out.',
   saved: 'Saved. The value was encrypted in this browser and is not shown.',
   deleted: 'Deleted.',
+  restored: 'Restored as a new revision. The value was encrypted in this browser and is not shown. Rotate or revoke the credential at its provider if it may be exposed.',
+  resolved: 'Conflicting branches marked resolved with a new revision. The branches stay in the signed history.',
 };
 
 export function messageFor(code: AppErrorCode | Notice['code']): string {

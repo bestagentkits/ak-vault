@@ -123,6 +123,10 @@ export class FakeWorld {
     revokedDids: new Set<string>(),
     /** Serve only the first n log entries (a rolled-back server). */
     truncateLog: null as number | null,
+    /** Withhold one log position (a gap in the served log). */
+    dropLogSeq: null as number | null,
+    /** Rewrite served log entries (a tampered record, a relabelled branch). */
+    mutateEntry: null as ((e: { log_seq: number; conflict_id: string | null; record: SignedRecord }) => { log_seq: number; conflict_id: string | null; record: SignedRecord }) | null,
     /** Replace the membership chain served. */
     membership: null as MembershipEvent[] | null,
     omitIss: false,
@@ -173,10 +177,10 @@ export class FakeWorld {
   }
 
   /** The owner's `device_add` after the SAS matched. `wrongSas` signs another transcript. */
-  approve(joinCode: string, nonceI: string, opts: { wrongSas?: boolean } = {}): void {
+  approve(joinCode: string, nonceI: string, opts: { wrongSas?: boolean; omitEpochs?: number[] } = {}): void {
     const join = parseJoinCode(joinCode);
     const st = this.state();
-    const ws = [...this.vks.entries()].map(([e, vk]) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: e, recipient: join.device }));
+    const ws = [...this.vks.entries()].filter(([e]) => !opts.omitEpochs?.includes(e)).map(([e, vk]) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: e, recipient: join.device }));
     const sas = sasDigest({ vault_id: this.vaultId, initiator: this.owner.record.device_id, joiner: join.device, nonce_i: opts.wrongSas ? b64encode(randomBytes(16)) : nonceI, nonce_j: join.nonce_j });
     const ev = nextMembershipEvent(st, { type: 'device_add', ts: Date.now(), author: this.owner.record.device_id, body: { device: join.device as unknown as JsonObject, sas, wraps_digest: wrapsDigest(ws) } }, this.owner.signSecret);
     this.events.push(ev);
@@ -204,6 +208,36 @@ export class FakeWorld {
     if (res.status !== 200) throw new Error('owner write refused');
     this.names.set(itemId, name);
     return itemId;
+  }
+
+  /** The owner CLI rotates the vault key: a `rekey` event and wraps for every current device. */
+  rekey(): number {
+    const st = this.state();
+    const epoch = st.key_epoch + 1;
+    const vk = randomBytes(32);
+    const ws = st.devices.map((d) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: epoch, recipient: d }));
+    const ev = nextMembershipEvent(st, { type: 'rekey', ts: Date.now(), author: this.owner.record.device_id, body: { new_key_epoch: epoch, wraps_digest: wrapsDigest(ws), needs_rotate: [] } }, this.owner.signSecret);
+    this.vks.set(epoch, vk);
+    this.events.push(ev);
+    this.wraps.set(ev.seq, ws);
+    return epoch;
+  }
+
+  /**
+   * The owner CLI submits a record at an explicit `base` (a stale base becomes a preserved branch),
+   * optionally as a tombstone or resolving branches. Returns the server's status and the branch ID.
+   */
+  ownerWrite(itemId: string, name: string, value: string, opts: { base: number; tombstone?: boolean; resolves?: string[]; ts?: number }): { status: number; conflictId: string | null } {
+    const st = this.state();
+    const tombstone = opts.tombstone === true;
+    const ctx = { vault_id: this.vaultId, item_id: itemId, base_revision: opts.base, key_epoch: st.key_epoch, author: this.owner.record.device_id, tombstone };
+    const payload = tombstone ? { deleted: true as const } : { name, value, meta: { schema: 'agentkit.secret/v1', created_ms: 1_700_000_000_000 }, sensitivity: 'normal' as const };
+    const env = sealItem({ ...ctx, vk: this.vks.get(st.key_epoch)!, payload });
+    const record = signRecord({ ...ctx, ts: opts.ts ?? Date.now(), resolves: opts.resolves ?? [], env }, this.owner.signSecret);
+    const res = this.applyServer(record, tombstone ? null : nameTag(nameIndexKey(this.vks.get(st.key_epoch)!, this.vaultId, st.key_epoch), name));
+    const body = res.body as { error?: { conflict_id?: string } };
+    this.names.set(itemId, name);
+    return { status: res.status, conflictId: body.error?.conflict_id ?? null };
   }
 
   private readonly names = new Map<string, string>();
@@ -365,7 +399,8 @@ export class FakeWorld {
       return ws ? json(200, { membership_seq: seq, wraps: ws }) : apiError(404, 'not_found');
     }
     if (method === 'GET' && coll === 'changes') {
-      const served = this.hostile.truncateLog === null ? this.log : this.log.slice(0, this.hostile.truncateLog);
+      const base = this.hostile.truncateLog === null ? this.log : this.log.slice(0, this.hostile.truncateLog);
+      const served = base.filter((e) => e.log_seq !== this.hostile.dropLogSeq).map((e) => (this.hostile.mutateEntry ? this.hostile.mutateEntry(e) : e));
       const cursor = Number(url.searchParams.get('cursor') ?? 0);
       const limit = Number(url.searchParams.get('limit') ?? 100);
       const page = served.filter((e) => e.log_seq > cursor).slice(0, limit);

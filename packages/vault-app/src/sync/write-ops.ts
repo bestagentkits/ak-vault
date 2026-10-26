@@ -20,6 +20,7 @@ import {
   nameIndexKey,
   nameTag,
   randomId,
+  recordDigest,
   sealItem,
   signRecordAsync,
   type DeviceSigner,
@@ -30,7 +31,10 @@ import {
 import { AppError } from '../app-error.js';
 import { isVaultApiError, type AkvClient } from './akv-client.js';
 import { validItemName, validItemValue } from './item-names.js';
-import { ITEM_META_SCHEMA, openHead, type VaultSnapshot } from './vault-sync.js';
+import { ITEM_META_SCHEMA, openHead, openRecord, type VaultSnapshot } from './vault-sync.js';
+
+/** Most branches one record may resolve (spec §5). */
+const MAX_RESOLVES = 256;
 
 export interface WriteResult {
   itemId: string;
@@ -115,20 +119,83 @@ export async function setItem(args: { client: AkvClient; snapshot: VaultSnapshot
     meta = nextMeta(null, true, nowMs);
   }
   const payload: ItemPayload = { name: args.name, value: args.value, meta, sensitivity };
+  return writeRevision({ ...args, itemId, base, vk, payload, resolves: [], nowMs });
+}
+
+/** Seal `payload` under the current key epoch, sign it at `base` and send it as one compare-and-swap write. */
+async function writeRevision(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; base: number; vk: Uint8Array; payload: ItemPayload; resolves: string[]; nowMs: number }): Promise<WriteResult> {
+  const { snapshot, payload } = args;
   if (cjsonBytes(payload as unknown as JsonObject).length > MAX_PLAINTEXT_BYTES) throw new AppError('value_too_large');
-  const ctx = { vault_id: snapshot.vaultId, item_id: itemId, base_revision: base, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: false };
-  const env = sealItem({ ...ctx, vk, payload });
-  const record = await signRecordAsync({ ...ctx, ts: nowMs, resolves: [], env }, args.signer);
-  const tag = nameTag(nameIndexKey(vk, snapshot.vaultId, snapshot.state.key_epoch), args.name);
+  const ctx = { vault_id: snapshot.vaultId, item_id: args.itemId, base_revision: args.base, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: false };
+  const env = sealItem({ ...ctx, vk: args.vk, payload });
+  const record = await signRecordAsync({ ...ctx, ts: args.nowMs, resolves: args.resolves, env }, args.signer);
+  const tag = nameTag(nameIndexKey(args.vk, snapshot.vaultId, snapshot.state.key_epoch), payload.name);
   return sendRecord(args.client, snapshot, record, tag);
+}
+
+/** A live, listed item's verified state, or `not_found`. */
+function liveState(snapshot: VaultSnapshot, itemId: string) {
+  const state = snapshot.itemStates.get(itemId);
+  if (!state || state.revision === 0 || state.tombstone || !snapshot.items.some((i) => i.itemId === itemId)) throw new AppError('not_found');
+  return state;
+}
+
+/**
+ * Restore the value of a verified earlier revision as a NEW revision of a live
+ * item: sealed under the current key epoch, signed by this device and sent
+ * compare-and-swap at the head the dashboard verified. The log position of the
+ * old revision is never rewritten, a tombstone is never revived, and a
+ * concurrent write turns this one into a preserved conflict branch. Only the
+ * value comes from the old revision; the name, sensitivity, profile and other
+ * metadata stay the current head's. The old value is opened and sealed again
+ * inside this function and is never returned or shown.
+ */
+export async function restoreRevision(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; logSeq: number; nowMs?: number }): Promise<WriteResult> {
+  const { snapshot } = args;
+  const vk = writableKey(snapshot);
+  const state = liveState(snapshot, args.itemId);
+  const target = snapshot.log.get(args.itemId)?.find((e) => e.logSeq === args.logSeq && e.conflictId === null);
+  if (!target || target.record.tombstone || recordDigest(target.record) === state.head) throw new AppError('history_unavailable');
+  const old = openRecord(target.record, snapshot.vaultKeys.get(target.record.key_epoch));
+  if (!old || 'deleted' in old) throw new AppError('history_unavailable');
+  const prev = openHead(snapshot, args.itemId);
+  if (old.value === prev.value) throw new AppError('restore_current');
+  const nowMs = args.nowMs ?? Date.now();
+  const payload: ItemPayload = { name: prev.name, value: old.value, meta: nextMeta(prev, true, nowMs), sensitivity: prev.sensitivity };
+  return writeRevision({ ...args, base: state.revision, vk, payload, resolves: [], nowMs });
+}
+
+/**
+ * Resolve every open conflict branch of a live item with one new revision at
+ * the verified head, listing their IDs in `resolves` (the protocol's explicit
+ * resolution). `adopt` null keeps the current value; an ID adopts that open,
+ * readable, non-tombstone branch's value. The branches stay in the signed log.
+ */
+export async function resolveConflicts(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; adopt: string | null; nowMs?: number }): Promise<WriteResult> {
+  const { snapshot } = args;
+  const vk = writableKey(snapshot);
+  const state = liveState(snapshot, args.itemId);
+  const open = state.conflicts;
+  if (open.length === 0 || open.length > MAX_RESOLVES) throw new AppError('history_unavailable');
+  const prev = openHead(snapshot, args.itemId);
+  let value = prev.value;
+  if (args.adopt !== null) {
+    const branch = open.find((c) => c.conflict_id === args.adopt);
+    if (!branch || branch.record.tombstone) throw new AppError('history_unavailable');
+    const payload = openRecord(branch.record, snapshot.vaultKeys.get(branch.record.key_epoch));
+    if (!payload || 'deleted' in payload) throw new AppError('history_unavailable');
+    value = payload.value;
+  }
+  const nowMs = args.nowMs ?? Date.now();
+  const next: ItemPayload = { name: prev.name, value, meta: nextMeta(prev, value !== prev.value, nowMs), sensitivity: prev.sensitivity };
+  return writeRevision({ ...args, base: state.revision, vk, payload: next, resolves: open.map((c) => c.conflict_id), nowMs });
 }
 
 /** Delete a live item with a signed tombstone at its verified head. */
 export async function deleteItem(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; nowMs?: number }): Promise<WriteResult> {
   const { snapshot } = args;
   const vk = writableKey(snapshot);
-  const state = snapshot.itemStates.get(args.itemId);
-  if (!state || state.revision === 0 || state.tombstone || !snapshot.items.some((i) => i.itemId === args.itemId)) throw new AppError('not_found');
+  const state = liveState(snapshot, args.itemId);
   const nowMs = args.nowMs ?? Date.now();
   const ctx = { vault_id: snapshot.vaultId, item_id: args.itemId, base_revision: state.revision, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: true };
   const env = sealItem({ ...ctx, vk, payload: { deleted: true } });

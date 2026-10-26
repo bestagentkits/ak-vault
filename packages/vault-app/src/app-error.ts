@@ -26,6 +26,8 @@ export const APP_ERROR_CODES = [
   'not_found',
   'item_unreadable',
   'duplicate_name',
+  'history_unavailable',
+  'restore_current',
   'quota_exceeded',
   'network',
   'server',

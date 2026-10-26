@@ -140,7 +140,9 @@ directories themselves are the authority for exact file names.
 | X9 | Malformed or substituted enrollment code joins the wrong device | Network, phishing | Closed key set, exact contexts, version and size checks; owner role and `human` kind required; SAS confirmation on approval ([spec §3.8](../protocol/v1/spec.md#38-enrollment-codes)) | Vectors: `enroll-codes.json` |
 | X10 | Relay or MCP flood exhausts an account | MCP client, stolen token | Per-client and per-account MCP rate limits, per-device in-flight cap, per-account connection cap, sealed queue cap with `sealed_queue_full` ([spec §10](../protocol/v1/spec.md#10-errors-and-limits)) | Relay and MCP rate-limit tests |
 
-Rows X1–X10 cover remote access (ADR 0002); their vectors and tests land with the
+| X12 | Dashboard history or restore used to bypass CAS, a tombstone, a removal fence or key rotation, or to reveal a value | Hostile server, concurrent device, XSS in `/app` | History is projected only from the log the browser verified (gap, repeat, reorder, forged record and relabelled branch are refused before any history shows); entries are metadata and never carry a payload. Restore and resolve write a new record under the current key epoch at the verified head by CAS, so a concurrent write becomes a preserved branch and the Worker still refuses a non-current epoch, a removed author or a pending rekey; a deletion, a deleted item, a branch or an unreadable revision cannot be restored; both need an explicit confirmation. Limits: restore opens the old value in browser memory (the same trust as every head the dashboard opens, ADR 0002) and a script running in `/app` could therefore read it, which the strict CSP, SRI and Trusted Types are there to prevent; restoring an old credential does not make it valid at its provider; history older than 200 entries per item is in the signed log but not listed | `packages/vault-app/test/dashboard-history.test.ts`, `packages/vault-app/test/history.test.ts` |
+
+Rows X1–X10 and X12 cover remote access (ADR 0002); their vectors and tests land with the
 implementation, before the feature leaves staging.
 
 ## Explicit limitations
