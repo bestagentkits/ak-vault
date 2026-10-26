@@ -48,6 +48,7 @@ import type { AkvClient } from './akv-client.js';
 import { deviceRecordOf, sasInputOf } from './enroll.js';
 import type { LoggedRecord } from './history.js';
 import { validItemName, validMetaText } from './item-names.js';
+import { parseRotationWorkflow, type RotationWorkflow } from './rotation.js';
 
 export const ITEM_META_SCHEMA = 'agentkit.secret/v1';
 const MEMBERSHIP_PAGE = 1000;
@@ -74,6 +75,11 @@ export interface ItemView {
   rotatedMs: number | null;
   creator: string | null;
   rotateTtlDays: number | null;
+  /** Rotation workflow an operator started (signed metadata), or null. */
+  rotation: RotationWorkflow | null;
+  /** Time and key epoch of the latest rekey that listed this item in `needs_rotate`; null when never listed. */
+  flaggedMs: number | null;
+  flaggedEpoch: number | null;
   profile: ProfileFieldView[];
   openConflicts: number;
 }
@@ -258,6 +264,9 @@ export function projectItem(
     rotatedMs: metaInt(meta, 'rotated_ms', 1),
     creator,
     rotateTtlDays: metaInt(meta, 'rotate_ttl_days', 1),
+    rotation: parseRotationWorkflow(meta),
+    flaggedMs: null,
+    flaggedEpoch: null,
     profile: (Object.keys(profile.profile) as ProfileKey[]).sort().map((key) => ({ key, value: profile.profile[key]!.value, origin: profile.origins[key] ?? 'sync' })),
     openConflicts,
   };
@@ -377,6 +386,25 @@ export function replayLog(
   return { itemStates, heads, log, items, unreadable, hidden, logHead: verified.head };
 }
 
+/** Record, per item, the latest rekey that listed it in `needs_rotate` (a removal's exposure flag). */
+export function flagRotations(items: ItemView[], events: readonly MembershipEvent[]): void {
+  const latest = new Map<string, { ts: number; epoch: number }>();
+  for (const e of events) {
+    if (e.type !== 'rekey') continue;
+    const ids = e.body['needs_rotate'];
+    const epoch = e.body['new_key_epoch'];
+    if (!Array.isArray(ids) || typeof epoch !== 'number') continue;
+    for (const id of ids) if (typeof id === 'string') latest.set(id, { ts: e.ts, epoch });
+  }
+  for (const item of items) {
+    const flag = latest.get(item.itemId);
+    if (flag) {
+      item.flaggedMs = flag.ts;
+      item.flaggedEpoch = flag.epoch;
+    }
+  }
+}
+
 export interface PullResult {
   snapshot: VaultSnapshot;
   enrollment: Enrollment;
@@ -392,6 +420,7 @@ export async function pullVault(client: AkvClient, device: StoredDevice, kx: Dev
   const vaultKeys = await loadVaultKeys(client, enrollment.vaultId, selfId, parsed, addSeq, kx);
   const entries = await fetchChanges(client, enrollment.vaultId);
   const replay = replayLog(entries, state, enrollment, vaultKeys, selfId);
+  flagRotations(replay.items, parsed);
   const witnessed: WitnessedState = {
     membership_seq: state.seq,
     membership_head: state.head,

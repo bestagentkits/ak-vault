@@ -130,15 +130,19 @@ export class FakeWorld {
     /** Replace the membership chain served. */
     membership: null as MembershipEvent[] | null,
     omitIss: false,
+    /** Refuse every item write with 403, as a Worker does for a role the chain no longer grants. */
+    forbidWrites: false,
+    /** Every request fails at the network layer. */
+    offline: false,
   };
 
-  constructor() {
+  constructor(opts: { shared?: boolean } = {}) {
     const wrap = wrapToDevice({ vk: this.vks.get(1)!, vaultId: this.vaultId, keyEpoch: 1, recipient: this.owner.record });
     const genesis = buildGenesisEvent(
       {
         vault_id: this.vaultId, ts: Date.now(), author: this.owner.record.device_id,
         body: {
-          vault_kind: 'personal', owner_account: ACCOUNT, recovery_sign_pub: this.recovery.record.sign_pub,
+          vault_kind: opts.shared ? 'shared' : 'personal', owner_account: ACCOUNT, recovery_sign_pub: this.recovery.record.sign_pub,
           devices: [this.owner.record as unknown as JsonObject], wraps_digest: wrapsDigest([wrap]),
         },
       },
@@ -187,6 +191,48 @@ export class FakeWorld {
     this.wraps.set(ev.seq, ws);
   }
 
+  /** The owner adds another owner device (as `ak secrets devices approve` would) so there is someone to remove. */
+  addDevice(keys: DeviceKeys): void {
+    const st = this.state();
+    const ws = [...this.vks.entries()].map(([e, vk]) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: e, recipient: keys.record }));
+    const sas = sasDigest({ vault_id: this.vaultId, initiator: this.owner.record.device_id, joiner: keys.record, nonce_i: b64encode(randomBytes(16)), nonce_j: b64encode(randomBytes(16)) });
+    const ev = nextMembershipEvent(st, { type: 'device_add', ts: Date.now(), author: this.owner.record.device_id, body: { device: keys.record as unknown as JsonObject, sas, wraps_digest: wrapsDigest(ws) } }, this.owner.signSecret);
+    this.events.push(ev);
+    this.wraps.set(ev.seq, ws);
+  }
+
+  /** Shared vaults: the owner signs another account in with one device and a role. */
+  addMember(keys: DeviceKeys, role: 'owner' | 'editor' | 'reader'): void {
+    const st = this.state();
+    const rec = { ...keys.record, role };
+    const ws = [...this.vks.entries()].map(([e, vk]) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: e, recipient: rec }));
+    const ev = nextMembershipEvent(st, { type: 'member_add', ts: Date.now(), author: this.owner.record.device_id, body: { account: rec.account, role, devices: [rec as unknown as JsonObject], wraps_digest: wrapsDigest(ws) } }, this.owner.signSecret);
+    this.events.push(ev);
+    this.wraps.set(ev.seq, ws);
+  }
+
+  /** The owner signs a role change for an account. */
+  setRole(account: string, role: 'owner' | 'editor' | 'reader'): void {
+    const ev = nextMembershipEvent(this.state(), { type: 'role_set', ts: Date.now(), author: this.owner.record.device_id, body: { account, role } }, this.owner.signSecret);
+    this.events.push(ev);
+  }
+
+  /** The owner rekeys to a new vault key, wrapping it to every current device, and flags items for rotation. */
+  rekey(needsRotate: string[] = []): number {
+    const st = this.state();
+    const epoch = st.key_epoch + 1;
+    const vk = randomBytes(32);
+    const ws = st.devices.map((d) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: epoch, recipient: d }));
+    const ev = nextMembershipEvent(st, {
+      type: 'rekey', ts: Date.now(), author: this.owner.record.device_id,
+      body: { new_key_epoch: epoch, wraps_digest: wrapsDigest(ws), needs_rotate: [...needsRotate].sort() },
+    }, this.owner.signSecret);
+    this.events.push(ev);
+    this.wraps.set(ev.seq, ws);
+    this.vks.set(epoch, vk);
+    return epoch;
+  }
+
   removeDevice(deviceId: string): void {
     const st = this.state();
     const ev = nextMembershipEvent(st, {
@@ -194,6 +240,19 @@ export class FakeWorld {
       body: { device_id: deviceId, reason: 'retired', log_fence: this.log.length, log_head: this.logHeads[this.log.length]! },
     }, this.owner.signSecret);
     this.events.push(ev);
+  }
+
+  /** The owner rekeys to the next epoch, wrapping it to every current device and flagging `needsRotate`. */
+  ownerRekey(needsRotate: string[], ts = Date.now()): number {
+    const st = this.state();
+    const epoch = st.key_epoch + 1;
+    const vk = randomBytes(32);
+    const ws = st.devices.map((d) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: epoch, recipient: d }));
+    const ev = nextMembershipEvent(st, { type: 'rekey', ts, author: this.owner.record.device_id, body: { new_key_epoch: epoch, wraps_digest: wrapsDigest(ws), needs_rotate: needsRotate } }, this.owner.signSecret);
+    this.events.push(ev);
+    this.wraps.set(ev.seq, ws);
+    this.vks.set(epoch, vk);
+    return epoch;
   }
 
   /** The owner CLI writes an item directly (as another device would). */
@@ -208,19 +267,6 @@ export class FakeWorld {
     if (res.status !== 200) throw new Error('owner write refused');
     this.names.set(itemId, name);
     return itemId;
-  }
-
-  /** The owner CLI rotates the vault key: a `rekey` event and wraps for every current device. */
-  rekey(): number {
-    const st = this.state();
-    const epoch = st.key_epoch + 1;
-    const vk = randomBytes(32);
-    const ws = st.devices.map((d) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: epoch, recipient: d }));
-    const ev = nextMembershipEvent(st, { type: 'rekey', ts: Date.now(), author: this.owner.record.device_id, body: { new_key_epoch: epoch, wraps_digest: wrapsDigest(ws), needs_rotate: [] } }, this.owner.signSecret);
-    this.vks.set(epoch, vk);
-    this.events.push(ev);
-    this.wraps.set(ev.seq, ws);
-    return epoch;
   }
 
   /**
@@ -294,6 +340,7 @@ export class FakeWorld {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = (init.method ?? 'GET').toUpperCase();
     const requestBody = typeof init.body === 'string' ? init.body : '';
+    if (this.hostile.offline) throw new TypeError('network down');
     const res = await this.route(new URL(url), method, requestBody, new Headers(init.headers));
     const responseBody = await res.clone().text();
     this.exchanges.push({ method, url, requestBody, responseBody, status: res.status });
@@ -420,6 +467,7 @@ export class FakeWorld {
       return json(200, { hits });
     }
     if (method === 'PUT' && coll === 'items') {
+      if (this.hostile.forbidWrites) return apiError(403, 'forbidden');
       if (!headers.get('Idempotency-Key')) return apiError(400, 'bad_request');
       const b = JSON.parse(body) as { record: SignedRecord; name_tag?: { key_epoch: number; tag: string } };
       if (b.record.item_id !== decodeURIComponent(parts[5] ?? '')) return apiError(400, 'bad_request');

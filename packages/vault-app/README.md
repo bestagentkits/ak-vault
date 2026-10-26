@@ -41,6 +41,28 @@ time; older ones stay in the signed log.
 - Both ask for confirmation. Restoring a provider credential does not make it
   valid again; rotate or revoke it at the provider if it may be exposed.
 
+It also shows each item's rotation health and guides a provider credential
+rotation: start, save the replacement value (write-only), then confirm the old
+credential was revoked at the provider as a separate step, with pause, fail and
+cancel. This is not a vault rekey. See
+[Secret rotation](../../docs/security/key-lifecycle-and-recovery.md#secret-rotation).
+
+## Members and access
+
+The Members screen is a read-only projection of the membership chain this browser
+verified: members and their roles, each account's devices (this browser marked),
+removed devices, the key epoch, a pending rekey and the items a removal flagged for
+rotation. It also lists what this `browser` session can and cannot do. Accounts and
+devices show only an 8-character prefix of their ID.
+
+It never writes membership. The Worker refuses a `browser` session on every
+membership POST, and ADR 0002 D1 limits browser enrollment to owner accounts, so
+inviting, removing, changing a role and rekeying stay with an owner CLI device.
+Protocol v1 has no pending-invitation state, so the screen says nothing is waiting
+on the server. Write controls follow the verified role and a pending rekey; a write
+the Worker refuses re-pulls the chain first, so a demoted role shows an explanation
+and a removed device still shows the removed view.
+
 ## Build
 
 The deploy step runs no bundler, so the built files are committed:

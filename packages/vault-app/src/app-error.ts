@@ -21,6 +21,8 @@ export const APP_ERROR_CODES = [
   'rollback',
   'conflict',
   'rekey_required',
+  'role_forbidden',
+  'write_refused',
   'invalid_name',
   'value_too_large',
   'not_found',
@@ -29,6 +31,9 @@ export const APP_ERROR_CODES = [
   'history_unavailable',
   'restore_current',
   'quota_exceeded',
+  'invalid_rotation',
+  'rotation_value_unchanged',
+  'rotation_not_ready',
   'network',
   'server',
 ] as const;
