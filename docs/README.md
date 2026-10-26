@@ -7,6 +7,7 @@ page to find the owner of a question.
 |---|---|
 | Why opt-in zero-knowledge sync, and what was rejected? | [ADR 0001](./adr/0001-opt-in-zero-knowledge-sync.md) |
 | Why a browser device, device relay and remote MCP, and what they cost the zero-knowledge boundary? | [ADR 0002](./adr/0002-browser-device-relay-and-remote-mcp.md) |
+| How another account joins a shared vault without server-held invitations (proposed)? | [ADR 0003](./adr/0003-shared-vault-member-enrollment.md) |
 | Exact wire format, primitives, encodings, errors | [Protocol v1 spec](./protocol/v1/spec.md) (normative) |
 | Who can attack what, and which test proves the defense? | [Threat model](./security/threat-model.md) |
 | What the server can see; logging and retention rules | [Data classification](./security/data-classification.md) |
