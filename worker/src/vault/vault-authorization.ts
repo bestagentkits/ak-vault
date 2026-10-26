@@ -62,6 +62,8 @@ const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: r
   'sealkey.put': { scope: WRITE, role: 'human_owner' },
   'sealed.get': { scope: READ, role: 'writer' },
   'sealed.ack': { scope: WRITE, role: 'writer' },
+  'writereq.get': { scope: READ, role: 'writer' },
+  'writereq.close': { scope: WRITE, role: 'writer' },
 };
 
 /**
@@ -72,8 +74,12 @@ const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: r
  */
 const BROWSER_REFUSED: ReadonlySet<VaultOp> = new Set<VaultOp>(['genesis', 'membership.post', 'recovery.get', 'recovery.put', 'sealkey.put', 'sealed.get', 'sealed.ack']);
 
+/** Ops only a `browser` (dashboard) session may call: the person's side of a human write request (spec §3.8). */
+const BROWSER_ONLY: ReadonlySet<VaultOp> = new Set<VaultOp>(['writereq.get', 'writereq.close']);
+
 function refuseBrowserSession(req: VaultRequest): void {
   if (req.claims.kind === 'browser' && BROWSER_REFUSED.has(req.op)) throw new ApiError('forbidden');
+  if (req.claims.kind !== 'browser' && BROWSER_ONLY.has(req.op)) throw new ApiError('forbidden');
 }
 
 /**

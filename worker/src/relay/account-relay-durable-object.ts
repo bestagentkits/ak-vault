@@ -319,8 +319,8 @@ export class AccountRelay extends DurableObject<Env> {
    * refused request spends nothing. An invalid client ID or tool is refused without
    * `retryAfterS`.
    */
-  async takeRate(clientId: string, tool: RelayTool | null, nowMs: number = Date.now()): Promise<RateDecision> {
-    if (typeof clientId !== 'string' || !/^[\x20-\x7e]{1,256}$/.test(clientId) || (tool !== null && !(RELAY_TOOLS as readonly string[]).includes(tool))) {
+  async takeRate(clientId: string, tool: RelayTool | 'prepare_write' | null, nowMs: number = Date.now()): Promise<RateDecision> {
+    if (typeof clientId !== 'string' || !/^[\x20-\x7e]{1,256}$/.test(clientId) || (tool !== null && tool !== 'prepare_write' && !(RELAY_TOOLS as readonly string[]).includes(tool))) {
       return { ok: false };
     }
     const window = Math.floor(nowMs / RATE_WINDOW_MS);
@@ -329,6 +329,7 @@ export class AccountRelay extends DurableObject<Env> {
       ['account', L.mcp_calls_per_minute_per_account],
     ];
     if (tool === 'run') buckets.push([`run:${clientId}`, L.mcp_run_calls_per_minute_per_client]);
+    if (tool === 'prepare_write') buckets.push([`prepare:${clientId}`, L.mcp_prepare_write_per_minute_per_client]);
     return this.ctx.storage.transactionSync(() => {
       this.sql.exec('DELETE FROM client_rate WHERE window < ?', window);
       const counts = buckets.map(([bucket]) => this.sql.exec<{ count: number }>('SELECT count FROM client_rate WHERE bucket = ? AND window = ?', bucket, window).toArray()[0]?.count ?? 0);

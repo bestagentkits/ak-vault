@@ -36,11 +36,11 @@ describe('MCP transport (2026-07-28)', () => {
     expect(typeof res.json.result.instructions).toBe('string');
   });
 
-  it('tools/list returns the seven tools with closed input schemas and annotations', async () => {
+  it('tools/list returns the nine tools with closed input schemas and annotations', async () => {
     const res = await modern(await token(), 'tools/list');
     expect(res.status).toBe(200);
     const tools = res.json.result.tools as { name: string; inputSchema: { additionalProperties: boolean; properties: Record<string, unknown> }; annotations: Record<string, unknown>; description: string }[];
-    expect(tools.map((t) => t.name)).toEqual(['secrets_search', 'secrets_list', 'secrets_describe', 'secrets_set', 'secrets_delete', 'secrets_request', 'secrets_run']);
+    expect(tools.map((t) => t.name)).toEqual(['secrets_search', 'secrets_list', 'secrets_describe', 'secrets_set', 'secrets_delete', 'secrets_request', 'secrets_run', 'secrets_prepare_write', 'secrets_write_status']);
     for (const tool of tools) {
       expect(tool.inputSchema.additionalProperties, tool.name).toBe(false);
       expect(tool.inputSchema.properties['vault_id'], tool.name).toBeDefined();
@@ -180,7 +180,7 @@ describe('MCP transport (2025-11-25, stateless)', () => {
     const list = await legacy(t, 'tools/list');
     expect(list.status).toBe(200);
     expect(list.json.result.resultType).toBeUndefined();
-    expect(list.json.result.tools).toHaveLength(7);
+    expect(list.json.result.tools).toHaveLength(9);
     const ping = await mcpPost(t, { jsonrpc: '2.0', id: 'p', method: 'ping' }, { version: '2025-11-25', headers: { Accept: '' } });
     expect(ping.status).toBe(200);
     expect(ping.json).toEqual({ jsonrpc: '2.0', id: 'p', result: {} });
