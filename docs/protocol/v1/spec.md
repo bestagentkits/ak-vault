@@ -1140,7 +1140,7 @@ per-client and per-account budgets.
   (`invalid_args`). A vault that does not exist or of which `sub` is not a member is
   `invalid_args`; a member that is not `owner` or `editor` is `denied`; a vault with
   no seal-key document for its current key epoch, or with `rekey_required` set, is
-  `no_seal_key`; a request beyond `write_intents_open_per_account` unfinished
+  `no_seal_key`; a request beyond `write_intents_open_per_account` (or `write_intents_open_per_client` for one MCP client) unfinished
   (`pending_user` or `processing`) requests of the account is `too_many_open`.
 - `secrets_prepare_write` seals the target with `sealOp` (§3.6) to the current seal-key document:
   `pt` = `{"op":"set","name","value":"","sensitivity"?}`, `origin` naming the MCP
@@ -1250,7 +1250,7 @@ included). The write-request tools (§9.9) add two more tool errors, `no_seal_ke
 `too_many_open`, and also answer `invalid_args`, `denied`, `not_found`, `rate_limited`
 and `internal`. `worker/src/limits.ts` owns the relay, MCP and write-request limits
 (`write_intent_ttl_s`, `write_intent_processing_s`, `write_intent_retention_s`,
-`write_intents_open_per_account`, `write_intent_calls_per_minute_per_device`) and
+`write_intents_open_per_account`, `write_intents_open_per_client`, `write_intent_calls_per_minute_per_device`) and
 `GET /v1/meta` publishes them where remote access is enabled; the table lists the relay
 and MCP ones for orientation, and `limits.ts` wins on any difference:
 

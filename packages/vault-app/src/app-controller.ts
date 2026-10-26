@@ -343,8 +343,9 @@ export class AppController {
       try {
         planWrite(this.snapshot, request.name, request.operation);
       } catch (err) {
-        // The vault no longer fits the request (a create of an existing name, a replace of a missing one).
-        await failWriteRequest(this.client, rid, 'conflict').catch(() => undefined);
+        // The vault no longer fits the request (a create of an existing name, a replace of a
+        // missing one). The assistant is told only that it failed, not which of these it was.
+        await failWriteRequest(this.client, rid, 'failed').catch(() => undefined);
         throw err;
       }
       this.showWrite(request, notice, false);
@@ -380,9 +381,12 @@ export class AppController {
         client: this.client, snapshot: this.snapshot, signer: this.signer, name: request.name, value, nowMs: this.now(),
         ...(plan.itemId === null ? { newItemId: itemId, sensitivity } : {}),
       });
-      await completeWriteRequest(this.client, request.requestId);
+      // The record is written; the server confirms it against the vault's head.
+      const status = await completeWriteRequest(this.client, request.requestId);
+      if (status !== 'completed') throw new AppError(status === 'conflict' ? 'conflict' : 'server');
     } catch (err) {
       const reason = appErrorCode(err, 'server') === 'conflict' ? 'conflict' : 'failed';
+      // After `complete` answered the request is settled, so this refusal changes nothing.
       if (claimed) await failWriteRequest(this.client, request.requestId, reason).catch(() => undefined);
       store.clear();
       await this.writeRequestFailed(err, reason);

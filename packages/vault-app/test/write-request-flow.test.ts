@@ -111,7 +111,7 @@ describe('write request', () => {
     const rid = world.prepareIntent('taken', 'create');
     const page = await openLink(b, rid);
     expect(page.controller.current()).toMatchObject({ kind: 'vault', notice: { kind: 'error', code: 'conflict' } });
-    expect(world.intents.get(rid)!.status).toBe('conflict');
+    expect(world.intents.get(rid)!.status).toBe('failed');
     expect(b.writeRequest.value).toBeNull();
   });
 

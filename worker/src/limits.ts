@@ -116,6 +116,8 @@ export const REMOTE_ACCESS_LIMITS = {
   write_intent_retention_s: 60 * 60,
   /** Max unfinished (pending_user or processing) write requests per account. */
   write_intents_open_per_account: 16,
+  /** Open requests one MCP client may hold, so a single client cannot take every slot. */
+  write_intents_open_per_client: 6,
   /** Browser calls to `/v1/write-intents/*` per device per minute. */
   write_intent_calls_per_minute_per_device: 60,
 } as const;

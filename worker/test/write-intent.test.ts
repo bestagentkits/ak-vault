@@ -109,10 +109,26 @@ describe('secrets_prepare_write', () => {
     expect((await prepare(stranger, fx)).out['code']).toBe('invalid_args');
   });
 
-  it('caps the unfinished requests per account', async () => {
+  it('caps the unfinished requests per MCP client, so one client cannot take every slot', async () => {
     const { fx, token } = await setup();
-    for (let i = 0; i < REMOTE_ACCESS_LIMITS.write_intents_open_per_account; i++) expect((await prepare(token, fx, { name: `K${i}` })).isError).toBe(false);
+    for (let i = 0; i < REMOTE_ACCESS_LIMITS.write_intents_open_per_client; i++) expect((await prepare(token, fx, { name: `K${i}` })).isError).toBe(false);
     expect((await prepare(token, fx)).out['code']).toBe('too_many_open');
+    // Another client of the same account still gets a slot.
+    const other = await mintMcpToken({ sub: fx.owner.account, clientId: `client-${randomId()}`, grantId: `grant-${randomId()}`, scope: 'vault-mcp:write' });
+    expect((await prepare(other, fx)).isError).toBe(false);
+  });
+
+  it('caps the unfinished requests per account', async () => {
+    const { fx } = await setup();
+    let opened = 0;
+    for (let c = 0; opened < REMOTE_ACCESS_LIMITS.write_intents_open_per_account; c++) {
+      const token = await mintMcpToken({ sub: fx.owner.account, clientId: `client-${randomId()}`, grantId: `grant-${randomId()}`, scope: 'vault-mcp:write' });
+      for (let i = 0; i < REMOTE_ACCESS_LIMITS.write_intents_open_per_client && opened < REMOTE_ACCESS_LIMITS.write_intents_open_per_account; i++, opened++) {
+        expect((await prepare(token, fx, { name: `K${c}-${i}` })).isError).toBe(false);
+      }
+    }
+    const last = await mintMcpToken({ sub: fx.owner.account, clientId: `client-${randomId()}`, grantId: `grant-${randomId()}`, scope: 'vault-mcp:write' });
+    expect((await prepare(last, fx)).out['code']).toBe('too_many_open');
   });
 });
 
@@ -183,6 +199,22 @@ describe('browser write flow', () => {
     expect(results.filter((r) => r.status === 200)).toHaveLength(1);
     expect(results.filter((r) => r.status === 409)).toHaveLength(5);
     expect(await statusOf(token, rid)).toMatchObject({ status: 'processing' });
+  });
+
+  it('two requests cannot be written by one record: the second claim of the same item and revision is refused', async () => {
+    const s = await setup();
+    const { fx, token } = s;
+    const itemId = randomId();
+    expect((await fx.write(fx.owner, itemId, 0, { name: 'K', value: 'v1' })).status).toBe(200);
+    const first = ridOf((await prepare(token, fx, { name: 'K', operation: 'replace' })).out['form_url']!);
+    const second = ridOf((await prepare(token, fx, { name: 'K', operation: 'replace' })).out['form_url']!);
+    expect((await browser(fx, 'POST', first, 'claim', { item_id: itemId, base_revision: 1 })).status).toBe(200);
+    const refused = await browser(fx, 'POST', second, 'claim', { item_id: itemId, base_revision: 1 });
+    expect(refused.status).toBe(409);
+    expect(await statusOf(token, second)).toMatchObject({ status: 'conflict' });
+    expect((await fx.write(fx.owner, itemId, 1, { name: 'K', value: 'v2' }, BROWSER_WRITE)).status).toBe(200);
+    expect(await statusOf(token, first)).toMatchObject({ status: 'completed' });
+    expect(await statusOf(token, second)).toMatchObject({ status: 'conflict' });
   });
 
   it('a claim and a cancel racing leave one outcome', async () => {

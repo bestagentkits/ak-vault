@@ -421,7 +421,9 @@ export class AccountRelay extends DurableObject<Env> {
     const target = JSON.stringify(a.target);
     const result = this.ctx.storage.transactionSync((): PrepareIntentResult => {
       purgeIntents(this.sql, nowMs);
-      if (openIntentCount(this.sql, nowMs) >= L.write_intents_open_per_account) return { ok: false, code: 'too_many_open' };
+      if (openIntentCount(this.sql, nowMs) >= L.write_intents_open_per_account || openIntentCount(this.sql, nowMs, a.clientId) >= L.write_intents_open_per_client) {
+        return { ok: false, code: 'too_many_open' };
+      }
       const requestId = b64encode(randomBytes(16));
       const expiresAt = nowMs + L.write_intent_ttl_s * 1000;
       insertIntent(this.sql, {
@@ -456,9 +458,10 @@ export class AccountRelay extends DurableObject<Env> {
 
   /**
    * One browser call on a request (`view`, `claim`, `complete`, `fail`, `cancel`).
-   * Order: proof (burns its `jti`) -> per-device rate -> request -> the device is still a
-   * current owner or editor of the request's vault -> the MCP grant is still live ->
-   * settle by time and vault state -> the action, as a compare-and-set on the status.
+   * Order: request -> the device is a current owner or editor of the request's vault (its
+   * enrolled key comes from there) -> proof (burns its `jti`) -> per-device rate -> the MCP
+   * grant is still live -> settle by time and vault state -> the action, as a
+   * compare-and-set on the status.
    * Every refusal is a stable code; nothing here sees a value or a name.
    */
   async writeIntentAction(a: IntentActionArgs, nowMs: number = Date.now()): Promise<IntentActionResult> {
@@ -482,7 +485,7 @@ export class AccountRelay extends DurableObject<Env> {
     try {
       revoked = await isGrantRevoked(this.env, { sub: a.sub, sid: initial.grant_id, iat: initial.grant_iat });
     } catch {
-      return refuse('unauthorized', undefined, 503);
+      return refuse('internal', undefined, 503);
     }
     if (revoked) {
       // The grant that asked is gone: nobody may finish what it asked for.
@@ -531,6 +534,7 @@ export class AccountRelay extends DurableObject<Env> {
           return wrong(getIntent(this.sql, row.rid) ?? row);
         }
         const won = this.ctx.storage.transactionSync(() => claimIntent(this.sql, row.rid, a.did, a.itemId as string, base, nowMs));
+        if (!won) this.ctx.storage.transactionSync(() => transition(this.sql, row.rid, 'pending_user', 'conflict', nowMs));
         const now = getIntent(this.sql, row.rid) ?? row;
         return won ? { ok: true, body: view(now) } : wrong(now);
       }

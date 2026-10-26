@@ -54,7 +54,11 @@ export function getIntent(sql: SqlStorage, rid: string): IntentRow | null {
   return sql.exec<IntentRow>('SELECT * FROM write_intent WHERE rid = ?', rid).toArray()[0] ?? null;
 }
 
-export function openIntentCount(sql: SqlStorage, nowMs: number): number {
+/** Open requests of the account, or of one MCP client when `clientId` is given. */
+export function openIntentCount(sql: SqlStorage, nowMs: number, clientId?: string): number {
+  if (clientId !== undefined) {
+    return sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM write_intent WHERE status IN ('pending_user','processing') AND expires_at > ? AND client_id = ?", nowMs, clientId).one().n;
+  }
   return sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM write_intent WHERE status IN ('pending_user','processing') AND expires_at > ?", nowMs).one().n;
 }
 
@@ -84,17 +88,24 @@ export function transition(sql: SqlStorage, rid: string, from: IntentStatus, to:
   return sql.exec('UPDATE write_intent SET status = ?, ended_at = CASE WHEN ? THEN ? ELSE ended_at END WHERE rid = ? AND status = ?', to, ends ? 1 : 0, nowMs, rid, from).rowsWritten === 1;
 }
 
-/** Claim a pending request for one browser device and the item revision it will write. */
+/**
+ * Claim a pending request for one browser device and the item revision it will write.
+ * Refused while another request is already writing the same item at the same revision:
+ * two requests must not both be settled by one record.
+ */
 export function claim(sql: SqlStorage, rid: string, did: string, itemId: string, baseRevision: number, nowMs: number): boolean {
   return (
     sql.exec(
-      "UPDATE write_intent SET status = 'processing', did = ?, item_id = ?, base_revision = ?, claimed_at = ? WHERE rid = ? AND status = 'pending_user' AND expires_at > ?",
+      `UPDATE write_intent SET status = 'processing', did = ?, item_id = ?, base_revision = ?, claimed_at = ? WHERE rid = ? AND status = 'pending_user' AND expires_at > ?
+         AND NOT EXISTS (SELECT 1 FROM write_intent o WHERE o.status = 'processing' AND o.vault_id = write_intent.vault_id AND o.item_id = ? AND o.base_revision = ?)`,
       did,
       itemId,
       baseRevision,
       nowMs,
       rid,
       nowMs,
+      itemId,
+      baseRevision,
     ).rowsWritten === 1
   );
 }

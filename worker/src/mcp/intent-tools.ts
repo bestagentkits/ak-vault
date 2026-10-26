@@ -73,8 +73,6 @@ function result(structured: Record<string, unknown>, isError: boolean): ToolResu
 
 const MESSAGES = {
   invalid_args: 'The arguments do not match the tool input schema.',
-  vault_required: 'Pass vault_id: your online devices hold several vaults, or none is online to choose one.',
-  vault_unknown: 'vault_id does not name a vault this account can use.',
   denied: 'This account cannot write to that vault.',
   no_seal_key: 'The vault has no seal key yet. Run `ak secrets sync now` once on an owner device, or start `ak secrets sync now --watch --relay`.',
   too_many_open: 'Too many write requests are waiting for the user. Wait for them to finish or expire.',
