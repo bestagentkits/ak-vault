@@ -319,8 +319,8 @@ are applied only by that account's own devices. For each operation, in order:
    head's (`normal` for a new item) and the requested one, so a sealed write never
    lowers sensitivity. A `delete` writes a tombstone. A `409` is an ordinary conflict
    branch (§5), never retried as an overwrite;
-5. append an encrypted audit entry (§7) with `action` `sealed_applied` or
-   `sealed_refused`, the `sealed_id`, `origin.client_id` and, when applied, the
+5. append an encrypted audit entry (§7) with `type` `sealed_applied` or
+   `sealed_refused` (event envelope, §7.1), the `sealed_id`, `origin.client_id` and, when applied, the
    `item_id`; never the name or value;
 6. acknowledge it with the outcome.
 
@@ -751,6 +751,47 @@ batches and covered by audit checkpoints (context `akv1/audit-checkpoint`,
 `{"vault_id","seq","head","author","ts"}`). Reordering, dropping or overwriting since a
 witnessed audit checkpoint is detected by chain replay. The server's operational log
 is separate and never contains item names or values.
+
+### 7.1 Event plaintext
+
+The plaintext of an entry is the canonical JSON of one event object. Every writer
+and every reader shares this envelope (the `ak` CLI defines the types below):
+
+```json
+{"v":1,"type":"<name>","device_id":"<id>","ts":<unix ms>, ...}
+```
+
+- `v` is the integer `1`; any other value, or none, is `unsupported_version`.
+- `type` is 1 to 64 bytes of `[a-z0-9_]`, starting with a letter.
+- `device_id` is the opaque ID (§2) of the device that acted; `ts` is a non-negative
+  safe integer in unix milliseconds.
+- Other fields depend on `type`. Events name items and devices by opaque ID only,
+  never a secret name, value, profile text, token, key or recovery material
+  (data classification: audit).
+
+Types defined today, each with the fields it carries besides the envelope:
+`item_put`, `item_delete`, `conflict_settled` (`item_id`, `revision`);
+`device_add`, `device_remove` (`subject_device_id`); `rekey`, `recover`,
+`recovery_rotate` (none); `profile_invalid` (`item_id`, `revision`);
+`profile_provenance_invalid` (`item_id`, `revision`, `field`);
+`sealed_applied` (`sealed_id`, `client_id`, `item_id` when it wrote one) and
+`sealed_refused` (`sealed_id`, `client_id`); `mcp_call` (`client_id`, `tool`,
+`outcome`). The `ak` CLI parses each of these strictly: a field its type does not
+carry, or a malformed one, makes it refuse the entry.
+
+**Unknown types.** A reader MUST accept an event whose `type` it does not define when
+its envelope is well formed, keep only `type`, `device_id` and `ts`, and read no other
+field. It MUST NOT skip or reject the entry or the chain: a newer writer's event type
+never stops an older device from verifying or appending. A new type needs no
+protocol change; a writer MUST choose a name no existing type uses, and MUST NOT
+reuse a defined name with another field set. For example, a `rotation_started`
+event from another writer is an unknown type to the CLI, which keeps its envelope only.
+
+A writer that does not use this envelope (for example `action` in place of `type`,
+or no `v`) makes a CLI device refuse the chain and stop appending audit entries
+(secret sync is unaffected). A verifier of the chain (§7) decrypts entries whose
+plaintext is any JSON object; checking the envelope is the event reader's job
+(`parseAuditEventEnvelope`; vectors: `audit.json` `event_envelopes`).
 
 ## 8. Portable policy (restrictive only)
 
@@ -1233,7 +1274,8 @@ These resolve points the sections above leave open; the vectors in
   when decrypted, `{"seq","key_epoch","opaque":true}` otherwise (§7). `minKeyEpoch`
   outside `1..keyEpoch`, a missing key for `keyEpoch` or for an entry epoch at or
   above `minKeyEpoch`, and a `kid` that is not an epoch tag are `bad_request`; a substituted, reordered or relabelled decryptable entry is
-  `decrypt_failed` (vectors: `audit.json`).
+  `decrypt_failed` (vectors: `audit.json`). `parseAuditEventEnvelope(event)` checks the
+  event envelope of a decrypted entry (§7.1) and returns `{type, device_id, ts}`.
 - **Transport proof:** `ts` is unix milliseconds, `jti` is b64 of 16 random bytes,
   `htm` is an uppercase method and `htu` is compared exactly. The proof blob MUST be
   canonical. Bad signature → `invalid_signature`; every other proof failure →
