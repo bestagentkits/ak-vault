@@ -8,8 +8,9 @@
 - **Tracking:** remote MCP [#101](https://github.com/bestagentkits/ak-vault/issues/101),
   web dashboard [ak-web#628](https://github.com/bestagentkits/ak-web/issues/628), parent
   epic [#1](https://github.com/bestagentkits/ak-vault/issues/1); profile, describe,
-  request and run [agentkit#2299](https://github.com/bestagentkits/agentkit/issues/2299)
-- **Wire contract:** [protocol v1 spec](../protocol/v1/spec.md) §3.6–§3.8, §5.1,
+  request and run [agentkit#2299](https://github.com/bestagentkits/agentkit/issues/2299);
+  human write requests (D8) [#119](https://github.com/bestagentkits/ak-vault/issues/119)
+- **Wire contract:** [protocol v1 spec](../protocol/v1/spec.md) §3.6–§3.9, §5.1,
   §9 item 1, §9.6, §9.7 and §10. This ADR records *why*; the spec owns *what goes on
   the wire*. If they disagree, the spec wins and this ADR is corrected.
 - **Rollout:** staging only, behind `VAULT_REMOTE_ACCESS_ENABLED` (Worker) and the
@@ -106,6 +107,24 @@ old clients keep verifying every chain they verify today.
    do not verify device signatures, so they trust the Worker for what a result says. It is never
    logged, stored or put into an error. The threat model, the consent screen and the
    vault guide state this boundary.
+8. **D8: human write requests.** An AI client often needs a secret it must not see
+   (an API key the user holds). D7 means `secrets_set` cannot carry it safely: the
+   value would sit in the AI's context and tool call before the Worker ever sees it.
+   `secrets_prepare_write` takes a name and no value. The Worker seals the name and
+   optional purpose to the seal key (D2) as a write intent with its own HKDF and AAD
+   context, stores only that ciphertext with the account, client, grant, operation,
+   state and expiry, and returns a one-time `/app` link. The person opens it on an
+   enrolled browser device (D1), which opens the intent with `SealSK[e]`, takes the
+   typed value, and writes a normal signed record with an item PUT that names the
+   request. The value never leaves the browser in plaintext; the name transits Worker
+   memory once, as D7 allows. The request ID authorizes nothing: every route needs a
+   `browser` session of the requesting account with its device proof. The server
+   enforces what it can see (account, vault, operation against item existence, expiry,
+   single use in the same transaction as the PUT, the requesting grant's liveness,
+   role, caps and a per-client rate); the browser device enforces what only it can see
+   (the name binding and the compare-and-swap base). The MCP client polls
+   `secrets_write_status` and gets a state, a closed reason and an opaque receipt,
+   never the value (spec §3.9, §9.6, §9.8).
 
 ## Alternatives rejected
 
@@ -118,6 +137,12 @@ old clients keep verifying every chain they verify today.
 | Browser device with an `editor` role in a personal vault | Needs a change to the spec §11 role rule; the `browser` session kind restricts the device instead. |
 | A new membership event type for the seal key | Old clients would refuse the chain; a separate signed document keeps them verifying. |
 | Raw value reveal over MCP | Not requested; `run` with device-side redaction covers use without reveal. |
+| Human write by asking the user to paste the value into the AI chat, then `secrets_set` | The value lands in the AI's context, transcript and tool call, outside every control here. |
+| Write request whose ID is a bearer capability (anyone holding the link may write) | A leaked or phished link would let anyone write into the vault; binding to the requesting account's `browser` session costs nothing. |
+| Storing the requested name in the clear beside the request | Contradicts zero-knowledge storage; sealing to the existing seal key adds no key or primitive. |
+| Server checks the name binding | The server cannot read names (D3 keeps the index key off it); only the browser device can resolve the name. |
+| Reusing the sealed-operation AAD context | A write intent could then be replayed as a sealed operation or the reverse; a separate context keeps the two domains apart. |
+| Completion as a separate step after the item PUT (a `processing` state) | A crash between the steps leaves a written item with an open request, or a consumed request with no item; one transaction removes the window. |
 
 ## Consequences
 
@@ -130,7 +155,8 @@ old clients keep verifying every chain they verify today.
     the landing page and `/v1/meta`. `/mcp` verifies the MCP token, live revocation
     by `sid` and the account's vault membership; it has no device proof because MCP
     clients hold no device key. `/v1/relay` and the §9.6 routes run the shared token,
-    revocation, proof and membership pipeline.
+    revocation, proof and membership pipeline; the write-request routes and the
+    `?write_request` item PUT (D8) also require a `browser` session.
   - "no code path may need server-side plaintext": narrowed to "no code path stores,
     logs or decrypts plaintext on the server"; the D7 transit is the only exception.
 
@@ -143,7 +169,10 @@ old clients keep verifying every chain they verify today.
   kind, relay and their limits are additive: no membership type, signed-record field
   or existing body changes meaning (spec Revisions).
 - New Worker state: an `AccountRelay` Durable Object class and a sealed queue and tag
-  index inside the vault object.
+  index inside the vault object, and a write-request table there (D8) whose intent
+  ciphertext is cleared on close or expiry and whose rows are purged after retention.
+- `secrets_set` stays for clients that already hold a value; it is not the flow for a
+  secret the AI must not see (D8).
 
 ## Residual risks
 
@@ -165,6 +194,21 @@ old clients keep verifying every chain they verify today.
 - **Run output redaction is literal.** The device removes exact released values from
   `run` output; a command that prints a value encoded, split or partially still leaks
   it to the MCP client.
+- **The form shows what the AI chose (D8).** The name, purpose and operation come from
+  the MCP client; a prompt-injected client can pick a misleading name or purpose to
+  get a value stored under it. The form shows them with the requesting client, and
+  `create` refuses an existing name, so a request cannot overwrite a secret unless it
+  asks for `replace`.
+- **Phished write links (D8).** A link sent to someone else is useless without a
+  `browser` session of the requesting account; a link sent to the right person by an
+  attacker still asks that person for a value, so the form must say who asked.
+- **Request spam (D8).** A client can open requests up to the per-account caps
+  (open, and open plus retained) and its per-client rate. The caps count each account
+  separately, so one member cannot block another's requests; a runaway client can lock
+  its own account out of new requests for up to the retention period.
+- **A compromised Worker can open write requests** it was not asked for, within the
+  same bounds as forged sealed operations; the person still sees and types every
+  value.
 
 ## Compatibility
 

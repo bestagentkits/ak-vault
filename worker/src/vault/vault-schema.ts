@@ -58,7 +58,7 @@ export const VAULT_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS sealed_ops_pending ON sealed_ops (account, seq) WHERE outcome IS NULL;
   CREATE INDEX IF NOT EXISTS sealed_ops_expiry ON sealed_ops (expires_at);
-  -- Human write requests (spec §3.8): a person types the value in the dashboard instead of the AI client.
+  -- Human write requests (spec §3.9): a person types the value in the dashboard instead of the AI client.
   -- intent is the sealed write intent (the secret name is only inside its ciphertext) and is cleared when the
   -- request closes or expires; the row keeps the sanitized outcome until it is purged.
   CREATE TABLE IF NOT EXISTS write_requests (

@@ -1,5 +1,5 @@
 /**
- * Human write requests (spec §3.8): `secrets_prepare_write` hands the AI a link,
+ * Human write requests (spec §3.9): `secrets_prepare_write` hands the AI a link,
  * never a value; the dashboard (a `browser` session) completes the request with a
  * sealed, signed record. The Worker stores neither the name nor the value.
  */
@@ -110,8 +110,8 @@ describe('secrets_prepare_write', () => {
   it('refuses while a rekey is pending', async () => {
     const s = await setup();
     expect((await s.fx.rekey()).status).toBe(201);
-    // The seal key still names the previous epoch, so the request is not stored.
-    expect((await prepare(s)).body.status).not.toBe('pending_user');
+    // The published seal key names the previous epoch, so nothing is sealed or stored.
+    expect((await prepare(s)).body.code).toBe('no_seal_key');
   });
 
   it('rate-limits per client and caps open requests per account', async () => {

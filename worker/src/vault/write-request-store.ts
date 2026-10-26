@@ -1,5 +1,5 @@
 /**
- * Human write requests (spec §3.8, ADR 0002 D8). An MCP client that must not see a
+ * Human write requests (spec §3.9, ADR 0002 D8). An MCP client that must not see a
  * secret value asks the Worker for a write request; the person then types the value
  * into the dashboard, an enrolled browser device seals and signs the record, and the
  * Worker sees ciphertext only.
@@ -81,7 +81,7 @@ function load(sql: SqlStorage, requestId: string): Row | undefined {
 }
 
 /**
- * Store a request built by the MCP handler (spec §3.8 "Who requests"): only for this
+ * Store a request built by the MCP handler (spec §3.9 "Who requests"): only for this
  * vault, only to the current key epoch, never while a rekey is pending, only when the
  * origin account is an `owner` or `editor` member, with a lifetime inside the allowed
  * range, never a `request_id` already held, and within the per-account and per-vault
@@ -103,8 +103,8 @@ export function createWriteRequest(sql: SqlStorage, state: MembershipState, wire
   prune(sql, nowMs);
   if (load(sql, intent.request_id)) return 'refused';
   const pending = sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM write_requests WHERE account = ? AND state = 'pending_user'", intent.origin.account).one().n;
-  const held = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM write_requests').one().n;
-  if (pending >= L.write_requests_pending_per_account || held >= L.write_requests_per_vault) return 'too_many';
+  const held = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM write_requests WHERE account = ?', intent.origin.account).one().n;
+  if (pending >= L.write_requests_pending_per_account || held >= L.write_requests_retained_per_account) return 'too_many';
   sql.exec(
     `INSERT INTO write_requests (${COLUMNS}, closed_at) VALUES (?, ?, ?, ?, ?, ?, 'pending_user', ?, NULL, NULL, ?, ?, NULL)`,
     intent.request_id,

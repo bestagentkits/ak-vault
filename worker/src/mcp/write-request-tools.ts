@@ -1,5 +1,5 @@
 /**
- * `secrets_prepare_write` and `secrets_write_status` (spec §3.8, §9.8): the
+ * `secrets_prepare_write` and `secrets_write_status` (spec §3.9, §9.8): the
  * Worker-local tools for a secret the AI must never see. `prepare_write` takes a
  * name, never a value: it seals the target to the vault's seal key, stores the
  * request and answers a link for the person to open in the dashboard. The name
@@ -28,6 +28,7 @@ const MESSAGES: Record<LocalErrorCode, string> = {
 };
 
 const VAULT_REQUIRED = 'Pass vault_id: your online devices hold several vaults, or none is online to choose one.';
+const REFUSED = 'The vault cannot take a write request now (a key rotation is pending, or the account lost write access). Retry after the vault syncs.';
 const VAULT_UNKNOWN = 'vault_id does not name a vault this account can use.';
 
 interface Outcome {
@@ -131,7 +132,7 @@ async function prepareWrite(env: Env, claims: McpClaims, args: Record<string, un
   }
   const created = await vault.createWriteRequest(wire, claims.iat, now);
   if (created === 'too_many') return fail('too_many_requests');
-  if (created !== 'created') return fail('internal');
+  if (created === 'refused') return fail('invalid_args', {}, REFUSED);
   return ok(
     {
       status: 'pending_user',
@@ -148,6 +149,8 @@ async function prepareWrite(env: Env, claims: McpClaims, args: Record<string, un
 async function writeStatus(env: Env, claims: McpClaims, args: Record<string, unknown>): Promise<Outcome> {
   if (!checkArgs(args, { request_id: 'string' }, ['request_id'])) return fail('invalid_args');
   const requestId = args['request_id'] as string;
+  const rate = await relayStub(env, claims.sub).takeRate(claims.client_id, null);
+  if (!rate.ok) return fail('rate_limited', { retry_after_s: rate.retryAfterS ?? 60 });
   try {
     b64decodeLength(requestId, 16);
   } catch {

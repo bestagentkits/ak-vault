@@ -1,5 +1,5 @@
 /**
- * Write intents `x25519-xc20p-seal` (spec §3.8): the target of a human-entered write
+ * Write intents `x25519-xc20p-seal` (spec §3.9): the target of a human-entered write
  * that an MCP client requested, encrypted to the epoch's seal public key so the
  * Worker never stores the secret name. An enrolled browser device opens it with
  * `SealSK[e]` to show the person what they are about to write.
@@ -165,7 +165,7 @@ export interface OpenedWriteIntent {
 }
 
 /**
- * Open a write intent with `SealSK[wire.key_epoch]`. Order (spec §3.8): parse
+ * Open a write intent with `SealSK[wire.key_epoch]`. Order (spec §3.9): parse
  * (`unsupported_version` / `bad_request`); `vault_id` ≠ expected (`bad_request`);
  * all-zero shared secret (`bad_request`); AEAD failure (`decrypt_failed`);
  * non-canonical or invalid target (`bad_request`).
