@@ -690,6 +690,11 @@ export class AppController {
         } catch (again) {
           if (await this.writeRouteFailed(again)) return;
         }
+        // Still open yet refused (the target changed after the last sync): retrying the same record cannot succeed.
+        if (err.status === 400) {
+          await this.refuseWrite(err);
+          return;
+        }
       } else if (await this.writeRouteFailed(err)) {
         return;
       }

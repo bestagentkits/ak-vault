@@ -17,7 +17,7 @@
  * request is never consumed without its record or the record written twice.
  */
 import { SEALED_MAX_FUTURE_MS, cjson, parseWriteIntent, randomId, type JsonObject, type MembershipState, type WriteIntentWire } from '@ak-vault/protocol';
-import { ApiError, okResult, type ApiResult } from '../http/errors.js';
+import { ApiError, errorResult, okResult, toApiError, type ApiResult } from '../http/errors.js';
 import { REMOTE_ACCESS_LIMITS as L } from '../limits.js';
 import { requireKeys } from './request-body.js';
 import type { VaultRequest } from './vault-request.js';
@@ -208,7 +208,16 @@ export function completeWithItemPut(sql: SqlStorage, req: VaultRequest, itemId: 
   const live = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM items WHERE item_id = ? AND tombstone = 0', itemId).one().n > 0;
   if (row.operation === 'create' && live) throw new ApiError('bad_request', { message: 'write request targets a new secret' });
   if (row.operation === 'replace' && !live) throw new ApiError('bad_request', { message: 'write request targets an existing secret' });
-  const result = put();
+  let result: ApiResult;
+  try {
+    result = put();
+  } catch (err) {
+    // A stale base below a later delete is refused before anything is written, so closing is safe.
+    const refusal = toApiError(err);
+    if (refusal.code !== 'tombstoned') throw err;
+    closeRow(sql, row.request_id, 'conflict', 'revision_conflict', null, req.nowMs);
+    return errorResult(refusal);
+  }
   if (result.status === 200) {
     const receipt = randomId();
     closeRow(sql, row.request_id, 'completed', null, receipt, req.nowMs);

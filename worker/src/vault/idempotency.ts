@@ -22,7 +22,8 @@ function keyHash(req: VaultRequest): string {
 }
 
 function requestHash(req: VaultRequest): string {
-  return sha256b64(concatBytes(utf8Encode(`${req.method} ${req.path}\n`), req.body));
+  const query = req.writeRequestId === undefined ? '' : `?write_request=${req.writeRequestId}`;
+  return sha256b64(concatBytes(utf8Encode(`${req.method} ${req.path}${query}\n`), req.body));
 }
 
 /** Stored result for a retried request, or null when the key is new. */

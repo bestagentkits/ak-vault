@@ -219,6 +219,33 @@ describe('completing a write request from the dashboard', () => {
     expect(await status(s, body.request_id)).toMatchObject({ state: 'conflict', reason: 'revision_conflict' });
   });
 
+  it('closes as conflict when the base predates a later delete', async () => {
+    const s = await setup();
+    const existing = randomId();
+    expect((await s.fx.write(s.fx.owner, existing, 0, { name: 'T', value: '1' })).status).toBe(200);
+    const { body } = await prepare(s, { operation: 'replace', name: 'T' });
+    expect((await s.fx.write(s.fx.owner, existing, 1, null)).status).toBe(200);
+    expect((await s.fx.write(s.fx.owner, existing, 2, { name: 'T', value: '3' })).status).toBe(200);
+    const stale = await complete(s.fx, body.request_id, existing, 1);
+    expect(stale.status).toBe(409);
+    expect(stale.json.error.code).toBe('tombstoned');
+    expect(await status(s, body.request_id)).toMatchObject({ state: 'conflict', reason: 'revision_conflict' });
+  });
+
+  it('does not replay one request\'s completion for another under the same idempotency key', async () => {
+    const s = await setup();
+    const first = (await prepare(s, { name: 'I1' })).body;
+    const second = (await prepare(s, { name: 'I2' })).body;
+    const itemId = randomId();
+    const record = s.fx.record(s.fx.owner, itemId, 0, { name: 'I1', value: SENTINEL_VALUE });
+    const put = (id: string) => call(s.fx.owner, 'PUT', `/v1/vaults/${s.fx.vaultId}/items/${itemId}?write_request=${id}`, record, { ...BROWSER, idempotencyKey: 'same-key-1' });
+    expect((await put(first.request_id)).status).toBe(200);
+    const mismatch = await put(second.request_id);
+    expect(mismatch.status).toBe(422);
+    expect(mismatch.json.error.code).toBe('idempotency_mismatch');
+    expect(await status(s, second.request_id)).toMatchObject({ state: 'pending_user' });
+  });
+
   it('cancels from the dashboard with a closed reason set', async () => {
     const s = await setup();
     const { body } = await prepare(s);
