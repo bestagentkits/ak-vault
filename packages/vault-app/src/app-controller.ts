@@ -26,9 +26,10 @@ import { acceptOffer, DEFAULT_DEVICE_LABEL, joinCodeFor, newJoinNonce, sanitizeL
 import { pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
 import { deleteItem, findByName, rotateValue, setItem, updateRotation, type RotationPatch } from './sync/write-ops.js';
 import type { RotationWorkflow } from './sync/rotation.js';
+import { appendRotationAudit, type RotationAuditAction } from './sync/audit.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
 
-export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'signed_out' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved' };
+export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'signed_out' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved' | 'audit_failed' };
 
 export type Screen =
   | { kind: 'loading' }
@@ -63,6 +64,13 @@ export const DEVICE_LOCK_PREFIX = 'akv-device:';
 
 /** Refresh a token this long before it expires (seconds). */
 const EXPIRY_MARGIN_S = 30;
+
+const STATE_ACTIONS: Record<RotationWorkflow['state'], RotationAuditAction> = {
+  active: 'rotation_resumed',
+  paused: 'rotation_paused',
+  failed: 'rotation_failed',
+  cancelled: 'rotation_cancelled',
+};
 
 export class AppController {
   private screen: Screen = { kind: 'loading' };
@@ -325,19 +333,20 @@ export class AppController {
   /** Start a rotation: record it in signed metadata. The new credential is created at the provider, not here. */
   async startRotation(itemId: string): Promise<boolean> {
     const workflow: RotationWorkflow = { state: 'active', startedMs: this.now(), revokedMs: null };
-    return this.write('rotation_started', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation: workflow }, nowMs: this.now() }));
+    return this.write('rotation_started', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation: workflow }, nowMs: this.now() }), { action: 'rotation_started', itemId });
   }
 
   /** Pause, resume, fail or cancel the workflow, or clear it with `null`. */
   async setRotationState(itemId: string, state: RotationWorkflow['state'] | null): Promise<boolean> {
     const current = this.snapshot?.items.find((i) => i.itemId === itemId)?.rotation ?? null;
     const rotation = state === null || !current ? null : { ...current, state };
-    return this.write('rotation_updated', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation }, nowMs: this.now() }));
+    const action: RotationAuditAction = state === null ? 'rotation_cleared' : (STATE_ACTIONS[state]);
+    return this.write('rotation_updated', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation }, nowMs: this.now() }), { action, itemId });
   }
 
   /** The operator says the old provider credential is revoked. Allowed only after the vault holds a new value. */
   async confirmRevoked(itemId: string): Promise<boolean> {
-    return this.write('rotation_revoked', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { confirmRevoked: true }, nowMs: this.now() }));
+    return this.write('rotation_revoked', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { confirmRevoked: true }, nowMs: this.now() }), { action: 'rotation_revoked', itemId });
   }
 
   /** Set or clear (`null`) the rotation interval in days. */
@@ -348,10 +357,10 @@ export class AppController {
 
   /** Save the replacement value; the Vault step counts as done only once the new revision is pulled and verified. */
   async rotate(itemId: string, value: string): Promise<boolean> {
-    return this.write('rotation_saved', () => rotateValue({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, value, nowMs: this.now() }));
+    return this.write('rotation_saved', () => rotateValue({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, value, nowMs: this.now() }), { action: 'rotation_vault_written', itemId });
   }
 
-  private async write(done: Extract<Notice['code'], 'saved' | 'deleted' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved'>, op: () => Promise<unknown>): Promise<boolean> {
+  private async write(done: Extract<Notice['code'], 'saved' | 'deleted' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved'>, op: () => Promise<unknown>, audit?: { action: RotationAuditAction; itemId: string }): Promise<boolean> {
     if (!this.snapshot || !this.client || !this.signer) return false;
     this.showVault(null, null, true);
     try {
@@ -360,7 +369,9 @@ export class AppController {
       await this.writeFailed(err);
       return false;
     }
-    await this.sync({ kind: 'info', code: done });
+    // The signed revision is the record; the audit entry follows it and never gates it.
+    const audited = audit === undefined || (await appendRotationAudit({ client: this.client, snapshot: this.snapshot, ...audit, nowMs: this.now() }));
+    await this.sync({ kind: audited ? 'info' : 'error', code: audited ? done : 'audit_failed' });
     return true;
   }
 

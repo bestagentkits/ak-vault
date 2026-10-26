@@ -122,7 +122,13 @@ sees none of it, and nothing here decides access.
   least-privilege credentials and the operator's consent. Anyone who held the old
   value (a removed member included) still knows it until the provider revokes it. The
   signed revisions, with their author device and time, are the record of each state
-  change; the dashboard does not append entries to the encrypted audit stream.
+  change. After each one the dashboard also appends an entry to the encrypted audit
+  stream (spec §7) for rotation start, resume, vault write, revocation confirmation,
+  pause, fail, cancel and clearing the workflow. An entry holds the action, the opaque
+  item ID, the acting device and the time, never the item name or a value. The append
+  follows the revision and does not gate it: if the audit stream is unavailable the
+  revision stands and the dashboard says the audit entry was not added. Interval edits
+  append no entry, and the dashboard signs no audit checkpoint.
 
 ## Password and parameter upgrade
 

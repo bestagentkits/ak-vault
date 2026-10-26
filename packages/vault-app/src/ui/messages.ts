@@ -36,6 +36,7 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   rotation_started: 'Rotation started. Create the new credential at the provider, outside any AI chat, then save it here.',
   rotation_updated: 'Rotation updated.',
   rotation_saved: 'New value saved in the vault. The old provider credential is not confirmed revoked yet.',
+  audit_failed: 'Saved, and the signed revision records it, but the encrypted audit entry could not be added. Reload to check the vault.',
   rotation_revoked: 'Recorded: you confirmed the old provider credential is revoked. The dashboard cannot check this with the provider.',
   settings_saved: 'Rotation settings saved.',
   saved: 'Saved. The value was encrypted in this browser and is not shown.',

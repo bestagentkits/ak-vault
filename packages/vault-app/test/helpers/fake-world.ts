@@ -6,6 +6,9 @@
  * for the no-disclosure checks. All data is synthetic.
  */
 import {
+  appendAuditEntry,
+  auditEntryHash,
+  verifyAuditChain,
   applyRecord,
   b64encode,
   buildGenesisEvent,
@@ -39,6 +42,7 @@ import {
   nameTag,
   type DeviceKeys,
   type ItemState,
+  type Envelope,
   type JsonObject,
   type MembershipEvent,
   type MembershipState,
@@ -107,6 +111,10 @@ export class FakeWorld {
   readonly tags = new Map<string, { key_epoch: number; tag: string }>();
   readonly exchanges: LoggedExchange[] = [];
   readonly revoked: string[] = [];
+  /** Audit entries the Worker stored, in order, with the hash each chains to. */
+  readonly audit: { entry: Envelope; hash: string }[] = [];
+  /** Audit posts seen, including refused ones. */
+  auditPosts = 0;
   private readonly codes = new Map<string, { challenge: string; state: string }>();
   private readonly appTokens = new Map<string, { sub: string; sid: string }>();
   private readonly refreshTokens = new Map<string, { sub: string; sid: string }>();
@@ -126,6 +134,10 @@ export class FakeWorld {
     /** Replace the membership chain served. */
     membership: null as MembershipEvent[] | null,
     omitIss: false,
+    /** Refuse audit appends with this status (an unavailable audit stream). */
+    auditStatus: null as number | null,
+    /** Move the audit head under the next append so it answers `conflict` once. */
+    auditRaceOnce: false,
   };
 
   constructor() {
@@ -203,6 +215,21 @@ export class FakeWorld {
     this.wraps.set(ev.seq, ws);
     this.vks.set(epoch, vk);
     return epoch;
+  }
+
+  /** Another device appends an audit entry, so the head moves. */
+  appendAuditEntryAsOther(event: JsonObject = { v: 1, action: 'other_device' }): void {
+    const last = this.audit.at(-1);
+    const head = last ? { seq: this.audit.length - 1, head: last.hash } : null;
+    const { entry } = appendAuditEntry({ vk: this.vks.get(this.state().key_epoch)!, vaultId: this.vaultId, keyEpoch: this.state().key_epoch, head, event });
+    this.audit.push({ entry, hash: auditEntryHash(entry) });
+  }
+
+  /** Decrypt the stored audit stream as a vault member would. */
+  auditEvents(): JsonObject[] {
+    const st = this.state();
+    const { events } = verifyAuditChain(this.audit.map((a) => a.entry), { vaultKeys: (e) => this.vks.get(e), vaultId: this.vaultId, keyEpoch: st.key_epoch });
+    return events.map((e) => (e.opaque ? ({ opaque: true } as JsonObject) : e.event));
   }
 
   /** The owner CLI writes an item directly (as another device would). */
@@ -388,6 +415,27 @@ export class FakeWorld {
         has_more: served.some((e) => e.log_seq > (page.length ? page[page.length - 1]!.log_seq : cursor)),
         head: {},
       });
+    }
+    if (method === 'GET' && coll === 'audit') {
+      const last = this.audit.at(-1);
+      return json(200, { entries: this.audit.map((a, seq) => ({ seq, entry: a.entry })), next_cursor: this.audit.length, has_more: false, head: last ? { seq: this.audit.length - 1, head: last.hash } : null, checkpoints: [] });
+    }
+    if (method === 'POST' && coll === 'audit') {
+      this.auditPosts++;
+      if (!headers.get('Idempotency-Key')) return apiError(400, 'bad_request');
+      if (this.hostile.auditStatus !== null) return apiError(this.hostile.auditStatus, 'server');
+      if (this.hostile.auditRaceOnce) {
+        this.hostile.auditRaceOnce = false;
+        this.appendAuditEntryAsOther();
+      }
+      const b = JSON.parse(body) as { start_seq: number; prev: string; entries: Envelope[] };
+      const last = this.audit.at(-1);
+      if (b.start_seq !== this.audit.length || b.prev !== (last ? last.hash : '')) return apiError(409, 'conflict');
+      for (const entry of b.entries) {
+        if (entry.kid !== `e${this.state().key_epoch}`) return apiError(400, 'bad_request');
+        this.audit.push({ entry, hash: auditEntryHash(entry) });
+      }
+      return json(201, { head: { seq: this.audit.length - 1, head: this.audit.at(-1)!.hash } });
     }
     if (method === 'GET' && coll === 'lookup') {
       const tags = url.searchParams.getAll('tag');
