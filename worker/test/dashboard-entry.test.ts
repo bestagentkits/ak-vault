@@ -91,6 +91,19 @@ describe('dashboard entry', () => {
     expect(`sha384-${btoa(String.fromCharCode(...digest))}`).toBe(integrity);
   });
 
+  it('answers a matching revalidation of a bundle asset with 304, not not_found', async () => {
+    const html = await (await fetchRaw('/app/')).text();
+    const src = /<script\b[^>]*\bsrc="([^"]+)"/.exec(html)![1]!;
+    const first = await fetchRaw(src);
+    const etag = first.headers.get('ETag');
+    expect(etag).toBeTruthy();
+    await first.arrayBuffer();
+    const again = await fetchRaw(src, { headers: { 'If-None-Match': etag! } });
+    expect(again.status).toBe(304);
+    expect(again.headers.get('Set-Cookie')).toBeNull();
+    expect(again.headers.get('Content-Security-Policy')).toBe(appContentSecurityPolicy(env));
+  });
+
   it('answers unknown dashboard paths and other methods with JSON not_found, never the landing site', async () => {
     for (const path of ['/app/x', '/app/assets/missing.js', '/app/404.html', '/app/robots.txt']) {
       const res = await fetchRaw(path);
