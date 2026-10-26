@@ -29,6 +29,9 @@ export const APP_ERROR_CODES = [
   'item_unreadable',
   'duplicate_name',
   'quota_exceeded',
+  'invalid_rotation',
+  'rotation_value_unchanged',
+  'rotation_not_ready',
   'network',
   'server',
 ] as const;

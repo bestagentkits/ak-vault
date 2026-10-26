@@ -10,6 +10,12 @@ keys in IndexedDB. An owner device approves it with a SAS join code
 It lists and searches metadata, sets values (write-only) and deletes items. It
 never shows, copies or stores a value; tokens and vault keys stay in memory.
 
+It also shows each item's rotation health and guides a provider credential
+rotation: start, save the replacement value (write-only), then confirm the old
+credential was revoked at the provider as a separate step, with pause, fail and
+cancel. This is not a vault rekey. See
+[Secret rotation](../../docs/security/key-lifecycle-and-recovery.md#secret-rotation).
+
 ## Members and access
 
 The Members screen is a read-only projection of the membership chain this browser

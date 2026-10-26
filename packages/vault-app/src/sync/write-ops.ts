@@ -30,6 +30,7 @@ import {
 import { AppError } from '../app-error.js';
 import { isVaultApiError, type AkvClient } from './akv-client.js';
 import { validItemName, validItemValue } from './item-names.js';
+import { isMs, ROTATE_TTL_META_KEY, ROTATION_META_KEY, MAX_ROTATE_TTL_DAYS, parseRotationWorkflow, workflowToMeta, type RotationWorkflow } from './rotation.js';
 import { ITEM_META_SCHEMA, openHead, type VaultSnapshot } from './vault-sync.js';
 
 export interface WriteResult {
@@ -121,6 +122,79 @@ export async function setItem(args: { client: AkvClient; snapshot: VaultSnapshot
   const record = await signRecordAsync({ ...ctx, ts: nowMs, resolves: [], env }, args.signer);
   const tag = nameTag(nameIndexKey(vk, snapshot.vaultId, snapshot.state.key_epoch), args.name);
   return sendRecord(args.client, snapshot, record, tag);
+}
+
+/** The rotation fields a metadata-only revision may change. `undefined` leaves a field as it is; `null` clears it. */
+export interface RotationPatch {
+  rotateTtlDays?: number | null;
+  rotation?: RotationWorkflow | null;
+  /** Confirm the old provider credential is revoked (needs a vault value written after the workflow started). */
+  confirmRevoked?: boolean;
+}
+
+/**
+ * Write a new revision of a live item that keeps its value and changes only
+ * rotation metadata: the interval and the workflow. Compare-and-swap on the
+ * verified head like every write. The value is re-sealed in this function and
+ * never returned.
+ */
+export async function updateRotation(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; patch: RotationPatch; nowMs?: number }): Promise<WriteResult> {
+  const { snapshot, patch } = args;
+  const vk = writableKey(snapshot);
+  const item = snapshot.items.find((i) => i.itemId === args.itemId);
+  const state = snapshot.itemStates.get(args.itemId);
+  if (!item || !state || state.revision === 0 || state.tombstone) throw new AppError('not_found');
+  const nowMs = args.nowMs ?? Date.now();
+  const prev = openHead(snapshot, args.itemId);
+  const meta = nextMeta(prev, false, nowMs);
+  if (patch.rotateTtlDays !== undefined) {
+    const ttl = patch.rotateTtlDays;
+    if (ttl === null) delete meta[ROTATE_TTL_META_KEY];
+    else if (Number.isSafeInteger(ttl) && ttl >= 1 && ttl <= MAX_ROTATE_TTL_DAYS) meta[ROTATE_TTL_META_KEY] = ttl;
+    else throw new AppError('invalid_rotation');
+  }
+  let workflow = patch.rotation === undefined ? parseRotationWorkflow(prev.meta) : patch.rotation;
+  if (patch.confirmRevoked) {
+    const rotatedRaw = prev.meta['rotated_ms'];
+    const rotatedMs = isMs(rotatedRaw) ? rotatedRaw : null;
+    if (!workflow || workflow.state !== 'active' || rotatedMs === null || rotatedMs < workflow.startedMs) throw new AppError('rotation_not_ready');
+    // Never earlier than the value write: another device's clock may run ahead of this one.
+    workflow = { ...workflow, revokedMs: Math.max(nowMs, rotatedMs) };
+  }
+  if (workflow === null) delete meta[ROTATION_META_KEY];
+  else meta[ROTATION_META_KEY] = workflowToMeta(workflow);
+  const payload: ItemPayload = { name: prev.name, value: prev.value, meta, sensitivity: prev.sensitivity };
+  if (cjsonBytes(payload as unknown as JsonObject).length > MAX_PLAINTEXT_BYTES) throw new AppError('value_too_large');
+  const ctx = { vault_id: snapshot.vaultId, item_id: args.itemId, base_revision: state.revision, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: false };
+  const env = sealItem({ ...ctx, vk, payload });
+  const record = await signRecordAsync({ ...ctx, ts: nowMs, resolves: [], env }, args.signer);
+  return sendRecord(args.client, snapshot, record, nameTag(nameIndexKey(vk, snapshot.vaultId, snapshot.state.key_epoch), prev.name));
+}
+
+/**
+ * Replace the value of one live item (a provider credential rotation). Refuses
+ * a value equal to the current one: re-writing the old secret protects nothing
+ * and must not read as a rotation. Writing a new value clears a recorded
+ * revocation, since that confirmed the previous credential.
+ */
+export async function rotateValue(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; value: string; nowMs?: number }): Promise<WriteResult> {
+  const { snapshot } = args;
+  if (args.value === '' || !validItemValue(args.value)) throw new AppError('value_too_large');
+  const vk = writableKey(snapshot);
+  const state = snapshot.itemStates.get(args.itemId);
+  if (!state || state.revision === 0 || state.tombstone || !snapshot.items.some((i) => i.itemId === args.itemId)) throw new AppError('not_found');
+  const prev = openHead(snapshot, args.itemId);
+  if (prev.value === args.value) throw new AppError('rotation_value_unchanged');
+  const nowMs = args.nowMs ?? Date.now();
+  const meta = nextMeta(prev, true, nowMs);
+  const workflow = parseRotationWorkflow(prev.meta);
+  if (workflow) meta[ROTATION_META_KEY] = workflowToMeta({ ...workflow, revokedMs: null });
+  const payload: ItemPayload = { name: prev.name, value: args.value, meta, sensitivity: prev.sensitivity };
+  if (cjsonBytes(payload as unknown as JsonObject).length > MAX_PLAINTEXT_BYTES) throw new AppError('value_too_large');
+  const ctx = { vault_id: snapshot.vaultId, item_id: args.itemId, base_revision: state.revision, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: false };
+  const env = sealItem({ ...ctx, vk, payload });
+  const record = await signRecordAsync({ ...ctx, ts: nowMs, resolves: [], env }, args.signer);
+  return sendRecord(args.client, snapshot, record, nameTag(nameIndexKey(vk, snapshot.vaultId, snapshot.state.key_epoch), prev.name));
 }
 
 /** Delete a live item with a signed tombstone at its verified head. */
