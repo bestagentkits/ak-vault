@@ -36,6 +36,8 @@ export interface AkRun {
   /** Resolves with the first match of `pattern` in the output, or rejects on exit or timeout. */
   waitFor(pattern: RegExp, timeoutMs?: number): Promise<RegExpExecArray>;
   write(line: string): void;
+  /** Writes `text` verbatim (no line end) and closes stdin. */
+  end(text: string): void;
   exit(timeoutMs?: number): Promise<number | null>;
   kill(): void;
 }
@@ -75,6 +77,9 @@ export function runAk(bin: string, args: string[], home: AkHome): AkRun {
     },
     write(line) {
       child.stdin.write(`${line}\n`);
+    },
+    end(text) {
+      child.stdin.end(text);
     },
     exit(timeoutMs = 60_000) {
       if (closed !== undefined) return Promise.resolve(closed);

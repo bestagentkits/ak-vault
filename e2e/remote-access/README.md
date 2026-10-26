@@ -58,8 +58,15 @@ line. That is not a clean scan.
 - The leak scan's `wrangler tail` needs one Cloudflare account. When the Wrangler login
   covers several accounts, set `CLOUDFLARE_ACCOUNT_ID` to the account that owns the
   staging Worker for the run. Without it the tail exits and the scan is BLOCKED.
-- The `ak` phase-10 command contract (device approve/remove, annotate, set
-  argument shapes) is not verified here. The suites that drive `ak` are gated on
-  `AK_BIN` and will need to be checked against that binary when it exists.
+- The `ak` argument shapes in `dashboard-flow.spec.ts` match the relay-capable
+  build's `--help`. Build it with a `-staging.N` version (for example
+  `-ldflags "-X main.Version=3.0.0-staging.1"`) so it targets the staging registry
+  and vault; a beta or stable version targets production.
+- `ak secrets devices approve` and `ak secrets devices remove` refuse an agent and
+  ask for a person's answer, so the dashboard flow never answers them. Run it headed
+  from your own terminal (`--headed`) and follow its `[enroll]` and `[remove]` lines.
+- The owner HOME uses the keychain backend so the suite's `ak` calls need no
+  passphrase. Keychain entries are keyed by ref name, so the suite uses only
+  run-specific `SMOKE_` names.
 - Playwright runs serially (`workers: 1`) with no traces, screenshots or video,
   because those capture DOM and network bodies that hold sentinels.
