@@ -9,6 +9,7 @@ import type { AppController, Notice, Screen } from '../app-controller.js';
 import type { ItemView } from '../sync/vault-sync.js';
 import { h, replaceChildren, type Child } from './dom.js';
 import { messageFor } from './messages.js';
+import { rotationMetaChips, rotationPanel, rotationSummary } from './rotation-view.js';
 
 /** Keep the browser and password managers from storing, suggesting or correcting a field. */
 export const NO_CAPTURE = {
@@ -20,10 +21,12 @@ export const NO_CAPTURE = {
 export interface ViewState {
   filter: string;
   confirmDelete: string | null;
+  /** Item whose rotation panel is open. */
+  rotating: string | null;
 }
 
 export function newViewState(): ViewState {
-  return { filter: '', confirmDelete: null };
+  return { filter: '', confirmDelete: null, rotating: null };
 }
 
 function noticeEl(notice: Notice | null): Child {
@@ -109,12 +112,13 @@ function matchesFilter(item: ItemView, filter: string): boolean {
   return fields.some((t) => t.toLowerCase().includes(f));
 }
 
-function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () => void, busy: boolean): HTMLElement {
+function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () => void, busy: boolean, rekeyRequired: boolean, nowMs: number): HTMLElement {
   const confirming = vs.confirmDelete === item.itemId;
   const meta: Child[] = [
     h('span', { class: `badge badge-${item.sensitivity}` }, [item.sensitivity === 'high' ? 'high sensitivity' : 'normal']),
     item.createdMs !== null ? h('span', {}, [`created ${fmtDate(item.createdMs)}`]) : null,
     item.rotatedMs !== null ? h('span', {}, [`rotated ${fmtDate(item.rotatedMs)}`]) : null,
+    ...rotationMetaChips(item, nowMs),
     item.creator ? h('span', {}, [`by ${item.creator}`]) : null,
     item.rotateTtlDays !== null ? h('span', {}, [`rotate every ${item.rotateTtlDays} days`]) : null,
     item.openConflicts > 0 ? h('span', { class: 'badge badge-conflict' }, [`${item.openConflicts} unresolved conflict${item.openConflicts > 1 ? 's' : ''}`]) : null,
@@ -136,10 +140,15 @@ function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () =
       h('button', { type: 'button', class: 'secondary' }, ['Cancel'], { click: () => { vs.confirmDelete = null; rerender(); } }),
     ])
     : h('button', { type: 'button', class: 'secondary', disabled: busy, 'data-testid': 'delete' }, ['Delete'], { click: () => { vs.confirmDelete = item.itemId; rerender(); } });
+  const rotating = vs.rotating === item.itemId;
+  const toggle = h('button', { type: 'button', class: 'secondary', 'aria-expanded': rotating ? 'true' : 'false', 'data-testid': 'rotate-open' }, [rotating ? 'Hide rotation' : 'Rotate'], {
+    click: () => { vs.rotating = rotating ? null : item.itemId; rerender(); },
+  });
   return h('li', { class: 'item', 'data-testid': 'item' }, [
-    h('div', { class: 'item-head' }, [h('span', { class: 'name', 'data-testid': 'item-name' }, [item.name]), actions]),
+    h('div', { class: 'item-head' }, [h('span', { class: 'name', 'data-testid': 'item-name' }, [item.name]), h('div', { class: 'row' }, [toggle, actions])]),
     h('div', { class: 'meta' }, meta),
     profile,
+    rotating ? rotationPanel(c, item, busy, rekeyRequired, nowMs, () => { vs.rotating = null; rerender(); }) : null,
   ]);
 }
 
@@ -183,6 +192,7 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
       noticeEl(s.notice),
       s.rekeyRequired ? h('p', { class: 'notice notice-error', role: 'status' }, [messageFor('rekey_required')]) : null,
       setForm,
+      rotationSummary(s.items, s.keyEpoch, s.rekeyRequired, s.nowMs),
       h('section', {}, [
         h('div', { class: 'row' }, [
           filterInput,
@@ -193,7 +203,7 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
           h('button', { type: 'button', class: 'secondary', disabled: s.busy, 'data-testid': 'refresh' }, ['Refresh'], { click: () => void c.refresh() }),
         ]),
         h('p', { class: 'count', 'aria-live': 'polite' }, [`${shown.length} of ${s.items.length} items`]),
-        h('ul', { class: 'items' }, shown.map((i) => itemRow(c, i, vs, rerender, s.busy))),
+        h('ul', { class: 'items' }, shown.map((i) => itemRow(c, i, vs, rerender, s.busy, s.rekeyRequired, s.nowMs))),
         s.unreadable > 0 ? h('p', { class: 'muted' }, [`${s.unreadable} item(s) use a key this browser was never given.`]) : null,
         s.hidden > 0 ? h('p', { class: 'muted' }, [`${s.hidden} item(s) are policies or other kinds the dashboard does not list.`]) : null,
       ]),

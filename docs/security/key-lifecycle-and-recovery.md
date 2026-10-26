@@ -87,6 +87,13 @@ Rotation is an ordinary CAS write of a new value under the current epoch. Cleari
 provider-side credential must be rotated as well; writing a new ciphertext of the
 old value protects nothing.
 
+A rekey and a provider credential rotation are different events. The rekey changes
+`key_epoch` and lists exposed items in `needs_rotate`; it never touches a provider.
+The dashboard's rotation view tracks the provider side as a guided flow with three
+separate states (started, Vault updated, old key revoked). Only the middle one is
+derived from the verified log; the revocation is what an operator confirmed. See the
+[dashboard README](../../packages/vault-app/README.md#credential-rotation).
+
 ## Password and parameter upgrade
 
 - Changing the password re-wraps the current vault key under a new Argon2id KEK

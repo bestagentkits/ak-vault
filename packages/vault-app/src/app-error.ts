@@ -26,6 +26,7 @@ export const APP_ERROR_CODES = [
   'not_found',
   'item_unreadable',
   'duplicate_name',
+  'rotation_invalid',
   'quota_exceeded',
   'network',
   'server',

@@ -192,6 +192,18 @@ export class FakeWorld {
     this.events.push(ev);
   }
 
+  /** The owner's `rekey`: a new vault key wrapped to every current device, listing `needsRotate` items. */
+  rekey(needsRotate: string[], ts = Date.now()): void {
+    const st = this.state();
+    const epoch = st.key_epoch + 1;
+    const vk = randomBytes(32);
+    const ws = st.devices.map((d) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: epoch, recipient: d }));
+    const ev = nextMembershipEvent(st, { type: 'rekey', ts, author: this.owner.record.device_id, body: { new_key_epoch: epoch, wraps_digest: wrapsDigest(ws), needs_rotate: needsRotate } }, this.owner.signSecret);
+    this.events.push(ev);
+    this.wraps.set(ev.seq, ws);
+    this.vks.set(epoch, vk);
+  }
+
   /** The owner CLI writes an item directly (as another device would). */
   ownerSet(name: string, value: string, meta: JsonObject = { schema: 'agentkit.secret/v1', created_ms: 1_700_000_000_000 }, ts = Date.now()): string {
     const st = this.state();

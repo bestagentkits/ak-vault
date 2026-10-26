@@ -30,6 +30,7 @@ import {
 import { AppError } from '../app-error.js';
 import { isVaultApiError, type AkvClient } from './akv-client.js';
 import { validItemName, validItemValue } from './item-names.js';
+import { applyRotationChange, rotationToMeta, type RotationChange } from './rotation.js';
 import { ITEM_META_SCHEMA, openHead, type VaultSnapshot } from './vault-sync.js';
 
 export interface WriteResult {
@@ -114,13 +115,42 @@ export async function setItem(args: { client: AkvClient; snapshot: VaultSnapshot
   } else {
     meta = nextMeta(null, true, nowMs);
   }
-  const payload: ItemPayload = { name: args.name, value: args.value, meta, sensitivity };
+  return putRevision({ client: args.client, snapshot, signer: args.signer, vk, itemId, base, payload: { name: args.name, value: args.value, meta, sensitivity }, nowMs });
+}
+
+/** Seal `payload` as revision `base + 1` of `itemId`, sign it and send it with its name tag. */
+async function putRevision(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; vk: Uint8Array; itemId: string; base: number; payload: ItemPayload; nowMs: number }): Promise<WriteResult> {
+  const { snapshot, payload } = args;
   if (cjsonBytes(payload as unknown as JsonObject).length > MAX_PLAINTEXT_BYTES) throw new AppError('value_too_large');
-  const ctx = { vault_id: snapshot.vaultId, item_id: itemId, base_revision: base, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: false };
-  const env = sealItem({ ...ctx, vk, payload });
-  const record = await signRecordAsync({ ...ctx, ts: nowMs, resolves: [], env }, args.signer);
-  const tag = nameTag(nameIndexKey(vk, snapshot.vaultId, snapshot.state.key_epoch), args.name);
+  const ctx = { vault_id: snapshot.vaultId, item_id: args.itemId, base_revision: args.base, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: false };
+  const env = sealItem({ ...ctx, vk: args.vk, payload });
+  const record = await signRecordAsync({ ...ctx, ts: args.nowMs, resolves: [], env }, args.signer);
+  const tag = nameTag(nameIndexKey(args.vk, snapshot.vaultId, snapshot.state.key_epoch), payload.name);
   return sendRecord(args.client, snapshot, record, tag);
+}
+
+/**
+ * Record one rotation step as a new signed revision of the item: the same value
+ * re-sealed with `meta.rotation` / `meta.rotate_ttl_days` changed. `rotated_ms`
+ * is untouched, because no value changed. The previous value is carried into the
+ * new revision inside this function and never returned. Compare-and-swap on the
+ * verified head, so a concurrent edit becomes a conflict instead of a lost step.
+ */
+export async function updateRotation(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; change: RotationChange; nowMs?: number }): Promise<WriteResult> {
+  const { snapshot } = args;
+  const vk = writableKey(snapshot);
+  const view = snapshot.items.find((i) => i.itemId === args.itemId);
+  const state = snapshot.itemStates.get(args.itemId);
+  if (!view || !state || state.revision === 0 || state.tombstone) throw new AppError('not_found');
+  const nowMs = args.nowMs ?? Date.now();
+  const update = applyRotationChange(view, args.change, nowMs);
+  const prev = openHead(snapshot, args.itemId);
+  const meta = nextMeta(prev, false, nowMs);
+  if (update.rotation) meta['rotation'] = rotationToMeta(update.rotation);
+  else delete meta['rotation'];
+  if (update.rotateTtlDays !== null) meta['rotate_ttl_days'] = update.rotateTtlDays;
+  else delete meta['rotate_ttl_days'];
+  return putRevision({ client: args.client, snapshot, signer: args.signer, vk, itemId: args.itemId, base: state.revision, payload: { name: prev.name, value: prev.value, meta, sensitivity: prev.sensitivity }, nowMs });
 }
 
 /** Delete a live item with a signed tombstone at its verified head. */

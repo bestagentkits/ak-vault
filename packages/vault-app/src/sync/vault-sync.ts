@@ -41,6 +41,7 @@ import {
   type SignedRecord,
   type TombstonePayload,
 } from '@ak-vault/protocol';
+import { parseRotation, type RotationMeta } from './rotation.js';
 import { AppError } from '../app-error.js';
 import type { Enrollment, StoredDevice, WitnessedState } from '../keys/device-store.js';
 import { deviceIdOf } from '../keys/webcrypto-device-keys.js';
@@ -73,6 +74,12 @@ export interface ItemView {
   rotatedMs: number | null;
   creator: string | null;
   rotateTtlDays: number | null;
+  /** Operator-recorded guided rotation (signed metadata; display and workflow only). */
+  rotation: RotationMeta | null;
+  /** `ts` of the newest rekey that listed this item in `needs_rotate`; null when never listed. */
+  exposedSinceMs: number | null;
+  /** The profile's `expires_at` as carried, null when absent. */
+  expiresAt: string | null;
   profile: ProfileFieldView[];
   openConflicts: number;
 }
@@ -255,6 +262,9 @@ export function projectItem(
     rotatedMs: metaInt(meta, 'rotated_ms', 1),
     creator,
     rotateTtlDays: metaInt(meta, 'rotate_ttl_days', 1),
+    rotation: parseRotation(meta['rotation']),
+    exposedSinceMs: null,
+    expiresAt: typeof profile.profile.expires_at?.value === 'string' ? profile.profile.expires_at.value : null,
     profile: (Object.keys(profile.profile) as ProfileKey[]).sort().map((key) => ({ key, value: profile.profile[key]!.value, origin: profile.origins[key] ?? 'sync' })),
     openConflicts,
   };
@@ -370,6 +380,26 @@ export function replayLog(
   return { itemStates, heads, items, unreadable, hidden, logHead: verified.head };
 }
 
+/**
+ * When each `needs_rotate` item was last listed by a rekey (the signed event's
+ * `ts`). An ID the log lists without a readable event time stays exposed
+ * forever (`MAX_SAFE_INTEGER`): the warning only clears once the Vault holds a
+ * newer value, never because a timestamp is missing.
+ */
+export function exposureTimes(events: readonly MembershipEvent[], needsRotate: readonly string[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const id of needsRotate) out.set(id, Number.MAX_SAFE_INTEGER);
+  const latest = new Map<string, number>();
+  for (const ev of events) {
+    if (ev.type !== 'rekey') continue;
+    const ids = ev.body['needs_rotate'];
+    if (!Array.isArray(ids) || !Number.isSafeInteger(ev.ts) || ev.ts < 1) continue;
+    for (const id of ids) if (typeof id === 'string' && ev.ts >= (latest.get(id) ?? 0)) latest.set(id, ev.ts);
+  }
+  for (const [id, ts] of latest) if (out.has(id)) out.set(id, ts);
+  return out;
+}
+
 export interface PullResult {
   snapshot: VaultSnapshot;
   enrollment: Enrollment;
@@ -385,6 +415,8 @@ export async function pullVault(client: AkvClient, device: StoredDevice, kx: Dev
   const vaultKeys = await loadVaultKeys(client, enrollment.vaultId, selfId, parsed, addSeq, kx);
   const entries = await fetchChanges(client, enrollment.vaultId);
   const replay = replayLog(entries, state, enrollment, vaultKeys, selfId);
+  const exposed = exposureTimes(parsed, state.needs_rotate);
+  for (const item of replay.items) item.exposedSinceMs = exposed.get(item.itemId) ?? null;
   const witnessed: WitnessedState = {
     membership_seq: state.seq,
     membership_head: state.head,

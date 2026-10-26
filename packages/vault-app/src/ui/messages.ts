@@ -25,6 +25,7 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   not_found: 'That item no longer exists.',
   item_unreadable: 'This browser does not hold the key for that item.',
   duplicate_name: 'More than one item has that name. Resolve it from the CLI first.',
+  rotation_invalid: 'That rotation step does not fit the item’s current state. Nothing was changed; refresh and check its status.',
   quota_exceeded: 'The vault is full.',
   network: 'The network request failed. Check your connection and try again.',
   server: 'The server could not complete the request. Try again shortly.',
@@ -32,6 +33,7 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   signed_out: 'You signed out.',
   saved: 'Saved. The value was encrypted in this browser and is not shown.',
   deleted: 'Deleted.',
+  rotation_saved: 'Rotation status saved. It is signed and encrypted in this browser like any other item revision.',
 };
 
 export function messageFor(code: AppErrorCode | Notice['code']): string {

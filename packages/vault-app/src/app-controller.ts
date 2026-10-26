@@ -24,10 +24,11 @@ import {
 import { createAkvClient, isVaultApiError, type AkvClient } from './sync/akv-client.js';
 import { acceptOffer, DEFAULT_DEVICE_LABEL, joinCodeFor, newJoinNonce, sanitizeLabel } from './sync/enroll.js';
 import { pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
-import { deleteItem, findByName, setItem } from './sync/write-ops.js';
+import type { RotationChange } from './sync/rotation.js';
+import { deleteItem, findByName, setItem, updateRotation } from './sync/write-ops.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
 
-export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'signed_out' };
+export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'signed_out' | 'rotation_saved' };
 
 export type Screen =
   | { kind: 'loading' }
@@ -35,7 +36,7 @@ export type Screen =
   | { kind: 'signed_out'; notice: Notice | null }
   | { kind: 'join'; joinCode: string; deviceId: string; notice: Notice | null }
   | { kind: 'approve'; sas: string; deviceId: string; notice: Notice | null }
-  | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; deviceId: string; notice: Notice | null; busy: boolean }
+  | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; keyEpoch: number; nowMs: number; deviceId: string; notice: Notice | null; busy: boolean }
   | { kind: 'removed' };
 
 export interface ControllerDeps {
@@ -293,7 +294,7 @@ export class AppController {
   private showVault(notice: Notice | null, matches: string[] | null, busy = false): void {
     const s = this.snapshot!;
     this.show({
-      kind: 'vault', items: s.items, matches, unreadable: s.unreadable, hidden: s.hidden, rekeyRequired: s.state.rekey_required,
+      kind: 'vault', items: s.items, matches, unreadable: s.unreadable, hidden: s.hidden, rekeyRequired: s.state.rekey_required, keyEpoch: s.state.key_epoch, nowMs: this.now(),
       deviceId: s.self.device_id, notice, busy,
     });
   }
@@ -320,7 +321,12 @@ export class AppController {
     return this.write('deleted', () => deleteItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, nowMs: this.now() }));
   }
 
-  private async write(done: 'saved' | 'deleted', op: () => Promise<unknown>): Promise<boolean> {
+  /** Record one rotation step (start, pause, confirm revocation, TTL…) as a signed revision. */
+  async rotate(itemId: string, change: RotationChange): Promise<boolean> {
+    return this.write('rotation_saved', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, change, nowMs: this.now() }));
+  }
+
+  private async write(done: 'saved' | 'deleted' | 'rotation_saved', op: () => Promise<unknown>): Promise<boolean> {
     if (!this.snapshot || !this.client || !this.signer) return false;
     this.showVault(null, null, true);
     try {
@@ -335,7 +341,7 @@ export class AppController {
 
   private async writeFailed(err: unknown): Promise<void> {
     const code = appErrorCode(err, 'server');
-    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'quota_exceeded', 'network', 'server'];
+    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'rotation_invalid', 'not_found', 'item_unreadable', 'quota_exceeded', 'network', 'server'];
     if (!isVaultApiError(err) && recoverable.includes(code)) {
       // A conflict means the verified head is stale: pull again, then say why the write did not land.
       if (code === 'conflict') await this.sync({ kind: 'error', code });

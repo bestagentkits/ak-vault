@@ -12,6 +12,7 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Secret value | Inside item ciphertext ([spec §3.2](../protocol/v1/spec.md#32-item-payload)) |
 | Secret name | Inside item ciphertext; IDs are random and never derived from names |
 | Description, tags, profile fields (`when_to_use`, URLs, provider, …) | Inside item `meta` ciphertext |
+| Rotation tracking (`meta.rotation`, `meta.rotate_ttl_days`) | Inside item `meta` ciphertext; written by the dashboard as ordinary signed revisions |
 | Sensitivity class | Inside item ciphertext |
 | Portable policy | Encrypted item with `meta.kind = "policy"` |
 | Private audit entries | Encrypted audit stream ([spec §7](../protocol/v1/spec.md#7-encrypted-audit-stream)) |
