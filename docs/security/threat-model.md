@@ -137,7 +137,7 @@ directories themselves are the authority for exact file names.
 | X6 | Name-tag lookup misleads a reader into acting on the wrong item | Server | Tags are unsigned hints: a reader decrypts and compares the name before acting; a tag must match the record's `key_epoch`; tombstones carry none ([spec §3.7](../protocol/v1/spec.md#37-name-tags-keyed-blind-index)) | Vectors: `name-tag.json`; lookup Worker tests |
 | X7 | Browser session changes membership or reads recovery | XSS in `/app`, stolen browser token | `browser` session kind refused (`403`) on genesis, every membership POST, recovery bundle and identity routes, seal-key PUT and the sealed queue; strict CSP, SRI, no third-party code; sync token TTL 300 s | Worker tests: browser session refusals; CSP header test |
 | X8 | Synced profile field forged in another device's name | Malicious member, server relaying old fields | Per-field provenance: changed fields carry the record author and time, unchanged fields keep prior provenance; violating fields dropped and audited `profile_provenance_invalid`; another device's field shown as `sync`; the own label is transitive and comes only from this device's own write history, so a field kept without a held base revision stays `sync` while carried, even through the device's own later records ([spec §5.1](../protocol/v1/spec.md#51-profile-layout)) | Vectors: `profile.json` cases and `chains` (`forged_without_prev_never_becomes_own`); `red-team-profile-provenance.test.ts` / `red_team_profile_provenance_test.go` |
-| X9 | Malformed or substituted enrollment code joins the wrong device | Network, phishing | Closed key set, exact contexts, version and size checks; owner role and `human` kind required; SAS confirmation on approval ([spec §3.8](../protocol/v1/spec.md#38-enrollment-codes)) | Vectors: `enroll-codes.json` |
+| X9 | Malformed or substituted enrollment code joins the wrong device | Network, phishing | Closed key set, exact contexts, version and size checks; owner role and `human` kind required; SAS confirmation on approval; the code channel must be authentic, see the enrollment-code limitation below ([spec §3.8](../protocol/v1/spec.md#38-enrollment-codes)) | Vectors: `enroll-codes.json` |
 | X10 | Relay or MCP flood exhausts an account | MCP client, stolen token | Per-client and per-account MCP rate limits, per-device in-flight cap, per-account connection cap, sealed queue cap with `sealed_queue_full` ([spec §10](../protocol/v1/spec.md#10-errors-and-limits)) | Relay and MCP rate-limit tests |
 
 Rows X1–X10 cover remote access (ADR 0002); their vectors and tests land with the
@@ -160,6 +160,13 @@ These are accepted and must be stated wherever the guarantees are described:
   Reading the log again with the kept head at the witnessed position, or comparing
   its own state digest with another device's checkpoint at that checkpoint's
   position, detects it ([spec §6](../protocol/v1/spec.md#6-checkpoints-anti-rollback)).
+- **Enrollment codes need an authentic channel.** The join and offer codes carry their
+  nonces without a prior commitment, so a party that carries both codes can learn the
+  owner's digits and grind the joiner's nonce (about 10^6 hashes) until the six-digit SAS
+  matches. The SAS authenticates enrollment only when the user moves the codes between
+  their own devices. No v1 flow may relay the codes through the Worker or another service;
+  that needs a commit-reveal wire change first
+  ([spec §3.8](../protocol/v1/spec.md#38-enrollment-codes)).
 - **Vault-wide key.** Any member device can decrypt every item in the vault. Roles
   do not create per-secret read boundaries.
 - **No clawback.** Values already decrypted by a removed member or a lost device
