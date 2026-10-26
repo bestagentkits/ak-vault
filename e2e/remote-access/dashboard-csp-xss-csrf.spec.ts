@@ -88,16 +88,23 @@ test.describe('script containment in the page', () => {
     await openDashboard(page);
     const result = await page.evaluate(async () => {
       const w = window as unknown as Record<string, unknown>;
+      const reports: string[] = [];
+      document.addEventListener('securitypolicyviolation', (e) => reports.push(e.violatedDirective));
       const anchor = document.createElement('a');
       anchor.href = 'javascript:window.__xssLink = 1';
       document.body.append(anchor);
-      let evalBlocked = false;
+      anchor.click();
+      // Code run by page.evaluate itself is exempt from the page's eval checks, so
+      // `new Function` here would run under any policy. A string timer is compiled
+      // later by the page, where script-src and Trusted Types apply.
+      let evalThrew = false;
       try {
-        new Function('window.__xssEval = 1')();
+        (setTimeout as unknown as (code: string, ms: number) => number)('window.__xssEval = 1', 0);
       } catch {
-        evalBlocked = true;
+        evalThrew = true;
       }
-      return { evalBlocked, linkExecuted: w['__xssLink'] === 1, evalExecuted: w['__xssEval'] === 1 };
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return { evalBlocked: evalThrew || reports.length > 0, linkExecuted: w['__xssLink'] === 1, evalExecuted: w['__xssEval'] === 1 };
     });
     expect(result.evalBlocked).toBe(true);
     expect(result.evalExecuted).toBe(false);
