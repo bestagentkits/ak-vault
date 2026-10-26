@@ -1,6 +1,7 @@
 /**
  * Encrypted audit entries for rotation state changes (spec §7). Each entry
- * names the action, the opaque item ID, the acting device and the time, and
+ * uses the event envelope the CLI reads (`v`, `type`, `device_id`, `ts`, optional
+ * `item_id`); an event without them would stop every CLI device appending. It names the action, the opaque item ID, the acting device and the time, and
  * nothing else: never the item name, a value, a provider or a credential hint.
  * Entries are sealed under the audit key of the current key epoch, chained to
  * the stored head; the Worker refuses a stale head with `conflict`, and one
@@ -41,7 +42,7 @@ export async function appendRotationAudit(args: { client: AkvClient; snapshot: V
   const { client, snapshot } = args;
   const vk = snapshot.vaultKeys.get(snapshot.state.key_epoch);
   if (!vk) return false;
-  const event: JsonObject = { v: 1, action: args.action, item_id: args.itemId, device: snapshot.self.device_id, ts: args.nowMs };
+  const event: JsonObject = { v: 1, type: args.action, item_id: args.itemId, device_id: snapshot.self.device_id, ts: args.nowMs };
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
       const head = await storedHead(client, snapshot.vaultId);

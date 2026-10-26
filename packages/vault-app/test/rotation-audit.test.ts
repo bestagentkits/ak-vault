@@ -36,13 +36,14 @@ describe('rotation audit entries', () => {
     await page.controller.setRotationState(itemId, null);
 
     const events = world.auditEvents();
-    expect(events.map((e) => e['action'])).toEqual([
+    expect(events.map((e) => e['type'])).toEqual([
       'rotation_started', 'rotation_paused', 'rotation_resumed', 'rotation_failed', 'rotation_started',
       'rotation_vault_written', 'rotation_revoked', 'rotation_cancelled', 'rotation_cleared',
     ]);
     for (const e of events) {
-      expect(Object.keys(e).sort()).toEqual(['action', 'device', 'item_id', 'ts', 'v']);
-      expect(e).toMatchObject({ v: 1, item_id: itemId, device: expect.any(String) as unknown });
+      expect(Object.keys(e).sort()).toEqual(['device_id', 'item_id', 'ts', 'type', 'v']);
+      expect(Number.isSafeInteger(e['ts'])).toBe(true);
+      expect(e).toMatchObject({ v: 1, item_id: itemId, device_id: expect.any(String) as unknown, type: expect.stringMatching(/^[a-z_]{1,64}$/) as unknown });
     }
     const wire = JSON.stringify(world.audit.map((a) => a.entry)) + world.exchanges.map((x) => x.requestBody).join('');
     const plain = JSON.stringify(events);
@@ -72,7 +73,7 @@ describe('rotation audit entries', () => {
     await page.controller.startRotation(itemId);
     expect(page.controller.current()).toMatchObject({ notice: { code: 'rotation_started' } });
     const events = world.auditEvents();
-    expect(events.map((e) => e['action'])).toEqual(['other_device', 'other_device', 'rotation_started']);
+    expect(events.map((e) => e['type'])).toEqual(['other_device', 'other_device', 'rotation_started']);
     expect(world.auditPosts).toBe(2);
   });
 
@@ -94,6 +95,6 @@ describe('rotation audit entries', () => {
     await page.controller.refresh();
     await page.controller.startRotation(itemId);
     expect(world.audit.at(-1)!.entry.kid).toBe('e2');
-    expect(world.auditEvents().at(-1)).toMatchObject({ action: 'rotation_started' });
+    expect(world.auditEvents().at(-1)).toMatchObject({ type: 'rotation_started' });
   });
 });

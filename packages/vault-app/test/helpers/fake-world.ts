@@ -218,7 +218,7 @@ export class FakeWorld {
   }
 
   /** Another device appends an audit entry, so the head moves. */
-  appendAuditEntryAsOther(event: JsonObject = { v: 1, action: 'other_device' }): void {
+  appendAuditEntryAsOther(event: JsonObject = { v: 1, type: 'other_device', device_id: 'other', ts: 1 }): void {
     const last = this.audit.at(-1);
     const head = last ? { seq: this.audit.length - 1, head: last.hash } : null;
     const { entry } = appendAuditEntry({ vk: this.vks.get(this.state().key_epoch)!, vaultId: this.vaultId, keyEpoch: this.state().key_epoch, head, event });

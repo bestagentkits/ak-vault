@@ -124,11 +124,12 @@ sees none of it, and nothing here decides access.
   signed revisions, with their author device and time, are the record of each state
   change. After each one the dashboard also appends an entry to the encrypted audit
   stream (spec §7) for rotation start, resume, vault write, revocation confirmation,
-  pause, fail, cancel and clearing the workflow. An entry holds the action, the opaque
-  item ID, the acting device and the time, never the item name or a value. The append
+  pause, fail, cancel and clearing the workflow. An entry uses the CLI's event envelope: `type` (the action), the opaque
+  item ID, `device_id` and the time, never the item name or a value. The append
   follows the revision and does not gate it: if the audit stream is unavailable the
   revision stands and the dashboard says the audit entry was not added. Interval edits
-  append no entry, and the dashboard signs no audit checkpoint.
+  append no entry, the dashboard signs no audit checkpoint, and it appends to the head
+  the server reports without replaying the chain first (CLI devices verify it).
 
 ## Password and parameter upgrade
 
