@@ -56,6 +56,8 @@ export interface HistoryEntry {
   readability: EntryReadability;
   /** Applied, live revisions only: null when it can be restored. */
   restoreBlock: RestoreBlock | null;
+  /** The key epoch was held by a device that has since been removed. */
+  knownToRemoved: boolean;
   /** Ciphertext and signature; used only to re-seal a value in memory. */
   record: SignedRecord;
 }
@@ -72,6 +74,8 @@ export interface ItemHistory {
   /** The item is deleted at its head. */
   deleted: boolean;
   openConflicts: number;
+  /** Every open branch of the item, from the replay (not from the listed entries). */
+  openConflictIds: string[];
 }
 
 function readabilityOf(snapshot: VaultSnapshot, record: SignedRecord): EntryReadability {
@@ -136,6 +140,7 @@ export async function loadItemHistory(client: AkvClient, snapshot: VaultSnapshot
       keyEpoch: record.key_epoch,
       readability: readabilityOf(snapshot, record),
       restoreBlock: null,
+      knownToRemoved: snapshot.state.removals.some((r) => r.key_epoch >= record.key_epoch),
       record,
     });
   });
@@ -158,14 +163,17 @@ export async function loadItemHistory(client: AkvClient, snapshot: VaultSnapshot
 
   const stale = final.revision !== shown.revision || final.head !== shown.head || !sameConflicts(final, shown);
   const newestFirst = rows.sort((a, b) => b.logSeq - a.logSeq);
+  // Open branches are always listed, so what the operator settles is what they saw.
+  const listed = newestFirst.filter((r, i) => i < MAX_HISTORY_ENTRIES || r.conflictOpen);
   return {
     itemId,
-    entries: newestFirst.slice(0, MAX_HISTORY_ENTRIES),
-    omitted: Math.max(0, newestFirst.length - MAX_HISTORY_ENTRIES),
+    entries: listed,
+    omitted: newestFirst.length - listed.length,
     logSeq: verified.head.log_seq,
     stale,
     deleted: final.tombstone,
     openConflicts: final.conflicts.length,
+    openConflictIds: final.conflicts.map((c) => c.conflict_id),
   };
 }
 

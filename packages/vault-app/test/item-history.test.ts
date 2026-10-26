@@ -213,7 +213,9 @@ describe('restore', () => {
     const id = world.ownerSet('moving', OLD);
     world.ownerWrite({ itemId: id, base: 1, value: MID });
     const { page } = await new Browser(world).enroll();
-    world.ownerWrite({ itemId: id, base: 2, value: NEW });
+    // The item moves after the pull that opens the history, while its log is being read.
+    world.beforeNext('/changes', () => undefined);
+    world.beforeNext('/changes', () => void world.ownerWrite({ itemId: id, base: 2, value: NEW }));
     await openHistory(page, 'moving');
     const hist = historyScreen(page);
     expect(hist.stale).toBe(true);
@@ -221,6 +223,53 @@ describe('restore', () => {
     expect(allByTestId(page.root, 'restore')).toHaveLength(0);
     expect(await page.controller.restore(hist.entries.find((e) => e.revision === 1)!.logSeq)).toBe(false);
     expect(world.exchanges.filter((e) => e.method === 'PUT')).toHaveLength(0);
+  });
+});
+
+describe('restore authorization', () => {
+  it('writes nothing once the owner removed this device after the history opened', async () => {
+    const world = new FakeWorld();
+    const id = world.ownerSet('retired', OLD);
+    world.ownerWrite({ itemId: id, base: 1, value: MID });
+    const b = new Browser(world);
+    const { page } = await b.enroll();
+    await openHistory(page, 'retired');
+    const target = historyScreen(page).entries.find((e) => e.revision === 1)!;
+    world.removeDevice((page.controller.current() as { deviceId: string }).deviceId);
+    // The browser cannot know yet; the Worker refuses the write and nothing is appended.
+    expect(await page.controller.restore(target.logSeq)).toBe(false);
+    expect(world.exchanges.filter((e) => e.method === 'PUT').every((e) => e.status !== 200)).toBe(true);
+    expect(world.log.filter((e) => e.record.item_id === id)).toHaveLength(2);
+  });
+
+  it('keeps a binary value base64-encoded when it is restored', async () => {
+    const world = new FakeWorld();
+    const meta = { schema: 'agentkit.secret/v1', created_ms: 1_700_000_000_000, value_encoding: 'base64' };
+    const id = world.ownerSet('cert', OLD, meta);
+    world.ownerWrite({ itemId: id, base: 1, value: MID, meta });
+    const { page } = await new Browser(world).enroll();
+    await openHistory(page, 'cert');
+    const target = historyScreen(page).entries.find((e) => e.revision === 1)!;
+    expect(await page.controller.restore(target.logSeq)).toBe(true);
+    const written = world.log.at(-1)!.record;
+    const opened = openItem({ ...written, vk: world.vks.get(written.key_epoch)!, env: written.env }) as ItemPayload;
+    expect(opened.value).toBe(OLD);
+    expect(opened.meta['value_encoding']).toBe('base64');
+  });
+
+  it('opens the history of a vault that gained a device after this browser last pulled', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('grown', OLD);
+    const b = new Browser(world);
+    const { page } = await b.enroll();
+    const other = new Browser(world);
+    const second = await other.signIn();
+    const code = byTestId(second.root, 'join-code').textContent!;
+    const offer = world.offerFor(code);
+    await second.controller.submitOffer(offer.code);
+    world.approve(code, offer.nonceI);
+    await openHistory(page, 'grown');
+    expect(historyScreen(page).stale).toBe(false);
   });
 });
 

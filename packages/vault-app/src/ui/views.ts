@@ -191,6 +191,8 @@ function entryRow(c: AppController, e: HistoryEntry, canWrite: boolean, busy: bo
     h('span', {}, [`claimed ${fmtDateTime(e.ts)}`]),
     h('span', {}, [`key epoch ${e.keyEpoch}`]),
     h('span', {}, [`log ${e.logSeq}`]),
+    e.conflictId ? h('span', {}, [`branch ${e.conflictId}`]) : null,
+    e.knownToRemoved && !e.tombstone ? h('span', { class: 'badge badge-conflict' }, ['key epoch was held by a removed device']) : null,
     e.tombstone ? null : h('span', { class: e.readability === 'readable' ? '' : 'badge badge-conflict' }, [READABILITY[e.readability]]),
   ];
   if (e.kind === 'conflict') {
@@ -239,7 +241,7 @@ function entryRow(c: AppController, e: HistoryEntry, canWrite: boolean, busy: bo
 function historyBody(c: AppController, s: Extract<Screen, { kind: 'history' }>, hist: ItemHistory, vs: ViewState, rerender: () => void): Child[] {
   const writable = s.canWrite && !hist.stale && !hist.deleted;
   const shown = hist.entries.slice(0, vs.historyShown);
-  const open = hist.entries.filter((e) => e.kind === 'conflict' && e.conflictOpen);
+  const open = hist.openConflictIds;
   const settleCurrent: Child = open.length > 0 && writable
     ? vs.confirmSettle === 'current'
       ? h('div', { class: 'row' }, [

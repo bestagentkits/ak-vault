@@ -291,9 +291,18 @@ export class FakeWorld {
     return json(200, { access_token: access, token_type: 'Bearer', expires_in: 600, refresh_token: refresh, scope: 'vault-app:session' });
   }
 
+  /** Runs once, just before the next request whose URL contains `fragment`. */
+  beforeNext(fragment: string, fn: () => void): void {
+    this.pending.push({ fragment, fn });
+  }
+
+  private readonly pending: { fragment: string; fn: () => void }[] = [];
+
   readonly fetch = async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = (init.method ?? 'GET').toUpperCase();
+    const due = this.pending.findIndex((p) => url.includes(p.fragment));
+    if (due >= 0) this.pending.splice(due, 1)[0]!.fn();
     const requestBody = typeof init.body === 'string' ? init.body : '';
     const res = await this.route(new URL(url), method, requestBody, new Headers(init.headers));
     const responseBody = await res.clone().text();

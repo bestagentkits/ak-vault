@@ -336,9 +336,12 @@ export class AppController {
    * before anything is listed, so a server cannot invent or reorder revisions.
    */
   async openHistory(itemId: string): Promise<void> {
+    if (!this.snapshot || !this.client || this.busy()) return;
+    // Verify against the newest membership and keys first: a device or rekey after the last pull would otherwise fail the log check.
+    await this.sync(null);
     const snapshot = this.snapshot;
     const item = snapshot?.items.find((i) => i.itemId === itemId);
-    if (!snapshot || !item || !this.client) return;
+    if (this.screen.kind !== 'vault' || !snapshot || !item || !this.client) return;
     this.historyItem = item;
     this.history = null;
     this.showHistory(null, true);
@@ -348,8 +351,14 @@ export class AppController {
       this.history = history;
       this.showHistory(null);
     } catch (err) {
+      // Locked or left the page meanwhile: do not turn that into a fatal screen.
+      if (this.snapshot !== snapshot || this.historyItem !== item) return;
       await this.fail(err);
     }
+  }
+
+  private busy(): boolean {
+    return (this.screen.kind === 'vault' || this.screen.kind === 'history') && this.screen.busy;
   }
 
   closeHistory(): void {
@@ -384,7 +393,7 @@ export class AppController {
   }
 
   private async write(done: 'saved' | 'deleted' | 'restored' | 'resolved', op: () => Promise<unknown>): Promise<boolean> {
-    if (!this.snapshot || !this.client || !this.signer) return false;
+    if (!this.snapshot || !this.client || !this.signer || this.busy()) return false;
     if (this.historyItem) this.showHistory(null, true);
     else this.showVault(null, null, true);
     try {

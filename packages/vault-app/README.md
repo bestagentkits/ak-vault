@@ -26,7 +26,9 @@ the same write authorization as `set`, so a concurrent write becomes a conflict
 branch instead of being overwritten, and a deleted item or a revision from before
 its deletion is never offered. The old value is decrypted, re-sealed and dropped
 inside the write; it is not rendered, copied or stored, so the no-reveal rule
-holds. Restoring an old provider credential does not make it valid or safe again.
+holds. A revision sealed under an epoch a since-removed device held is flagged
+but can still be restored; the new revision is sealed under the current epoch.
+Restoring an old provider credential does not make it valid or safe again.
 
 An open conflict can be settled with one confirmed new revision that keeps the
 current value or adopts one branch's value; every open branch is listed in

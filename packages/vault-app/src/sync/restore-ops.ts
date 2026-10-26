@@ -47,15 +47,19 @@ function openLive(snapshot: VaultSnapshot, entry: HistoryEntry): ItemPayload {
 }
 
 /** Write `value` as the next revision of the item, optionally resolving branches. */
-async function writeNext(ctx: Context, value: string, sensitivityOf: ItemPayload, valueChanged: boolean, resolves: string[]): Promise<WriteResult> {
+async function writeNext(ctx: Context, source: ItemPayload, valueChanged: boolean, resolves: string[]): Promise<WriteResult> {
+  const value = source.value;
   const { snapshot, history } = ctx;
   const vk = writableKey(snapshot);
   const state = snapshot.itemStates.get(history.itemId);
   if (!state || state.revision === 0 || state.tombstone) throw new AppError('not_found');
   const head = openHead(snapshot, history.itemId);
   const nowMs = ctx.nowMs ?? Date.now();
-  const sensitivity: ItemPayload['sensitivity'] = head.sensitivity === 'high' || sensitivityOf.sensitivity === 'high' ? 'high' : 'normal';
-  const payload: ItemPayload = { name: head.name, value, meta: nextMeta(head, valueChanged, nowMs) as JsonObject, sensitivity };
+  const sensitivity: ItemPayload['sensitivity'] = head.sensitivity === 'high' || source.sensitivity === 'high' ? 'high' : 'normal';
+  const meta = nextMeta(head, valueChanged, nowMs) as JsonObject;
+  // The value is copied from `source`, so its encoding marker travels with it (a base64 binary stays base64).
+  if (source.meta['value_encoding'] !== undefined) meta['value_encoding'] = source.meta['value_encoding'];
+  const payload: ItemPayload = { name: head.name, value, meta, sensitivity };
   if (cjsonBytes(payload as unknown as JsonObject).length > MAX_PLAINTEXT_BYTES) throw new AppError('value_too_large');
   const base = {
     vault_id: snapshot.vaultId, item_id: history.itemId, base_revision: state.revision, key_epoch: snapshot.state.key_epoch,
@@ -86,7 +90,7 @@ export async function restoreRevision(ctx: Context & { logSeq: number }): Promis
   const old = openLive(ctx.snapshot, entry);
   const head = openHead(ctx.snapshot, ctx.history.itemId);
   if (old.value === head.value) throw new AppError('restore_unchanged');
-  return writeNext(ctx, old.value, old, true, []);
+  return writeNext(ctx, old, true, []);
 }
 
 /**
@@ -97,13 +101,15 @@ export async function restoreRevision(ctx: Context & { logSeq: number }): Promis
 export async function settleConflicts(ctx: Context & { choice: SettleChoice }): Promise<WriteResult> {
   liveHistory(ctx);
   const open = ctx.history.entries.filter((e) => e.kind === 'conflict' && e.conflictOpen);
-  if (open.length === 0) throw new AppError('nothing_to_resolve');
-  const resolves = open.map((e) => e.conflictId!).slice(0, MAX_RESOLVES);
+  const resolves = ctx.history.openConflictIds;
+  if (resolves.length === 0) throw new AppError('nothing_to_resolve');
+  // One record lists at most MAX_RESOLVES branches; never settle part of them silently.
+  if (resolves.length > MAX_RESOLVES) throw new AppError('restore_unavailable');
   const head = openHead(ctx.snapshot, ctx.history.itemId);
-  if (ctx.choice.source === 'current') return writeNext(ctx, head.value, head, false, resolves);
+  if (ctx.choice.source === 'current') return writeNext(ctx, head, false, resolves);
   const chosenId = ctx.choice.conflictId;
   const branch = open.find((e) => e.conflictId === chosenId);
   if (!branch || branch.tombstone || branch.readability !== 'readable' || !resolves.includes(chosenId)) throw new AppError('restore_unavailable');
   const payload = openLive(ctx.snapshot, branch);
-  return writeNext(ctx, payload.value, payload, payload.value !== head.value, resolves);
+  return writeNext(ctx, payload, payload.value !== head.value, resolves);
 }
