@@ -43,16 +43,29 @@ describe('rotation health', () => {
     expect(rotationInfo({ ...base, rotateTtlDays: 10 }, NOW).health).toBe('overdue');
   });
 
-  it('keeps needs-rotate until the item was rewritten with a new value under the rekey epoch', () => {
-    const flagged = { ...base, rotateTtlDays: 365, flaggedMs: NOW - DAY_MS, flaggedEpoch: 2, keyEpoch: 1 };
-    expect(stillNeedsRotate(flagged)).toBe(true);
+  it('keeps needs-rotate after any rewrite until a member confirms revocation of the old credential', () => {
+    const flagged = { ...base, rotateTtlDays: 365, flaggedMs: NOW - DAY_MS, flaggedEpoch: 2, keyEpoch: 2 };
+    const wf = { state: 'active' as const, startedMs: NOW - DAY_MS / 2, revokedMs: null };
     expect(rotationInfo(flagged, NOW).health).toBe('needs_rotate');
-    // rotated before the flag, or never: still flagged
-    expect(stillNeedsRotate({ ...flagged, rotatedMs: NOW - 2 * DAY_MS, keyEpoch: 2 })).toBe(true);
-    // a rewrite under the old epoch does not clear it
-    expect(stillNeedsRotate({ ...flagged, rotatedMs: NOW, keyEpoch: 1 })).toBe(true);
-    expect(stillNeedsRotate({ ...flagged, rotatedMs: NOW, keyEpoch: 2 })).toBe(false);
-    expect(rotationInfo({ ...flagged, rotatedMs: NOW, keyEpoch: 2 }, NOW).health).toBe('ok');
+    // a rewrite (the dashboard's, or a CLI set that bumped rotated_ms for the same value) does not clear it
+    expect(rotationInfo({ ...flagged, rotatedMs: NOW }, NOW).health).toBe('needs_rotate');
+    expect(rotationInfo({ ...flagged, rotatedMs: NOW, workflow: wf }, NOW).health).toBe('needs_rotate');
+    // a confirmation recorded before the latest write confirmed the previous credential
+    expect(stillNeedsRotate({ ...flagged, rotatedMs: NOW, workflow: { ...wf, revokedMs: NOW - 1000 } })).toBe(true);
+    // a rewrite from before the flag never clears it
+    expect(stillNeedsRotate({ ...flagged, rotatedMs: NOW - 2 * DAY_MS, workflow: { ...wf, revokedMs: NOW } })).toBe(true);
+    // a rewrite under the old epoch never clears it
+    expect(stillNeedsRotate({ ...flagged, keyEpoch: 1, rotatedMs: NOW, workflow: { ...wf, revokedMs: NOW } })).toBe(true);
+    expect(rotationInfo({ ...flagged, rotatedMs: NOW, workflow: { ...wf, revokedMs: NOW } }, NOW).health).toBe('ok');
+  });
+
+  it('shows awaiting-revoke after the vault write, never on schedule, until revocation is confirmed', () => {
+    const wf = { state: 'active' as const, startedMs: NOW - DAY_MS, revokedMs: null };
+    const written = { ...base, rotateTtlDays: 365, rotatedMs: NOW, workflow: wf };
+    expect(rotationInfo(written, NOW).health).toBe('awaiting_revoke');
+    expect(rotationInfo({ ...written, workflow: { ...wf, state: 'paused' } }, NOW).health).toBe('awaiting_revoke');
+    expect(rotationInfo({ ...written, workflow: { ...wf, state: 'cancelled' } }, NOW).health).toBe('ok');
+    expect(rotationInfo({ ...written, workflow: { ...wf, revokedMs: NOW } }, NOW).health).toBe('ok');
   });
 
   it('reads only a well-formed workflow', () => {
@@ -145,8 +158,21 @@ describe('dashboard rotation health', () => {
     // an edit that keeps the value does not clear it
     await page.controller.setRotateTtl(itemId, 300);
     expect(byTestId(page.root, 'rotation-health').textContent).toBe('needs rotation');
+    await page.controller.startRotation(itemId);
     expect(await page.controller.rotate(itemId, NEW_SENTINEL)).toBe(true);
+    // the vault holds the new value, but the old credential is not confirmed revoked
+    expect(byTestId(page.root, 'rotation-health').textContent).toBe('needs rotation');
+    expect(await page.controller.confirmRevoked(itemId)).toBe(true);
     expect(byTestId(page.root, 'rotation-health').textContent).toBe('rotation on schedule');
+  });
+
+  it('keeps the flag when the CLI re-saves the same value after the rekey', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w, { created_ms: Date.now() - DAY_MS, rotate_ttl_days: 365 }));
+    world.ownerRekey([itemId]);
+    world.ownerSet('stripe-key', SENTINEL, { schema: 'agentkit.secret/v1', created_ms: Date.now() - DAY_MS, rotate_ttl_days: 365, rotated_ms: Date.now() + 5 });
+    await page.controller.refresh();
+    expect(byTestId(page.root, 'rotation-health').textContent).toBe('needs rotation');
   });
 });
 
@@ -185,12 +211,18 @@ describe('guided rotation', () => {
     expect(byTestId(page.root, 'step-vault').className).toContain('step-done');
     expect(byTestId(page.root, 'step-revoked').className).not.toContain('step-done');
     expect(byTestId(page.root, 'rotation-flow').textContent).toContain('old key not confirmed revoked');
+    expect(byTestId(page.root, 'rotation-health').textContent).toBe('old key not confirmed revoked');
+    expect(page.root.textContent).not.toMatch(/\brotated \d{4}-/);
 
     byTestId(page.root, 'rotation-revoked').click();
     await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'rotation_revoked' } }));
     expect(byTestId(page.root, 'step-revoked').className).toContain('step-done');
     expect(byTestId(page.root, 'step-revoked').textContent).toContain('cannot verify this with the provider');
-    expect(byTestId(page.root, 'rotation-flow').textContent).toContain('old key revoked (you confirmed)');
+    expect(byTestId(page.root, 'rotation-flow').textContent).toContain('old key revoked (member-confirmed)');
+    expect(byTestId(page.root, 'rotation-state').textContent).toMatch(/^Rotation complete/);
+    expect(allByTestId(page.root, 'rotation-pause')).toHaveLength(0);
+    expect(byTestId(page.root, 'rotation-start').textContent).toBe('Start again');
+    expect(byTestId(page.root, 'rotation-health').textContent).toBe('rotation on schedule');
     // the value is unchanged by the metadata-only revisions, and the other device's CLI keys survive
     expect(headPayload(world)).toMatchObject({ value: NEW_SENTINEL });
     expect(headPayload(world).meta).toMatchObject({ schema: 'agentkit.secret/v1', rotate_ttl_days: 30 });
@@ -239,6 +271,48 @@ describe('guided rotation', () => {
     expect(headPayload(world).value).toBe(SENTINEL);
   });
 
+  it('refuses confirmation while paused or failed, an empty value, and a resume of a failed rotation', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    await page.controller.startRotation(itemId);
+    expect(await page.controller.rotate(itemId, '')).toBe(false);
+    expect(page.controller.current()).toMatchObject({ notice: { code: 'value_too_large' } });
+    expect(await page.controller.rotate(itemId, NEW_SENTINEL)).toBe(true);
+    await page.controller.setRotationState(itemId, 'paused');
+    expect(await page.controller.confirmRevoked(itemId)).toBe(false);
+    expect(page.controller.current()).toMatchObject({ notice: { code: 'rotation_not_ready' } });
+    await page.controller.setRotationState(itemId, 'failed');
+    expect(await page.controller.confirmRevoked(itemId)).toBe(false);
+    const writes = world.log.length;
+    expect(await page.controller.setRotationState(itemId, 'active')).toBe(false);
+    expect(world.log.length).toBe(writes);
+    expect(item(page, itemId).rotation!.state).toBe('failed');
+  });
+
+  it('reports a conflict on the value save and on the revocation confirmation', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    await page.controller.startRotation(itemId);
+    world.ownerSet('stripe-key', 'changed-elsewhere', { schema: 'agentkit.secret/v1', created_ms: 1_700_000_000_000 });
+    expect(await page.controller.rotate(itemId, NEW_SENTINEL)).toBe(false);
+    expect(page.controller.current()).toMatchObject({ notice: { kind: 'error', code: 'conflict' } });
+    const stale = page.controller as unknown as { snapshot: VaultSnapshot };
+    expect(stale.snapshot.heads.get(itemId)).toBeTruthy();
+  });
+
+  it('records a revocation no earlier than a value written by a device whose clock runs ahead', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    await page.controller.startRotation(itemId);
+    const ahead = Date.now() + 10 * 60_000;
+    const head = headPayload(world);
+    world.ownerSet('stripe-key', 'cli-new-value', { ...head.meta, rotated_ms: ahead } as never);
+    await page.controller.refresh();
+    expect(await page.controller.confirmRevoked(itemId)).toBe(true);
+    expect(item(page, itemId).rotation!.revokedMs).toBe(ahead);
+    expect(byTestId(page.root, 'rotation-flow').textContent).toContain('old key revoked');
+  });
+
   it('sets and clears the interval and refuses an invalid one', async () => {
     const world = new FakeWorld();
     const { page, itemId } = await open(world, (w) => seedAged(w));
@@ -246,7 +320,7 @@ describe('guided rotation', () => {
     expect(item(page, itemId).rotateTtlDays).toBe(90);
     expect(headPayload(world).meta['rotate_ttl_days']).toBe(90);
     const writes = world.log.length;
-    for (const bad of [0, -1, 1.5, 4000, Number.NaN]) {
+    for (const bad of [0, -1, 1.5, 40000, Number.NaN]) {
       expect(await page.controller.setRotateTtl(itemId, bad)).toBe(false);
       expect(page.controller.current()).toMatchObject({ notice: { code: 'invalid_rotation' } });
     }

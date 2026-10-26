@@ -331,7 +331,13 @@ export class AppController {
   /** Pause, resume, fail or cancel the workflow, or clear it with `null`. */
   async setRotationState(itemId: string, state: RotationWorkflow['state'] | null): Promise<boolean> {
     const current = this.snapshot?.items.find((i) => i.itemId === itemId)?.rotation ?? null;
-    const rotation = state === null || !current ? null : { ...current, state };
+    if (!current) return false;
+    // Only a paused rotation resumes; a failed or cancelled one starts again from scratch.
+    const allowed: Record<RotationWorkflow['state'], RotationWorkflow['state'][]> = {
+      active: ['paused', 'failed', 'cancelled'], paused: ['active', 'failed', 'cancelled'], failed: [], cancelled: [],
+    };
+    if (state !== null && !allowed[current.state].includes(state)) return false;
+    const rotation = state === null ? null : { ...current, state };
     return this.write('rotation_updated', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation }, nowMs: this.now() }));
   }
 
@@ -369,7 +375,8 @@ export class AppController {
     const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'quota_exceeded', 'invalid_rotation', 'rotation_value_unchanged', 'rotation_not_ready', 'network', 'server'];
     if (!isVaultApiError(err) && recoverable.includes(code)) {
       // A conflict means the verified head is stale: pull again, then say why the write did not land.
-      if (code === 'conflict') await this.sync({ kind: 'error', code });
+      // A lost response may hide a write that landed: pull again so the screen shows the real head.
+      if (code === 'conflict' || code === 'network') await this.sync({ kind: 'error', code });
       else this.showVault({ kind: 'error', code }, null);
       return;
     }

@@ -26,7 +26,7 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   item_unreadable: 'This browser does not hold the key for that item.',
   duplicate_name: 'More than one item has that name. Resolve it from the CLI first.',
   quota_exceeded: 'The vault is full.',
-  invalid_rotation: 'That rotation interval is not valid. Use a whole number of days from 1 to 3650, or clear it.',
+  invalid_rotation: 'That rotation interval is not valid. Use a whole number of days from 1 to 36500, or clear it.',
   rotation_value_unchanged: 'That is the value already in the vault, so nothing was rotated. Create a new credential at the provider and enter it here.',
   rotation_not_ready: 'Save the new value in the vault first. Revocation can be confirmed only after that.',
   network: 'The network request failed. Check your connection and try again.',

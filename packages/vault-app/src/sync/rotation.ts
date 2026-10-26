@@ -13,8 +13,8 @@ import type { JsonObject, JsonValue } from '@ak-vault/protocol';
 export const DAY_MS = 86_400_000;
 /** Show "due soon" this many days before the due date. */
 export const DUE_SOON_DAYS = 7;
-/** Longest rotation interval the dashboard writes (ten years). */
-export const MAX_ROTATE_TTL_DAYS = 3650;
+/** Longest rotation interval the dashboard writes (one hundred years). */
+export const MAX_ROTATE_TTL_DAYS = 36500;
 
 /** Key in `meta` that holds the workflow. Unknown to older writers, which carry it forward unchanged. */
 export const ROTATION_META_KEY = 'rotation';
@@ -31,7 +31,7 @@ export interface RotationWorkflow {
   revokedMs: number | null;
 }
 
-export type RotationHealth = 'needs_rotate' | 'overdue' | 'due_soon' | 'ok' | 'unknown';
+export type RotationHealth = 'needs_rotate' | 'awaiting_revoke' | 'overdue' | 'due_soon' | 'ok' | 'unknown';
 
 export interface RotationInfo {
   health: RotationHealth;
@@ -57,7 +57,7 @@ export interface RotationInput {
   workflow: RotationWorkflow | null;
 }
 
-function isMs(v: unknown): v is number {
+export function isMs(v: unknown): v is number {
   return typeof v === 'number' && Number.isSafeInteger(v) && v >= 1;
 }
 
@@ -82,13 +82,17 @@ export function workflowToMeta(w: RotationWorkflow): JsonObject {
 }
 
 /**
- * The flag from a member or device removal clears only when the item was
- * rewritten with a new value under the key epoch that rekey installed. The
- * check errs toward keeping the warning: a missing date keeps it.
+ * Removal exposure is cleared only by the operator's confirmation that the old
+ * provider credential is revoked, recorded after a new value was written under
+ * the key epoch that rekey installed. A rewrite alone (the dashboard's, or a
+ * CLI `set`, which also bumps `rotated_ms` for an unchanged value) never clears
+ * it, because nothing here can see whether the old credential still works.
  */
 export function stillNeedsRotate(i: RotationInput): boolean {
   if (i.flaggedMs === null) return false;
-  if (i.rotatedMs === null || i.rotatedMs < i.flaggedMs) return true;
+  const revokedMs = i.workflow?.revokedMs ?? null;
+  if (i.rotatedMs === null || revokedMs === null) return true;
+  if (i.rotatedMs < i.flaggedMs || revokedMs < i.rotatedMs) return true;
   return i.flaggedEpoch !== null && i.keyEpoch < i.flaggedEpoch;
 }
 
@@ -100,6 +104,7 @@ export function rotationInfo(i: RotationInput, nowMs: number): RotationInfo {
   const providerRevoked = vaultUpdated && i.workflow!.revokedMs !== null && i.workflow!.revokedMs >= i.rotatedMs!;
   let health: RotationHealth;
   if (stillNeedsRotate(i)) health = 'needs_rotate';
+  else if (vaultUpdated && !providerRevoked && (i.workflow!.state === 'active' || i.workflow!.state === 'paused')) health = 'awaiting_revoke';
   else if (dueMs === null) health = 'unknown';
   else if (dueMs <= nowMs) health = 'overdue';
   else if (dueMs - nowMs <= DUE_SOON_DAYS * DAY_MS) health = 'due_soon';

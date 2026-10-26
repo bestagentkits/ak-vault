@@ -30,7 +30,7 @@ import {
 import { AppError } from '../app-error.js';
 import { isVaultApiError, type AkvClient } from './akv-client.js';
 import { validItemName, validItemValue } from './item-names.js';
-import { ROTATE_TTL_META_KEY, ROTATION_META_KEY, MAX_ROTATE_TTL_DAYS, parseRotationWorkflow, workflowToMeta, type RotationWorkflow } from './rotation.js';
+import { isMs, ROTATE_TTL_META_KEY, ROTATION_META_KEY, MAX_ROTATE_TTL_DAYS, parseRotationWorkflow, workflowToMeta, type RotationWorkflow } from './rotation.js';
 import { ITEM_META_SCHEMA, openHead, type VaultSnapshot } from './vault-sync.js';
 
 export interface WriteResult {
@@ -155,9 +155,11 @@ export async function updateRotation(args: { client: AkvClient; snapshot: VaultS
   }
   let workflow = patch.rotation === undefined ? parseRotationWorkflow(prev.meta) : patch.rotation;
   if (patch.confirmRevoked) {
-    const rotatedMs = typeof prev.meta['rotated_ms'] === 'number' ? prev.meta['rotated_ms'] : null;
+    const rotatedRaw = prev.meta['rotated_ms'];
+    const rotatedMs = isMs(rotatedRaw) ? rotatedRaw : null;
     if (!workflow || workflow.state !== 'active' || rotatedMs === null || rotatedMs < workflow.startedMs) throw new AppError('rotation_not_ready');
-    workflow = { ...workflow, revokedMs: nowMs };
+    // Never earlier than the value write: another device's clock may run ahead of this one.
+    workflow = { ...workflow, revokedMs: Math.max(nowMs, rotatedMs) };
   }
   if (workflow === null) delete meta[ROTATION_META_KEY];
   else meta[ROTATION_META_KEY] = workflowToMeta(workflow);
@@ -177,7 +179,7 @@ export async function updateRotation(args: { client: AkvClient; snapshot: VaultS
  */
 export async function rotateValue(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; value: string; nowMs?: number }): Promise<WriteResult> {
   const { snapshot } = args;
-  if (!validItemValue(args.value)) throw new AppError('value_too_large');
+  if (args.value === '' || !validItemValue(args.value)) throw new AppError('value_too_large');
   const vk = writableKey(snapshot);
   const state = snapshot.itemStates.get(args.itemId);
   if (!state || state.revision === 0 || state.tombstone || !snapshot.items.some((i) => i.itemId === args.itemId)) throw new AppError('not_found');

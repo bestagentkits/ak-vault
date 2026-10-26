@@ -114,6 +114,7 @@ function matchesFilter(item: ItemView, filter: string): boolean {
 
 const HEALTH_LABEL: Record<RotationHealth, string> = {
   needs_rotate: 'needs rotation',
+  awaiting_revoke: 'old key not confirmed revoked',
   overdue: 'rotation overdue',
   due_soon: 'rotation due soon',
   ok: 'rotation on schedule',
@@ -150,26 +151,27 @@ function rotationPanel(c: AppController, item: ItemView, info: RotationInfo, s: 
   const active = wf?.state === 'active';
   const valueInput = h('input', { id: `rot-value-${item.itemId}`, type: 'text', class: 'masked', required: true, 'data-testid': 'rotate-value', ...NO_CAPTURE }) as HTMLInputElement;
   const ttlInput = h('input', { id: `rot-ttl-${item.itemId}`, type: 'number', min: '1', max: String(MAX_ROTATE_TTL_DAYS), step: '1', inputmode: 'numeric', 'data-testid': 'ttl-input', autocomplete: 'off' }) as HTMLInputElement;
-  ttlInput.value = item.rotateTtlDays === null ? '' : String(item.rotateTtlDays);
+  ttlInput.value = item.rotateTtlDays === null ? '' : String(Math.min(item.rotateTtlDays, MAX_ROTATE_TTL_DAYS));
 
   const step = (done: boolean, label: string, detail: string, testId: string): HTMLElement =>
     h('li', { class: done ? 'step step-done' : 'step', 'data-testid': testId }, [h('strong', {}, [`${label}: `]), done ? `done. ${detail}` : 'not done yet.']);
 
+  const done = info.providerRevoked && active;
   const stateLine = wf
-    ? `Rotation ${wf.state === 'active' ? 'in progress' : wf.state} since ${fmtDate(wf.startedMs)}.`
+    ? done ? `Rotation complete (started ${fmtDate(wf.startedMs)}).` : `Rotation ${wf.state === 'active' ? 'in progress' : wf.state} since ${fmtDate(wf.startedMs)}.`
     : 'No rotation in progress.';
   const stateButtons: Child[] = [];
-  if (!wf || wf.state === 'cancelled' || wf.state === 'failed') {
+  if (!wf || done || wf.state === 'cancelled' || wf.state === 'failed') {
     stateButtons.push(h('button', { type: 'button', disabled: !can, 'data-testid': 'rotation-start' }, [wf ? 'Start again' : 'Start rotation'], { click: () => void c.startRotation(item.itemId) }));
   }
-  if (wf?.state === 'active') {
+  if (wf?.state === 'active' && !done) {
     stateButtons.push(h('button', { type: 'button', class: 'secondary', disabled: !can, 'data-testid': 'rotation-pause' }, ['Pause'], { click: () => void c.setRotationState(item.itemId, 'paused') }));
     stateButtons.push(h('button', { type: 'button', class: 'secondary', disabled: !can, 'data-testid': 'rotation-fail' }, ['Mark failed'], { click: () => void c.setRotationState(item.itemId, 'failed') }));
   }
   if (wf?.state === 'paused') {
     stateButtons.push(h('button', { type: 'button', disabled: !can, 'data-testid': 'rotation-resume' }, ['Resume'], { click: () => void c.setRotationState(item.itemId, 'active') }));
   }
-  if (wf && (wf.state === 'active' || wf.state === 'paused')) {
+  if (wf && !done && (wf.state === 'active' || wf.state === 'paused')) {
     stateButtons.push(h('button', { type: 'button', class: 'secondary', disabled: !can, 'data-testid': 'rotation-cancel' }, ['Cancel rotation'], { click: () => void c.setRotationState(item.itemId, 'cancelled') }));
   }
 
@@ -185,7 +187,7 @@ function rotationPanel(c: AppController, item: ItemView, info: RotationInfo, s: 
     h('ol', { class: 'steps' }, [
       h('li', { class: 'step' }, [h('strong', {}, ['1. Create the new credential at the provider yourself. ']), 'Do it in the provider’s own console, not in an AI chat or a URL.']),
       step(info.vaultUpdated, '2. Vault updated', info.vaultUpdated ? `new value saved ${fmtDate(item.rotatedMs)}.` : '', 'step-vault'),
-      step(info.providerRevoked, '3. Old provider credential revoked', info.providerRevoked && wf?.revokedMs ? `you confirmed it on ${fmtDate(wf.revokedMs)}. The dashboard cannot verify this with the provider.` : '', 'step-revoked'),
+      step(info.providerRevoked, '3. Old provider credential revoked', info.providerRevoked && wf?.revokedMs ? `a vault member confirmed it on ${fmtDate(wf.revokedMs)}. The dashboard cannot verify this with the provider.` : '', 'step-revoked'),
     ]),
     h('form', { class: 'set' }, [
       h('label', { for: valueInput.id }, ['New value (write-only: encrypted here, never shown again)']),
@@ -227,11 +229,11 @@ function itemRow(c: AppController, item: ItemView, s: Extract<Screen, { kind: 'v
   const meta: Child[] = [
     h('span', { class: `badge badge-${item.sensitivity}` }, [item.sensitivity === 'high' ? 'high sensitivity' : 'normal']),
     item.createdMs !== null ? h('span', {}, [`created ${fmtDate(item.createdMs)}`]) : null,
-    item.rotatedMs !== null ? h('span', {}, [`rotated ${fmtDate(item.rotatedMs)}`]) : null,
+    item.rotatedMs !== null ? h('span', {}, [`value written ${fmtDate(item.rotatedMs)}`]) : null,
     item.creator ? h('span', {}, [`by ${item.creator}`]) : null,
     item.rotateTtlDays !== null ? h('span', {}, [`rotate every ${item.rotateTtlDays} days`]) : null,
     info.dueMs !== null ? h('span', { 'data-testid': 'rotation-due' }, [dueText(info)]) : null,
-    item.rotation ? h('span', { 'data-testid': 'rotation-flow' }, [`rotation ${item.rotation.state}${info.vaultUpdated ? ', vault updated' : ''}${info.providerRevoked ? ', old key revoked (you confirmed)' : info.vaultUpdated ? ', old key not confirmed revoked' : ''}`]) : null,
+    item.rotation ? h('span', { 'data-testid': 'rotation-flow' }, [`rotation ${item.rotation.state}${info.vaultUpdated ? ', vault updated' : ''}${info.providerRevoked ? ', old key revoked (member-confirmed)' : info.vaultUpdated ? ', old key not confirmed revoked' : ''}`]) : null,
     item.openConflicts > 0 ? h('span', { class: 'badge badge-conflict' }, [`${item.openConflicts} unresolved conflict${item.openConflicts > 1 ? 's' : ''}`]) : null,
   ];
   const profile = item.profile.length
@@ -268,14 +270,14 @@ function itemRow(c: AppController, item: ItemView, s: Extract<Screen, { kind: 'v
 
 /** Counts per health state, and the rekey versus provider-rotation distinction. */
 function rotationSummary(s: Extract<Screen, { kind: 'vault' }>): HTMLElement {
-  const counts: Record<RotationHealth, number> = { needs_rotate: 0, overdue: 0, due_soon: 0, ok: 0, unknown: 0 };
+  const counts: Record<RotationHealth, number> = { needs_rotate: 0, awaiting_revoke: 0, overdue: 0, due_soon: 0, ok: 0, unknown: 0 };
   for (const i of s.items) counts[infoOf(i, s.nowMs).health]++;
-  const order: RotationHealth[] = ['needs_rotate', 'overdue', 'due_soon', 'unknown', 'ok'];
+  const order: RotationHealth[] = ['needs_rotate', 'awaiting_revoke', 'overdue', 'due_soon', 'unknown', 'ok'];
   return h('section', { class: 'rotation-summary', 'aria-label': 'Rotation health', 'data-testid': 'rotation-summary' }, [
     h('h2', {}, ['Rotation health']),
     h('ul', { class: 'row health-list' }, order.map((k) => h('li', { class: `badge badge-rot-${k}`, 'data-testid': `health-${k}` }, [`${counts[k]} ${HEALTH_LABEL[k]}`]))),
     h('p', { class: 'muted' }, [
-      'Two different things are called rotation. A vault rekey (key epoch) re-wraps the vault key for the devices that remain after a removal and replaces no credential. Provider credential rotation replaces the secret at its provider. Items marked needs rotation were readable by a removed member or device and stay exposed until the provider credential is replaced.',
+      'Two different things are called rotation. A vault rekey (key epoch) re-wraps the vault key for the devices that remain after a removal and replaces no credential. Provider credential rotation replaces the secret at its provider. Items marked needs rotation were readable by a removed member or device; the mark stays until a member confirms the old provider credential is revoked after a new value was saved.',
     ]),
   ]);
 }
