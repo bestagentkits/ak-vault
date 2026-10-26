@@ -1,11 +1,12 @@
 /**
  * Dashboard headers, script containment and cross-origin refusal. The CSP check is
  * exact and needs no account. The injection probes run in the page without a
- * signed-in session; the secret-name rendering probe needs the account and is gated.
+ * signed-in session; the secret-name rendering probe needs an enrolled browser, whose keys
+ * cannot leave its context, so it runs in dashboard-flow.
  */
 import { expect, test } from '@playwright/test';
-import { AK_WEB_ORIGIN, BASE_URL, STORAGE_STATE, gate, runSentinel } from './support/env.js';
-import { APP_URL, openDashboard, signIn, setSecret } from './support/dashboard.js';
+import { AK_WEB_ORIGIN, BASE_URL, gate } from './support/env.js';
+import { APP_URL, openDashboard } from './support/dashboard.js';
 
 const g = await gate();
 
@@ -157,20 +158,5 @@ test.describe('cross-origin requests cannot act on the vault', () => {
     test.skip(g.oauth !== null, g.oauth ?? '');
     await openDashboard(page);
     expect(await context.cookies(BASE_URL)).toEqual([]);
-  });
-});
-
-test.describe('secret names and profile text render inert (signed-in account)', () => {
-  test.skip(g.remote !== null, g.remote ?? '');
-  test.skip(g.account !== null, g.account ?? '');
-  test.use({ storageState: STORAGE_STATE || undefined });
-
-  test('an injected image handler in a secret name does not execute and is shown as text', async ({ page }) => {
-    await signIn(page);
-    const name = `SMOKE_XSS_<img src=x onerror="window.__xssName=1">`;
-    await setSecret(page, name, runSentinel());
-    await expect(page.getByTestId('item-name').filter({ hasText: 'SMOKE_XSS_' })).toBeVisible({ timeout: 30_000 });
-    expect(await page.evaluate(() => (window as unknown as { __xssName?: number }).__xssName)).toBeUndefined();
-    expect(await page.locator('img[onerror]').count()).toBe(0);
   });
 });

@@ -1,18 +1,20 @@
 /**
  * Dashboard end-to-end flow against staging with a signed-in account and the phase-10
- * `ak` binary: sign in, enroll this browser by SAS, write-only set, search by name and
- * by provider metadata, delete, a concurrent edit that must surface as a conflict, and
- * removal of the browser device. One shared browser context carries the device state
- * through the serial steps.
+ * `ak` binary: sign in, enroll this browser by SAS, write-only set with the value-leak
+ * round trip, an inert secret name, search by name and by provider metadata, delete, a
+ * concurrent edit that must surface as a conflict, and removal of the browser device.
+ * One shared browser context carries the device state through the serial steps: the
+ * device keys are non-extractable, so every enrolled check lives here.
  *
  * The `ak` argument shapes below match `ak secrets --help` of the relay-capable build.
  * Device approval and removal stay with the operator: `ak` refuses an agent there, and
  * the suite never answers either prompt. Run it headed from your own terminal.
  */
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { AK_BIN, AK_OWNER_HOME, STORAGE_STATE, gate, runNameSentinel, runSentinel } from './support/env.js';
+import { AK_BIN, AK_OWNER_HOME, BASE_URL, STORAGE_STATE, gate, runNameSentinel, runSentinel } from './support/env.js';
 import { setSecret, signIn } from './support/dashboard.js';
 import { akHomeFromEnv, runAk } from './support/ak-cli.js';
+import { capture, dumpPageState, type Capture } from './support/page-capture.js';
 
 const g = await gate();
 const reason = [g.remote, g.oauth, g.account, g.ak].find((r) => r !== null) ?? '';
@@ -25,11 +27,13 @@ test.describe('dashboard flow (signed-in account, phase-10 ak)', () => {
 
   let context: BrowserContext;
   let page: Page;
+  let seen: Capture;
   let joinCode = '';
 
   test.beforeAll(async ({ browser }) => {
     context = await browser.newContext({ storageState: STORAGE_STATE || undefined });
     page = await context.newPage();
+    seen = capture(page);
   });
 
   test.afterAll(async () => {
@@ -69,6 +73,25 @@ test.describe('dashboard flow (signed-in account, phase-10 ak)', () => {
     await expect(page.getByTestId('item')).toHaveCount(1);
     // No control shows, copies or reveals a value: the dashboard is write-only.
     await expect(page.getByRole('button', { name: /show|copy|reveal/i })).toHaveCount(0);
+    // The dashboard shows names by design; the value must stay hidden everywhere, the name off the wire.
+    await page.waitForLoadState('networkidle');
+    expect(await dumpPageState(page)).not.toContain(runSentinel());
+    expect(seen.bodies.some((b) => b.includes(runSentinel()) || b.includes(name))).toBe(false);
+    expect(seen.console.some((c) => c.includes(runSentinel()) || c.includes(name))).toBe(false);
+    expect(await context.cookies(BASE_URL)).toEqual([]);
+  });
+
+  test('an injected image handler in a secret name does not execute and is shown as text', async () => {
+    const name = `SMOKE_XSS_<img src=x onerror="window.__xssName=1">`;
+    await page.getByTestId('filter').fill('');
+    await setSecret(page, name, runSentinel());
+    const item = page.getByTestId('item').filter({ hasText: 'SMOKE_XSS_' });
+    await expect(item.getByTestId('item-name')).toHaveText(name, { timeout: 30_000 });
+    expect(await page.evaluate(() => (window as unknown as { __xssName?: number }).__xssName)).toBeUndefined();
+    expect(await page.locator('img[onerror]').count()).toBe(0);
+    await item.getByTestId('delete').click();
+    await item.getByTestId('confirm-delete').click();
+    await expect(page.getByTestId('item').filter({ hasText: 'SMOKE_XSS_' })).toHaveCount(0, { timeout: 60_000 });
   });
 
   test('the value set in the browser reaches the owner device after one sync cycle', async () => {
