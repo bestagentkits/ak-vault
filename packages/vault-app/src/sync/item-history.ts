@@ -54,7 +54,7 @@ export interface HistoryEntry {
   tombstone: boolean;
   keyEpoch: number;
   readability: EntryReadability;
-  /** Applied, live revisions only: null when it can be restored. */
+  /** Applied live revisions and conflict branches: null when the value can be written again. */
   restoreBlock: RestoreBlock | null;
   /** The key epoch was held by a device that has since been removed. */
   knownToRemoved: boolean;
@@ -159,6 +159,8 @@ export async function loadItemHistory(client: AkvClient, snapshot: VaultSnapshot
   }
   for (const row of rows) {
     if (row.kind === 'applied' && row.tombstone) row.restoreBlock = 'deletion';
+    // A branch kept from before the last deletion survives it; its value is never adopted.
+    if (row.kind === 'conflict' && row.baseRevision < final.tombstone_revision) row.restoreBlock = 'before_deletion';
   }
 
   const stale = final.revision !== shown.revision || final.head !== shown.head || !sameConflicts(final, shown);

@@ -238,7 +238,9 @@ describe('restore authorization', () => {
     world.removeDevice((page.controller.current() as { deviceId: string }).deviceId);
     // The browser cannot know yet; the Worker refuses the write and nothing is appended.
     expect(await page.controller.restore(target.logSeq)).toBe(false);
-    expect(world.exchanges.filter((e) => e.method === 'PUT').every((e) => e.status !== 200)).toBe(true);
+    const puts = world.exchanges.filter((e) => e.method === 'PUT');
+    expect(puts.length).toBeGreaterThan(0);
+    expect(puts.every((e) => e.status !== 200)).toBe(true);
     expect(world.log.filter((e) => e.record.item_id === id)).toHaveLength(2);
   });
 
@@ -317,11 +319,35 @@ describe('conflicts', () => {
     expect(world.itemStates.get(id)!.conflicts).toHaveLength(0);
   });
 
-  it('refuses a branch that is not open, and settling with nothing open', async () => {
+  it('refuses a branch that is not open', async () => {
     const { page } = await conflicted();
     await openHistory(page, 'contested');
     expect(await page.controller.settle({ source: 'branch', conflictId: 'AAAAAAAAAAAAAAAAAAAAAA' })).toBe(false);
     expect(page.controller.current()).toMatchObject({ kind: 'history', notice: { code: 'restore_unavailable' } });
+  });
+});
+
+describe('conflicts across a deletion', () => {
+  it('never offers a branch kept from before the deletion as the value of a re-created item', async () => {
+    const world = new FakeWorld();
+    const id = world.ownerSet('revived', OLD);
+    world.ownerWrite({ itemId: id, base: 1, value: MID });
+    expect(world.ownerWrite({ itemId: id, base: 1, value: BRANCH }).status).toBe(409);
+    expect(world.ownerWrite({ itemId: id, base: 2, tombstone: true }).status).toBe(200);
+    expect(world.ownerWrite({ itemId: id, base: 3, value: NEW }).status).toBe(200);
+    const { page } = await new Browser(world).enroll();
+    await openHistory(page, 'revived');
+    const hist = historyScreen(page);
+    const branch = hist.entries.find((e) => e.kind === 'conflict')!;
+    expect(branch.conflictOpen).toBe(true);
+    expect(branch.restoreBlock).toBe('before_deletion');
+    expect(page.root.querySelector('[data-testid="settle-branch"]')).toBeNull();
+    const logBefore = world.log.length;
+    expect(await page.controller.settle({ source: 'branch', conflictId: branch.conflictId! })).toBe(false);
+    expect(page.controller.current()).toMatchObject({ kind: 'history', notice: { code: 'restore_unavailable' } });
+    expect(world.log.length).toBe(logBefore);
+    // Keeping the current value still settles it.
+    expect(await page.controller.settle({ source: 'current' })).toBe(true);
   });
 });
 

@@ -219,6 +219,7 @@ function entryRow(c: AppController, e: HistoryEntry, canWrite: boolean, busy: bo
   } else if (e.kind === 'conflict' && e.conflictOpen) {
     const id = e.conflictId!;
     if (e.tombstone) actions = h('span', { class: 'muted' }, ['This branch is a delete request; it cannot be adopted as a value.']);
+    else if (e.restoreBlock !== null) actions = h('span', { class: 'muted', 'data-testid': 'restore-blocked' }, [RESTORE_BLOCK[e.restoreBlock]]);
     else if (e.readability !== 'readable') actions = h('span', { class: 'muted' }, ['Cannot adopt this branch here. Use `ak secrets sync settle` from an owner device.']);
     else if (!canWrite) actions = h('span', { class: 'muted' }, ['This browser cannot write now. Use `ak secrets sync settle` from an owner device.']);
     else if (vs.confirmSettle === id) {

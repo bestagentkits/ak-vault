@@ -109,7 +109,7 @@ export async function settleConflicts(ctx: Context & { choice: SettleChoice }): 
   if (ctx.choice.source === 'current') return writeNext(ctx, head, false, resolves);
   const chosenId = ctx.choice.conflictId;
   const branch = open.find((e) => e.conflictId === chosenId);
-  if (!branch || branch.tombstone || branch.readability !== 'readable' || !resolves.includes(chosenId)) throw new AppError('restore_unavailable');
+  if (!branch || branch.tombstone || branch.readability !== 'readable' || branch.restoreBlock !== null || !resolves.includes(chosenId)) throw new AppError('restore_unavailable');
   const payload = openLive(ctx.snapshot, branch);
   return writeNext(ctx, payload, payload.value !== head.value, resolves);
 }
