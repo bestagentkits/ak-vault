@@ -21,7 +21,14 @@ export async function signIn(page: Page): Promise<void> {
   await openDashboard(page);
   if (await page.getByTestId('signin').isVisible()) {
     await page.getByTestId('signin').click();
-    await page.waitForURL((url) => url.origin === new URL(BASE_URL).origin, { timeout: 90_000 });
+    const origin = new URL(BASE_URL).origin;
+    // ak-web asks for consent until this account has granted the dashboard client.
+    const allow = page.getByRole('button', { name: 'Allow access' });
+    await expect(allow.or(page.locator('[data-testid]').first())).toBeVisible({ timeout: 90_000 });
+    if (new URL(page.url()).origin !== origin && (await allow.isVisible())) await allow.click();
+    await page.waitForURL((url) => url.origin === origin, { timeout: 90_000 });
+    // The callback screen: the join code, the SAS check or the vault, never the loading screen.
+    await expect(page.getByTestId('join-code').or(page.getByTestId('offer-input')).or(page.getByTestId('sas')).or(page.getByTestId('filter'))).toBeVisible({ timeout: 60_000 });
   }
 }
 
