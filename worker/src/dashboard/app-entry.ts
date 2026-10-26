@@ -65,6 +65,12 @@ const notFound = (): Response => resultResponse(errorResult(new ApiError('not_fo
 /** Static asset through the assets binding; never the landing site's 404 page, never a cookie. */
 async function serveAppAsset(request: Request, env: Pick<Env, 'ASSETS'>): Promise<Response> {
   const asset = await env.ASSETS.fetch(request);
+  // A revalidation (`If-None-Match`) that still matches: the browser keeps its cached copy.
+  if (asset.status === 304) {
+    const out = new Response(null, asset);
+    out.headers.delete('Set-Cookie');
+    return out;
+  }
   // Redirects are the assets binding's own trailing-slash handling (`/app` -> `/app/`).
   if (asset.status >= 300 && asset.status < 400) {
     const location = asset.headers.get('Location');
