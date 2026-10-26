@@ -428,8 +428,8 @@ chain (§6), and that the `device_add` adding it carries `sas` = `b64(sha256(tra
 for its own device record before it trusts any wrap.
 
 **Authenticity of the code channel.** The `akj1-`/`ako1-` codes do not commit to the
-nonces before they are revealed: the join code carries `nonce_j` and the offer code carries `nonce_i`, and
-neither is bound to the other. The six-digit SAS (about 20 bits) therefore authenticates
+nonces before they are revealed: the join code carries `nonce_j` and the offer code
+carries `nonce_i`, and neither is bound to the other. The six-digit SAS (about 20 bits) therefore authenticates
 the exchange only while the two codes travel between the two devices without an active
 attacker on that path. An attacker who carries both codes can read `nonce_j`, put its own
 device towards the owner, learn the owner's digits, then choose the nonce it hands the
@@ -474,15 +474,22 @@ place of `nonce_j`; `reveal` has `vault_id` and `joiner` as IDs and a 16-byte `n
 Order:
 
 1. The joiner prints `join` and keeps `nonce_j`.
-2. The owner device parses it, chooses `nonce_i`, and answers with `offer`, echoing
-   `nonce_j_commit`. It does not yet have `nonce_j` and shows no SAS.
+2. The owner device parses it, draws `nonce_i` (16 fresh random bytes, drawn after the
+   join is received), and answers with `offer`, echoing `nonce_j_commit`. It does not
+   yet have `nonce_j` and shows no SAS. The pending enrollment is bound to
+   (`joiner`, `nonce_j_commit`, `nonce_i`); a further join for the same joiner discards
+   it and draws a new `nonce_i`, so a `nonce_i` is never paired with a second commitment.
 3. The joiner accepts the offer only if `joiner` is its own device ID and
    `nonce_j_commit` is its own commitment, then prints `reveal` and shows its SAS.
+   **A joiner accepts at most one offer per join.** Once it has printed a reveal it
+   discards `nonce_j` and refuses every further offer for that commitment; a retry
+   starts with a new join and a fresh `nonce_j`. Otherwise a second offer could be
+   ground against the revealed `nonce_j`.
 4. The owner device accepts `reveal` only if `vault_id` and `joiner` are those of the
-   pending enrollment and `verifyNonceJReveal` passes (`nonce_j` hashes to the stored
-   commitment; otherwise `forbidden`, and no SAS is computed). It then shows its SAS.
-   An owner device holds at most one pending enrollment per joiner and discards it on
-   the first failed reveal.
+   pending enrollment (otherwise `forbidden`) and `verifyNonceJReveal` passes
+   (`nonce_j` hashes to the stored commitment; otherwise `forbidden`, and no SAS is
+   computed). It then shows its SAS. An owner device holds at most one pending
+   enrollment per joiner and discards it on the first failed reveal.
 
 ```
 transcript = cjson({"ctx":"akv1/sas2","vault_id","vault_origin","trust_anchor",
@@ -501,18 +508,22 @@ the transcript, so a substituted anchor or origin changes the digits.
 Why the search fails. A forger that replaces the join fixes its own key and a
 commitment before the owner device reveals `nonce_i`, so the owner's digits are not
 known to the forger when it fixes `nonce_j`. A forger that replaces the offer must pick
-`nonce_i` without knowing the honest `nonce_j`, which only the commitment hides. Each
-attempt therefore matches with probability 10^-6 and costs a fresh enrollment that the
-owner sees fail. An implementation SHOULD stop after three mismatches. A SAS shorter
+`nonce_i` without knowing the honest `nonce_j`, which only the commitment hides. Given the
+single-use and fresh-nonce rules of steps 2 and 3, each attempt therefore matches with
+probability 10^-6 and costs a fresh enrollment that the owner sees fail. An implementation SHOULD stop after three mismatches. A SAS shorter
 than the key material still cannot stop an attacker who is given unlimited attempts;
 this construction bounds each attempt, not the number the humans tolerate.
 
-Compatibility. §3.8 codes remain accepted (§3.8). A joiner that printed an `akj2-`
-join accepts only `ako2-`, and an owner device MAY refuse `akj1-` (a policy switch, not
-a wire rule). An attacker who swaps an `akj2-` join for an `akj1-` join downgrades the
-exchange to the uncommitted SAS if the owner device accepts both; the owner device and
-the joiner SHOULD display which form was used, and the owner SHOULD refuse `akj1-` when
-the joiner is known to support committed codes.
+Compatibility. §3.8 codes remain accepted (§3.8), so the construction protects a
+joiner only when both sides use committed codes. An `akj2-` joiner accepts only
+`ako2-`, and swapping its join for an `akj1-` join does not weaken it: the joiner still
+reveals last, and the owner's digits are fixed by a `nonce_j` that was already public
+before `nonce_i` was drawn. The weak case is a joiner that prints or accepts `akj1-`/
+`ako1-` (shipped CLIs and the dashboard), because its nonce is public before the offer
+arrives and the digits can be ground (§3.5). An owner device that accepts `akj1-`
+therefore enrolls those joiners without that protection, and only over the authentic
+code channel that §3.8 requires; it MAY refuse `akj1-` (a policy switch, not a wire
+rule) and SHOULD display which form was used.
 
 Vectors (`enroll-commit.json`): byte-exact round trips of all three codes; the
 commitment, matching and mismatching reveals (`forbidden`); the SAS transcript, code and

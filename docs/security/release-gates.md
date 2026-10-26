@@ -212,7 +212,8 @@ in production needs every box below, at the exact commit, plus an owner decision
       ground nonce refusal ([spec §3.9](../protocol/v1/spec.md#39-committed-enrollment-codes));
       the `ak` CLI and the dashboard enroll with `akj2-`/`ako2-`/`akr2-` and the owner
       device refuses `akj1-`, so [threat model X9](./threat-model.md) can drop its
-      uncommitted-SAS limitation.
+      uncommitted-SAS limitation. Client tests cover single-use `nonce_j` (a second offer for
+      the same join is refused) and a fresh `nonce_i` per join.
 - [ ] Relay: Worker tests for the closed frame set and close codes, signed `hello` and
       `result`, `reauth` before expiry, revocation and membership checked before each
       call (a device removed mid-connection gets no further call), a replaced

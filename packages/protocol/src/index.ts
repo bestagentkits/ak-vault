@@ -26,7 +26,7 @@
  * - Recovery bundle (§3.4, §11): `sealRecoveryBundle(args): RecoveryBundleWire`,
  *   `openRecoveryBundle({bundle, vaultId, password? | rk?, knownBundleSeq?}): OpenedRecoveryBundle`.
  * - SAS (§3.5): `sasTranscript`, `sasCode`, `sasDigest`; committed enrollment (§3.9): `nonceJCommit`,
- *   `verifyNonceJReveal`, `sas2Transcript`, `sas2Code`, `sas2Digest`, `encode/parseJoin2Code`, `Offer2Code`, `Reveal2Code`.
+ *   `verifyNonceJReveal`, `sas2Transcript`, `sas2Code`, `sas2Digest`, `encode/parse{Join2,Offer2,Reveal2}Code`.
  *
  * Membership (§4)
  * - `verifyMembershipChain(events, {trustedAnchor?, witnessedCheckpoint?, vaultId?}): MembershipState`.
