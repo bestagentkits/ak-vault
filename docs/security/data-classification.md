@@ -18,6 +18,7 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Vault keys | Wrapped to devices, password KEK and recovery KEK only |
 | Recovery bundle contents (vault keys, owner anchor, checkpoint) | AEAD under password and recovery KEKs |
 | Sealed operation contents (`op`, name, value, sensitivity) at rest | Sealed to the epoch's `seal_pub`; only member devices derive `SealSK[e]` ([spec §3.6](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)). The Worker saw them in plaintext before sealing ([transit table](#transits-worker-memory-never-stored-or-logged-remote-access-only)) |
+| Write-request target (name and requested sensitivity) | Sealed-op ciphertext to the epoch's `seal_pub`, stored as the request's `target` ([spec §9.9](../protocol/v1/spec.md#99-human-only-write-requests)); the Worker saw the name in the MCP arguments before sealing ([transit table](#transits-worker-memory-never-stored-or-logged-remote-access-only)) |
 | Audit of drained sealed operations and dropped profile fields (`sealed_applied`, `sealed_refused`, `profile_invalid`, `profile_provenance_invalid`) | Encrypted audit stream |
 
 ## Visible operational metadata (unavoidable)
@@ -39,6 +40,7 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Sealed operation envelope: `sealed_id`, key epoch, queue position, `origin` (`account`, `client_id`, `grant_id`), time, ciphertext size, and the `applied`/`refused` outcome of its ack | Queueing, deduplication, expiry and audit attribution |
 | Lookup requests: the requested `(key_epoch, tag)` pairs and the hits served | Answering name lookups; reveals which names a reader looks for, not the names |
 | Relay connection and call metadata: device ID, vault IDs and tool names from `hello`, `call_id`, vault ID and tool of each call, caller `client_id`/`grant_id`/scopes, result `ok` and error code, timing | Routing calls to a device and enforcing scopes, deadlines and rate limits |
+| Write-request row in the account's relay object: `request_id`, `vault_id`, MCP `grant_id`, token `iat` and `client_id`, `operation` (`create`/`replace`), preselected `sensitivity`, `status`, created, expiry, claim and end times, and once claimed the browser `did`, `item_id` and `base_revision`; purged `write_intent_retention_s` after it ends or expires | Binding a request to the grant that asked and to one device, item and revision; reporting status ([spec §9.9](../protocol/v1/spec.md#99-human-only-write-requests)) |
 | Quota and rate-limit counters | Abuse protection |
 | Durable Object point-in-time bookmarks (operator restore route only) | Positions in a vault object's storage history; they carry no vault contents |
 | Client IP and TLS metadata at the Cloudflare edge | Inherent to the platform |
@@ -55,12 +57,18 @@ termination and are held only for the request or relayed call
 
 | Data | Path |
 |---|---|
-| MCP tool arguments, including a `set` value | MCP client → Worker → relayed to a device or sealed |
+| MCP tool arguments, including a `set` value and a `secrets_prepare_write` name | MCP client → Worker → relayed to a device or sealed |
 | Relayed results: names, profile fields, sensitivity, timestamps, request status | Device → Worker → MCP client |
 | Redacted `run` output (`stdout`, `stderr`) | Device → Worker → MCP client |
 
 The dashboard at `/app` decrypts in the browser, so its plaintext never reaches the
-Worker; its traffic is the same ciphertext and metadata as any device.
+Worker; its traffic is the same ciphertext and metadata as any device. A value entered
+for a write request is typed there, so it is in neither table: the Worker receives it
+only inside the browser's signed item record.
+
+The write request's `operation` and preselected `sensitivity` are stored in the clear
+beside the sealed target, and the form preselects the server's copy of the sensitivity.
+Both are request metadata, not secrets, and the user sees the operation before writing.
 
 ## Handling rules
 
@@ -69,7 +77,8 @@ Worker; its traffic is the same ciphertext and metadata as any device.
 - Never record request or response bodies, ciphertext, wrap material, tokens,
   proofs, idempotency keys, recovery bundles, or any field from the encrypted table.
   The same applies to MCP request and response bodies, relay frames, sealed
-  operations, `name_tag` values and everything in the transit table above.
+  operations, `name_tag` values, write-request IDs and targets, and everything in the
+  transit table above.
   The operator restore route's signature and the `VAULT_OPERATOR_SECRET` it is keyed
   with are secrets. Its bookmarks go on the incident issue, not into logs.
 - Allowed fields: route template, status, stable error code, vault ID, device ID,
@@ -130,6 +139,8 @@ Worker; its traffic is the same ciphertext and metadata as any device.
 - Tombstones are kept for the life of the vault; deleting one would re-open
   resurrection.
 - Conflict branches are kept until a record resolves them.
+- Write requests are purged `write_intent_retention_s` after they end or expire
+  ([`worker/src/limits.ts`](../../worker/src/limits.ts)).
 - Membership events are kept for the life of the vault; the chain is replayed
   from genesis or from a trusted checkpoint.
 - Change-log compaction, audit retention and operational-log retention periods are

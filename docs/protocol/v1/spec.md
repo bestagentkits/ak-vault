@@ -1095,7 +1095,10 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   is the tool error `rate_limited` with `retry_after_s`; any other refused request, including such a call whose `arguments`
   is any other value, is HTTP `429 rate_limited` with `Retry-After` and the §10 error
   body. A call refused as `rate_limited` writes no audit row.
-- **Tools** map one to one onto the relay tools (§9.7) with the same scopes. Each
+- **Tools** are the seven relay tools (§9.7), named `secrets_<tool>`, plus the two
+  write-request tools `secrets_prepare_write` and `secrets_write_status` (§9.9), which
+  are never relayed or sealed. The relay tools map one to one onto §9.7 with the same
+  scopes. Each
   takes the relay `args` plus an optional `vault_id`. Without it the Worker uses the
   one vault the account's online relay connections list. When they list more than
   one, the call needs `vault_id` (`invalid_args`). When none is online, a read or
@@ -1111,7 +1114,107 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   `{"code"}`; a token or scope failure is an HTTP `401` or `403`, a rate-limited
   request that is not such a tool call (see rate limits) an HTTP `429 rate_limited`, and the
   kill switch an HTTP `503 sync_disabled`, with the §10 error body. Messages never
-  echo arguments.
+  echo arguments. The write-request tools add their own tool error codes (§9.9).
+
+### 9.9 Human-only write requests
+
+A write request lets an MCP client have a secret created or replaced without the value
+ever passing through the client or its conversation, or through the Worker in
+plaintext: the client names the
+target, the user types the value into the dashboard, and the browser device writes it as
+an ordinary signed record (§5). Served only where remote access is enabled; the
+rationale is [ADR 0003](../../adr/0003-human-only-secret-write-requests.md). Nothing
+here changes a signed body, a sealed-op wire or an existing route, so there are no new
+vectors.
+
+**MCP tools.** Both need `vault-mcp:write` (else HTTP `403`, §9.8) and spend the §9.8
+per-client and per-account budgets.
+
+| Tool | `arguments` (exact keys; `?` optional) | `structuredContent` |
+|---|---|---|
+| `secrets_prepare_write` | `{"name":1–4096 code units,"operation":"create"\|"replace","sensitivity"?:"normal"\|"high","vault_id"?}` | `{"request_id","form_url","expires_at","status":"pending_user"}` |
+| `secrets_write_status` | `{"request_id"}` | `{"request_id","status","expires_at"}` |
+
+- There is no value argument; any key outside the table is `invalid_args`. `vault_id`
+  defaults as in §9.8, except that with no online device the call needs it
+  (`invalid_args`). A vault that does not exist or of which `sub` is not a member is
+  `invalid_args`; a member that is not `owner` or `editor` is `denied`; a vault with
+  no seal-key document for its current key epoch, or with `rekey_required` set, is
+  `no_seal_key`; a request beyond `write_intents_open_per_account` unfinished
+  (`pending_user` or `processing`) requests of the account is `too_many_open`.
+- `secrets_prepare_write` seals the target with `sealOp` (§3.6) to the current seal-key document:
+  `pt` = `{"op":"set","name","value":"","sensitivity"?}`, `origin` naming the MCP
+  token's `sub`, `client_id` and `grant_id`. This sealed-op wire is the request's
+  `target`. It is never enqueued and never drained: it only carries the name to the
+  browser, so the Worker stores no name in the clear.
+- `request_id` is 16 random bytes (§2). `form_url` is `<origin>/app/#write=<request_id>`:
+  the ID rides in the fragment, which the browser sends to no server and no
+  `Referer`. The ID is a lookup key, not a credential; every browser call still runs
+  the checks below. `expires_at` is an RFC 3339 UTC time, `write_intent_ttl_s` after
+  creation.
+- `secrets_write_status` returns a request only to the `grant_id` and `client_id` that made it; an
+  unknown, purged or foreign `request_id` is `not_found`, alike. Neither tool returns a
+  name or a value.
+
+**Request state.** One row per request in the account's relay object (§9.7), keyed by
+`request_id`. `status` is the closed set:
+
+| `status` | Meaning |
+|---|---|
+| `pending_user` | Waiting for the user; ends `expired` at `expires_at` |
+| `processing` | Claimed by one browser device for one item and base revision |
+| `completed` | The vault head is the claiming device's record at `base_revision + 1` |
+| `conflict` | The binding no longer held: the item exists for a `create`, is missing or a tombstone for a `replace`, or its head moved |
+| `failed` | The browser reported failure, or a claimed write did not land within `write_intent_processing_s` |
+| `cancelled` | The user declined, or the MCP grant that asked was revoked |
+| `expired` | Not claimed before `expires_at` |
+| `queued` | Reserved; no server path produces it |
+
+Every transition is a compare-and-set on `status` inside one storage transaction, so of
+concurrent callers exactly one wins and the others get `409 conflict`. A `processing`
+request is settled against the vault's durable head whenever it is read (`status`, or
+any browser call), so it completes even if the browser never reports. A request is
+purged `write_intent_retention_s` after it ended, or after `expires_at` if it never
+ended; until then `status` still reports it.
+
+**Browser routes.** Remote access only (`404` otherwise; `503 sync_disabled` while the
+kill switch is off). `<rid>` is a `request_id`; a malformed one is `bad_request`.
+
+| Route | Body | From status | Effect |
+|---|---|---|---|
+| `GET /v1/write-intents/<rid>` | none | `pending_user` | `{"request_id","status","expires_at","vault_id","operation","sensitivity"?,"target"}` |
+| `POST …/<rid>/claim` | `{"item_id","base_revision"}` | `pending_user` | → `processing`, binding the device, item and revision |
+| `POST …/<rid>/complete` | none | `processing` or `completed` | settles and returns the status; claiming device only |
+| `POST …/<rid>/fail` | `{"reason":"conflict"\|"failed"}` | `pending_user`, or `processing` by the claiming device | → `conflict` or `failed` |
+| `POST …/<rid>/cancel` | none | `pending_user` | → `cancelled` |
+
+- Each call needs a sync token (§9 item 1) whose `session_kind` is `browser` and whose
+  scope has `vault:write` (else `403`), live revocation of that token (item 3), and a
+  single-use `AKV-Proof` (item 2) over the method, URL and body, verified against the
+  `sign_pub` the membership chain holds for `did`. `did` MUST be a current `human`
+  `owner` or `editor` device of `sub` in the request's vault (`403`). The request
+  exists only in the relay object of the token's `sub`, so another account's request is
+  `not_found`. The MCP grant that asked is checked for revocation; a revoked grant
+  cancels the request and the call is `401`, and a registry error is `503`. At most
+  `write_intent_calls_per_minute_per_device` calls per device (`429 rate_limited`).
+- A call whose request is in another status is `409 conflict` with the current
+  `status`. A completed request answers `complete` and `fail` from the claiming device
+  with its status; another device gets `403`.
+- `claim` checks the binding against the vault head: a `create` needs a new `item_id`
+  at `base_revision` 0, a `replace` the live item at exactly its head revision. A
+  mismatch ends the request as `conflict`.
+- Responses carry `expires_at` as unix ms. Bodies are JSON objects with exactly the
+  listed keys (`bad_request` otherwise), at most 1024 bytes.
+
+**Browser obligations.** The browser opens `target` with `SealSK[target.key_epoch]`
+(`openSealedOp`, §3.6) and refuses a request whose `vault_id` is not the vault it
+opened, whose target does not open, or whose opened operation is not an `mcp`-origin
+`set` with an empty value. It shows the user the name and operation and takes the value
+in a masked input. It resolves the name against its own verified, decrypted live items:
+a `create` needs no match, a `replace` exactly one, and more than one match refuses. It
+then claims, writes the item with an ordinary signed item PUT (§5) at the claimed
+`item_id` and `base_revision`, and reports `complete`. The value exists only in page
+memory and inside that record's ciphertext; no write-request call carries it.
 
 ## 10. Errors and limits
 
@@ -1143,9 +1246,13 @@ device of the account holds the vault, or none is online for a read or `use` cal
 without `vault_id`, and the call cannot be sealed),
 `device_timeout` (the device missed `deadline_ms`) and `sealed_queue_full` (the vault
 already holds `sealed_queue_max` operations, acknowledged ones kept for replay refusal
-included). `worker/src/limits.ts` owns the relay and MCP limits and `GET /v1/meta`
-publishes them where remote access is enabled; the table lists them for orientation,
-and `limits.ts` wins on any difference:
+included). The write-request tools (§9.9) add two more tool errors, `no_seal_key` and
+`too_many_open`, and also answer `invalid_args`, `denied`, `not_found`, `rate_limited`
+and `internal`. `worker/src/limits.ts` owns the relay, MCP and write-request limits
+(`write_intent_ttl_s`, `write_intent_processing_s`, `write_intent_retention_s`,
+`write_intents_open_per_account`, `write_intent_calls_per_minute_per_device`) and
+`GET /v1/meta` publishes them where remote access is enabled; the table lists the relay
+and MCP ones for orientation, and `limits.ts` wins on any difference:
 
 | Limit | Value |
 |---|---|
@@ -1324,3 +1431,6 @@ under an earlier revision does not verify and is reset rather than migrated.
   that ignore these additions keep verifying and syncing and no data is reset. One
   limitation: a writer that predates §5.1 does not carry `meta.profile` forward, so
   its edit of an item drops that item's synced profile.
+- **2026-10 (issue #119):** human-only write requests (§9.9), additive: two MCP tools,
+  the `/v1/write-intents/…` routes, their errors and limits (§10). The request target
+  reuses the §3.6 sealed-op wire; no signed body, vector or existing route changes.

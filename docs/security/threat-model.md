@@ -72,8 +72,10 @@ What the server can see is in
 - The server never stores plaintext values, names, profiles, policy or audit, and
   never holds a key that decrypts them. It never receives them either, except, while
   remote access is enabled, the plaintext in transit through Worker memory that
-  ADR 0002 D7 names (an MCP set's `value`, relayed metadata results and redacted run
-  output); that plaintext is never logged, stored or put into an error.
+  ADR 0002 D7 names (an MCP set's `value`, a write request's target name, relayed
+  metadata results and redacted run output); that plaintext is never logged, stored
+  or put into an error. A value entered for a write request never reaches the Worker
+  in plaintext.
 - No write is accepted unless its base revision matches (CAS); no write silently
   overwrites another.
 - A write below a tombstone never becomes live.
@@ -139,9 +141,11 @@ directories themselves are the authority for exact file names.
 | X8 | Synced profile field forged in another device's name | Malicious member, server relaying old fields | Per-field provenance: changed fields carry the record author and time, unchanged fields keep prior provenance; violating fields dropped and audited `profile_provenance_invalid`; another device's field shown as `sync`; the own label is transitive and comes only from this device's own write history, so a field kept without a held base revision stays `sync` while carried, even through the device's own later records ([spec §5.1](../protocol/v1/spec.md#51-profile-layout)) | Vectors: `profile.json` cases and `chains` (`forged_without_prev_never_becomes_own`); `red-team-profile-provenance.test.ts` / `red_team_profile_provenance_test.go` |
 | X9 | Malformed or substituted enrollment code joins the wrong device | Network, phishing | Closed key set, exact contexts, version and size checks; owner role and `human` kind required; SAS confirmation on approval ([spec §3.8](../protocol/v1/spec.md#38-enrollment-codes)) | Vectors: `enroll-codes.json` |
 | X10 | Relay or MCP flood exhausts an account | MCP client, stolen token | Per-client and per-account MCP rate limits, per-device in-flight cap, per-account connection cap, sealed queue cap with `sealed_queue_full` ([spec §10](../protocol/v1/spec.md#10-errors-and-limits)) | Relay and MCP rate-limit tests |
+| X11 | An MCP client reads or chooses the value of a secret it asks the user to store | Remote MCP client, possibly prompt-injected | `secrets_prepare_write` takes no value and `secrets_write_status` returns only a status; the user types the value in the dashboard, which seals and signs it as its own device ([spec §9.9](../protocol/v1/spec.md#99-human-only-write-requests), [ADR 0003](../adr/0003-human-only-secret-write-requests.md)); the request ID rides in the URL fragment and is never logged | `write-intent.test.ts`: tools refuse a `value` argument; plaintext boundary scan of results, logs and both objects' dumps |
+| X12 | A write request is finished by the wrong party, twice, after its grant is revoked, or over a different item | Another account, another device, a revoked MCP client, a racing writer | The request lives in the asking account's relay object; every browser call needs a `browser` token with `vault:write`, live revocation, a single-use proof under the chain-enrolled key and a current `owner`/`editor` device of the vault; the asking grant is re-checked and its revocation cancels the request (registry error → `503`); status is visible only to the asking grant and client; compare-and-set transitions; `claim` binds device, item and base revision, and completion is read from the vault's head, so a moved head is `conflict`, never an overwrite | `write-intent.test.ts`: isolation and authorization, concurrent claims, claim/cancel race, stale base, revoked grant and device, per-device rate limit |
 
-Rows X1–X10 cover remote access (ADR 0002); their vectors and tests land with the
-implementation, before the feature leaves staging.
+Rows X1–X12 cover remote access (ADR 0002, and ADR 0003 for X11–X12); their vectors and
+tests land with the implementation, before the feature leaves staging.
 
 ## Explicit limitations
 
@@ -262,9 +266,27 @@ These are accepted and must be stated wherever the guarantees are described:
   older epoch cannot read items still at that epoch; they are rotated forward by a
   device that can, never delivered by an unsigned late wrap.
 - **Remote access puts plaintext in Worker memory** (ADR 0002 D7). While remote access
-  is enabled, an MCP set's `value`, relayed names and profile fields, and redacted run
-  output pass through the Worker after TLS termination on their way to or from a
-  device. A compromised Worker sees them; it still stores none and holds no key.
+  is enabled, an MCP set's `value`, a write request's target name, relayed names and
+  profile fields, and redacted run output pass through the Worker after TLS
+  termination on their way to or from a device. A compromised Worker sees them; it
+  still stores none and holds no key.
+- **Write requests keep the value from the AI client, not the request.** The client
+  still chooses the name and the operation, so it can ask the user to store a secret
+  under a misleading name or to replace a real one; the user must read what the form
+  shows. A prompt-injected client can keep opening such phishing-style requests,
+  bounded only by the request TTL, the open-request cap and the MCP rate limits
+  ([`worker/src/limits.ts`](../../worker/src/limits.ts)). The client knows the name;
+  the server stores it only sealed, and only the vault's member devices can open it.
+- **The user must trust the dashboard origin.** The form URL is only as safe as the
+  link the AI client shows; a look-alike origin that the user signs in to receives the
+  value. The real dashboard is `/app` on the vault origin, under the strict CSP of
+  ADR 0002. A compromised Worker can also forge write requests, since it holds the
+  seal public key and can serve its own `/app`; that is the existing browser
+  residual risk, not a new one.
+- **A write request is not a sealed operation.** No device drains it and nothing
+  applies it without the user: an unfinished request expires and its row is purged.
+  `queued` is reserved and never produced, so a request with no browser to finish it
+  does nothing.
 - **A compromised Worker can forge relay calls and sealed operations** for devices that
   opted in, within any MCP scope it claims. Devices apply their own grants and
   approvals, and every drained operation is a signed, audited record, but devices do

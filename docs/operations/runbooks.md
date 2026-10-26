@@ -156,9 +156,10 @@ echoing them, and only after `pnpm install` (as CI does).
 ## Remote access
 
 `VAULT_REMOTE_ACCESS_ENABLED` gates the vault dashboard (`/app`), remote MCP
-(`/mcp` and its protected-resource metadata), the device relay (`/v1/relay`) and the
-lookup, seal-key and sealed-queue routes. Any value other than exactly `true` turns
-them off, and each then answers `404` (the `/v1/vaults/…` ones answer
+(`/mcp` and its protected-resource metadata), the device relay (`/v1/relay`), the
+lookup, seal-key and sealed-queue routes, and the write-request routes
+(`/v1/write-intents/…`). Any value other than exactly `true` turns
+them off, and each then answers `404` (the `/v1/vaults/…` and `/v1/write-intents/…` ones answer
 `503 sync_disabled` instead while sync is also off). It is on for staging and off for production in
 `worker/wrangler.jsonc`; remote access is staging only, pre-release, and not for
 production credentials. The sync kill switch also stops it: with sync off, `/mcp`
@@ -185,7 +186,8 @@ the cause could touch sync itself, use the [kill switch](#kill-switch) instead.
    `/.well-known/oauth-protected-resource/mcp` answer `404`, and `GET /v1/meta` no
    longer lists the relay, sealed-queue and MCP limits.
 4. Tell affected users: AI tools lose access, devices cannot open the relay, and
-   the dashboard stops loading. Sealed operations already queued stay in the vault
+   the dashboard stops loading; open write requests cannot be finished and expire.
+   Sealed operations already queued stay in the vault
    object, unserved, until they expire (`sealed_ttl_s` in
    [`worker/src/limits.ts`](../../worker/src/limits.ts)). Local `resolve` and sync are
    unaffected.
@@ -242,6 +244,36 @@ they expire, so a replay is refused, and they count toward the limit
 - Draining frees no slot at once: space returns as acknowledged and unclaimed
   operations reach `sealed_ttl_s`. Do not delete rows from the vault object by hand.
 - A queue that refills quickly from one client is the [abuse](#mcp-client-abuse) case.
+
+### Write requests
+
+`secrets_prepare_write` opens a request the user finishes in the dashboard
+([spec §9.9](../protocol/v1/spec.md#99-human-only-write-requests),
+[ADR 0003](../adr/0003-human-only-secret-write-requests.md)). It has no flag of its own:
+[remote access off](#remote-access-off) disables both tools and every
+`/v1/write-intents/…` route (`404`), and the kill switch stops them with the rest of
+sync. Unfinished requests then stay in the account's relay object until they are
+purged; nothing applies them.
+
+- **What you see.** `/mcp` lines with `tool` `secrets_prepare_write` or
+  `secrets_write_status` and the request status or tool error code as `outcome`, and
+  request lines with the route template `GET /v1/write-intents/:rid` or
+  `POST /v1/write-intents/:rid/<action>`, status and error code. Request IDs, names and
+  values never appear; the ID stays in the URL fragment, which reaches no server.
+- **Expected noise.** `too_many_open` is one account with many unanswered requests;
+  `no_seal_key` means no owner device has published the vault's seal key yet, or a
+  rekey is pending; `409` on browser routes is a request already settled, cancelled or
+  raced. A rise in `401` on browser routes after a grant revocation is the request
+  being cancelled, as intended.
+- **Purge.** The relay object purges ended and expired requests
+  `write_intent_retention_s` after they end or expire, from its alarm and whenever a new
+  request is opened ([`worker/src/limits.ts`](../../worker/src/limits.ts)). Do not
+  delete rows by hand. A revoked grant's requests are cancelled the next time the
+  browser touches them and expire otherwise.
+- **Abuse.** Many requests from one client is the [abuse](#mcp-client-abuse) case:
+  revoking the grant stops new requests and cancels the open ones on their next use.
+  A completed write is an ordinary signed record by the user's browser device; review
+  or correct it as any item edit.
 
 ## Deploy freeze
 
