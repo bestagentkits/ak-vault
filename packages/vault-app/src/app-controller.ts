@@ -23,11 +23,13 @@ import {
 } from './oauth/pkce-client.js';
 import { createAkvClient, isVaultApiError, type AkvClient } from './sync/akv-client.js';
 import { acceptOffer, DEFAULT_DEVICE_LABEL, joinCodeFor, newJoinNonce, sanitizeLabel } from './sync/enroll.js';
+import { loadItemHistory, type ItemHistory } from './sync/item-history.js';
+import { restoreRevision, settleConflicts, type SettleChoice } from './sync/restore-ops.js';
 import { pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
 import { deleteItem, findByName, setItem } from './sync/write-ops.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
 
-export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'signed_out' };
+export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'restored' | 'resolved' | 'signed_out' };
 
 export type Screen =
   | { kind: 'loading' }
@@ -36,6 +38,7 @@ export type Screen =
   | { kind: 'join'; joinCode: string; deviceId: string; notice: Notice | null }
   | { kind: 'approve'; sas: string; deviceId: string; notice: Notice | null }
   | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; deviceId: string; notice: Notice | null; busy: boolean }
+  | { kind: 'history'; item: ItemView; history: ItemHistory | null; canWrite: boolean; deviceId: string; notice: Notice | null; busy: boolean }
   | { kind: 'removed' };
 
 export interface ControllerDeps {
@@ -75,6 +78,9 @@ export class AppController {
   private kx: DeviceKx | null = null;
   private client: AkvClient | null = null;
   private snapshot: VaultSnapshot | null = null;
+  /** The item whose history is open, and its verified history once loaded. */
+  private historyItem: ItemView | null = null;
+  private history: ItemHistory | null = null;
   private readonly now: () => number;
 
   constructor(private readonly deps: ControllerDeps) {
@@ -144,6 +150,8 @@ export class AppController {
     this.session = null;
     this.syncToken = null;
     this.snapshot = null;
+    this.historyItem = null;
+    this.history = null;
     this.client = null;
     this.signer = null;
     this.kx = null;
@@ -292,6 +300,8 @@ export class AppController {
 
   private showVault(notice: Notice | null, matches: string[] | null, busy = false): void {
     const s = this.snapshot!;
+    this.historyItem = null;
+    this.history = null;
     this.show({
       kind: 'vault', items: s.items, matches, unreadable: s.unreadable, hidden: s.hidden, rekeyRequired: s.state.rekey_required,
       deviceId: s.self.device_id, notice, busy,
@@ -312,6 +322,59 @@ export class AppController {
     }
   }
 
+  private showHistory(notice: Notice | null, busy = false): void {
+    const s = this.snapshot!;
+    const self = s.self;
+    this.show({
+      kind: 'history', item: this.historyItem!, history: this.history, deviceId: self.device_id, notice, busy,
+      canWrite: self.kind === 'human' && (self.role === 'owner' || self.role === 'editor') && !s.state.rekey_required,
+    });
+  }
+
+  /**
+   * Open one item's history: the whole change log is fetched again and verified
+   * before anything is listed, so a server cannot invent or reorder revisions.
+   */
+  async openHistory(itemId: string): Promise<void> {
+    const snapshot = this.snapshot;
+    const item = snapshot?.items.find((i) => i.itemId === itemId);
+    if (!snapshot || !item || !this.client) return;
+    this.historyItem = item;
+    this.history = null;
+    this.showHistory(null, true);
+    try {
+      const history = await loadItemHistory(this.client, snapshot, itemId);
+      if (this.snapshot !== snapshot || this.historyItem !== item) return;
+      this.history = history;
+      this.showHistory(null);
+    } catch (err) {
+      await this.fail(err);
+    }
+  }
+
+  closeHistory(): void {
+    if (this.snapshot) this.showVault(null, null);
+  }
+
+  /** Re-load the open history (after a stale notice or a failed restore). */
+  async refreshHistory(): Promise<void> {
+    if (this.historyItem) await this.openHistory(this.historyItem.itemId);
+  }
+
+  /** Write a verified earlier revision as a new revision; the value never reaches the page. */
+  async restore(logSeq: number): Promise<boolean> {
+    const history = this.history;
+    if (!history) return false;
+    return this.write('restored', () => restoreRevision({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, history, logSeq, nowMs: this.now() }));
+  }
+
+  /** Settle the open conflict branches of the open item with one new revision. */
+  async settle(choice: SettleChoice): Promise<boolean> {
+    const history = this.history;
+    if (!history) return false;
+    return this.write('resolved', () => settleConflicts({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, history, choice, nowMs: this.now() }));
+  }
+
   async set(name: string, value: string): Promise<boolean> {
     return this.write('saved', () => setItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, name, value, nowMs: this.now() }));
   }
@@ -320,9 +383,10 @@ export class AppController {
     return this.write('deleted', () => deleteItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, nowMs: this.now() }));
   }
 
-  private async write(done: 'saved' | 'deleted', op: () => Promise<unknown>): Promise<boolean> {
+  private async write(done: 'saved' | 'deleted' | 'restored' | 'resolved', op: () => Promise<unknown>): Promise<boolean> {
     if (!this.snapshot || !this.client || !this.signer) return false;
-    this.showVault(null, null, true);
+    if (this.historyItem) this.showHistory(null, true);
+    else this.showVault(null, null, true);
     try {
       await op();
     } catch (err) {
@@ -335,10 +399,14 @@ export class AppController {
 
   private async writeFailed(err: unknown): Promise<void> {
     const code = appErrorCode(err, 'server');
-    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'quota_exceeded', 'network', 'server'];
+    const recoverable: AppErrorCode[] = [
+      'conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'quota_exceeded',
+      'restore_unavailable', 'restore_unchanged', 'nothing_to_resolve', 'network', 'server',
+    ];
     if (!isVaultApiError(err) && recoverable.includes(code)) {
       // A conflict means the verified head is stale: pull again, then say why the write did not land.
       if (code === 'conflict') await this.sync({ kind: 'error', code });
+      else if (this.historyItem) this.showHistory({ kind: 'error', code });
       else this.showVault({ kind: 'error', code }, null);
       return;
     }

@@ -118,13 +118,13 @@ async function fetchMembership(client: AkvClient, vaultId: string): Promise<unkn
   throw new AppError('server');
 }
 
-interface ChangeEntry {
+export interface ChangeEntry {
   log_seq: unknown;
   conflict_id: unknown;
   record: unknown;
 }
 
-async function fetchChanges(client: AkvClient, vaultId: string): Promise<ChangeEntry[]> {
+export async function fetchChanges(client: AkvClient, vaultId: string): Promise<ChangeEntry[]> {
   const entries: ChangeEntry[] = [];
   let cursor = 0;
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -260,7 +260,7 @@ export function projectItem(
   };
 }
 
-function openRecord(record: SignedRecord, vk: Uint8Array | undefined): ItemPayload | TombstonePayload | null {
+export function openRecord(record: SignedRecord, vk: Uint8Array | undefined): ItemPayload | TombstonePayload | null {
   if (!vk) return null;
   try {
     return openItem({

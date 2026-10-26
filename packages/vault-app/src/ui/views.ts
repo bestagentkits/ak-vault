@@ -6,6 +6,7 @@
  * reveal or copy action.
  */
 import type { AppController, Notice, Screen } from '../app-controller.js';
+import type { EntryReadability, HistoryEntry, ItemHistory, RestoreBlock } from '../sync/item-history.js';
 import type { ItemView } from '../sync/vault-sync.js';
 import { h, replaceChildren, type Child } from './dom.js';
 import { messageFor } from './messages.js';
@@ -20,10 +21,18 @@ export const NO_CAPTURE = {
 export interface ViewState {
   filter: string;
   confirmDelete: string | null;
+  /** Log position of the revision awaiting a restore confirmation. */
+  confirmRestore: number | null;
+  /** `current` or a conflict ID awaiting a settle confirmation. */
+  confirmSettle: string | null;
+  /** How many history entries are listed. */
+  historyShown: number;
 }
 
+export const HISTORY_PAGE = 20;
+
 export function newViewState(): ViewState {
-  return { filter: '', confirmDelete: null };
+  return { filter: '', confirmDelete: null, confirmRestore: null, confirmSettle: null, historyShown: HISTORY_PAGE };
 }
 
 function noticeEl(notice: Notice | null): Child {
@@ -135,12 +144,149 @@ function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () =
       }),
       h('button', { type: 'button', class: 'secondary' }, ['Cancel'], { click: () => { vs.confirmDelete = null; rerender(); } }),
     ])
-    : h('button', { type: 'button', class: 'secondary', disabled: busy, 'data-testid': 'delete' }, ['Delete'], { click: () => { vs.confirmDelete = item.itemId; rerender(); } });
+    : h('div', { class: 'row' }, [
+      h('button', { type: 'button', class: 'secondary', disabled: busy, 'data-testid': 'history' }, ['History'], { click: () => { resetHistoryState(vs); void c.openHistory(item.itemId); } }),
+      h('button', { type: 'button', class: 'secondary', disabled: busy, 'data-testid': 'delete' }, ['Delete'], { click: () => { vs.confirmDelete = item.itemId; rerender(); } }),
+    ]);
   return h('li', { class: 'item', 'data-testid': 'item' }, [
     h('div', { class: 'item-head' }, [h('span', { class: 'name', 'data-testid': 'item-name' }, [item.name]), actions]),
     h('div', { class: 'meta' }, meta),
     profile,
   ]);
+}
+
+function resetHistoryState(vs: ViewState): void {
+  vs.confirmRestore = null;
+  vs.confirmSettle = null;
+  vs.historyShown = HISTORY_PAGE;
+}
+
+function fmtDateTime(ms: number): string {
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? 'unknown time' : `${d.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
+}
+
+const READABILITY: Record<EntryReadability, string> = {
+  readable: 'verified in this browser',
+  no_key: 'unavailable: this browser was never given the key for this epoch',
+  unverified: 'unverified: the ciphertext did not authenticate',
+};
+
+const RESTORE_BLOCK: Record<RestoreBlock, string> = {
+  current: 'current revision',
+  deletion: 'deletion',
+  before_deletion: 'written before the item was deleted, so it is not offered',
+  no_key: 'cannot restore: key epoch unavailable here',
+  unverified: 'cannot restore: not verified',
+};
+
+function entryLabel(e: HistoryEntry): string {
+  if (e.kind === 'conflict') return e.tombstone ? 'conflicting delete (branch)' : 'conflicting write (branch)';
+  return e.tombstone ? `revision ${e.revision}: deleted` : `revision ${e.revision}`;
+}
+
+function entryRow(c: AppController, e: HistoryEntry, canWrite: boolean, busy: boolean, vs: ViewState, rerender: () => void): HTMLElement {
+  const status: Child[] = [
+    h('span', {}, [`signed by device ${shortId(e.author)}${e.authorCurrent ? '' : ' (removed device)'}`]),
+    h('span', {}, [`claimed ${fmtDateTime(e.ts)}`]),
+    h('span', {}, [`key epoch ${e.keyEpoch}`]),
+    h('span', {}, [`log ${e.logSeq}`]),
+    e.tombstone ? null : h('span', { class: e.readability === 'readable' ? '' : 'badge badge-conflict' }, [READABILITY[e.readability]]),
+  ];
+  if (e.kind === 'conflict') {
+    status.push(h('span', { class: `badge ${e.conflictOpen ? 'badge-conflict' : ''}` }, [e.conflictOpen ? 'open conflict' : `resolved${e.resolvedAtRevision ? ` at revision ${e.resolvedAtRevision}` : ''}`]));
+  }
+  if (e.resolves.length > 0) status.push(h('span', {}, [`settles ${e.resolves.length} branch${e.resolves.length > 1 ? 'es' : ''}`]));
+
+  let actions: Child = null;
+  if (e.kind === 'applied' && !e.tombstone) {
+    if (e.restoreBlock !== null) {
+      actions = h('span', { class: 'muted', 'data-testid': 'restore-blocked' }, [RESTORE_BLOCK[e.restoreBlock]]);
+    } else if (!canWrite) {
+      actions = h('span', { class: 'muted' }, ['This browser cannot write now. Restore from an owner device with the CLI.']);
+    } else if (vs.confirmRestore === e.logSeq) {
+      actions = h('div', { class: 'row' }, [
+        h('button', { type: 'button', class: 'danger', disabled: busy, 'data-testid': 'confirm-restore' }, [`Write revision ${e.revision} as a new revision`], {
+          click: () => { vs.confirmRestore = null; void c.restore(e.logSeq); },
+        }),
+        h('button', { type: 'button', class: 'secondary' }, ['Cancel'], { click: () => { vs.confirmRestore = null; rerender(); } }),
+      ]);
+    } else {
+      actions = h('button', { type: 'button', class: 'secondary', disabled: busy, 'data-testid': 'restore' }, ['Restore'], { click: () => { vs.confirmRestore = e.logSeq; vs.confirmSettle = null; rerender(); } });
+    }
+  } else if (e.kind === 'conflict' && e.conflictOpen) {
+    const id = e.conflictId!;
+    if (e.tombstone) actions = h('span', { class: 'muted' }, ['This branch is a delete request; it cannot be adopted as a value.']);
+    else if (e.readability !== 'readable') actions = h('span', { class: 'muted' }, ['Cannot adopt this branch here. Use `ak secrets sync settle` from an owner device.']);
+    else if (!canWrite) actions = h('span', { class: 'muted' }, ['This browser cannot write now. Use `ak secrets sync settle` from an owner device.']);
+    else if (vs.confirmSettle === id) {
+      actions = h('div', { class: 'row' }, [
+        h('button', { type: 'button', class: 'danger', disabled: busy, 'data-testid': 'confirm-settle' }, ['Adopt this branch and settle every open conflict'], {
+          click: () => { vs.confirmSettle = null; void c.settle({ source: 'branch', conflictId: id }); },
+        }),
+        h('button', { type: 'button', class: 'secondary' }, ['Cancel'], { click: () => { vs.confirmSettle = null; rerender(); } }),
+      ]);
+    } else {
+      actions = h('button', { type: 'button', class: 'secondary', disabled: busy, 'data-testid': 'settle-branch' }, ['Use this branch’s value'], { click: () => { vs.confirmSettle = id; vs.confirmRestore = null; rerender(); } });
+    }
+  }
+  return h('li', { class: 'item', 'data-testid': 'history-entry' }, [
+    h('div', { class: 'item-head' }, [h('span', { class: 'name' }, [entryLabel(e)]), actions]),
+    h('div', { class: 'meta' }, status),
+  ]);
+}
+
+function historyBody(c: AppController, s: Extract<Screen, { kind: 'history' }>, hist: ItemHistory, vs: ViewState, rerender: () => void): Child[] {
+  const writable = s.canWrite && !hist.stale && !hist.deleted;
+  const shown = hist.entries.slice(0, vs.historyShown);
+  const open = hist.entries.filter((e) => e.kind === 'conflict' && e.conflictOpen);
+  const settleCurrent: Child = open.length > 0 && writable
+    ? vs.confirmSettle === 'current'
+      ? h('div', { class: 'row' }, [
+        h('button', { type: 'button', class: 'danger', disabled: s.busy, 'data-testid': 'confirm-settle-current' }, [`Keep the current value and settle ${open.length} conflict${open.length > 1 ? 's' : ''}`], {
+          click: () => { vs.confirmSettle = null; void c.settle({ source: 'current' }); },
+        }),
+        h('button', { type: 'button', class: 'secondary' }, ['Cancel'], { click: () => { vs.confirmSettle = null; rerender(); } }),
+      ])
+      : h('button', { type: 'button', class: 'secondary', disabled: s.busy, 'data-testid': 'settle-current' }, ['Keep the current value'], { click: () => { vs.confirmSettle = 'current'; vs.confirmRestore = null; rerender(); } })
+    : null;
+  return [
+    hist.stale
+      ? h('p', { class: 'notice notice-error', role: 'status', 'data-testid': 'history-stale' }, ['This item changed after the list was verified. Reload the history before restoring or settling anything.'])
+      : null,
+    hist.deleted ? h('p', { class: 'notice notice-error', role: 'status' }, ['This item is deleted. A deletion is kept for the life of the vault and is never undone from here.']) : null,
+    h('p', { class: 'muted' }, [
+      `Verified against the signed change log up to position ${hist.logSeq}. Times are claimed by the signing device. A server can withhold the newest entries, so a missing entry is not proof it never existed. No value is shown.`,
+    ]),
+    h('p', { class: 'muted' }, ['Restoring writes the old value as a new revision. It does not make an old provider credential valid or safe again; it may already be revoked or exposed, so check it with the provider and rotate it there if needed.']),
+    open.length > 0
+      ? h('section', { 'data-testid': 'conflicts' }, [
+        h('h2', {}, [`${open.length} open conflict${open.length > 1 ? 's' : ''}`]),
+        h('p', { class: 'muted' }, ['Every branch is kept until one new revision settles it. Settling lists all open branches and cannot be undone from here. From a terminal, `ak secrets sync settle` does the same.']),
+        settleCurrent,
+      ])
+      : null,
+    h('ul', { class: 'items' }, shown.map((e) => entryRow(c, e, writable, s.busy, vs, rerender))),
+    hist.entries.length > shown.length
+      ? h('button', { type: 'button', class: 'secondary', 'data-testid': 'history-more' }, [`Show older (${hist.entries.length - shown.length} more)`], { click: () => { vs.historyShown += HISTORY_PAGE; rerender(); } })
+      : null,
+    hist.omitted > 0 ? h('p', { class: 'muted' }, [`${hist.omitted} older entries are not listed.`]) : null,
+  ];
+}
+
+function historyScreen(c: AppController, s: Extract<Screen, { kind: 'history' }>, vs: ViewState, rerender: () => void): HTMLElement[] {
+  return [
+    header(c, s.deviceId),
+    h('main', { 'aria-busy': s.busy ? 'true' : 'false' }, [
+      h('div', { class: 'row' }, [
+        h('button', { type: 'button', class: 'secondary', 'data-testid': 'history-back' }, ['Back to the vault'], { click: () => { resetHistoryState(vs); c.closeHistory(); } }),
+        h('button', { type: 'button', class: 'secondary', disabled: s.busy, 'data-testid': 'history-reload' }, ['Reload history'], { click: () => { resetHistoryState(vs); void c.refreshHistory(); } }),
+      ]),
+      h('h2', { 'data-testid': 'history-title' }, [`History of ${s.item.name}`]),
+      noticeEl(s.notice),
+      ...(s.history ? historyBody(c, s, s.history, vs, rerender) : [h('p', { class: 'muted', 'data-testid': 'history-loading' }, ['Verifying the change log…'])]),
+    ]),
+  ];
 }
 
 function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs: ViewState, rerender: () => void): HTMLElement[] {
@@ -222,6 +368,9 @@ export function render(root: Element, c: AppController, screen: Screen, vs: View
       break;
     case 'vault':
       nodes = vaultScreen(c, screen, vs, rerender);
+      break;
+    case 'history':
+      nodes = historyScreen(c, screen, vs, rerender);
       break;
     case 'removed':
       nodes = [header(c, null), h('main', {}, [

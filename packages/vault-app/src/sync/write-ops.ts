@@ -37,7 +37,7 @@ export interface WriteResult {
   revision: number;
 }
 
-function writableKey(snapshot: VaultSnapshot): Uint8Array {
+export function writableKey(snapshot: VaultSnapshot): Uint8Array {
   if (snapshot.state.rekey_required) throw new AppError('rekey_required');
   const self = snapshot.self;
   if (self.kind !== 'human' || (self.role !== 'owner' && self.role !== 'editor')) throw new AppError('device_mismatch');
@@ -66,7 +66,7 @@ function mapWriteError(err: unknown): never {
   throw err;
 }
 
-async function sendRecord(client: AkvClient, snapshot: VaultSnapshot, record: SignedRecord, nameTagValue: string | null): Promise<WriteResult> {
+export async function sendRecord(client: AkvClient, snapshot: VaultSnapshot, record: SignedRecord, nameTagValue: string | null): Promise<WriteResult> {
   try {
     authorizeRecordWrite(snapshot.state, record);
   } catch (err) {

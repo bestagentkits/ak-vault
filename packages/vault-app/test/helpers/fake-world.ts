@@ -173,10 +173,10 @@ export class FakeWorld {
   }
 
   /** The owner's `device_add` after the SAS matched. `wrongSas` signs another transcript. */
-  approve(joinCode: string, nonceI: string, opts: { wrongSas?: boolean } = {}): void {
+  approve(joinCode: string, nonceI: string, opts: { wrongSas?: boolean; epochs?: number[] } = {}): void {
     const join = parseJoinCode(joinCode);
     const st = this.state();
-    const ws = [...this.vks.entries()].map(([e, vk]) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: e, recipient: join.device }));
+    const ws = [...this.vks.entries()].filter(([e]) => !opts.epochs || opts.epochs.includes(e)).map(([e, vk]) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: e, recipient: join.device }));
     const sas = sasDigest({ vault_id: this.vaultId, initiator: this.owner.record.device_id, joiner: join.device, nonce_i: opts.wrongSas ? b64encode(randomBytes(16)) : nonceI, nonce_j: join.nonce_j });
     const ev = nextMembershipEvent(st, { type: 'device_add', ts: Date.now(), author: this.owner.record.device_id, body: { device: join.device as unknown as JsonObject, sas, wraps_digest: wrapsDigest(ws) } }, this.owner.signSecret);
     this.events.push(ev);
@@ -204,6 +204,41 @@ export class FakeWorld {
     if (res.status !== 200) throw new Error('owner write refused');
     this.names.set(itemId, name);
     return itemId;
+  }
+
+  /**
+   * The owner device writes an arbitrary record: a stale base (a conflict branch), a
+   * tombstone, or a settle (`resolves`). Returns the server's answer and the record.
+   */
+  ownerWrite(args: { itemId: string; base: number; name?: string; value?: string; tombstone?: boolean; resolves?: string[]; ts?: number; meta?: JsonObject }): { status: number; body: unknown; record: SignedRecord } {
+    const st = this.state();
+    const epoch = st.key_epoch;
+    const ctx = { vault_id: this.vaultId, item_id: args.itemId, base_revision: args.base, key_epoch: epoch, author: this.owner.record.device_id, tombstone: args.tombstone === true };
+    const payload = args.tombstone
+      ? { deleted: true as const }
+      : { name: args.name ?? this.names.get(args.itemId) ?? 'item', value: args.value ?? '', meta: args.meta ?? { schema: 'agentkit.secret/v1', created_ms: 1_700_000_000_000 }, sensitivity: 'normal' as const };
+    const env = sealItem({ ...ctx, vk: this.vks.get(epoch)!, payload });
+    const record = signRecord({ ...ctx, ts: args.ts ?? Date.now(), resolves: args.resolves ?? [], env }, this.owner.signSecret);
+    const tag = args.tombstone ? null : nameTag(nameIndexKey(this.vks.get(epoch)!, this.vaultId, epoch), (payload as { name: string }).name);
+    const res = this.applyServer(record, tag);
+    if (res.status === 200 && !args.tombstone) this.names.set(args.itemId, (payload as { name: string }).name);
+    return { ...res, record };
+  }
+
+  /** Advance the key epoch; every current device receives the new key. */
+  rekey(): number {
+    const st = this.state();
+    const epoch = st.key_epoch + 1;
+    const vk = randomBytes(32);
+    const ws = st.devices.map((d) => wrapToDevice({ vk, vaultId: this.vaultId, keyEpoch: epoch, recipient: d }));
+    const ev = nextMembershipEvent(st, {
+      type: 'rekey', ts: Date.now(), author: this.owner.record.device_id,
+      body: { new_key_epoch: epoch, wraps_digest: wrapsDigest(ws), needs_rotate: [] },
+    }, this.owner.signSecret);
+    this.vks.set(epoch, vk);
+    this.events.push(ev);
+    this.wraps.set(ev.seq, ws);
+    return epoch;
   }
 
   private readonly names = new Map<string, string>();

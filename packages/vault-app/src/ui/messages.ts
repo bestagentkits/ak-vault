@@ -26,12 +26,17 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   item_unreadable: 'This browser does not hold the key for that item.',
   duplicate_name: 'More than one item has that name. Resolve it from the CLI first.',
   quota_exceeded: 'The vault is full.',
+  restore_unavailable: 'That revision cannot be restored from this browser. Restore it from an owner device with the CLI if it is still needed.',
+  restore_unchanged: 'That revision holds the same value as the current one, so nothing was written.',
+  nothing_to_resolve: 'There are no open conflicts left on this item.',
   network: 'The network request failed. Check your connection and try again.',
   server: 'The server could not complete the request. Try again shortly.',
   locked: 'The dashboard is locked. Sign in to unlock it.',
   signed_out: 'You signed out.',
   saved: 'Saved. The value was encrypted in this browser and is not shown.',
   deleted: 'Deleted.',
+  restored: 'Restored as a new revision. The old value was re-encrypted in this browser and is not shown. A restored provider credential may already be revoked or exposed: check it with the provider and rotate it there if needed.',
+  resolved: 'Conflicts settled with one new revision. The value was re-encrypted in this browser and is not shown.',
 };
 
 export function messageFor(code: AppErrorCode | Notice['code']): string {
