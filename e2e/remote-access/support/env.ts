@@ -82,7 +82,16 @@ async function computeGate(): Promise<Gate> {
       : `staging does not report remote_access=true (healthz HTTP ${health?.status ?? 'unreachable'}, field ${remoteValue === undefined ? 'absent' : 'false'}); the remote-access deploy has not reached ${BASE_URL}`;
 
   const as = await probe(`${AK_WEB_ORIGIN}/.well-known/oauth-authorization-server`).catch(() => null);
-  const oauth = as?.status === 200 ? null : `ak-web staging authorization server answers HTTP ${as?.status ?? 'unreachable'} (env blocker: OAuth signing configuration)`;
+  // Answering is not enough: ak-web serves the vault resources only while VAULT_REMOTE_ACCESS_ENABLED
+  // is on, and then lists their scopes. Without them the dashboard sign-in fails as an unsupported resource.
+  const scopes = as?.json?.['scopes_supported'];
+  const vaultScopes = Array.isArray(scopes) && ['vault-app:session', 'vault-mcp:read'].every((s) => scopes.includes(s));
+  const oauth =
+    as?.status !== 200
+      ? `ak-web staging authorization server answers HTTP ${as?.status ?? 'unreachable'} (env blocker: OAuth signing configuration)`
+      : vaultScopes
+        ? null
+        : 'ak-web staging does not list the vault scopes (env blocker: VAULT_REMOTE_ACCESS_ENABLED is off on ak-web staging)';
 
   const account = STORAGE_STATE && existsSync(STORAGE_STATE) ? null : 'no signed-in staging test account (VAULT_E2E_STORAGE_STATE unset or missing)';
   const ak = !AK_BIN || !existsSync(AK_BIN)
