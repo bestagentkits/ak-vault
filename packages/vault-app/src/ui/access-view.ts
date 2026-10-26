@@ -31,10 +31,11 @@ function memberRow(a: MembershipView['accounts'][number]): HTMLElement {
   ]);
 }
 
-export function accessSection(view: MembershipView, verifiedAtMs: number, changes: readonly Parameters<typeof changeText>[0][]): HTMLElement {
-  const needsRotate: Child = view.needsRotate.length
+export function accessSection(view: MembershipView, verifiedAtMs: number, changes: readonly Parameters<typeof changeText>[0][], listedItemIds: ReadonlySet<string>): HTMLElement {
+  const marked = view.needsRotate.filter((id) => listedItemIds.has(id)).length;
+  const needsRotate: Child = marked
     ? h('p', { class: 'notice notice-error', role: 'status', 'data-testid': 'needs-rotate' }, [
-      `${view.needsRotate.length} item${view.needsRotate.length > 1 ? 's' : ''} need rotation. ${ACCESS_NOTES.needsRotate} ${ACCESS_NOTES.noClawback}`,
+      `${marked} listed item${marked > 1 ? 's' : ''} marked for rotation. ${ACCESS_NOTES.needsRotate} ${ACCESS_NOTES.noClawback}`,
     ])
     : null;
   return h('section', { class: 'access', 'aria-label': 'Vault access', 'data-testid': 'access' }, [

@@ -51,7 +51,9 @@ describe('browser session kind', () => {
     const rekey = fx.rekeyEvent();
     expect((await fx.append(rekey.event, rekey.wraps, fx.owner, BROWSER)).status).toBe(403);
 
-    // Nothing was applied: the same events still succeed from a CLI (non-browser) session, in order.
+    // Nothing was applied. Replaying the member_add from a CLI session succeeds, so the refusal above
+    // was the session kind and not an invalid event. The later events are built on the pre-add head and
+    // are not replayed; their 403s are the same route-level check.
     const log = await fx.get(fx.owner, `/membership?from=0&limit=1000`, BROWSER);
     expect(log.json.events).toHaveLength(seq + 1);
     expect((await fx.append(add.event, add.wraps)).status).toBe(201);

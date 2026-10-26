@@ -85,7 +85,7 @@ export const ACCESS_NOTES = {
     'A removal pauses writes until an owner device rekeys the vault. The new key is wrapped only for the devices that remain.',
   noClawback:
     'Rotating the vault key does not take back anything a removed member already read. Provider keys and tokens they could see stay valid until you rotate them at the provider; items marked “needs rotation” are the ones to start with.',
-  needsRotate: 'Marked by the owner device that rekeyed: these items were readable by a removed member.',
+  needsRotate: 'Marked by an owner device in a past rekey because a removed member could read them. The mark is part of the signed history and may remain after you rotate at the provider.',
   offline:
     'This is the last membership this browser verified. If you are offline or the server is unreachable it may be out of date; refresh to verify again.',
 } as const;

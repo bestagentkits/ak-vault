@@ -121,7 +121,7 @@ describe('removal, rekey and rotation', () => {
     await page.controller.refresh();
     expect(text(page.root, 'cap-write_secrets')).toContain('allowed');
     expect(page.root.querySelector('[data-testid="rekey-pending"]')).toBeNull();
-    expect(text(page.root, 'needs-rotate')).toContain('1 item need');
+    expect(text(page.root, 'needs-rotate')).toContain('1 listed item marked');
     expect(text(page.root, 'needs-rotate')).toContain('stay valid until you rotate them at the provider');
     expect(text(page.root, 'access-summary')).toContain('key epoch 2');
     byTestId(page.root, 'tab-secrets').click();
@@ -164,6 +164,22 @@ describe('stale and concurrent states', () => {
     await page.controller.refresh();
     expect(page.controller.current().kind).toBe('removed');
     expect(await b.devices.get(ACCOUNT)).toBeNull();
+  });
+
+  it('a write after this account was removed ends at the removed screen and wipes the device key', async () => {
+    const world = new FakeWorld('shared');
+    const bob = world.addMember('acct-bob', 'owner');
+    const { b, page } = await openAccess(world);
+    byTestId(page.root, 'tab-secrets').click();
+    world.actor = bob;
+    world.removeMember(ACCOUNT);
+    const form = page.root.querySelector('form.set') as HTMLFormElement;
+    (form.querySelector('#set-name') as HTMLInputElement).value = 'SOME_NAME';
+    (form.querySelector('#set-value') as HTMLInputElement).value = 'synthetic-value';
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    await vi.waitFor(() => expect(page.controller.current().kind).toBe('removed'));
+    expect(await b.devices.get(ACCOUNT)).toBeNull();
+    expect(world.log).toHaveLength(0);
   });
 
   it('offline: keeps the last verified membership with its time and a network notice', async () => {

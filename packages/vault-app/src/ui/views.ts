@@ -119,7 +119,7 @@ function itemRow(c: AppController, item: ItemView, vs: ViewState, rerender: () =
     item.rotatedMs !== null ? h('span', {}, [`rotated ${fmtDate(item.rotatedMs)}`]) : null,
     item.creator ? h('span', {}, [`by ${item.creator}`]) : null,
     item.rotateTtlDays !== null ? h('span', {}, [`rotate every ${item.rotateTtlDays} days`]) : null,
-    needsRotate ? h('span', { class: 'badge badge-conflict', title: 'A removed member could read this item. Rotate it at the provider.', 'data-testid': 'item-needs-rotate' }, ['needs rotation']) : null,
+    needsRotate ? h('span', { class: 'badge badge-conflict', title: 'Marked by a past rekey: a removed member could read this item. Rotate it at the provider; the mark may remain afterwards.', 'data-testid': 'item-needs-rotate' }, ['needs rotation']) : null,
     item.openConflicts > 0 ? h('span', { class: 'badge badge-conflict' }, [`${item.openConflicts} unresolved conflict${item.openConflicts > 1 ? 's' : ''}`]) : null,
   ];
   const profile = item.profile.length
@@ -195,7 +195,7 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
       noticeEl(s.notice),
       s.rekeyRequired ? h('p', { class: 'notice notice-error', role: 'status' }, [messageFor('rekey_required')]) : null,
       h('nav', { class: 'row tabs', 'aria-label': 'Dashboard sections' }, [tab('secrets', 'Secrets'), tab('access', 'Vault access')]),
-      vs.tab === 'access' ? accessSection(s.access, s.verifiedAtMs, s.changes) : null,
+      vs.tab === 'access' ? accessSection(s.access, s.verifiedAtMs, s.changes, new Set(s.items.map((i) => i.itemId))) : null,
       vs.tab === 'secrets' ? setForm : null,
       vs.tab === 'secrets' ? h('section', {}, [
         h('div', { class: 'row' }, [
