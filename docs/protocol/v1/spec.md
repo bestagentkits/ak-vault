@@ -427,9 +427,9 @@ joiner and grind about 10^6 SHA-256 values until both sides show the same six di
 therefore requires an authentic code channel: the user copies the codes between two
 terminals or screens they control. A service that relays the codes for the user (the
 Worker, ak-web or another service) is outside what v1 protects, and an implementation
-MUST NOT offer such a flow on v1 codes. A relayed flow needs a commit-reveal exchange (the
-join code carries `sha256(device, nonce_j)` first, the offer is signed over it, the
-reveal comes second), which is a wire change under the spec-change procedure.
+MUST NOT offer such a flow on v1 codes. A relayed flow needs a commit-reveal exchange in which the
+joiner commits to `nonce_j` before it sees `nonce_i` and reveals it only afterwards, which
+is a wire change under the spec-change procedure.
 
 Vectors (`enroll-codes.json`): byte-exact round trips of a join and an offer code in
 the format shipped CLIs produce; a code split by whitespace parses; oversize, wrong

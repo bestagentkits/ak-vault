@@ -162,7 +162,7 @@ These are accepted and must be stated wherever the guarantees are described:
   position, detects it ([spec §6](../protocol/v1/spec.md#6-checkpoints-anti-rollback)).
 - **Enrollment codes need an authentic channel.** The join and offer codes carry their
   nonces without a prior commitment, so a party that carries both codes can learn the
-  owner's digits and grind the joiner's nonce (about 10^6 hashes) until the six-digit SAS
+  owner's digits and grind the initiator nonce in the offer it hands the joiner (about 10^6 hashes) until the six-digit SAS
   matches. The SAS authenticates enrollment only when the user moves the codes between
   their own devices. No v1 flow may relay the codes through the Worker or another service;
   that needs a commit-reveal wire change first
