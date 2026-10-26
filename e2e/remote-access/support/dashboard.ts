@@ -28,7 +28,7 @@ export async function signIn(page: Page): Promise<void> {
     if (new URL(page.url()).origin !== origin && (await allow.isVisible())) await allow.click();
     await page.waitForURL((url) => url.origin === origin, { timeout: 90_000 });
     // The callback screen: the join code, the SAS check or the vault, never the loading screen.
-    await expect(page.getByTestId('join-code').or(page.getByTestId('offer-input')).or(page.getByTestId('sas')).or(page.getByTestId('filter'))).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('join-code').or(page.getByTestId('offer-input')).or(page.getByTestId('sas')).or(page.getByTestId('filter')).first()).toBeVisible({ timeout: 60_000 });
   }
 }
 
