@@ -11,7 +11,7 @@
  */
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { AK_BIN, AK_OWNER_HOME, STORAGE_STATE, gate, runNameSentinel, runSentinel } from './support/env.js';
-import { openDashboard, setSecret, signIn } from './support/dashboard.js';
+import { setSecret, signIn } from './support/dashboard.js';
 import { akHomeFromEnv, runAk } from './support/ak-cli.js';
 
 const g = await gate();
@@ -49,9 +49,16 @@ test.describe('dashboard flow (signed-in account, phase-10 ak)', () => {
     console.log(
       `[enroll] In your own terminal, with the owner HOME: ak secrets devices approve ${joinCode}\n` +
         '[enroll] Paste the printed offer code into this browser, continue, and answer y only if both codes match.\n' +
-        '[enroll] Then press "Check approval" in the browser.',
+        '[enroll] The suite then presses "I approved it, continue" until the approval arrives.',
     );
-    await expect(page.getByTestId('filter')).toBeVisible({ timeout: 14 * 60_000 });
+    // Only the joining side is automated: the approval itself is the operator's answer in `ak`.
+    const deadline = Date.now() + 14 * 60_000;
+    while (!(await page.getByTestId('filter').isVisible())) {
+      expect(Date.now(), 'the owner device did not approve this browser in time').toBeLessThan(deadline);
+      const check = page.getByTestId('check-approval');
+      if (await check.isVisible()) await check.click();
+      await page.waitForTimeout(10_000);
+    }
   });
 
   test('sets a value write-only and finds the item by name', async () => {
@@ -115,12 +122,22 @@ test.describe('dashboard flow (signed-in account, phase-10 ak)', () => {
     // Removal rotates the vault key and needs the vault password and recovery key, so the
     // operator runs it by hand, as with approval.
     test.setTimeout(15 * 60_000);
-    await openDashboard(page);
+    // A reload signs the dashboard out (tokens live in memory only); sign in again on the enrolled device.
+    await signIn(page);
+    await expect(page.getByTestId('filter')).toBeVisible({ timeout: 60_000 });
     // The header shows only a short device id; `ak` matches it against its own device list.
     const shortId = ((await page.locator('.device').textContent()) ?? '').replace(/^Device\s+/, '').trim();
     expect(shortId.length).toBeGreaterThan(0);
     console.log(`[remove] In your own terminal, with the owner HOME: ak secrets devices remove ${shortId} --reason retired`);
-    await expect(page.getByText('This browser was removed from the vault.')).toBeVisible({ timeout: 14 * 60_000 });
+    // The browser learns of its removal on its next pull, so refresh until it does.
+    const removed = page.getByText('This browser was removed from the vault.');
+    const deadline = Date.now() + 14 * 60_000;
+    while (!(await removed.isVisible())) {
+      expect(Date.now(), 'the owner device did not remove this browser in time').toBeLessThan(deadline);
+      const refresh = page.getByTestId('refresh');
+      if (await refresh.isVisible()) await refresh.click();
+      await page.waitForTimeout(10_000);
+    }
   });
 });
 
