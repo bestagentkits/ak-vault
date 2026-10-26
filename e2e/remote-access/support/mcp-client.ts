@@ -104,11 +104,23 @@ export async function authorizeMcpClient(browser: Browser, request: APIRequestCo
   }
 }
 
-/** One stateless JSON-RPC call to `/mcp` with a bearer token. */
-export async function rpc(request: APIRequestContext, token: string, id: number, method: string, params: unknown = {}): Promise<JsonRpcReply> {
+/**
+ * One stateless JSON-RPC call to `/mcp` with a bearer token, framed as a 2026-07-28 client
+ * frames it: both media types in `Accept`, the method (and tool name) mirrored in headers,
+ * and the protocol version and client capabilities in `_meta`.
+ */
+export async function rpc(request: APIRequestContext, token: string, id: number, method: string, params: Record<string, unknown> = {}): Promise<JsonRpcReply> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    'MCP-Protocol-Version': MCP_PROTOCOL,
+    Accept: 'application/json, text/event-stream',
+    'Mcp-Method': method,
+  };
+  if (method === 'tools/call' && typeof params['name'] === 'string') headers['Mcp-Name'] = params['name'];
+  const _meta = { 'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL, 'io.modelcontextprotocol/clientCapabilities': {} };
   const res = await request.post(`${BASE_URL}/mcp`, {
-    data: { jsonrpc: '2.0', id, method, params },
-    headers: { Authorization: `Bearer ${token}`, 'MCP-Protocol-Version': MCP_PROTOCOL },
+    data: { jsonrpc: '2.0', id, method, params: { ...params, _meta } },
+    headers,
     maxRedirects: 0,
     failOnStatusCode: false,
   });
