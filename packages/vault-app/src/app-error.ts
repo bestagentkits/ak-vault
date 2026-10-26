@@ -30,6 +30,7 @@ export const APP_ERROR_CODES = [
   'duplicate_name',
   'history_unavailable',
   'restore_current',
+  'already_exists',
   'quota_exceeded',
   'invalid_rotation',
   'rotation_value_unchanged',

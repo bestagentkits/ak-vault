@@ -64,6 +64,13 @@ on the server. Write controls follow the verified role and a pending rekey; a wr
 the Worker refuses re-pulls the chain first, so a demoted role shows an explanation
 and a removed device still shows the removed view.
 
+It also completes human write requests: an MCP client's `form_url`
+(`/app#write=<request_id>&vault=<vault_id>`) opens, after sign-in and the usual
+device checks, a form that shows the sealed request (name, purpose, operation,
+requesting client, expiry) and takes the value in a password field. The browser
+opens the intent with its own seal key, checks the name against its synced items,
+and writes a normal signed record with `?write_request=`. See spec §3.9.
+
 ## Build
 
 The deploy step runs no bundler, so the built files are committed:

@@ -29,6 +29,7 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   duplicate_name: 'More than one item has that name. Resolve it from the CLI first.',
   history_unavailable: 'That revision or branch cannot be used from this browser: it is not readable here, is a deletion, or is no longer current. Nothing was written. Use `ak secrets sync settle` or a device that holds the key.',
   restore_current: 'That revision already has the current value. Nothing was written.',
+  already_exists: 'An item with that name already exists.',
   quota_exceeded: 'The vault is full.',
   invalid_rotation: 'That rotation interval is not valid. Use a whole number of days from 1 to 36500, or clear it.',
   rotation_value_unchanged: 'That is the value already in the vault, so nothing was rotated. Create a new credential at the provider and enter it here.',
@@ -46,6 +47,16 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   deleted: 'Deleted.',
   restored: 'Restored as a new revision. The value was encrypted in this browser and is not shown. Rotate or revoke the credential at its provider if it may be exposed.',
   resolved: 'Conflicting branches marked resolved with a new revision. The branches stay in the signed history.',
+  write_signin: 'An assistant asked you to enter a secret value. Sign in to open the request; the value is typed here and never shown to the assistant.',
+  write_enroll: 'Add this browser to your vault first. The write request opens once the owner device approves it.',
+  write_wrong_vault: 'That write request is for a vault this browser is not a device of. Open the link in a browser enrolled in that vault.',
+  write_unavailable: 'This write request is no longer open: it was completed, cancelled or revoked, or it expired. Ask the assistant for a new link if you still need it.',
+  write_saved: 'Saved. The value was encrypted in this browser; the assistant only learns that the request completed.',
+  write_conflict: 'Another device changed this secret at the same time. Your value was kept as a conflict branch; resolve it in the dashboard or the CLI.',
+  write_cancelled: 'Cancelled. Nothing was written.',
+  write_exists: 'A secret with this name already exists, so the request was closed without writing. Ask the assistant for a replace request instead.',
+  write_missing: 'No secret with this name exists to replace, so the request was closed without writing.',
+  write_device_error: 'This browser could not open or complete the request, so it was closed without writing.',
 };
 
 export function messageFor(code: AppErrorCode | Notice['code']): string {

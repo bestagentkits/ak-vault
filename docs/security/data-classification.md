@@ -71,6 +71,11 @@ change log it already verifies and write ordinary signed records. A restored val
 is opened and sealed again in browser memory and is never rendered, copied or sent
 in clear.
 
+Opening a write-request link (`/app#write=<request_id>&vault=<vault_id>`) keeps the two
+opaque IDs in the browser's `sessionStorage` only for the sign-in redirect, and removes
+them when the callback reads them. The request ID authorizes nothing by itself. The
+dashboard never stores or logs the typed value, which is cleared on submit and cancel.
+
 ## Handling rules
 
 **Logs, traces and metrics**
