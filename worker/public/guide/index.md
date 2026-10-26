@@ -99,8 +99,8 @@ The dashboard is a device of your vault, like a second laptop. It creates its ow
    # PREVIEW: hidden in the released CLI, unsupported, syntax may change
    ak secrets devices approve <join code>
    ```
-3. **What the dashboard can do** (staging). List secrets with their metadata (sensitivity, dates and profile fields, each marked with where it came from), filter by name or metadata, find an exact name, set a value and delete a secret. Filtering and search run in the browser over the copy it verified; no query goes to the server.
-4. **What it never does.** It never shows, copies or stores a value: the value field is write-only and is cleared when you save. It signs no checkpoints and resolves no conflicts; it shows how many conflicts are open, and you resolve them from the CLI. It cannot change membership, read the recovery bundle, publish the seal key or apply queued writes: the server refuses those for a browser session.
+3. **What the dashboard can do** (staging). List secrets with their metadata (sensitivity, dates and profile fields, each marked with where it came from), filter by name or metadata, find an exact name, set a value and delete a secret. Filtering and search run in the browser over the copy it verified; no query goes to the server. The read-only **Members and access** tab lists the accounts, roles and devices the signed membership chain names, removed devices, the key epoch, a pending rekey and the items a removal flagged for rotation, and says what this browser session can and cannot do. A removal ends future access only: rotating the vault key does not revoke provider keys already disclosed, so rotate those at the provider.
+4. **What it never does.** It never shows, copies or stores a value: the value field is write-only and is cleared when you save. It signs no checkpoints and resolves no conflicts; it shows how many conflicts are open, and you resolve them from the CLI. It cannot invite, remove or re-role members, rekey, read the recovery bundle, publish the seal key or apply queued writes: the server refuses those for a browser session.
 
 ## Part 6: Connect an AI tool with remote MCP (staging)
 
