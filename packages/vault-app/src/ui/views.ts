@@ -274,16 +274,17 @@ function entryRow(c: AppController, itemId: string, e: HistoryEntry, canWrite: b
 
 function conflictPanel(c: AppController, s: Extract<Screen, { kind: 'history' }>, vs: ViewState, rerender: () => void): Child {
   const open = s.history.entries.filter((e) => e.status === 'open');
-  if (open.length === 0) return null;
+  const total = s.history.openConflicts;
+  if (total === 0) return null;
   const choices = [{ id: 'keep', label: 'Keep the current value' }, ...open.filter((e) => e.adoptable).map((e) => ({ id: e.conflictId!, label: `Use the value of the branch from device ${e.author}, ${fmtTime(e.ts)}` }))];
   const confirming = vs.confirmResolve !== null ? choices.find((x) => x.id === vs.confirmResolve) ?? null : null;
   return h('section', { class: 'warn', 'data-testid': 'conflicts' }, [
-    h('h2', {}, [`${open.length} unresolved conflict${open.length > 1 ? 's' : ''}`]),
+    h('h2', {}, [`${total} unresolved conflict${total > 1 ? 's' : ''}`]),
     h('p', {}, ['Another device wrote at the same time, and the server kept its record as a branch instead of overwriting either. Nothing is lost: every branch stays in the signed history. Resolving writes one new revision that lists all open branches as resolved. The CLI offers the same through ', h('code', {}, ['ak secrets sync settle']), '.']),
-    s.canWrite
+    s.canWrite && s.history.resolvable
       ? confirming
         ? h('div', {}, [
-          h('p', { 'data-testid': 'resolve-confirm' }, [`${confirming.label}, and mark all ${open.length} open branch${open.length > 1 ? 'es' : ''} resolved for every device?`]),
+          h('p', { 'data-testid': 'resolve-confirm' }, [`${confirming.label}, and mark all ${total} open branch${total > 1 ? 'es' : ''} resolved for every device?`]),
           h('div', { class: 'row' }, [
             h('button', { type: 'button', class: 'danger', disabled: s.busy, 'data-testid': 'confirm-resolve' }, ['Resolve'], { click: () => { const adopt = confirming.id === 'keep' ? null : confirming.id; vs.confirmResolve = null; void c.resolve(s.history.itemId, adopt); } }),
             h('button', { type: 'button', class: 'secondary' }, ['Cancel'], { click: () => { vs.confirmResolve = null; rerender(); } }),
@@ -291,7 +292,8 @@ function conflictPanel(c: AppController, s: Extract<Screen, { kind: 'history' }>
         ])
         : h('div', { class: 'row' }, choices.map((x) => h('button', { type: 'button', class: 'secondary', disabled: s.busy, 'data-testid': 'resolve-choice' }, [x.label], { click: () => { vs.confirmResolve = x.id; vs.confirmRestore = null; rerender(); } })))
       : null,
-    open.some((e) => !e.adoptable) ? h('p', { class: 'muted' }, ['A branch that is a deletion or that this browser cannot read cannot be adopted here; use the CLI for it.']) : null,
+    !s.history.resolvable ? h('p', { class: 'notice notice-error', 'data-testid': 'resolve-blocked' }, ['At least one open branch is a deletion or cannot be read by this browser, so it cannot be resolved here and nothing is dismissed. Use ', h('code', {}, ['ak secrets sync settle']), ' on a device that can read it.']) : null,
+    open.some((e) => !e.adoptable) && s.history.resolvable ? h('p', { class: 'muted' }, ['A branch that predates a device removal or key rotation cannot be adopted here; use the CLI for it.']) : null,
   ]);
 }
 

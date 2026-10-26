@@ -25,14 +25,19 @@ time; older ones stay in the signed log.
   current key epoch, signed by this device, compare-and-swap on the verified
   head. A concurrent write turns it into a preserved conflict branch. Only the
   value is taken from the old revision; name, sensitivity and profile stay the
-  current head's. A deleted item, a deletion entry, a branch or a revision that
-  already equals the current value is refused. The old value is opened and sealed
+  current head's. A deleted item, a deletion entry, a branch, a revision that
+  already equals the current value, a value from before the item's latest
+  deletion, and a value a since-removed device wrote or could hold (its key
+  epoch is at or below the epoch current at the removal) are refused; a value
+  the CLI marked `value_encoding: base64` keeps that marker, any other encoding
+  is refused. The old value is opened and sealed
   again in memory and is never rendered, copied or logged: the dashboard already
   opens every live head the same way. It needs no device approval step.
 - **Resolve** writes one new revision at the head that lists every open branch in
   `resolves`, keeping the current value or adopting one readable branch. Branches
-  stay in the log. Deletion branches and branches this browser cannot read are
-  left to `ak secrets sync settle`.
+  stay in the log. If any open branch is a deletion or cannot be read by this
+  browser, resolving is refused for every choice and the user is pointed to
+  `ak secrets sync settle`: nothing is dismissed unseen.
 - Both ask for confirmation. Restoring a provider credential does not make it
   valid again; rotate or revoke it at the provider if it may be exposed.
 

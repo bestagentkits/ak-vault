@@ -227,11 +227,11 @@ export class FakeWorld {
    * The owner CLI submits a record at an explicit `base` (a stale base becomes a preserved branch),
    * optionally as a tombstone or resolving branches. Returns the server's status and the branch ID.
    */
-  ownerWrite(itemId: string, name: string, value: string, opts: { base: number; tombstone?: boolean; resolves?: string[]; ts?: number }): { status: number; conflictId: string | null } {
+  ownerWrite(itemId: string, name: string, value: string, opts: { base: number; tombstone?: boolean; resolves?: string[]; ts?: number; meta?: JsonObject }): { status: number; conflictId: string | null } {
     const st = this.state();
     const tombstone = opts.tombstone === true;
     const ctx = { vault_id: this.vaultId, item_id: itemId, base_revision: opts.base, key_epoch: st.key_epoch, author: this.owner.record.device_id, tombstone };
-    const payload = tombstone ? { deleted: true as const } : { name, value, meta: { schema: 'agentkit.secret/v1', created_ms: 1_700_000_000_000 }, sensitivity: 'normal' as const };
+    const payload = tombstone ? { deleted: true as const } : { name, value, meta: opts.meta ?? { schema: 'agentkit.secret/v1', created_ms: 1_700_000_000_000 }, sensitivity: 'normal' as const };
     const env = sealItem({ ...ctx, vk: this.vks.get(st.key_epoch)!, payload });
     const record = signRecord({ ...ctx, ts: opts.ts ?? Date.now(), resolves: opts.resolves ?? [], env }, this.owner.signSecret);
     const res = this.applyServer(record, tombstone ? null : nameTag(nameIndexKey(this.vks.get(st.key_epoch)!, this.vaultId, st.key_epoch), name));

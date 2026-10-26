@@ -16,6 +16,7 @@ import {
   carryForwardMeta,
   cjsonBytes,
   isAkvError,
+  MAX_RESOLVES,
   MAX_PLAINTEXT_BYTES,
   nameIndexKey,
   nameTag,
@@ -31,10 +32,9 @@ import {
 import { AppError } from '../app-error.js';
 import { isVaultApiError, type AkvClient } from './akv-client.js';
 import { validItemName, validItemValue } from './item-names.js';
+import { valueBlocked } from './history.js';
 import { ITEM_META_SCHEMA, openHead, openRecord, type VaultSnapshot } from './vault-sync.js';
 
-/** Most branches one record may resolve (spec §5). */
-const MAX_RESOLVES = 256;
 
 export interface WriteResult {
   itemId: string;
@@ -58,6 +58,15 @@ export function nextMeta(prev: ItemPayload | null, valueChanged: boolean, nowMs:
   if (!prev || typeof meta['created_ms'] !== 'number') meta['created_ms'] = nowMs;
   if (prev && valueChanged) meta['rotated_ms'] = nowMs;
   if (prev && prev.meta['profile'] !== undefined) meta['profile'] = prev.meta['profile'];
+  return meta;
+}
+
+/** The meta for a value taken from `source`: a base64 value (a binary secret the CLI wrote) stays marked as such; any other encoding is refused. */
+function metaForValueFrom(prev: ItemPayload, source: ItemPayload, valueChanged: boolean, nowMs: number): JsonObject {
+  const enc = source.meta['value_encoding'];
+  if (enc !== undefined && enc !== 'base64') throw new AppError('history_unavailable');
+  const meta = nextMeta(prev, valueChanged, nowMs);
+  if (enc === 'base64') meta['value_encoding'] = 'base64';
   return meta;
 }
 
@@ -156,12 +165,13 @@ export async function restoreRevision(args: { client: AkvClient; snapshot: Vault
   const state = liveState(snapshot, args.itemId);
   const target = snapshot.log.get(args.itemId)?.find((e) => e.logSeq === args.logSeq && e.conflictId === null);
   if (!target || target.record.tombstone || recordDigest(target.record) === state.head) throw new AppError('history_unavailable');
+  if (valueBlocked(target.record, target.logSeq, snapshot.log.get(args.itemId) ?? [], snapshot.state) !== null) throw new AppError('history_unavailable');
   const old = openRecord(target.record, snapshot.vaultKeys.get(target.record.key_epoch));
   if (!old || 'deleted' in old) throw new AppError('history_unavailable');
   const prev = openHead(snapshot, args.itemId);
   if (old.value === prev.value) throw new AppError('restore_current');
   const nowMs = args.nowMs ?? Date.now();
-  const payload: ItemPayload = { name: prev.name, value: old.value, meta: nextMeta(prev, true, nowMs), sensitivity: prev.sensitivity };
+  const payload: ItemPayload = { name: prev.name, value: old.value, meta: metaForValueFrom(prev, old, true, nowMs), sensitivity: prev.sensitivity };
   return writeRevision({ ...args, base: state.revision, vk, payload, resolves: [], nowMs });
 }
 
@@ -177,17 +187,26 @@ export async function resolveConflicts(args: { client: AkvClient; snapshot: Vaul
   const state = liveState(snapshot, args.itemId);
   const open = state.conflicts;
   if (open.length === 0 || open.length > MAX_RESOLVES) throw new AppError('history_unavailable');
+  // A deletion or an unreadable branch is never dismissed from here, whichever value is kept.
+  for (const c of open) {
+    const p = c.record.tombstone ? null : openRecord(c.record, snapshot.vaultKeys.get(c.record.key_epoch));
+    if (!p || 'deleted' in p) throw new AppError('history_unavailable');
+  }
   const prev = openHead(snapshot, args.itemId);
   let value = prev.value;
+  let source = prev;
   if (args.adopt !== null) {
     const branch = open.find((c) => c.conflict_id === args.adopt);
-    if (!branch || branch.record.tombstone) throw new AppError('history_unavailable');
+    if (!branch) throw new AppError('history_unavailable');
+    const logged = snapshot.log.get(args.itemId)?.find((e) => e.conflictId === branch.conflict_id);
+    if (!logged || valueBlocked(branch.record, logged.logSeq, snapshot.log.get(args.itemId) ?? [], snapshot.state) !== null) throw new AppError('history_unavailable');
     const payload = openRecord(branch.record, snapshot.vaultKeys.get(branch.record.key_epoch));
     if (!payload || 'deleted' in payload) throw new AppError('history_unavailable');
     value = payload.value;
+    source = payload;
   }
   const nowMs = args.nowMs ?? Date.now();
-  const next: ItemPayload = { name: prev.name, value, meta: nextMeta(prev, value !== prev.value, nowMs), sensitivity: prev.sensitivity };
+  const next: ItemPayload = { name: prev.name, value, meta: source === prev ? nextMeta(prev, false, nowMs) : metaForValueFrom(prev, source, value !== prev.value, nowMs), sensitivity: prev.sensitivity };
   return writeRevision({ ...args, base: state.revision, vk, payload: next, resolves: open.map((c) => c.conflict_id), nowMs });
 }
 

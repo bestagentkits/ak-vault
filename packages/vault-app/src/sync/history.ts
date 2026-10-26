@@ -60,6 +60,8 @@ export interface ItemHistory {
   /** Entries older than {@link HISTORY_LIMIT} that are not listed. */
   omitted: number;
   openConflicts: number;
+  /** Every open branch is a readable value, so "keep" cannot dismiss a deletion or an unseen branch. */
+  resolvable: boolean;
 }
 
 export type OpenFn = (record: SignedRecord, vk: Uint8Array | undefined) => ItemPayload | TombstonePayload | null;
@@ -68,6 +70,19 @@ export type OpenFn = (record: SignedRecord, vk: Uint8Array | undefined) => ItemP
 function canOpen(record: SignedRecord, vaultKeys: ReadonlyMap<number, Uint8Array>, open: OpenFn): boolean {
   const payload = open(record, vaultKeys.get(record.key_epoch));
   return payload !== null && !('deleted' in payload);
+}
+
+/**
+ * Why an earlier value may not be written back, or null when it may. A value
+ * written before the item's latest deletion stays dead (a deletion is often the
+ * response to a compromise), and a value a since-removed device wrote or could
+ * hold (its key epoch is at or below the epoch current at removal) is never
+ * promoted back to the head. Fail closed: the CLI is the route for those.
+ */
+export function valueBlocked(record: SignedRecord, logSeq: number, log: readonly LoggedRecord[], state: MembershipState): 'deleted_before' | 'removed_device' | null {
+  for (const e of log) if (e.conflictId === null && e.record.tombstone && e.logSeq > logSeq) return 'deleted_before';
+  if (state.removals.some((r) => r.device_id === record.author || record.key_epoch <= r.key_epoch)) return 'removed_device';
+  return null;
 }
 
 function standing(author: string, state: MembershipState, selfDeviceId: string): AuthorStanding {
@@ -94,11 +109,14 @@ export function buildItemHistory(input: HistoryInput): ItemHistory {
   const live = itemState.revision > 0 && !itemState.tombstone;
   const openIds = new Set(itemState.conflicts.map((c) => c.conflict_id));
   // Where each branch was resolved: the first applied record after it that lists it.
+  const branchSeq = new Map<string, number>();
+  for (const e of log) if (e.conflictId !== null) branchSeq.set(e.conflictId, e.logSeq);
   const resolvedAt = new Map<string, number>();
   for (const e of log) {
     if (e.conflictId !== null) continue;
-    for (const id of e.record.resolves) if (!resolvedAt.has(id)) resolvedAt.set(id, e.record.base_revision + 1);
+    for (const id of e.record.resolves) if (!resolvedAt.has(id) && e.logSeq > (branchSeq.get(id) ?? Infinity)) resolvedAt.set(id, e.record.base_revision + 1);
   }
+  const resolvable = itemState.conflicts.every((c) => !c.record.tombstone && canOpen(c.record, vaultKeys, input.open));
   const limit = input.limit ?? HISTORY_LIMIT;
   const recent = log.length > limit ? log.slice(log.length - limit) : log;
   const entries: HistoryEntry[] = [];
@@ -108,6 +126,7 @@ export function buildItemHistory(input: HistoryInput): ItemHistory {
     const isCurrent = applied && recordDigest(record) === itemState.head && record.base_revision + 1 === itemState.revision;
     const content = record.tombstone ? 'none' : canOpen(record, vaultKeys, input.open) ? 'readable' : 'unavailable';
     const open = !applied && openIds.has(conflictId);
+    const blocked = valueBlocked(record, logSeq, log, state) !== null;
     entries.push({
       logSeq,
       kind: applied ? 'revision' : 'conflict',
@@ -123,9 +142,9 @@ export function buildItemHistory(input: HistoryInput): ItemHistory {
       status: applied ? (isCurrent ? 'current' : 'superseded') : open ? 'open' : 'resolved',
       resolvedAtRevision: !applied && !open ? (resolvedAt.get(conflictId) ?? null) : null,
       content,
-      restorable: live && applied && !isCurrent && !record.tombstone && content === 'readable',
-      adoptable: live && open && !record.tombstone && content === 'readable',
+      restorable: live && applied && !isCurrent && !record.tombstone && content === 'readable' && !blocked,
+      adoptable: live && open && !record.tombstone && content === 'readable' && !blocked,
     });
   }
-  return { itemId: input.itemId, name: input.name, revision: itemState.revision, entries, omitted: log.length - recent.length, openConflicts: openIds.size };
+  return { itemId: input.itemId, name: input.name, revision: itemState.revision, entries, omitted: log.length - recent.length, openConflicts: openIds.size, resolvable };
 }

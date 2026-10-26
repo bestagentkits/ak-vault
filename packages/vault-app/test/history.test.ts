@@ -42,7 +42,8 @@ describe('buildItemHistory', () => {
     const r = replay([write(owner, 0, 'SENTINEL-A'), write(gone, 1, 'SENTINEL-B'), write(owner, 2, 'SENTINEL-C')]);
     const h = build(r);
     expect(h.entries.map((e) => [e.revision, e.status, e.authorStanding])).toEqual([[3, 'current', 'this_browser'], [2, 'superseded', 'removed_device'], [1, 'superseded', 'this_browser']]);
-    expect(h.entries.map((e) => e.restorable)).toEqual([false, true, true]);
+    // A value the removed device wrote is never promoted back; the one before it is restorable.
+    expect(h.entries.map((e) => e.restorable)).toEqual([false, false, true]);
     expect(JSON.stringify(h)).not.toContain('SENTINEL');
     expect(h.entries[0]!.author).toBe(owner.record.device_id.slice(0, 8));
   });
@@ -53,10 +54,24 @@ describe('buildItemHistory', () => {
     expect(h.entries.map((e) => [e.revision, e.keyEpoch, e.content, e.restorable])).toEqual([[2, 2, 'readable', false], [1, 1, 'unavailable', false]]);
   });
 
-  it('shows a tombstone with no content and never offers to restore through it', () => {
+  it('shows a tombstone with no content and offers no restore of a value from before the deletion', () => {
     const r = replay([write(owner, 0, 'a'), write(owner, 1, '', { tombstone: true }), write(owner, 2, 'again')]);
     const h = build(r);
-    expect(h.entries.map((e) => [e.revision, e.tombstone, e.content, e.restorable])).toEqual([[3, false, 'readable', false], [2, true, 'none', false], [1, false, 'readable', true]]);
+    expect(h.entries.map((e) => [e.revision, e.tombstone, e.content, e.restorable])).toEqual([[3, false, 'readable', false], [2, true, 'none', false], [1, false, 'readable', false]]);
+  });
+
+  it('offers no restore of a value a removed device could hold, and none of a pre-removal epoch', () => {
+    const r = replay([write(owner, 0, 'a', { epoch: 1 }), write(owner, 1, 'b', { epoch: 2 }), write(owner, 2, 'c', { epoch: 2 })]);
+    const removed = { devices: [owner.record], removals: [{ device_id: gone.record.device_id, key_epoch: 1 }] } as unknown as MembershipState;
+    const h = buildItemHistory({ itemId, name: 'n', itemState: r.state, log: r.log, state: removed, vaultKeys: keys, selfDeviceId: owner.record.device_id, open: openRecord });
+    expect(h.entries.map((e) => [e.revision, e.restorable])).toEqual([[3, false], [2, true], [1, false]]);
+  });
+
+  it('is not resolvable while an open branch is a deletion or unreadable', () => {
+    const del = replay([write(owner, 0, 'a'), write(owner, 1, 'head'), write(owner, 1, '', { tombstone: true })]);
+    expect(build(del).resolvable).toBe(false);
+    const epoch2 = replay([write(owner, 0, 'a'), write(owner, 1, 'head'), write(owner, 1, 'branch', { epoch: 2 })]);
+    expect(build(epoch2, new Map([[1, keys.get(1)!]])).resolvable).toBe(false);
   });
 
   it('offers no restore on a deleted item', () => {
@@ -70,7 +85,8 @@ describe('buildItemHistory', () => {
     const branchId = open.log[2]!.conflictId!;
     const h1 = build(open);
     expect(h1.openConflicts).toBe(1);
-    expect(h1.entries[0]).toMatchObject({ kind: 'conflict', status: 'open', adoptable: true, revision: null, baseRevision: 1, authorStanding: 'removed_device' });
+    expect(h1.entries[0]).toMatchObject({ kind: 'conflict', status: 'open', adoptable: false, revision: null, baseRevision: 1, authorStanding: 'removed_device' });
+    expect(h1.resolvable).toBe(true);
     const resolved = replay([...base, write(owner, 2, 'head', { resolves: [branchId] })]);
     const h2 = build(resolved);
     expect(h2.openConflicts).toBe(0);

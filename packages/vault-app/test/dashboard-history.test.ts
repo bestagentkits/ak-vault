@@ -7,6 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openItem } from '@ak-vault/protocol';
+import { openRecord } from '../src/sync/vault-sync.js';
 import { ACCOUNT, FakeWorld } from './helpers/fake-world.js';
 import { Browser, allByTestId, byTestId, type Page } from './helpers/dashboard-page.js';
 
@@ -298,7 +299,7 @@ describe('conflicts', () => {
     expect(world.exchanges.filter((e) => e.method === 'PUT').length).toBe(puts);
   });
 
-  it('does not offer to adopt a branch that is a deletion, and refuses it if asked', async () => {
+  it('does not offer to resolve while a branch is a deletion, and refuses both keep and adopt', async () => {
     const world = new FakeWorld();
     world.ownerSet('shared', S('base'));
     const itemId = itemIdOf(world);
@@ -307,12 +308,47 @@ describe('conflicts', () => {
     expect(del.status).toBe(409);
     const { page } = await new Browser(world).enroll();
     openHistory(page);
-    expect(allByTestId(page.root, 'resolve-choice').length).toBe(1);
-    expect(byTestId(page.root, 'conflicts').textContent).toContain('use the CLI');
+    expect(allByTestId(page.root, 'resolve-choice').length).toBe(0);
+    expect(byTestId(page.root, 'resolve-blocked').textContent).toContain('ak secrets sync settle');
     const puts = world.exchanges.filter((e) => e.method === 'PUT').length;
     expect(await page.controller.resolve(itemId, del.conflictId!)).toBe(false);
     expect(page.controller.current()).toMatchObject({ notice: { code: 'history_unavailable' } });
+    expect(await page.controller.resolve(itemId, null)).toBe(false);
     expect(world.exchanges.filter((e) => e.method === 'PUT').length).toBe(puts);
+  });
+
+  it('keeps the base64 marker when it restores or adopts a value the CLI wrote as base64', async () => {
+    const world = new FakeWorld();
+    const meta = { schema: 'agentkit.secret/v1', created_ms: 1_700_000_000_000, value_encoding: 'base64' };
+    world.ownerSet('binary', S('AAEC'), meta);
+    const itemId = itemIdOf(world);
+    world.ownerWrite(itemId, 'binary', S('plain'), { base: 1 });
+    const { page } = await new Browser(world).enroll();
+    expect(await page.controller.restore(itemId, 1)).toBe(true);
+    const written = openRecord(world.log.at(-1)!.record, world.vks.get(1));
+    expect(written).toMatchObject({ value: S('AAEC'), meta: { value_encoding: 'base64' } });
+  });
+
+  it('refuses a value whose encoding it does not know', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('odd', S('x'), { schema: 'agentkit.secret/v1', created_ms: 1_700_000_000_000, value_encoding: 'hex' });
+    const itemId = itemIdOf(world);
+    world.ownerWrite(itemId, 'odd', S('y'), { base: 1 });
+    const { page } = await new Browser(world).enroll();
+    expect(await page.controller.restore(itemId, 1)).toBe(false);
+    expect(page.controller.current()).toMatchObject({ notice: { code: 'history_unavailable' } });
+  });
+
+  it('refuses to restore a value from before the item was deleted and re-created', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('reborn', S('a'));
+    const itemId = itemIdOf(world);
+    world.ownerWrite(itemId, 'reborn', '', { base: 1, tombstone: true });
+    world.ownerWrite(itemId, 'reborn', S('b'), { base: 2 });
+    world.ownerWrite(itemId, 'reborn', S('c'), { base: 3 });
+    const { page } = await new Browser(world).enroll();
+    expect(await page.controller.restore(itemId, 1)).toBe(false);
+    expect(page.controller.current()).toMatchObject({ notice: { code: 'history_unavailable' } });
   });
 
   it('refuses to resolve when there is no open branch', async () => {
