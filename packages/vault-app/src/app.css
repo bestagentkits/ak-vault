@@ -58,3 +58,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .profile dt { color: var(--muted); }
 .profile dd { margin: 0; word-break: break-word; }
 .origin, .muted, .count { color: var(--muted); font-size: 0.85rem; }
+
+.devices { list-style: none; margin: 0.25rem 0 0; padding: 0 0 0 0.5rem; color: var(--muted); font-size: 0.9rem; }
+.caps { list-style: none; padding: 0; }
+.caps li { padding: 0.2rem 0; }
+.badge-active { border-color: var(--ok); color: var(--ok); }
+.cap-no .badge { border-color: var(--muted); color: var(--muted); }
