@@ -180,6 +180,9 @@ path next to email OTP; it does not change the cryptographic design.
   same `403 forbidden` as the recovery identity. A long-lived API key or CI credential
   leaks more easily than an email-OTP session, and recovery material is the vault's
   highest-value object; recovery stays available from any email-OTP owner device.
+  Consequence: such a session cannot seal a bundle either, so a vault it creates, or
+  a rekey it makes, leaves recovery unusable until an email-OTP owner device seals
+  one ([threat model](../security/threat-model.md) limitations).
 - ak-web enforces opt-in per API key (off by default, existing keys included), at
   most 5 devices per key and an email notice on every new API-key device
   ([ak-web#583](https://github.com/bestagentkits/ak-web/issues/583)); the CLI enrols

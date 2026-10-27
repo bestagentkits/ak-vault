@@ -197,6 +197,17 @@ describe('recovery operations by members need an email_otp session, whatever the
     },
   );
 
+  it.each(['api_key_device', 'machine'])('refuses a %s session that sends a bundle on any membership event', async (kind) => {
+    const vault = await VaultFixture.create();
+    const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });
+    const { event, wraps } = vault.enrollEvent(vault.newDevice(), undefined, signerOf(device));
+    const res = await vault.append(event, wraps, device, { sessionKind: kind }, { bundle: sealTestBundle(vault, 1) as never });
+    expect(res.status).toBe(403);
+    expect(res.json.error.code).toBe('forbidden');
+    // The same body from an email_otp session reaches the mutation step, which refuses a stray bundle.
+    expect((await vault.append(event, wraps, device, {}, { bundle: sealTestBundle(vault, 1) as never })).status).toBe(400);
+  });
+
   it.each(['api_key_device', 'machine'])('a %s session may still append other membership events as an owner', async (kind) => {
     const vault = await VaultFixture.create();
     const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });

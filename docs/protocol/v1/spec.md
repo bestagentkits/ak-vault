@@ -904,10 +904,13 @@ devices that honor it, not what a vault member can decrypt (§3).
    `PUT /v1/vaults/{vid}/recovery`, and a `POST …/membership` carrying a
    `recovery_rotate` event or a `bundle`) additionally require an `email_otp` session,
    whatever the device's role: an `api_key_device` or `machine` session on an
-   owner-role device is refused with `403 forbidden` before anything is read or
-   stored, the same refusal as on the recovery identity. Such a device keeps every
-   other right of its role. A token without `session_kind` is read as `email_otp`
-   (item 1).
+   owner-role device is refused with `403 forbidden` before any vault state is read
+   or its proof is consumed, the same refusal as on the recovery identity. Such a
+   device keeps every other right of its role, genesis, removal and rekey included,
+   but cannot seal a bundle: a vault it creates has none, and after a rekey it makes
+   the stored bundle cannot enroll a device (§3.5) until an owner device in an
+   `email_otp` session reseals it. A token without `session_kind` is read as
+   `email_otp` (item 1).
 5. Wrap routes. Wraps are uploaded only inside `PUT /v1/vaults/{vid}` (genesis) and
    `POST /v1/vaults/{vid}/membership` (`{"event","wraps"?,"bundle"?}`); there is no
    separate wrap upload. `GET /v1/vaults/{vid}/wraps?membership_seq=n` returns the
