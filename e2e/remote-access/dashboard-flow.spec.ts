@@ -78,7 +78,9 @@ test.describe('dashboard flow (signed-in account, phase-10 ak)', () => {
     expect(await dumpPageState(page)).not.toContain(runSentinel());
     expect(seen.bodies.some((b) => b.includes(runSentinel()) || b.includes(name))).toBe(false);
     expect(seen.console.some((c) => c.includes(runSentinel()) || c.includes(name))).toBe(false);
-    expect(await context.cookies(BASE_URL)).toEqual([]);
+    // ak-web's own `.agentkit.best` cookies come with the signed-in storage state; the vault host sets none.
+    const vaultHost = new URL(BASE_URL).hostname;
+    expect((await context.cookies(BASE_URL)).filter((c) => c.domain.replace(/^\./, '') === vaultHost)).toEqual([]);
   });
 
   test('an injected image handler in a secret name does not execute and is shown as text', async () => {
