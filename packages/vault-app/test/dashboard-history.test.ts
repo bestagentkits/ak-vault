@@ -79,6 +79,22 @@ describe('history', () => {
     noPlaintext(page, world);
   });
 
+  it('opens the history of a vault that gained a device after this browser last pulled', async () => {
+    const { world, page } = await threeRevisions();
+    const second = await new Browser(world).signIn();
+    const joinCode = byTestId(second.root, 'join-code').textContent!;
+    const offer = world.offerFor(joinCode);
+    await second.controller.submitOffer(offer.code);
+    world.approve(joinCode, offer.nonceI);
+    await page.controller.refresh();
+    page.controller.openHistory(itemIdOf(world));
+    expect(page.controller.current().kind).toBe('history');
+    expect(titles(page)).toEqual(['Revision 3', 'Revision 2', 'Revision 1']);
+    await page.controller.refresh();
+    expect(page.controller.current().kind).toBe('history');
+    noPlaintext(page, world);
+  });
+
   it('opens from the item list and returns to it', async () => {
     const { page } = await threeRevisions();
     openHistory(page);
@@ -392,6 +408,33 @@ describe('hostile history fails closed', () => {
     world.hostile.truncateLog = 1;
     await page.controller.refresh();
     expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+  });
+
+  it('refuses a log whose positions were reordered, by the head this browser kept', async () => {
+    const { world, page } = await threeRevisions();
+    const [two, three] = [world.log[1]!, world.log[2]!];
+    world.hostile.mutateEntry = (e) => (e.log_seq === 2 ? { ...three, log_seq: 2 } : e.log_seq === 3 ? { ...two, log_seq: 3 } : e);
+    await page.controller.refresh();
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+    expect(page.root.querySelector('[data-testid="history-list"]')).toBeNull();
+  });
+});
+
+describe('restore authorization', () => {
+  it('writes nothing once the owner removed this device after the history opened (simulated Worker refusal)', async () => {
+    const { world, page } = await threeRevisions();
+    openHistory(page);
+    const before = world.log.length;
+    const putsBefore = world.exchanges.filter((e) => e.method === 'PUT').length;
+    world.removeDevice((page.controller.current() as { deviceId: string }).deviceId);
+    // The browser cannot know yet. The fake Worker refuses a device the chain no longer lists.
+    expect(await page.controller.restore(itemIdOf(world), 1)).toBe(false);
+    // Zero PUTs or only refused ones: either way nothing is appended.
+    expect(world.exchanges.filter((e) => e.method === 'PUT').slice(putsBefore).every((e) => e.status === 403)).toBe(true);
+    expect(world.log.length).toBe(before);
+    // The pull after the refusal finds the removal and leaves the vault.
+    expect(page.controller.current().kind).toBe('removed');
+    noPlaintext(page, world);
   });
 });
 
