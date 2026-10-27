@@ -25,7 +25,8 @@
  *   `encodeRecoveryKey`/`decodeRecoveryKey` (Crockford base32).
  * - Recovery bundle (§3.4, §11): `sealRecoveryBundle(args): RecoveryBundleWire`,
  *   `openRecoveryBundle({bundle, vaultId, password? | rk?, knownBundleSeq?}): OpenedRecoveryBundle`.
- * - SAS (§3.5): `sasTranscript`, `sasCode`, `sasDigest`.
+ * - SAS (§3.5): `sasTranscript`, `sasCode`, `sasDigest`; committed enrollment (§3.9): `nonceJCommit`,
+ *   `verifyNonceJReveal`, `sas2Transcript`, `sas2Code`, `sas2Digest`, `encode/parse{Join2,Offer2,Reveal2}Code`.
  *
  * Membership (§4)
  * - `verifyMembershipChain(events, {trustedAnchor?, witnessedCheckpoint?, vaultId?}): MembershipState`.
@@ -306,6 +307,31 @@ export {
   type JoinCode,
   type OfferCode,
 } from './enroll-codes.js';
+export {
+  JOIN2_CODE_CONTEXT,
+  JOIN2_CODE_PREFIX,
+  NONCE_J_COMMIT_CONTEXT,
+  OFFER2_CODE_CONTEXT,
+  OFFER2_CODE_PREFIX,
+  REVEAL2_CODE_CONTEXT,
+  REVEAL2_CODE_PREFIX,
+  SAS2_CONTEXT,
+  encodeJoin2Code,
+  encodeOffer2Code,
+  encodeReveal2Code,
+  nonceJCommit,
+  parseJoin2Code,
+  parseOffer2Code,
+  parseReveal2Code,
+  sas2Code,
+  sas2Digest,
+  sas2Transcript,
+  verifyNonceJReveal,
+  type Join2Code,
+  type Offer2Code,
+  type Reveal2Code,
+  type Sas2Input,
+} from './enroll-commit.js';
 export {
   PROFILE_KEYS,
   PROFILE_KINDS,
