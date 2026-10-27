@@ -121,13 +121,14 @@ page and docs, and its own CI run is linked from its pull request.
       scenarios 1 to 12, 14 and 15 executed, findings filed as issues
       ([#41](https://github.com/bestagentkits/ak-vault/issues/41) fixed; open include
       [#42](https://github.com/bestagentkits/ak-vault/issues/42), blocked on ak-web
-      marking non-human sessions). **Open:**
-      scenario 13 must run again when
-      [#7](https://github.com/bestagentkits/ak-vault/issues/7) or agentkit#2299 lands.
-      Its 2026-10-16 run ([#80](https://github.com/bestagentkits/ak-vault/issues/80))
-      passed against what exists (the protocol policy evaluator and the sync client's
-      handling of pulled policy and profile items), but the features it attacks are
-      not built ([red-team evidence](./red-team-evidence.md#scenario-13-hostile-policy-and-profile-text)).
+      marking non-human sessions). Scenario 13 was re-run on 2026-10-27 against
+      agentkit `dev` with synced profiles and enforced synced policy: no grant
+      widened, no command ran and no forged profile field passed the provenance
+      check; hardening filed as
+      [#150](https://github.com/bestagentkits/ak-vault/issues/150) and
+      [agentkit#2745](https://github.com/bestagentkits/agentkit/issues/2745)
+      ([red-team evidence](./red-team-evidence.md#scenario-13-hostile-policy-and-profile-text);
+      first run [#80](https://github.com/bestagentkits/ak-vault/issues/80)).
 - [x] Two-device round trip and soak (below): replaced by the
       [Docker two-device e2e](../../e2e/docker/README.md)
       ([#55](https://github.com/bestagentkits/ak-vault/pull/55)) by owner decision
@@ -218,6 +219,9 @@ in production needs every box below, at the exact commit, plus an owner decision
       [data classification](./data-classification.md#transits-worker-memory-never-stored-or-logged-remote-access-only)).
 - [ ] Red-team scenarios 16–21 executed and scenario 13 rerun with synced profiles
       (`meta.profile` provenance) and MCP-originated text as the hostile input.
+      Scenario 13 part: done on 2026-10-27
+      ([red-team evidence](./red-team-evidence.md#scenario-13-hostile-policy-and-profile-text)).
+      Scenarios 16–21: open.
 - [ ] The D7 boundary (plaintext transits Worker memory) is stated on the MCP consent
       screen and in the vault guide, matching the
       [threat model](./threat-model.md#explicit-limitations).
