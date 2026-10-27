@@ -299,7 +299,7 @@ export function openHead(snapshot: VaultSnapshot, itemId: string): ItemPayload {
 interface ProfileAt {
   profile: Profile;
   origins: Partial<Record<ProfileKey, ProfileOrigin>>;
-  /** False when the device did not hold the base revision, so nothing was actually checked. */
+  /** False when this revision, or any revision it was built on, was kept without a held base to check against. */
   verified: boolean;
 }
 
@@ -363,7 +363,7 @@ export function replayLog(
             next = {};
           }
           const checked = checkProfileProvenance(prev?.profile ?? (record.base_revision === 0 ? {} : null), next, record, { selfDeviceId: selfId, prevOrigins: prev?.origins ?? null });
-          byRevision.set(revision, { profile: checked.profile, origins: checked.origins, verified: record.base_revision === 0 || prev !== null });
+          byRevision.set(revision, { profile: checked.profile, origins: checked.origins, verified: record.base_revision === 0 || (prev !== null && prev.verified) });
         }
       }
     }

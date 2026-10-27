@@ -131,7 +131,7 @@ describe('write metadata', () => {
   it('carries the verified profile, never the raw one', () => {
     expect(nextMeta(prev, false, 9, null)).not.toHaveProperty('profile');
     expect(nextMeta(prev, false, 9, {})).not.toHaveProperty('profile');
-    expect(nextMeta(prev, false, 9, verified)['profile']).not.toBe(verified);
+    expect(JSON.stringify(nextMeta(prev, false, 9, verified))).not.toContain('raw');
   });
 
   it('applies the CLI name rules', () => {

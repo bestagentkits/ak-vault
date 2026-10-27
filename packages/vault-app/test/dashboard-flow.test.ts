@@ -351,6 +351,29 @@ describe('vault', () => {
     expect(profileOf(world.log.length - 1)).toBeUndefined();
   });
 
+  it('carries no profile once any base under it was never held', async () => {
+    const world = new FakeWorld();
+    const at = 1_700_000_000_123;
+    const owner = world.owner.record.device_id;
+    const profile = { description: { value: 'unchecked', by: owner, at, src: 'local' } };
+    const meta = { schema: 'agentkit.secret/v1', profile };
+    const id = world.ownerSet('rotated', 'a', meta, at);
+    world.rekey();
+    expect(world.ownerWrite(id, 'rotated', 'b', { base: 1, ts: at + 1, meta }).status).toBe(200);
+    expect(world.ownerWrite(id, 'rotated', 'c', { base: 2, ts: at + 2, meta }).status).toBe(200);
+    const b = new Browser(world);
+    const page = await b.signIn();
+    const joinCode = byTestId(page.root, 'join-code').textContent!;
+    const offer = world.offerFor(joinCode);
+    await page.controller.submitOffer(offer.code);
+    world.approve(joinCode, offer.nonceI, { omitEpochs: [1] });
+    await page.controller.checkApproval();
+    expect(await page.controller.set('rotated', 'd')).toBe(true);
+    const record = world.log.at(-1)!.record;
+    const written = openItem({ ...record, vk: world.vks.get(record.key_epoch)! }) as { meta: Record<string, unknown> };
+    expect(written.meta['profile']).toBeUndefined();
+  });
+
   it('refuses a server that rolls the change log back below what this browser verified', async () => {
     const world = new FakeWorld();
     world.ownerSet('one', 'a');
