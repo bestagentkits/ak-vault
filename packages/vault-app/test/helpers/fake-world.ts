@@ -33,11 +33,16 @@ import {
   verifyProof,
   verifyRecord,
   authorizeRecordWrite,
+  appendAuditEntry,
+  auditEntryHash,
+  epochTag,
+  parseEnvelope,
   wrapToDevice,
   wrapsDigest,
   nameIndexKey,
   nameTag,
   type DeviceKeys,
+  type Envelope,
   type ItemState,
   type JsonObject,
   type MembershipEvent,
@@ -107,6 +112,8 @@ export class FakeWorld {
   readonly tags = new Map<string, { key_epoch: number; tag: string }>();
   readonly exchanges: LoggedExchange[] = [];
   readonly revoked: string[] = [];
+  /** The encrypted audit stream, as the Worker stores it. */
+  readonly audit: Envelope[] = [];
   private readonly codes = new Map<string, { challenge: string; state: string }>();
   private readonly appTokens = new Map<string, { sub: string; sid: string }>();
   private readonly refreshTokens = new Map<string, { sub: string; sid: string }>();
@@ -138,6 +145,12 @@ export class FakeWorld {
     forbidWrites: false,
     /** Every request fails at the network layer. */
     offline: false,
+    /** Refuse audit appends with this HTTP status (a failing audit store). */
+    auditAppendStatus: null as number | null,
+    /** Answer the next n audit appends with a 409 as if another device appended first. */
+    auditConflicts: 0,
+    /** Serve a head the stored chain does not have, and accept appends chained on it (a lying server). */
+    auditForgedHead: false,
   };
 
   constructor(opts: { shared?: boolean } = {}) {
@@ -424,6 +437,48 @@ export class FakeWorld {
     return json(404, { error: 'not_found' });
   }
 
+  /** The fixed hash a lying server reports as its head while `auditForgedHead` is set. */
+  private readonly forgedAuditHash = b64encode(randomBytes(32));
+
+  /** The head the server reports: the real one, or the forged one while lying. */
+  private servedAuditHead(): { seq: number; head: string } | null {
+    return this.hostile.auditForgedHead ? { seq: Math.max(0, this.audit.length - 1), head: this.forgedAuditHash } : this.auditHead();
+  }
+
+  private auditHead(): { seq: number; head: string } | null {
+    const last = this.audit.length - 1;
+    return last >= 0 ? { seq: last, head: auditEntryHash(this.audit[last]!) } : null;
+  }
+
+  private routeAudit(url: URL, method: string, body: string, headers: Headers): Response {
+    if (method === 'GET') {
+      const cursor = Number(url.searchParams.get('cursor') ?? 0);
+      const limit = Number(url.searchParams.get('limit') ?? 500);
+      const page = this.audit.map((entry, seq) => ({ seq, entry })).filter((e) => e.seq >= cursor).slice(0, limit);
+      return json(200, { entries: page, next_cursor: cursor, has_more: false, head: this.servedAuditHead(), checkpoints: [] });
+    }
+    if (method !== 'POST') return apiError(404, 'not_found');
+    if (!headers.get('Idempotency-Key')) return apiError(400, 'bad_request');
+    if (this.hostile.auditAppendStatus !== null) return apiError(this.hostile.auditAppendStatus, 'internal');
+    const b = JSON.parse(body) as { start_seq: number; prev: string; entries: unknown[] };
+    const head = this.auditHead();
+    if (this.hostile.auditConflicts > 0) {
+      this.hostile.auditConflicts--;
+      // another device appended first
+      const epoch = this.state().key_epoch;
+      this.audit.push(appendAuditEntry({ vk: this.vks.get(epoch)!, vaultId: this.vaultId, keyEpoch: epoch, head, event: { v: 1, type: 'item_put', device_id: this.owner.record.device_id, ts: Date.now() } }).entry);
+      return apiError(409, 'conflict');
+    }
+    // A lying server checks the append against the head it served, so only the client's own check refuses it.
+    const served = this.servedAuditHead();
+    if (b.start_seq !== (served ? served.seq + 1 : 0) || b.prev !== (served ? served.head : '')) return apiError(409, 'conflict');
+    const kid = epochTag(this.state().key_epoch);
+    const entries = b.entries.map((e) => parseEnvelope(e, 'audit entry'));
+    if (entries.some((e) => e.kid !== kid)) return apiError(400, 'bad_request');
+    this.audit.push(...entries);
+    return json(201, { head: this.auditHead() });
+  }
+
   private routeVault(url: URL, method: string, body: string, headers: Headers): Response {
     const token = (headers.get('Authorization') ?? '').replace(/^Bearer /, '');
     const who = this.syncTokens.get(token);
@@ -468,6 +523,7 @@ export class FakeWorld {
         head: { log_seq: served.length, log_head: this.logHeads[served.length] ?? '' },
       });
     }
+    if (coll === 'audit') return this.routeAudit(url, method, body, headers);
     if (method === 'GET' && coll === 'lookup') {
       const tags = url.searchParams.getAll('tag');
       const epochs = url.searchParams.getAll('key_epoch').map(Number);

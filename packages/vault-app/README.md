@@ -45,7 +45,7 @@ time; older ones stay in the signed log.
 It also shows each item's rotation health and guides a provider credential
 rotation: start, save the replacement value (write-only), then confirm the old
 credential was revoked at the provider as a separate step, with pause, fail and
-cancel. This is not a vault rekey. See
+cancel, and appends an encrypted audit entry for each state change (no name or value). This is not a vault rekey. See
 [Secret rotation](../../docs/security/key-lifecycle-and-recovery.md#secret-rotation).
 
 ## Members and access

@@ -34,6 +34,7 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   quota_exceeded: 'The vault is full.',
   invalid_rotation: 'That rotation interval is not valid. Use a whole number of days from 1 to 36500, or clear it.',
   rotation_value_unchanged: 'That is the value already in the vault, so nothing was rotated. Create a new credential at the provider and enter it here.',
+  audit_failed: 'The change was saved and signed, but its audit entry could not be confirmed as recorded. The signed revision is still the record of it.',
   rotation_not_ready: 'Save the new value in the vault first. Revocation can be confirmed only after that.',
   network: 'The network request failed. Check your connection and try again.',
   server: 'The server could not complete the request. Try again shortly.',

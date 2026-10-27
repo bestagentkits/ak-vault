@@ -19,7 +19,7 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Vault keys | Wrapped to devices, password KEK and recovery KEK only |
 | Recovery bundle contents (vault keys, owner anchor, checkpoint) | AEAD under password and recovery KEKs |
 | Sealed operation contents (`op`, name, value, sensitivity) at rest | Sealed to the epoch's `seal_pub`; only member devices derive `SealSK[e]` ([spec §3.6](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)). The Worker saw them in plaintext before sealing ([transit table](#transits-worker-memory-never-stored-or-logged-remote-access-only)) |
-| Audit of drained sealed operations and dropped profile fields (`sealed_applied`, `sealed_refused`, `profile_invalid`, `profile_provenance_invalid`) | Encrypted audit stream |
+| Audit of drained sealed operations and dropped profile fields (`sealed_applied`, `sealed_refused`, `profile_invalid`, `profile_provenance_invalid`) and of dashboard rotation state changes (`rotation_*`: type, item ID, author device, time) | Encrypted audit stream |
 
 ## Visible operational metadata (unavoidable)
 
