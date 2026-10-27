@@ -18,8 +18,9 @@ name: Deploy
 # when they start, because a run can wait in a queue or at the reviewer's
 # approval for hours. Any other value
 # refuses (fail closed). Procedure: docs/operations/runbooks.md#deploy-freeze.
-# After that check, production also refuses when its commit is no longer the head
-# of main, so a stale approved run cannot overwrite a newer deploy.
+# Staging (right before it deploys) and production (after that check) also refuse
+# when their commit is no longer the head of main, so a late CI run or a stale
+# approved run cannot overwrite a newer deploy.
 on:
   workflow_run:
     workflows: [CI]
