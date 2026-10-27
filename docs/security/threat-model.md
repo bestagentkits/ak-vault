@@ -266,7 +266,7 @@ These are accepted and must be stated wherever the guarantees are described:
   remove devices and rekey. A vault it creates has no bundle, and every rekey it
   makes leaves the stored bundle unable to enroll a device, until an owner device
   in an `email_otp` session seals one. With no such device, the vault cannot be
-  recovered ([#90](https://github.com/bestagentkits/ak-vault/issues/90)).
+  recovered ([#90](https://github.com/bestagentkits/ak-vault/issues/90); decision open on [#149](https://github.com/bestagentkits/ak-vault/issues/149)).
 - **Wraps of older epochs are optional.** A device enrolled without a wrap for an
   older epoch cannot read items still at that epoch; they are rotated forward by a
   device that can, never delivered by an unsigned late wrap.
