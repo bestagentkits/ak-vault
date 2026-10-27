@@ -288,6 +288,22 @@ projections, not measurements; each lever is re-measured when it lands.
 - Quotas and rate limits (published by `GET /v1/meta`, owned by
   `worker/src/limits.ts`) bound the worst case per vault.
 
+## Remote access (staging only, not measured)
+
+Remote access ([ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md)) is on
+for staging only and is not in the estimates above. Its cost line, from the request
+path rather than a measurement: a relayed MCP tool call adds a second
+revocation-registry hop (the Worker checks the MCP grant, then the account's relay
+object checks the device before it hands over the call), several calls to that
+relay object (rate budget, dispatch, audit row) and two vault-object lookups (account
+role, device role). The relay object holds each device's connection through the
+WebSocket hibernation API, so an idle connection bills no duration; each device
+re-authenticates at least once per sync-token lifetime. Owners:
+`worker/src/mcp/tool-dispatch.ts`, `worker/src/relay/account-relay-durable-object.ts`,
+and the limits in [`worker/src/limits.ts`](../../worker/src/limits.ts). The
+`pnpm cost:measure` harness does not drive `/mcp` or the relay yet; measure this line
+before remote access is considered for production.
+
 ## Replacing estimates with measurements
 
 Per-operation inputs are measured above; re-run

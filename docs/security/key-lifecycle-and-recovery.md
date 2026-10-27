@@ -35,6 +35,8 @@ recovery key, with no surviving device, makes the vault unrecoverable by design.
 
 Web login alone never enrolls a device. The SAS transcript is defined in
 [spec §3.5](../protocol/v1/spec.md#35-owner-recovery-signing-key-and-sas-enrollment).
+The enrollment codes must travel between the user's own devices; a flow that relays
+them needs commit-reveal first ([spec §3.8](../protocol/v1/spec.md#38-enrollment-codes)).
 
 ## Device loss or theft
 
@@ -86,6 +88,48 @@ Rotation is an ordinary CAS write of a new value under the current epoch. Cleari
 `needs-rotate` happens when the item is rewritten after the flag was set. The
 provider-side credential must be rotated as well; writing a new ciphertext of the
 old value protects nothing.
+
+Two things are called rotation and are different. A **rekey** (`key_epoch`) re-wraps
+the vault key for the devices that remain and replaces no credential. A **provider
+credential rotation** replaces the secret at its provider. The dashboard at `/app`
+shows them apart and manages only the second.
+
+### Rotation in the dashboard
+
+State comes from signed, encrypted item metadata and the membership log. The server
+sees none of it, and nothing here decides access.
+
+- **Health.** From `meta.rotated_ms` (else `created_ms`) plus `meta.rotate_ttl_days`:
+  on schedule, due soon (7 days), overdue, or unknown. With no interval or no date the
+  state is unknown; the dashboard never invents a date. After a vault write inside an
+  active or paused rotation the state is *old key not confirmed revoked*, never on
+  schedule, until a member confirms revocation. An item a rekey listed in
+  `needs_rotate` shows `needs rotation` until a member confirms the old credential is
+  revoked after a value was written under the epoch that rekey installed. A rewrite
+  alone never clears it, including a CLI `set`, which bumps `rotated_ms` even for an
+  unchanged value. (The base protocol rule, that a rewrite clears `needs-rotate`, is
+  unchanged; the dashboard is stricter because it cannot see the provider.) The check
+  uses writer-supplied dates, so a member with write access can misstate them; it is a
+  display aid, not an authorization input.
+- **Workflow.** `meta.rotation` is `{state: active|paused|failed|cancelled, started_ms,
+  revoked_ms?}`. A value not in that exact shape reads as no workflow. Older writers
+  carry the key forward unchanged.
+- **Separate steps.** (1) The operator creates the new credential at the provider,
+  outside the dashboard and any AI chat. (2) *Vault updated* is true only when the
+  verified head holds a value written after the workflow started (`rotated_ms >=
+  started_ms`), so it follows the pulled revision, not the click. (3) *Old credential
+  revoked* is a vault member's confirmation (not necessarily the viewer's), accepted only after step 2 while the rotation is active, and the
+  dashboard cannot check it with the provider. Writing another value clears it. The
+  dashboard never shows "rotated" before step 3 is confirmed.
+- **Writes** use the browser device's signing and sealing path, compare-and-swap on the
+  verified head: a concurrent edit becomes a conflict branch, a vault waiting on a
+  rekey or a device without an owner or editor role is refused, and a dashboard
+  replacement equal to the current value or empty is refused (a CLI `set` is not). The previous value is never shown.
+- **Limits.** No provider adapters ship; none will rotate or revoke without separate
+  least-privilege credentials and the operator's consent. Anyone who held the old
+  value (a removed member included) still knows it until the provider revokes it. The
+  signed revisions, with their author device and time, are the record of each state
+  change; the dashboard does not append entries to the encrypted audit stream.
 
 ## Password and parameter upgrade
 

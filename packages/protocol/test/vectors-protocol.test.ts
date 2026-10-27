@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyRecord, authorizeRecordWrite, b64decode, buildProof, checkRollback, computeStateDigest, deriveAuditKey, deviceIdFromSignPub, effectiveGrant,
   openItem, sasCode, sasDigest, sasTranscript, signKeyPairFromSeed, b64encode, utf8Decode, validateWrapRecipients, verifyAuditChain,
-  verifyAuditCheckpoint, verifyCheckpoint, verifyMembershipChain, verifyProof, verifyRecord, wrapsDigest,
+  parseAuditEventEnvelope, verifyAuditCheckpoint, verifyCheckpoint, verifyMembershipChain, verifyProof, verifyRecord, wrapsDigest,
   type ItemState, type VerifyChainOptions,
 } from '../src/index.js';
 import { expectCode, loadVector, named, type Vec } from './helpers.js';
@@ -124,6 +124,15 @@ describe('audit.json', () => {
   });
   it.each(named(v.invalid))('rejects %s', (_n, c: Vec) => {
     expectCode(() => verifyAuditChain(c.entries, opts(c)), c.expect_error);
+  });
+  it.each(named(v.event_envelopes.valid))('event envelope accepts %s', (_n, c: Vec) => {
+    expect(parseAuditEventEnvelope(c.event)).toEqual(c.envelope);
+  });
+  it.each(named(v.event_envelopes.invalid))('event envelope rejects %s', (_n, c: Vec) => {
+    expectCode(() => parseAuditEventEnvelope(c.event), c.expect_error);
+  });
+  it('every decrypted chain event has a valid envelope', () => {
+    for (const c of v.cases as Vec[]) for (const e of c.events) if (!e.opaque) parseAuditEventEnvelope(e.event);
   });
 });
 

@@ -12,6 +12,7 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Secret value | Inside item ciphertext ([spec §3.2](../protocol/v1/spec.md#32-item-payload)) |
 | Secret name | Inside item ciphertext; IDs are random and never derived from names |
 | Description, tags, profile fields (`when_to_use`, URLs, provider, …) | Inside item `meta` ciphertext |
+| Rotation interval, rotation workflow state and dates (`rotate_ttl_days`, `rotated_ms`, `rotation`) | Inside item `meta` ciphertext |
 | Sensitivity class | Inside item ciphertext |
 | Portable policy | Encrypted item with `meta.kind = "policy"` |
 | Private audit entries | Encrypted audit stream ([spec §7](../protocol/v1/spec.md#7-encrypted-audit-stream)) |
@@ -60,7 +61,11 @@ termination and are held only for the request or relayed call
 | Redacted `run` output (`stdout`, `stderr`) | Device → Worker → MCP client |
 
 The dashboard at `/app` decrypts in the browser, so its plaintext never reaches the
-Worker; its traffic is the same ciphertext and metadata as any device.
+Worker; its traffic is the same ciphertext and metadata as any device. Its per-item
+history, restore and conflict resolution add no field and no route: they read the
+change log it already verifies and write ordinary signed records. A restored value
+is opened and sealed again in browser memory and is never rendered, copied or sent
+in clear.
 
 ## Handling rules
 

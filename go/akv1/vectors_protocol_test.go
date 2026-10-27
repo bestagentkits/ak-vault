@@ -286,6 +286,26 @@ func checkAudit(t *testing.T, f *rec, n *counter) {
 	state := mustOK(VerifyMembershipChain(f.list("membership_events"), VerifyChainOptions{}))(t, f.path)
 	mustOK(VerifyAuditCheckpoint(f.raw("checkpoint"), state))(t, "checkpoint")
 	n.add(1)
+	envs := f.obj("event_envelopes")
+	for _, c := range envs.recs("valid") {
+		got := mustOK(ParseAuditEventEnvelope(c.raw("event")))(t, c.path)
+		want := c.obj("envelope")
+		eqStr(t, c.path+" type", got.Type, want.str("type"))
+		eqStr(t, c.path+" device_id", got.DeviceID, want.str("device_id"))
+		if got.TS != want.i64("ts") {
+			t.Errorf("%s: ts %d, want %d", c.path, got.TS, want.i64("ts"))
+		}
+		want.done()
+		c.done()
+		n.add(1)
+	}
+	for _, c := range envs.recs("invalid") {
+		_, err := ParseAuditEventEnvelope(c.raw("event"))
+		expectCode(t, c, err)
+		c.done()
+		n.add(1)
+	}
+	envs.done()
 	for _, c := range f.recs("invalid_checkpoints") {
 		_, err := VerifyAuditCheckpoint(c.raw("checkpoint"), state)
 		expectCode(t, c, err)
@@ -319,6 +339,11 @@ func checkAudit(t *testing.T, f *rec, n *counter) {
 		var head any
 		if chain.Head != nil {
 			head = *chain.Head
+		}
+		for _, e := range chain.Events {
+			if !e.Opaque {
+				mustOK(ParseAuditEventEnvelope(e.Event))(t, c.path+" event envelope")
+			}
 		}
 		eqJSON(t, c.path+" events", events, c.raw("events"))
 		eqJSON(t, c.path+" head", head, c.raw("head"))

@@ -173,7 +173,10 @@ membership whose session kind is `api_key_device` or `machine` is refused (`403`
 path (the bundle and membership reads) and on recovery enrollment, so a leaked API key or a CI
 runner cannot collect recovery bundles by itself. Once an owner device approves such a
 device with a signed `device_add`, it is a current member and its role decides: an owner-role
-device may read and replace the bundle and rotate the recovery key. Every other route answers such a device `forbidden`;
+device may read and replace the bundle and rotate the recovery key, but only in an
+`email_otp` session; an `api_key_device` or `machine` session may only store the
+first bundle of a vault that has none (genesis seal, §9 item 4). Every other route
+answers such a device `forbidden`;
 without the `AKV-Device-Key` header, a membership read by a non-member is `forbidden`
 as before. The membership log is metadata already visible to the server (§4,
 [data classification](../../security/data-classification.md)); reading it lets the
@@ -302,7 +305,9 @@ are applied only by that account's own devices. For each operation, in order:
    {account, now, sealedTtlS, seen})` runs steps 1 and 2 on the result of
    `openSealedOp`, never on a raw wire, so it reads only authenticated header fields:
    another account → `forbidden`, an applied or refused `sealed_id` → `conflict`, a
-   `ts` out of bounds → `bad_request`;
+   `ts` out of bounds → `bad_request`. Before step 1 it refuses with `bad_request`
+   a malformed context (an `account` outside 1..256 UTF-16 code units, no `seen`
+   set) and any value `openSealedOp` did not return;
 3. resolve `name` against all its own decrypted live items: those whose payload
    `name` equals `name` after NFC normalization of both. More than one match, any
    match that is a policy item (§8.1), or a `delete` with no match → refuse. A `set`
@@ -317,8 +322,8 @@ are applied only by that account's own devices. For each operation, in order:
    head's (`normal` for a new item) and the requested one, so a sealed write never
    lowers sensitivity. A `delete` writes a tombstone. A `409` is an ordinary conflict
    branch (§5), never retried as an overwrite;
-5. append an encrypted audit entry (§7) with `action` `sealed_applied` or
-   `sealed_refused`, the `sealed_id`, `origin.client_id` and, when applied, the
+5. append an encrypted audit entry (§7) with `type` `sealed_applied` or
+   `sealed_refused` (event envelope, §7.1), the `sealed_id`, `origin.client_id` and, when applied, the
    `item_id`; never the name or value;
 6. acknowledge it with the outcome.
 
@@ -414,6 +419,20 @@ joiner MUST then verify the membership chain from `trust_anchor` (the genesis
 author's `sign_pub`, §4), the checkpoint signature and its non-rollback against that
 chain (§6), and that the `device_add` adding it carries `sas` = `b64(sha256(transcript))`
 for its own device record before it trusts any wrap.
+
+**Authenticity of the code channel.** v1 does not commit to the nonces before they are
+revealed: the join code carries `nonce_j` and the offer code carries `nonce_i`, and
+neither is bound to the other. The six-digit SAS (about 20 bits) therefore authenticates
+the exchange only while the two codes travel between the two devices without an active
+attacker on that path. An attacker who carries both codes can read `nonce_j`, put its own
+device towards the owner, learn the owner's digits, then choose the nonce it hands the
+joiner and grind about 10^6 SHA-256 values until both sides show the same six digits. v1
+therefore requires an authentic code channel: the user copies the codes between two
+terminals or screens they control. A service that relays the codes for the user (the
+Worker, ak-web or another service) is outside what v1 protects, and an implementation
+MUST NOT offer such a flow on v1 codes. A relayed flow needs a commit-reveal exchange in which the
+joiner commits to `nonce_j` before it sees `nonce_i` and reveals it only afterwards, which
+is a wire change under the spec-change procedure.
 
 Vectors (`enroll-codes.json`): byte-exact round trips of a join and an offer code in
 the format shipped CLIs produce; a code split by whitespace parses; oversize, wrong
@@ -750,6 +769,47 @@ batches and covered by audit checkpoints (context `akv1/audit-checkpoint`,
 witnessed audit checkpoint is detected by chain replay. The server's operational log
 is separate and never contains item names or values.
 
+### 7.1 Event plaintext
+
+The plaintext of an entry is the canonical JSON of one event object. Every writer
+and every reader shares this envelope (the `ak` CLI defines the types below):
+
+```json
+{"v":1,"type":"<name>","device_id":"<id>","ts":<unix ms>, ...}
+```
+
+- `v` is the integer `1`; any other value, or none, is `unsupported_version`.
+- `type` is 1 to 64 bytes of `[a-z0-9_]`, starting with a letter.
+- `device_id` is the opaque ID (§2) of the device that acted; `ts` is a non-negative
+  safe integer in unix milliseconds.
+- Other fields depend on `type`. Events name items and devices by opaque ID only,
+  never a secret name, value, profile text, token, key or recovery material
+  (data classification: audit).
+
+Types defined today, each with the fields it carries besides the envelope:
+`item_put`, `item_delete`, `conflict_settled` (`item_id`, `revision`);
+`device_add`, `device_remove` (`subject_device_id`); `rekey`, `recover`,
+`recovery_rotate` (none); `profile_invalid` (`item_id`, `revision`);
+`profile_provenance_invalid` (`item_id`, `revision`, `field`);
+`sealed_applied` (`sealed_id`, `client_id`, `item_id` when it wrote one) and
+`sealed_refused` (`sealed_id`, `client_id`); `mcp_call` (`client_id`, `tool`,
+`outcome`). The `ak` CLI parses each of these strictly: a field its type does not
+carry, or a malformed one, makes it refuse the entry.
+
+**Unknown types.** A reader MUST accept an event whose `type` it does not define when
+its envelope is well formed, keep only `type`, `device_id` and `ts`, and read no other
+field. It MUST NOT skip or reject the entry or the chain: a newer writer's event type
+never stops an older device from verifying or appending. A new type needs no
+protocol change; a writer MUST choose a name no existing type uses, and MUST NOT
+reuse a defined name with another field set. For example, a `rotation_started`
+event from another writer is an unknown type to the CLI, which keeps its envelope only.
+
+A writer that does not use this envelope (for example `action` in place of `type`,
+or no `v`) makes a CLI device refuse the chain and stop appending audit entries
+(secret sync is unaffected). A verifier of the chain (§7) decrypts entries whose
+plaintext is any JSON object; checking the envelope is the event reader's job
+(`parseAuditEventEnvelope`; vectors: `audit.json` `event_envelopes`).
+
 ## 8. Portable policy (restrictive only)
 
 Encrypted item with `meta.kind = "policy"` (payload layout and binding: §8.1). Fields are maxima only:
@@ -897,7 +957,23 @@ devices that honor it, not what a vault member can decrypt (§3).
    session (an AgentKit API key exchanged for a revocable device session) may create a
    new vault with genesis and, once enrolled, acts as a member under its role; it joins an
    existing vault only through a `device_add` signed by an existing owner device, never
-   through the recovery identity.
+   through the recovery identity. **Recovery operations** (`GET` and
+   `PUT /v1/vaults/{vid}/recovery`, and a `POST …/membership` carrying a
+   `recovery_rotate` event or a `bundle`) additionally require an `email_otp` session,
+   whatever the device's role, with one exception, the **genesis seal**: an
+   `api_key_device` or `machine` session on an owner-role device may
+   `PUT /v1/vaults/{vid}/recovery` while the vault has no stored bundle, under the
+   usual role, scope and proof checks. Every other recovery operation by such a
+   session (a read, a `PUT` that would replace a stored bundle, a rotation) is
+   refused with `403 forbidden` before its proof is consumed, the same refusal as on
+   the recovery identity; an exact idempotent retry of the genesis seal (§5) is
+   answered with its stored result, so a client whose answer was lost MUST retry
+   with the same `Idempotency-Key` and body (it cannot read the bundle to check). The server re-checks "no stored bundle" in the
+   transaction that stores it. Such a device keeps every other right of its role,
+   removal and rekey included, but cannot reseal: after a rekey it makes, the stored
+   bundle cannot enroll a device (§3.5) until an owner device in an `email_otp`
+   session reseals it. A token without `session_kind` is read as `email_otp`
+   (item 1).
 5. Wrap routes. Wraps are uploaded only inside `PUT /v1/vaults/{vid}` (genesis) and
    `POST /v1/vaults/{vid}/membership` (`{"event","wraps"?,"bundle"?}`); there is no
    separate wrap upload. `GET /v1/vaults/{vid}/wraps?membership_seq=n` returns the
@@ -1083,13 +1159,16 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   `MCP-Protocol-Version`; an unsupported value answers `400` `-32022` with the
   request's `id`. A request without the header is served as 2025-11-25, statelessly:
   a 2025-11-25 client's `initialize` is answered without a session ID.
-- **Rate limits.** Every JSON-RPC request spends one call from the
-  `mcp_calls_per_minute_per_client` and `mcp_calls_per_minute_per_account` budgets
-  (§10), and a `run` call also from `mcp_run_calls_per_minute_per_client`. A refused
-  `tools/call` of a known tool within the token's scopes is the tool error
-  `rate_limited` with `retry_after_s`; any other refused request is HTTP
-  `429 rate_limited` with `Retry-After` and the §10 error body. A call refused as
-  `rate_limited` writes no audit row.
+- **Rate limits.** Every JSON-RPC request that passes transport validation (method,
+  `Origin`, kill switch, token and revocation, headers and protocol version, body and
+  JSON-RPC parsing) spends one call from the `mcp_calls_per_minute_per_client` and
+  `mcp_calls_per_minute_per_account` budgets (§10), and a `run` call also from
+  `mcp_run_calls_per_minute_per_client`; a request refused before that point, and a
+  notification, spends nothing. A refused `tools/call` of a known tool within the
+  token's scopes whose `arguments` is absent, `null` (treated as absent) or an object
+  is the tool error `rate_limited` with `retry_after_s`; any other refused request, including such a call whose `arguments`
+  is any other value, is HTTP `429 rate_limited` with `Retry-After` and the §10 error
+  body. A call refused as `rate_limited` writes no audit row.
 - **Tools** map one to one onto the relay tools (§9.7) with the same scopes. Each
   takes the relay `args` plus an optional `vault_id`. Without it the Worker uses the
   one vault the account's online relay connections list. When they list more than
@@ -1103,8 +1182,10 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   `no_device_online`.
 - **Errors.** A device `error.code`, `no_device_online`, `device_timeout`,
   `sealed_queue_full` and `rate_limited` are MCP tool errors (`isError` true) carrying
-  `{"code"}`; a token or scope failure is an HTTP `401` or `403`, and the kill switch
-  an HTTP `503 sync_disabled`, with the §10 error body. Messages never echo arguments.
+  `{"code"}`; a token or scope failure is an HTTP `401` or `403`, a rate-limited
+  request that is not such a tool call (see rate limits) an HTTP `429 rate_limited`, and the
+  kill switch an HTTP `503 sync_disabled`, with the §10 error body. Messages never
+  echo arguments.
 
 ## 10. Errors and limits
 
@@ -1226,7 +1307,8 @@ These resolve points the sections above leave open; the vectors in
   when decrypted, `{"seq","key_epoch","opaque":true}` otherwise (§7). `minKeyEpoch`
   outside `1..keyEpoch`, a missing key for `keyEpoch` or for an entry epoch at or
   above `minKeyEpoch`, and a `kid` that is not an epoch tag are `bad_request`; a substituted, reordered or relabelled decryptable entry is
-  `decrypt_failed` (vectors: `audit.json`).
+  `decrypt_failed` (vectors: `audit.json`). `parseAuditEventEnvelope(event)` checks the
+  event envelope of a decrypted entry (§7.1) and returns `{type, device_id, ts}`.
 - **Transport proof:** `ts` is unix milliseconds, `jti` is b64 of 16 random bytes,
   `htm` is an uppercase method and `htu` is compared exactly. The proof blob MUST be
   canonical. Bad signature → `invalid_signature`; every other proof failure →
