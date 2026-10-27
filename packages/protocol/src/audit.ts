@@ -162,6 +162,30 @@ export function verifyAuditChain(entries: readonly unknown[], opts: VerifyAuditO
   return { events, head: last >= 0 ? { seq: last, head: hashes[last]! } : null };
 }
 
+/** The part of an audit event every reader checks (spec §7.1). */
+export interface AuditEventEnvelope {
+  type: string;
+  device_id: string;
+  ts: number;
+}
+
+const AUDIT_TYPE_NAME = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
+ * Check the plaintext envelope `{"v":1,"type","device_id","ts", ...}` of a decrypted
+ * audit event (spec §7.1) and return its three common fields. Other fields are not
+ * read: a type this reader does not know is accepted on its envelope alone, so a
+ * newer writer's event never stops a device appending. Per-type fields are owned by
+ * the writer that defines the type.
+ */
+export function parseAuditEventEnvelope(value: unknown, what = 'audit event'): AuditEventEnvelope {
+  const obj = asObject(value, what);
+  checkVersion(obj, what);
+  const type = obj['type'];
+  if (typeof type !== 'string' || !AUDIT_TYPE_NAME.test(type)) fail('bad_request', `${what}.type must match [a-z][a-z0-9_]{0,63}`);
+  return { type, device_id: asId(obj['device_id'], `${what}.device_id`), ts: asInt(obj['ts'], `${what}.ts`) };
+}
+
 export function signAuditCheckpoint(fields: Omit<AuditCheckpoint, 'v' | 'sig'>, secretKey: Uint8Array): AuditCheckpoint {
   return signObject(SIGN_CONTEXT.auditCheckpoint, { v: 1 as const, ...fields }, secretKey);
 }

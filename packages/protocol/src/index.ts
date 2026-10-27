@@ -51,7 +51,7 @@
  * and the head kept at the witnessed position to refuse a restored-then-regrown log).
  *
  * Audit (§7) — `deriveAuditKey`, `appendAuditEntry`, `verifyAuditChain(entries, {vaultKeys, vaultId, keyEpoch, witnessed?})`,
- * `auditEntryHash`, `signAuditCheckpoint`, `verifyAuditCheckpoint`.
+ * `auditEntryHash`, `parseAuditEventEnvelope`, `signAuditCheckpoint`, `verifyAuditCheckpoint`.
  *
  * Policy (§8) — `parsePolicy`, `effectiveGrant(localGrant, policy, sensitivity): LocalGrant`;
  * `resolveItemPolicy(targetItemId, items): {policy, sensitivity}` combines the policy items that
@@ -207,11 +207,13 @@ export {
   auditEntryHash,
   deriveAuditKey,
   parseAuditCheckpoint,
+  parseAuditEventEnvelope,
   signAuditCheckpoint,
   verifyAuditChain,
   verifyAuditCheckpoint,
   type AppendAuditArgs,
   type AuditCheckpoint,
+  type AuditEventEnvelope,
   type AuditHead,
   type VerifyAuditOptions,
   type AuditChainEntry,
