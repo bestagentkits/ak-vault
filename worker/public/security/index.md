@@ -94,6 +94,7 @@ These are design properties of protocol v1 as proposed, not reviewed results.
 - **Operators can see proofs in the live log tail.** Account members with Workers Tail access see request proofs and webhook signatures in the live tail. Each is single-use and bound to one request; tokens are redacted ([#61](https://github.com/bestagentkits/ak-vault/issues/61)).
 - **No independent third-party review.** By owner decision the GA security review is performed by the project owner, who accepted it on 2026-10-16 by an instruction recorded on #8 by an agent, with no written findings; the owner directs the agents that built ak-vault. No reviewer outside the project has reviewed it ([#8](https://github.com/bestagentkits/ak-vault/issues/8)).
 - **Recovery bundle can be guessed offline.** Anyone with a live owner-account session can download the encrypted bundle and guess a weak password offline. Revoke your sessions after a loss. (spec §3.4)
+- **Enrollment SAS can be ground.** The codes shipped today (`akj1-`/`ako1-`) carry both nonces in the clear, so an attacker who alters them can find a matching six-digit code in about 10^6 hashes. Committed codes close this (spec §3.9) and are not yet used by the `ak` CLI or the dashboard ([#136](https://github.com/bestagentkits/ak-vault/issues/136), [#146](https://github.com/bestagentkits/ak-vault/issues/146)). (spec §3.5)
 - **Trust on first use at genesis.** The owner's key is pinned on first use unless it arrives through the recovery bundle or a SAS-verified pairing. (spec §4)
 
 ## 5. Release gate

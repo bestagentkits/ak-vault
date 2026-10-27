@@ -208,6 +208,26 @@ in production needs every box below, at the exact commit, plus an owner decision
 - [ ] Go and TypeScript reproduce `seal-key.json`, `sealed-op.json`, `name-tag.json`,
       `enroll-codes.json`, `profile.json` and `relay-frames.json`, including every
       negative case ([spec §3.6–§3.8, §5.1, §9.7](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)).
+- [ ] Committed enrollment: Go and TypeScript reproduce `enroll-commit.json` including the
+      ground nonce refusal ([spec §3.9](../protocol/v1/spec.md#39-committed-enrollment-codes));
+      the `ak` CLI and the dashboard enroll with `akj2-`/`ako2-`/`akr2-` and the owner
+      device refuses `akj1-`, so [threat model X9](./threat-model.md) can drop its
+      uncommitted-SAS limitation. Client tests cover single-use `nonce_j` (a second offer for
+      the same join is refused) and a fresh `nonce_i` per join. On the joiner: refusing an
+      offer for another joiner or another commitment, a join only on explicit human action
+      (no automatic retry), every reveal not followed by a `device_add` for its own device
+      record counted as an attempt (including a SAS the human neither confirmed nor
+      rejected), and a stop with a visible notice after three until a deliberate resume.
+      On the owner device: at most one pending enrollment in total, an offer only on
+      explicit human action (no automatic answer to a relayed join), a pending enrollment
+      expiring 600 seconds after its offer (a later reveal is `forbidden`), every issued
+      offer without a confirmed match (failed reveal, reported mismatch, a SAS shown but
+      neither confirmed nor rejected, or a pending enrollment superseded, expired after
+      the 600-second time-to-live, or lost to a restart without a reveal) counted toward
+      the stop limit, a visible notice when a pending enrollment is abandoned, and
+      `forbidden` for a reveal whose `vault_id` or `joiner` differs from the pending
+      enrollment. On both: the attempt count survives a client restart until a deliberate
+      human resume.
 - [ ] Relay: Worker tests for the closed frame set and close codes, signed `hello` and
       `result`, `reauth` before expiry, revocation and membership checked before each
       call (a device removed mid-connection gets no further call), a replaced
