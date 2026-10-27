@@ -236,7 +236,8 @@ export class AppController {
       return;
     }
     this.writeLink = link;
-    if (kind === 'signed_out') this.show({ kind: 'signed_out', notice: { kind: 'info', code: 'write_signin' } });
+    // A skewed clock would refuse the sign-in the link asks for, so its error stays on screen.
+    if (kind === 'signed_out') this.show({ kind: 'signed_out', notice: this.clockSkewed() ? { kind: 'error', code: 'clock_skew' } : { kind: 'info', code: 'write_signin' } });
     else if (kind === 'join' || kind === 'approve') await this.route();
   }
 

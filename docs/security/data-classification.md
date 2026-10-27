@@ -87,7 +87,7 @@ name or a value.
 | Device keys: Ed25519 and X25519 as non-extractable `CryptoKey` objects, join nonce, device label | IndexedDB, one entry per account | The browser is the same device across visits; script cannot export the key bytes, only use them while the page runs |
 | Enrollment: vault ID, trust anchor, offer checkpoint, approving device ID, SAS | Same entry | Verifying the chain from the offer, as every device does |
 | Sync position: membership and log sequence numbers and heads, key epoch | Same entry | Anti-rollback and fork detection across visits and tabs; never a server value |
-| Pending sign-in: `state`, PKCE verifier, creation time | `sessionStorage`, removed when the callback reads it, refused after 10 minutes | Surviving the redirect to the authorization server |
+| Pending sign-in: `state`, PKCE verifier, creation time, and a write-request link's request and vault IDs | `sessionStorage`, removed when the callback reads it, refused after 10 minutes | Surviving the redirect to the authorization server |
 | Tokens, vault keys, item names, values, metadata, profile fields | Page memory only | Dropped on lock, sign-out and page exit; there is **no** local cache of vault contents, so every visit verifies from the server |
 
 Clearing site data removes the device; an owner should then remove it from the
