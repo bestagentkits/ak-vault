@@ -19,7 +19,7 @@
   <meta property="og:image" content="https://vault.agentkit.best/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, in security review.">
+  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, reviewed by the owner, not independently; sync is pre-release, not GA.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ak-vault guide: from .env to an encrypted vault">
   <meta name="twitter:description" content="Import a .env file, reference secrets in agent configs and control which agents read them. Sync steps are marked preview; the browser dashboard and remote MCP are staging only, pre-release.">
@@ -187,7 +187,7 @@
         <div class="section-head reveal">
           <span class="eyebrow">Part 2</span>
           <h2 id="sync-title">Sync a second device <span class="badge badge-planned">preview</span></h2>
-          <p>The end-to-end encrypted sync described on this site. A pre-release preview is live in production, before the external security review; the steps below are not a supported workflow until that review closes, and production credentials do not belong in it yet.</p>
+          <p>The end-to-end encrypted sync described on this site. A pre-release preview is live in production, enabled before the owner's review, which is not an independent third-party review. Sync is not generally available: the steps below are not a supported workflow until every release gate is met, and production credentials do not belong in it yet.</p>
         </div>
         <ol class="steps reveal">
             <li><div class="step-head"><h3>Sign in to your AgentKit account</h3><span class="badge badge-ok">available</span></div><div class="step-body"><p><code>ak login</code> exists today for your AgentKit account; the preview sync commands use that sign-in.</p>
@@ -282,9 +282,9 @@
 <pre tabindex="0"><code id="g-browser-approve"><span class="c"># PREVIEW: hidden in the released CLI, unsupported, syntax may change</span>
 <span class="p">$ </span>ak secrets devices approve &lt;join code&gt;</code></pre>
             </div></div></li>
-            <li class="is-planned"><div class="step-head"><h3>What the dashboard can do</h3><span class="badge badge-review">staging</span></div><div class="step-body"><p>List secrets with their metadata (sensitivity, dates and profile fields, each marked with where it came from), filter by name or metadata, find an exact name, set a value and delete a secret. Filtering and search run in the browser over the copy it verified; no query goes to the server.</p></div></li>
+            <li class="is-planned"><div class="step-head"><h3>What the dashboard can do</h3><span class="badge badge-review">staging</span></div><div class="step-body"><p>List secrets with their metadata (sensitivity, dates and profile fields, each marked with where it came from), filter by name or metadata, find an exact name, set a value, delete a secret, open a secret's signed revision history, restore an earlier value as a new revision and resolve conflicting branches. Filtering and search run in the browser over the copy it verified; no query goes to the server.</p></div></li>
             <li class="is-planned"><div class="step-head"><h3>Members and access</h3><span class="badge badge-review">staging</span></div><div class="step-body"><p>The <strong>Members and access</strong> tab is read-only. It lists the accounts the signed membership chain names, their roles and devices, removed devices, the key epoch, a pending rekey and the items a removal flagged for rotation, and says what this browser session can and cannot do. Inviting, removing, changing roles and rekeying are done on an owner device, never in the browser. A removal ends future access only: rotating the vault key does not revoke provider keys that were already disclosed, so rotate those at the provider.</p></div></li>
-            <li class="is-planned"><div class="step-head"><h3>What it never does</h3></div><div class="step-body"><p>It never shows, copies or stores a value: the value field is write-only and is cleared when you save. It signs no checkpoints and resolves no conflicts; it shows how many conflicts are open, and you resolve them from the CLI. It cannot change membership, read the recovery bundle, publish the seal key or apply queued writes: the server refuses those for a browser session.</p></div></li>
+            <li class="is-planned"><div class="step-head"><h3>What it never does</h3></div><div class="step-body"><p>It never shows, copies or stores a value: the value field is write-only and is cleared when you save. History lists each revision's device, time, key epoch, deletions and conflict branches, never a value; a revision this browser has no key for is marked unavailable / unverified. Restore and conflict resolution are explicit confirmations that write one new signed revision against the current head: a concurrent change becomes a conflict, never an overwrite, a deleted secret is not brought back, and restoring an old credential does not make it valid again at its provider, so rotate or revoke it there if it may be exposed. A conflict that includes a deletion or an unreadable branch is left to <code>ak secrets sync settle</code>. It signs no checkpoints. It cannot change membership, read the recovery bundle, publish the seal key or apply queued writes: the server refuses those for a browser session.</p></div></li>
         </ol>
       </div>
     </section>

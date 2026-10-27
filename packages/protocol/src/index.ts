@@ -187,7 +187,7 @@ export {
   type RecoveryBundleWire,
 } from './recovery-bundle-parse.js';
 export { openRecoveryBundle, sealRecoveryBundle, type OpenRecoveryBundleArgs, type OpenedRecoveryBundle, type SealRecoveryBundleArgs } from './recovery-bundle.js';
-export { authorizeRecordWrite, parseRecord, recordDigest, signRecord, verifyRecord, verifyRecordSignature, type SignedRecord, type UnsignedRecord } from './records.js';
+export { authorizeRecordWrite, MAX_RESOLVES, parseRecord, recordDigest, signRecord, verifyRecord, verifyRecordSignature, type SignedRecord, type UnsignedRecord } from './records.js';
 export { applyRecord, computeStateDigest, emptyItemState, type ApplyOutcome, type ApplyRecordOptions, type ConflictBranch, type ItemState } from './record-state.js';
 export { verifyLoggedRecord } from './removal-fence.js';
 export {

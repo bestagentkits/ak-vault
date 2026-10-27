@@ -123,18 +123,23 @@ Issues are the coordination surface. Labels: `in progress`, `blocked`, `in revie
 ## Release gate
 
 Sync is not GA. Production sync is live (`VAULT_SYNC_ENABLED=true`, with ak-web
-production minting vault tokens) under the owner's 2026-10-16 decisions recorded on
-[#8](https://github.com/bestagentkits/ak-vault/issues/8), which waive the
-external-review gate for it. That waiver was not a review. Since 2026-10-16 the
-reviewer is the owner, which is not an independent third-party review. The review
-gate was **accepted by the owner on 2026-10-16** (owner instruction in chat, recorded
-by an agent on the owner's behalf, [record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212706397)), with no written findings.
-Production sync stays pre-release and not yet recommended for production credentials
-until every remaining gate in [release gates](./docs/security/release-gates.md) is
-met (red-team scenario 13 and the open items listed there and on #8). No agent may self-attest
-the review or an owner decision: an agent records one only on the owner's explicit
-instruction and says on #8 that it recorded it on the owner's behalf. No agent may
-describe a waiver as a sign-off or the owner's review as an independent review.
+production minting vault tokens) as a pre-release preview under the owner's
+decisions recorded on [#8](https://github.com/bestagentkits/ak-vault/issues/8); those
+waivers are not a review. The review gate is the
+[review by the owner](./docs/security/release-gates.md#review-by-the-owner), accepted
+by the owner on 2026-10-16 (owner instruction in chat, recorded by an agent on the
+owner's behalf, no written findings,
+[record on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212706397)). It is the owner's review, **not an independent
+third-party review**, and by owner decision no independent review is a GA gate.
+GA still waits for every remaining gate in
+[release gates](./docs/security/release-gates.md) at the release commit (red-team
+scenario 13 and the open items listed there and on #8); until then
+sync is not recommended for production credentials.
+
+No agent may self-attest the review or an owner decision: an agent records one only
+on the owner's explicit instruction and says on the issue carrying the decision (#8 or the
+linked issue) that it recorded it on the owner's behalf. No agent may describe a waiver as a sign-off or the owner's review as
+an independent review.
 
 - Only the owner approves production deployments. Agents never approve the
   `production` environment. Agent approval of production ended on 2026-10-16.

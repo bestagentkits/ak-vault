@@ -1,14 +1,14 @@
 ---
 title: "ak-vault: end-to-end encrypted sync for ak secrets"
 url: https://vault.agentkit.best/
-status: "Protocol v1 proposed, in security review. Cloud sync not generally available."
+status: "Protocol v1 proposed, reviewed by the owner (not an independent review). Cloud sync pre-release, not generally available."
 ---
 
 # Your secrets sync. The server only sees ciphertext.
 
 ak-vault is the opt-in, end-to-end encrypted sync layer for AgentKit's `ak secrets`. Secrets are sealed on your device before they leave it, agents keep reading from the local vault, and with sync off nothing touches the network. A browser dashboard and remote MCP run on staging only, pre-release and not for production credentials; remote MCP passes plaintext through server memory during a call ([details](https://vault.agentkit.best/security/#remote-access)).
 
-> **Status: Protocol v1 · in security review.** Cloud sync is not generally available. The production sync API is live as a pre-release preview, by owner decision, before the owner's security review, which is not an independent third-party review: anyone signed in to AgentKit who runs the preview `ak secrets sync` commands can use it. Do not put production credentials in it yet. The local `ak secrets` vault works today without it.
+> **Status: Protocol v1 · owner-reviewed · sync pre-release.** Cloud sync is not generally available. The production sync API is live as a pre-release preview, by owner decision, before the owner's security review, which is not an independent third-party review: anyone signed in to AgentKit who runs the preview `ak secrets sync` commands can use it. Do not put production credentials in it yet. The local `ak secrets` vault works today without it.
 
 ## 1. The problem
 
@@ -93,7 +93,7 @@ Work is tracked in the [epic, issue #1](https://github.com/bestagentkits/ak-vaul
 
 ## 7. Questions
 
-- **Can I use cloud sync today?** Only as a preview. Protocol v1 is proposed and in security review, and cloud sync is not generally available. By owner decision the production sync API is live before that review as a pre-release preview: if you are signed in and run the preview `ak secrets sync` commands, your device syncs with it. It is not yet recommended for production credentials. The local `ak secrets` vault works today.
+- **Can I use cloud sync today?** Only as a preview. Protocol v1 is proposed; its review gate was accepted by the owner, not by an independent third party, and cloud sync is not generally available. By owner decision the production sync API went live before that review as a pre-release preview: if you are signed in and run the preview `ak secrets sync` commands, your device syncs with it. It is not yet recommended for production credentials. The local `ak secrets` vault works today.
 - **Can AgentKit read my secrets?** The design says no: the server stores ciphertext and wrapped keys only. It can see the metadata in the table above. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met. On staging only (pre-release, not for production credentials), remote MCP narrows this: during a call, plaintext passes through the server's memory, though it is never stored or logged ([remote access](https://vault.agentkit.best/security/#remote-access)).
 - **What happens if the server is down?** Nothing changes for running agents. `resolve` reads the local vault. Offline changes sync on the next successful connection, and conflicting edits are kept for you to resolve.
 - **Can I give a teammate access to just one secret?** Not within one vault. Put shared secrets in a separate shared vault.

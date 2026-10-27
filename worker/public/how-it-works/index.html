@@ -19,7 +19,7 @@
   <meta property="og:image" content="https://vault.agentkit.best/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, in security review.">
+  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, reviewed by the owner, not independently; sync is pre-release, not GA.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="How ak-vault works: keys, enrollment and conflicts">
   <meta name="twitter:description" content="Protocol v1, explained with diagrams: vault keys, six-digit device enrollment, no last-writer-wins, rollback detection.">
@@ -97,7 +97,7 @@
   <main id="main">
     <section class="page-hero" aria-labelledby="page-title">
       <div class="container">
-        <span class="badge badge-review hero-badge reveal"><span class="dot" aria-hidden="true"></span>Protocol v1 · in security review</span>
+        <span class="badge badge-review hero-badge reveal"><span class="dot" aria-hidden="true"></span>Protocol v1 · owner-reviewed · sync pre-release</span>
         <h1 id="page-title" class="reveal">How a secret stays <span class="grad">sealed</span> from one device to the next.</h1>
         <p class="lede reveal">A walkthrough of protocol v1 as proposed: the keys, how a new device joins, how conflicting edits are kept, and how devices notice a server that lies about history. Where this page simplifies, the <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md">normative spec</a> wins.</p>
         <nav class="toc reveal" aria-label="On this page">

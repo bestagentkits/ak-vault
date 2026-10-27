@@ -1,7 +1,7 @@
 ---
 title: "How ak-vault works: keys, enrollment, conflicts and rollback"
 url: https://vault.agentkit.best/how-it-works/
-status: "Protocol v1 proposed, in security review. Cloud sync not generally available."
+status: "Protocol v1 proposed, reviewed by the owner (not an independent review). Cloud sync pre-release, not generally available."
 ---
 
 # How a secret stays sealed from one device to the next
