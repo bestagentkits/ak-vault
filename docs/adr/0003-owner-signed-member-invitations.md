@@ -103,11 +103,12 @@ offer with a key that reached it outside the Worker.
    live join per account per invitation. These Worker limits protect availability only;
    the security bound in D5 is enforced by the owner device. A join does not use up the
    invitation and arriving first gives it no priority: the invitation ends only by
-   acceptance, a cancellation of scope `invitation` or expiry (D9), and the owner chooses
-   which join to answer (D5). Someone who saw a code therefore cannot lock the real
+   acceptance, a cancellation of scope `invitation` or expiry (D9), and the owner
+   chooses which join to answer (D5). The Worker has no per-invitation join cap, only
+   the per-account limit above. Someone who saw a code therefore cannot lock the real
    invitee out by joining first; the attempts such a join can still cost are under
-   [Limits](#limits-stated-plainly). A join post is allowed
-   only to an account outside the vault, for an `email_otp` session (the
+   [Limits](#limits-stated-plainly). A join post is allowed only to an account outside
+   the vault, for an `email_otp` session (the
    recovery-identity precedent in spec §3.5, with the `browser` refusal from spec §9
    item 1), with a device-key proof, and only when the secret hashes to `secret_hash`;
    a wrong secret spends nothing. Unknown vault, unknown invitation, wrong secret,
@@ -157,11 +158,12 @@ offer with a key that reached it outside the Worker.
    wrong entry ends that join: the device signs a cancellation scoped to the join and
    the attempt count stays spent. The owner device also counts wrong entries per
    invitation and after the third signs a cancellation of scope `invitation`; the owner
-   issues a new invitation to try again. This client limit sits beside `a` and does not
-   change the D5 bound. The owner then signs `invite_accept` and
-   **afterwards** a normal `member_add`. `member_add` carries the byte-identical device
-   record the owner checked against the commit, the invited role and the signed wrap
-   set; the wrap set MUST hold the current epoch
+   issues a new invitation to try again. The limit is client-side, like `a`: every wrong
+   entry also spends an attempt, so it is stricter than `a` when `a` > 3 and has no
+   effect otherwise, and it does not change the D5 bound. The owner then signs
+   `invite_accept` and **afterwards** a normal `member_add`. `member_add` carries the
+   byte-identical device record the owner checked against the commit, the invited role
+   and the signed wrap set; the wrap set MUST hold the current epoch
    ([spec §4](../protocol/v1/spec.md#4-membership-log-owner-signed-hash-chained)) and
    SHOULD hold every retained epoch. The order makes a stopped approval resumable:
    `invite_accept` alone grants nothing, and the owner device keeps the verified reveal
@@ -203,15 +205,24 @@ If the owner rejects the Worker-held pending state of D4, invitations are kept o
 the inviting owner device and the Worker holds no invitation state. That device keeps a
 local record per invitation (role, expiry, its nonce and state), never synced, and the
 code, the join and the owner's reply travel out of band as codes in the spec §3.8 style.
-Each side still commits before the other reveals: the owner device commits to its nonce
-in the code and reveals it only after it holds the join. The typed SAS over the full
-device record, the limit of three wrong entries and the normal `member_add` of D6 apply
-unchanged; there are no Worker-held documents, so a cancellation is a local state change
-on the issuing device. The invitee verifies the chain as in D8. Limits of this fallback: only the issuing device can
-complete an invitation, losing that device ends its open invitations, and other owner
-devices and the dashboard cannot see them. It needs code formats, vectors and parsers in
-TypeScript and Go, and no Worker or chain change. It follows the same spec-change
-procedure and is not authorized before the owner decides.
+The order still makes one side commit before the other reveals: the code carries a
+commitment to the owner device's `nonce_i`; the joiner's reply carries its device record
+and `nonce_j` in the clear; the owner device reveals `nonce_i` only after it holds that
+join. The typed SAS over the full device record, the limit of three wrong entries and
+the normal `member_add` of D6 apply unchanged. There are no Worker-held documents, so
+there is no `invite_accept` and a cancellation is a local state change on the issuing
+device. The invitee learns that it was added by retrying the ordinary membership read,
+which the Worker answers once the chain lists its device, and then verifies the chain as
+in D8; where the checkpoint that guards against an old prefix travels is open for the
+spec change. This ADR makes no numeric claim for Stage A: that spec change must also fix
+how a revealed `nonce_i` is retired before a second join is answered, and states the
+bound with it.
+
+Limits of this fallback: only the issuing device can complete an invitation, losing that
+device ends its open invitations, and other owner devices and the dashboard cannot see
+them. It needs new code formats, vectors and parsers in TypeScript and Go, and no Worker
+or chain change. It follows the same spec-change procedure and is not authorized before
+the owner decides.
 
 ## Limits stated plainly
 
@@ -225,8 +236,9 @@ procedure and is not authorized before the owner decides.
   leaked code and reaches the owner on the same channel can be enrolled by an owner who
   does not do this: the code is not enough for membership, the owner's own comparison is.
 - A leaked code lets a stranger spend attempts and block the intended invitee until the
-  owner cancels and reissues. It spends an attempt only when the owner selects the
-  stranger's join; joining first does not use up the invitation (D4).
+  owner cancels and reissues. It spends something only when the owner selects the
+  stranger's join, and then a wrong entry spends both an `a` attempt and one of the
+  three wrong entries of D6; joining first does not use up the invitation (D4).
 - A browser device is a human owner device; a compromise of the dashboard origin (ADR
   0002) could sign invitation documents that another channel delivers.
 - A member who joins holds the vault-wide key (ADR 0001): an invitation grants vault
@@ -239,7 +251,7 @@ procedure and is not authorized before the owner decides.
 
 | Option | Why not |
 |---|---|
-| No server state; out-of-band codes only (today's `akj1` model) | Safe, and the offline fallback this ADR keeps. But the owner learns nothing about a pending invite or a timeout, the dashboard stays blind, and members cannot be added without copying long codes both ways. |
+| No server state; out-of-band codes only (today's `akj1` model) | Safe, and the basis of the [Stage A fallback](#fallback-if-d4-is-rejected-stage-a), which still needs new code formats (`akj1` cannot carry an invitee). But the owner learns nothing about a pending invite or a timeout, the dashboard stays blind, and members cannot be added without copying long codes both ways. |
 | Reveal both nonces in the join and the offer, as `akj1` and `ako1` do | A relay can grind the second nonce and force a matching SAS (see above). The commit step closes it for invitations; the same weakness in the existing codes is tracked separately. |
 | An invitation as a new membership event type | A new event type changes what old verifiers accept; the seal-key precedent shows the beside-the-chain route works. |
 | A server-authored invitation or acceptance state | The server must not author membership state; derived state (D9) removes the temptation. |
@@ -289,14 +301,17 @@ Each step is its own reviewed pull request and follows the spec-change procedure
    role, non-owner signer, wrong vault, extra key, non-canonical JSON, reveal that does
    not match its commit or carries a substituted `kx_pub`, nonce sent before the commit,
    offer over a foreign commit, second offer for a revealed commit, attempt above `a`,
-   offer signed by a device other than the inviter, old checkpoint); threat-model rows
-   with the D5 bound.
+   offer signed by a device other than the inviter, old checkpoint); vectors showing that
+   a second join on an open invitation does not void it and that the third wrong SAS
+   entry cancels the invitation; threat-model rows with the D5 bound.
 2. Worker ([#128](https://github.com/bestagentkits/ak-vault/issues/128)): routes and limits
-   behind a flag, a negative test for every refusal in D4 and D9, dump and log scans for
-   the new fields, data classification, REVIEW.md and AGENTS.md route lists.
+   behind a flag, a negative test for every refusal in D4 and D9, a test that a second
+   join on an open invitation does not void it, dump and log scans for the new fields,
+   data classification, REVIEW.md and AGENTS.md route lists.
 3. CLI ([agentkit#2730](https://github.com/bestagentkits/agentkit/issues/2730)): owner
    invite, list, cancel and approve with typed SAS, and the invitee join command, all
-   refusing to run under an AI agent.
+   refusing to run under an AI agent; tests that the third wrong SAS entry cancels the
+   invitation and that a second join does not void an open one.
 4. Dashboard ([#137](https://github.com/bestagentkits/ak-vault/issues/137)): read-only
    states.
 
