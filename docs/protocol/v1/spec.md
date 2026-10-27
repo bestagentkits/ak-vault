@@ -420,6 +420,20 @@ author's `sign_pub`, §4), the checkpoint signature and its non-rollback against
 chain (§6), and that the `device_add` adding it carries `sas` = `b64(sha256(transcript))`
 for its own device record before it trusts any wrap.
 
+**Authenticity of the code channel.** v1 does not commit to the nonces before they are
+revealed: the join code carries `nonce_j` and the offer code carries `nonce_i`, and
+neither is bound to the other. The six-digit SAS (about 20 bits) therefore authenticates
+the exchange only while the two codes travel between the two devices without an active
+attacker on that path. An attacker who carries both codes can read `nonce_j`, put its own
+device towards the owner, learn the owner's digits, then choose the nonce it hands the
+joiner and grind about 10^6 SHA-256 values until both sides show the same six digits. v1
+therefore requires an authentic code channel: the user copies the codes between two
+terminals or screens they control. A service that relays the codes for the user (the
+Worker, ak-web or another service) is outside what v1 protects, and an implementation
+MUST NOT offer such a flow on v1 codes. A relayed flow needs a commit-reveal exchange in which the
+joiner commits to `nonce_j` before it sees `nonce_i` and reveals it only afterwards, which
+is a wire change under the spec-change procedure.
+
 Vectors (`enroll-codes.json`): byte-exact round trips of a join and an offer code in
 the format shipped CLIs produce; a code split by whitespace parses; oversize, wrong
 prefix, wrong `ctx`, an extra or missing key, non-canonical JSON, a non-owner or
