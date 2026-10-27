@@ -16,15 +16,22 @@
  *    `AKV-Device-Key`; the token `did` must equal `kid(sign_pub)` and the proof
  *    must verify against that key. Only an `email_otp` session may take this path
  *    and recovery enrollment; `api_key_device` and `machine` sessions are refused
- *    (spec §9.4), so a leaked API key alone cannot collect bundles. Exposure: any holder of an owner-account token
- *    plus a key it generates can fetch the bundle and attempt offline guessing of
- *    the bundle password, and can read membership metadata (accounts, roles,
- *    device public keys).
+ *    (spec §9.4), so a leaked API key alone cannot collect bundles. Exposure: any
+ *    holder of an owner-account token plus a key it generates can fetch the
+ *    bundle and attempt offline guessing of the bundle password, and can read
+ *    membership metadata (accounts, roles, device public keys).
+ * Recovery operations by members (`GET`/`PUT /recovery` and `recovery_rotate`)
+ * also require an `email_otp` session, whatever the device's role (spec §9.4): a
+ * long-lived API key or machine credential may never read, replace or rotate the
+ * recovery material, even on an owner-role device. It may only store the first
+ * bundle of a vault that has none (the genesis seal).
  */
 import { b64decodeLength, deviceIdFromSignPub, parseMembershipEvent, type DeviceRecord, type JsonObject, type MembershipState } from '@ak-vault/protocol';
 import type { Scope } from '../auth/jwt-verify.js';
 import { ApiError } from '../http/errors.js';
 import { MembershipStore } from './membership-store.js';
+import { hasIdempotentResult } from './idempotency.js';
+import { hasRecoveryBundle } from './recovery-store.js';
 import { parseBodyObject, requireKeys } from './request-body.js';
 import { enforceRole, memberDevice, requireScope, verifyRequestProof, type RoleRule } from './request-guard.js';
 import { isMutation, type VaultOp, type VaultRequest } from './vault-request.js';
@@ -69,7 +76,10 @@ function refuseBrowserSession(req: VaultRequest): void {
   if (req.claims.kind === 'browser' && BROWSER_REFUSED.has(req.op)) throw new ApiError('forbidden');
 }
 
-/** Fail closed: outside membership only an `email_otp` session is admitted (spec §9.4). */
+/**
+ * Fail closed: outside membership only an `email_otp` session is admitted (spec
+ * §9.4). A token without `session_kind` was verified as `email_otp`.
+ */
 function requireHumanSession(req: VaultRequest): void {
   if (req.claims.kind !== 'email_otp') throw new ApiError('forbidden');
 }
@@ -135,6 +145,42 @@ function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: Memb
 }
 
 /**
+ * A recovery operation other than `PUT /recovery`: a bundle read, or a membership
+ * append that rotates the recovery key. A `bundle` marks a rotation too: the
+ * mutation step refuses a bundle on any other event, so counting it here only
+ * fails closed earlier. A body that does not parse is not classified; it fails
+ * later as before.
+ */
+function isRecoveryReadOrRotate(req: VaultRequest): boolean {
+  if (req.op === 'recovery.get') return true;
+  if (req.op !== 'membership.post') return false;
+  let body: JsonObject;
+  try {
+    body = parseBodyObject(req.body);
+  } catch {
+    return false;
+  }
+  const event = body['event'];
+  const type = typeof event === 'object' && event !== null && !Array.isArray(event) ? (event as JsonObject)['type'] : undefined;
+  return type === 'recovery_rotate' || body['bundle'] !== undefined;
+}
+
+/**
+ * Recovery operations need an `email_otp` session whatever the device's role,
+ * member or not (spec §9.4), with one exception: the genesis seal. A non-human
+ * session may `PUT /recovery` while the vault has no bundle yet, so a vault it
+ * created gets its first bundle; replacing a stored bundle is refused, except an
+ * exact idempotent retry of that seal, which is answered from the stored result.
+ * Checked before the proof is consumed, like the recovery-identity refusal; the
+ * bundle store re-checks inside the mutation's transaction.
+ */
+function refuseNonHumanRecovery(req: VaultRequest, sql: SqlStorage): void {
+  if (req.claims.kind === 'email_otp') return;
+  if (isRecoveryReadOrRotate(req)) throw new ApiError('forbidden');
+  if (req.op === 'recovery.put' && hasRecoveryBundle(sql) && !hasIdempotentResult(sql, req)) throw new ApiError('forbidden');
+}
+
+/**
  * The recovery identity: `GET /recovery` or `GET /membership` (the only ops a
  * not-yet-enrolled device may call) by a fresh owner-account device that proves
  * possession of the key it presents.
@@ -158,6 +204,7 @@ function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: Membe
 
 export function authorize(req: VaultRequest, sql: SqlStorage, store: MembershipStore): Authorized {
   refuseBrowserSession(req);
+  refuseNonHumanRecovery(req, sql);
   if (req.op === 'genesis') return authorizeGenesis(req, sql);
   if (req.op === 'membership.post') return authorizeMembershipPost(req, sql, store);
   const state = store.requireState();

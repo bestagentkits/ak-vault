@@ -53,7 +53,18 @@ function latestRecoveryRotateSeq(sql: SqlStorage): number {
   return seq;
 }
 
-export function putRecovery(sql: SqlStorage, state: MembershipState, vaultId: string, body: JsonObject): ApiResult {
+/** True once any recovery bundle is stored for this vault. */
+export function hasRecoveryBundle(sql: SqlStorage): boolean {
+  return sql.exec('SELECT 1 FROM recovery_blob WHERE id = 1').toArray().length > 0;
+}
+
+/**
+ * `PUT /recovery`. With `firstOnly` (a non-human session, spec §9.4) only the
+ * genesis seal is accepted: a stored bundle is never replaced. Re-checked here,
+ * inside the transaction, so no interleaving can turn the seal into a replacement.
+ */
+export function putRecovery(sql: SqlStorage, state: MembershipState, vaultId: string, body: JsonObject, firstOnly = false): ApiResult {
+  if (firstOnly && hasRecoveryBundle(sql)) throw new ApiError('forbidden');
   requireKeys(body, ['bundle', 'membership_seq']);
   const sealedAt = requireInt(body['membership_seq']);
   if (sealedAt > state.seq) throw new ApiError('bad_request', { message: 'membership_seq is ahead of the membership log' });

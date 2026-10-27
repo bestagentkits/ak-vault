@@ -21,7 +21,8 @@ export type Scope = (typeof SCOPES)[number];
 
 /**
  * How the session behind a token signed in. Only `email_otp` is a human session
- * that may take the recovery-identity path; the others never may (spec §9.1).
+ * that may take the recovery-identity path or perform a recovery operation; the
+ * others never may (spec §9.1, §9.4).
  * `browser` is the vault dashboard: a member device refused on genesis,
  * membership, recovery, seal-key publication, the sealed queue and the relay.
  */

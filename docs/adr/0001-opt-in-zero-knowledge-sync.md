@@ -171,8 +171,21 @@ path next to email OTP; it does not change the cryptographic design.
   `api_key_device` and `machine` sessions and fails closed on an unknown kind, so a
   leaked key alone cannot collect recovery bundles. Joining an existing vault requires a
   `device_add` signed by an existing owner device; creating a vault is allowed. Once an
-  owner approves a device it is a member under its role, including recovery-bundle
-  rights if it is an owner device.
+  owner approves a device it is a member under its role, except for recovery
+  operations (below).
+- Recovery operations need a human session (owner decision delegated on 2026-10-16,
+  recorded on [#90](https://github.com/bestagentkits/ak-vault/issues/90)): the Worker
+  refuses `GET /recovery`, `PUT /recovery` that replaces a stored bundle, and
+  recovery-key rotation to `api_key_device` and `machine` sessions, even on an
+  owner-role device, with the same `403 forbidden` as the recovery identity. A
+  long-lived API key or CI credential leaks more easily than an email-OTP session,
+  and recovery material is the vault's highest-value object; recovery stays
+  available from any email-OTP owner device. One exception, the genesis seal: such a
+  session may store the first bundle of a vault that has none, so a vault created
+  through an API key is recoverable from the start (the CLI seals right after
+  genesis). It can never read, replace or rotate that bundle afterwards; a rekey it
+  makes leaves the bundle stale until an email-OTP owner device reseals it
+  ([threat model](../security/threat-model.md) limitations).
 - ak-web enforces opt-in per API key (off by default, existing keys included), at
   most 5 devices per key and an email notice on every new API-key device
   ([ak-web#583](https://github.com/bestagentkits/ak-web/issues/583)); the CLI enrols
