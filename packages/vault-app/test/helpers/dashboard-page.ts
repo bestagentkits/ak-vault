@@ -96,7 +96,7 @@ export function allByTestId(root: ParentNode, id: string): HTMLElement[] {
   return [...root.querySelectorAll(`[data-testid="${id}"]`)] as HTMLElement[];
 }
 
-/** Poll until an async dashboard effect lands. The generous timeout keeps these tests from flaking on a CPU-starved runner; a real hang still fails at the test timeout. */
+/** Poll until an async dashboard effect lands. The generous timeout keeps these tests from flaking on a CPU-starved runner; a real hang fails after 30s, inside the 60s test timeout. */
 export function settle<T>(check: () => T | Promise<T>): Promise<T> {
   return vi.waitFor(check, { timeout: 30_000, interval: 20 });
 }
