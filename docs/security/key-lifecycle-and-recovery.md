@@ -35,6 +35,8 @@ recovery key, with no surviving device, makes the vault unrecoverable by design.
 
 Web login alone never enrolls a device. The SAS transcript is defined in
 [spec §3.5](../protocol/v1/spec.md#35-owner-recovery-signing-key-and-sas-enrollment).
+The enrollment codes must travel between the user's own devices; a flow that relays
+them needs commit-reveal first ([spec §3.8](../protocol/v1/spec.md#38-enrollment-codes)).
 
 ## Device loss or theft
 

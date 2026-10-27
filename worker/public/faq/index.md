@@ -1,7 +1,7 @@
 ---
 title: "ak-vault FAQ"
 url: https://vault.agentkit.best/faq/
-status: "Protocol v1 proposed, in security review. Cloud sync not generally available."
+status: "Protocol v1 proposed, reviewed by the owner (not an independent review). Cloud sync pre-release, not generally available."
 ---
 
 # Questions worth asking a secrets product
@@ -12,7 +12,7 @@ Straight answers about status, privacy, everyday use, teams, agents and recovery
 
 ### Can I use cloud sync today?
 
-Only as a preview. Protocol v1 is proposed and in security review on [issue #8](https://github.com/bestagentkits/ak-vault/issues/8), and cloud sync is not generally available. By owner decision the production sync API is live before that review as a pre-release preview: if you are signed in and run the preview `ak secrets sync` commands, your device syncs with it. It is not yet recommended for production credentials. The local `ak secrets` vault works today.
+Only as a preview. Protocol v1 is proposed; its review gate was accepted by the owner, not by an independent third party ([issue #8](https://github.com/bestagentkits/ak-vault/issues/8)), and cloud sync is not generally available. By owner decision the production sync API went live before that review as a pre-release preview: if you are signed in and run the preview `ak secrets sync` commands, your device syncs with it. It is not yet recommended for production credentials. The local `ak secrets` vault works today.
 
 ### What works right now?
 

@@ -1,7 +1,7 @@
 ---
 title: "ak-vault security model: guarantees and limitations"
 url: https://vault.agentkit.best/security/
-status: "Protocol v1 proposed, in security review. Not approved for production credentials."
+status: "Protocol v1 proposed, reviewed by the owner (not an independent review). Not approved for production credentials."
 ---
 
 # Security model, in plain language

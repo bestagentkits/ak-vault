@@ -1,7 +1,7 @@
 ---
 title: "How ak-vault works: keys, enrollment, conflicts and rollback"
 url: https://vault.agentkit.best/how-it-works/
-status: "Protocol v1 proposed, in security review. Cloud sync not generally available."
+status: "Protocol v1 proposed, reviewed by the owner (not an independent review). Cloud sync pre-release, not generally available."
 ---
 
 # How a secret stays sealed from one device to the next
@@ -22,7 +22,7 @@ On the server: wrapped copies of the vault key and the item ciphertext. Never a 
 
 ## 2. Enrollment: a new device joins only after you compare six digits
 
-The server relays enrollment messages, so it could try to slip in a key of its own. A short authentication string (SAS) stops that. Both devices derive the same six digits from one transcript: the vault, both device IDs and a random nonce from each side. A server that swapped a key in transit would make the codes differ. (Spec §3.5.)
+You carry the enrollment codes between your own devices, so the server never relays them. A short authentication string (SAS) confirms that both devices saw the same exchange. Both devices derive the same six digits from one transcript: the vault, both device IDs and a random nonce from each side. The codes must be copied between your own screens: a service that relayed them could make the digits match. (Spec §3.5, §3.8.)
 
 1. **The new device creates its keys.** It generates its own signing and key-exchange keys. The private halves never leave it.
 2. **Both screens show a code.** Each device hashes the same transcript and shows six digits.

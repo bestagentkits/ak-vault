@@ -247,8 +247,9 @@ they expire, so a replay is refused, and they count toward the limit
 
 The repository variable `DEPLOY_FREEZE` stops the
 [Deploy workflow](../../.github/workflows/deploy.yml): while it is `true` the gate job
-fails with an error and deploys neither staging nor production, and the production
-job checks it again after the reviewer's approval. Unset or `false` means not
+fails with an error and deploys neither staging nor production, and the staging and
+production jobs check it again when they start (production after the reviewer's
+approval), so a run already queued behind another deploy refuses too. Unset or `false` means not
 frozen; any other value also refuses. Use it during an incident whenever a deploy
 from `main` could undo a kill switch or a rollback. Set it at the repository level,
 not on an environment.
@@ -262,6 +263,21 @@ gh variable list -R bestagentkits/ak-vault                             # check
 Record freezing and unfreezing on the incident issue. Merges to `main` still land
 while frozen; their deploys fail at the gate and are not retried, so after
 unfreezing run the Deploy workflow on `main` once.
+
+The staging job also refuses, right before it deploys, when its commit is no longer
+the head of `main` (or when the head cannot be read), so a late or re-run CI run
+cannot put an older commit on staging. Production needs staging, so that run's
+production deploy is skipped as well. The newer commit deploys only once its own CI
+is green and deploys are not frozen, and a manual run needs a green CI push run for
+the head. While the head of `main` is red, no deploy goes through the workflow: land
+a fix, or use the emergency kill switch or the rollback below.
+
+The production job also refuses when its commit is no longer the head of `main`
+(or when the head cannot be read). If `main` moved while a run waited for
+approval, approving it fails with an error naming the newer head instead of
+overwriting a newer deploy: reject that run and approve the one for the newer
+commit. A red or still-running CI on the head of `main` therefore blocks
+production until a fix lands; for urgent recovery use the rollback runbook below.
 
 ## Worker rollback
 

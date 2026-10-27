@@ -19,7 +19,7 @@
   <meta property="og:image" content="https://vault.agentkit.best/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, in security review.">
+  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, reviewed by the owner, not independently; sync is pre-release, not GA.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ak-vault guide: from .env to an encrypted vault">
   <meta name="twitter:description" content="Import a .env file, reference secrets in agent configs and control which agents read them. Sync steps are marked preview; the browser dashboard and remote MCP are staging only, pre-release.">
@@ -187,7 +187,7 @@
         <div class="section-head reveal">
           <span class="eyebrow">Part 2</span>
           <h2 id="sync-title">Sync a second device <span class="badge badge-planned">preview</span></h2>
-          <p>The end-to-end encrypted sync described on this site. A pre-release preview is live in production, before the external security review; the steps below are not a supported workflow until that review closes, and production credentials do not belong in it yet.</p>
+          <p>The end-to-end encrypted sync described on this site. A pre-release preview is live in production, enabled before the owner's review, which is not an independent third-party review. Sync is not generally available: the steps below are not a supported workflow until every release gate is met, and production credentials do not belong in it yet.</p>
         </div>
         <ol class="steps reveal">
             <li><div class="step-head"><h3>Sign in to your AgentKit account</h3><span class="badge badge-ok">available</span></div><div class="step-body"><p><code>ak login</code> exists today for your AgentKit account; the preview sync commands use that sign-in.</p>
