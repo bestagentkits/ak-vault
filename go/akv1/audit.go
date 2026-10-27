@@ -244,6 +244,54 @@ func VerifyAuditChain(entries []any, vaultKeys VaultKeyLookup, vaultID string, k
 	return out, nil
 }
 
+// AuditEventEnvelope is the part of an audit event every reader checks (spec §7.1).
+type AuditEventEnvelope struct {
+	Type     string
+	DeviceID string
+	TS       int64
+}
+
+// ParseAuditEventEnvelope checks the plaintext envelope {"v":1,"type","device_id","ts",...}
+// of a decrypted audit event and returns its three common fields. Other fields are
+// not read: a type this reader does not know is accepted on its envelope alone, so a
+// newer writer's event never stops a device appending.
+func ParseAuditEventEnvelope(v any) (AuditEventEnvelope, error) {
+	const what = "audit event"
+	obj, err := asObject(v, what)
+	if err != nil {
+		return AuditEventEnvelope{}, err
+	}
+	if err := checkVersion(obj, what); err != nil {
+		return AuditEventEnvelope{}, err
+	}
+	typ, ok := obj["type"].(string)
+	if !ok || !validAuditTypeName(typ) {
+		return AuditEventEnvelope{}, badRequest("%s.type must match [a-z][a-z0-9_]{0,63}", what)
+	}
+	var out AuditEventEnvelope
+	out.Type = typ
+	if out.DeviceID, err = asID(obj["device_id"], what+".device_id"); err != nil {
+		return AuditEventEnvelope{}, err
+	}
+	if out.TS, err = asUint(obj["ts"], what+".ts"); err != nil {
+		return AuditEventEnvelope{}, err
+	}
+	return out, nil
+}
+
+func validAuditTypeName(s string) bool {
+	if s == "" || len(s) > 64 || s[0] < 'a' || s[0] > 'z' {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+			return false
+		}
+	}
+	return true
+}
+
 // SignAuditCheckpoint signs c (its Sig is replaced) with an Ed25519 seed.
 func SignAuditCheckpoint(c AuditCheckpoint, seed []byte) (AuditCheckpoint, error) {
 	c.Sig = ""

@@ -1,7 +1,7 @@
 ---
 title: "ak-vault security model: guarantees and limitations"
 url: https://vault.agentkit.best/security/
-status: "Protocol v1 proposed, in security review. Not approved for production credentials."
+status: "Protocol v1 proposed, reviewed by the owner (not an independent review). Not approved for production credentials."
 ---
 
 # Security model, in plain language
@@ -14,11 +14,13 @@ The assets are your secret values and everything that describes them: names, des
 
 > **Status:** protocol v1 is *proposed*. It is not approved for production credentials until every security gate in [issue #8](https://github.com/bestagentkits/ak-vault/issues/8) is met. The owner accepted the review gate on 2026-10-16 (recorded by an agent on the owner's instruction, no written findings); that is not an independent third-party review. The owner made the production sync API live before that review (an owner waiver, not a sign-off): anyone signed in who runs the preview `ak secrets sync` commands can use it. It is pre-release and not yet recommended for production credentials.
 
-Out of scope by design: decryption in a web browser, server-held vault keys or KMS, and taking back plaintext that has already been disclosed.
+Out of scope by design: server-side decryption, server-held vault keys or KMS, and taking back plaintext that has already been disclosed.
+
+**Remote access (staging only, pre-release, not for production credentials).** On staging, a browser dashboard at `/app` and a remote MCP endpoint at `/mcp` are switched on; production has both off. The dashboard is an enrolled device: it decrypts in the browser with its own keys, like any other device. Remote MCP narrows the boundary. The server stores no plaintext and holds no vault key, but plaintext passes through its memory after TLS ends: the value an AI tool sends with a set, until the server seals it or relays it to your device, and the names, metadata and redacted `run` output your device sends back on their way to the AI tool. It is never logged, stored or put in an error. AI tools do not verify device signatures, so they trust the server for what a result says. Decision D7 of [ADR 0002](https://github.com/bestagentkits/ak-vault/blob/main/docs/adr/0002-browser-device-relay-and-remote-mcp.md) and the [threat model](https://github.com/bestagentkits/ak-vault/blob/main/docs/security/threat-model.md) own this boundary.
 
 ## 2. Threat map
 
-Plaintext exists only inside your devices. Everything that crosses the network or rests on the server is ciphertext, signatures or the listed metadata.
+Plaintext exists only inside your devices. Everything that crosses the network or rests on the server is ciphertext, signatures or the listed metadata. The one exception is remote MCP on staging, whose calls pass plaintext through server memory (see remote access in section 1).
 
 - **Your devices (plaintext lives here):** stolen or lost device; removed member; stale or conflicting devices; hostile shared metadata.
 - **Network:** network attacker; stolen token without the device key.

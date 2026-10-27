@@ -6,8 +6,8 @@
  * branch instead of a lost update.
  *
  * Metadata follows the AgentKit CLI mapping: schema `agentkit.secret/v1`,
- * `created_ms` on create, `rotated_ms` when the value changes, the profile and
- * every other carried key kept byte for byte, `value_encoding` dropped because
+ * `created_ms` on create, `rotated_ms` when the value changes, the verified profile (the
+ * fields the provenance check kept) and every other carried key kept byte for byte, `value_encoding` dropped because
  * the dashboard writes text. The previous value is compared and dropped inside
  * this function; it is never returned or kept.
  */
@@ -16,21 +16,27 @@ import {
   carryForwardMeta,
   cjsonBytes,
   isAkvError,
+  MAX_RESOLVES,
   MAX_PLAINTEXT_BYTES,
   nameIndexKey,
   nameTag,
   randomId,
+  recordDigest,
   sealItem,
   signRecordAsync,
+  validateProfile,
   type DeviceSigner,
   type ItemPayload,
   type JsonObject,
+  type Profile,
   type SignedRecord,
 } from '@ak-vault/protocol';
 import { AppError } from '../app-error.js';
 import { isVaultApiError, type AkvClient } from './akv-client.js';
 import { validItemName, validItemValue } from './item-names.js';
-import { ITEM_META_SCHEMA, openHead, type VaultSnapshot } from './vault-sync.js';
+import { valueBlocked } from './history.js';
+import { isMs, ROTATE_TTL_META_KEY, ROTATION_META_KEY, MAX_ROTATE_TTL_DAYS, parseRotationWorkflow, workflowToMeta, type RotationWorkflow } from './rotation.js';
+import { ITEM_META_SCHEMA, openHead, openRecord, type VaultSnapshot } from './vault-sync.js';
 
 export interface WriteResult {
   itemId: string;
@@ -46,14 +52,32 @@ function writableKey(snapshot: VaultSnapshot): Uint8Array {
   return vk;
 }
 
-/** The meta for a set over `prev` (null on create). */
-export function nextMeta(prev: ItemPayload | null, valueChanged: boolean, nowMs: number): JsonObject {
+/** The profile a write over `itemId`'s head may carry: the fields this device's provenance check kept, byte for byte, or none when the base was not verified. */
+function verifiedProfile(snapshot: VaultSnapshot, itemId: string): Profile | null {
+  return snapshot.profiles.get(itemId) ?? null;
+}
+
+/**
+ * The meta for a set over `prev` (null on create). `verified` is the head's
+ * profile as this device checked it (spec §5.1); the raw `prev.meta.profile` is
+ * never carried, since it can hold fields the check already dropped.
+ */
+export function nextMeta(prev: ItemPayload | null, valueChanged: boolean, nowMs: number, verified: Profile | null): JsonObject {
   const meta: JsonObject = prev ? carryForwardMeta(prev.meta) : {};
   delete meta['value_encoding'];
   meta['schema'] = ITEM_META_SCHEMA;
   if (!prev || typeof meta['created_ms'] !== 'number') meta['created_ms'] = nowMs;
   if (prev && valueChanged) meta['rotated_ms'] = nowMs;
-  if (prev && prev.meta['profile'] !== undefined) meta['profile'] = prev.meta['profile'];
+  if (prev && verified && Object.keys(verified).length > 0) meta['profile'] = validateProfile(verified) as unknown as JsonObject;
+  return meta;
+}
+
+/** The meta for a value taken from `source`: a base64 value (a binary secret the CLI wrote) stays marked as such; any other encoding is refused. */
+function metaForValueFrom(prev: ItemPayload, source: ItemPayload, valueChanged: boolean, nowMs: number, verified: Profile | null): JsonObject {
+  const enc = source.meta['value_encoding'];
+  if (enc !== undefined && enc !== 'base64') throw new AppError('history_unavailable');
+  const meta = nextMeta(prev, valueChanged, nowMs, verified);
+  if (enc === 'base64') meta['value_encoding'] = 'base64';
   return meta;
 }
 
@@ -109,26 +133,172 @@ export async function setItem(args: { client: AkvClient; snapshot: VaultSnapshot
   if (matches[0]) {
     const prev = openHead(snapshot, itemId);
     base = snapshot.itemStates.get(itemId)!.revision;
-    meta = nextMeta(prev, prev.value !== args.value, nowMs);
+    meta = nextMeta(prev, prev.value !== args.value, nowMs, verifiedProfile(snapshot, itemId));
     sensitivity = prev.sensitivity;
   } else {
-    meta = nextMeta(null, true, nowMs);
+    meta = nextMeta(null, true, nowMs, null);
   }
   const payload: ItemPayload = { name: args.name, value: args.value, meta, sensitivity };
+  return writeRevision({ ...args, itemId, base, vk, payload, resolves: [], nowMs });
+}
+
+/** Seal `payload` under the current key epoch, sign it at `base` and send it as one compare-and-swap write. */
+async function writeRevision(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; base: number; vk: Uint8Array; payload: ItemPayload; resolves: string[]; nowMs: number }): Promise<WriteResult> {
+  const { snapshot, payload } = args;
   if (cjsonBytes(payload as unknown as JsonObject).length > MAX_PLAINTEXT_BYTES) throw new AppError('value_too_large');
-  const ctx = { vault_id: snapshot.vaultId, item_id: itemId, base_revision: base, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: false };
+  const ctx = { vault_id: snapshot.vaultId, item_id: args.itemId, base_revision: args.base, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: false };
+  const env = sealItem({ ...ctx, vk: args.vk, payload });
+  const record = await signRecordAsync({ ...ctx, ts: args.nowMs, resolves: args.resolves, env }, args.signer);
+  const tag = nameTag(nameIndexKey(args.vk, snapshot.vaultId, snapshot.state.key_epoch), payload.name);
+  return sendRecord(args.client, snapshot, record, tag);
+}
+
+/** A live, listed item's verified state, or `not_found`. */
+function liveState(snapshot: VaultSnapshot, itemId: string) {
+  const state = snapshot.itemStates.get(itemId);
+  if (!state || state.revision === 0 || state.tombstone || !snapshot.items.some((i) => i.itemId === itemId)) throw new AppError('not_found');
+  return state;
+}
+
+/**
+ * Restore the value of a verified earlier revision as a NEW revision of a live
+ * item: sealed under the current key epoch, signed by this device and sent
+ * compare-and-swap at the head the dashboard verified. The log position of the
+ * old revision is never rewritten, a tombstone is never revived, and a
+ * concurrent write turns this one into a preserved conflict branch. Only the
+ * value comes from the old revision; the name, sensitivity, profile and other
+ * metadata stay the current head's. The old value is opened and sealed again
+ * inside this function and is never returned or shown.
+ */
+export async function restoreRevision(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; logSeq: number; nowMs?: number }): Promise<WriteResult> {
+  const { snapshot } = args;
+  const vk = writableKey(snapshot);
+  const state = liveState(snapshot, args.itemId);
+  const target = snapshot.log.get(args.itemId)?.find((e) => e.logSeq === args.logSeq && e.conflictId === null);
+  if (!target || target.record.tombstone || recordDigest(target.record) === state.head) throw new AppError('history_unavailable');
+  if (valueBlocked(target.record, target.logSeq, snapshot.log.get(args.itemId) ?? [], snapshot.state) !== null) throw new AppError('history_unavailable');
+  const old = openRecord(target.record, snapshot.vaultKeys.get(target.record.key_epoch));
+  if (!old || 'deleted' in old) throw new AppError('history_unavailable');
+  const prev = openHead(snapshot, args.itemId);
+  if (old.value === prev.value) throw new AppError('restore_current');
+  const nowMs = args.nowMs ?? Date.now();
+  const payload: ItemPayload = { name: prev.name, value: old.value, meta: metaForValueFrom(prev, old, true, nowMs, verifiedProfile(snapshot, args.itemId)), sensitivity: prev.sensitivity };
+  return writeRevision({ ...args, base: state.revision, vk, payload, resolves: [], nowMs });
+}
+
+/**
+ * Resolve every open conflict branch of a live item with one new revision at
+ * the verified head, listing their IDs in `resolves` (the protocol's explicit
+ * resolution). `adopt` null keeps the current value; an ID adopts that open,
+ * readable, non-tombstone branch's value. The branches stay in the signed log.
+ */
+export async function resolveConflicts(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; adopt: string | null; nowMs?: number }): Promise<WriteResult> {
+  const { snapshot } = args;
+  const vk = writableKey(snapshot);
+  const state = liveState(snapshot, args.itemId);
+  const open = state.conflicts;
+  if (open.length === 0 || open.length > MAX_RESOLVES) throw new AppError('history_unavailable');
+  // A deletion or an unreadable branch is never dismissed from here, whichever value is kept.
+  for (const c of open) {
+    const p = c.record.tombstone ? null : openRecord(c.record, snapshot.vaultKeys.get(c.record.key_epoch));
+    if (!p || 'deleted' in p) throw new AppError('history_unavailable');
+  }
+  const prev = openHead(snapshot, args.itemId);
+  let value = prev.value;
+  let source = prev;
+  if (args.adopt !== null) {
+    const branch = open.find((c) => c.conflict_id === args.adopt);
+    if (!branch) throw new AppError('history_unavailable');
+    const logged = snapshot.log.get(args.itemId)?.find((e) => e.conflictId === branch.conflict_id);
+    if (!logged || valueBlocked(branch.record, logged.logSeq, snapshot.log.get(args.itemId) ?? [], snapshot.state) !== null) throw new AppError('history_unavailable');
+    const payload = openRecord(branch.record, snapshot.vaultKeys.get(branch.record.key_epoch));
+    if (!payload || 'deleted' in payload) throw new AppError('history_unavailable');
+    value = payload.value;
+    source = payload;
+  }
+  const nowMs = args.nowMs ?? Date.now();
+  const next: ItemPayload = { name: prev.name, value, meta: source === prev ? nextMeta(prev, false, nowMs, verifiedProfile(snapshot, args.itemId)) : metaForValueFrom(prev, source, value !== prev.value, nowMs, verifiedProfile(snapshot, args.itemId)), sensitivity: prev.sensitivity };
+  return writeRevision({ ...args, base: state.revision, vk, payload: next, resolves: open.map((c) => c.conflict_id), nowMs });
+}
+
+/** The rotation fields a metadata-only revision may change. `undefined` leaves a field as it is; `null` clears it. */
+export interface RotationPatch {
+  rotateTtlDays?: number | null;
+  rotation?: RotationWorkflow | null;
+  /** Confirm the old provider credential is revoked (needs a vault value written after the workflow started). */
+  confirmRevoked?: boolean;
+}
+
+/**
+ * Write a new revision of a live item that keeps its value and changes only
+ * rotation metadata: the interval and the workflow. Compare-and-swap on the
+ * verified head like every write. The value is re-sealed in this function and
+ * never returned.
+ */
+export async function updateRotation(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; patch: RotationPatch; nowMs?: number }): Promise<WriteResult> {
+  const { snapshot, patch } = args;
+  const vk = writableKey(snapshot);
+  const item = snapshot.items.find((i) => i.itemId === args.itemId);
+  const state = snapshot.itemStates.get(args.itemId);
+  if (!item || !state || state.revision === 0 || state.tombstone) throw new AppError('not_found');
+  const nowMs = args.nowMs ?? Date.now();
+  const prev = openHead(snapshot, args.itemId);
+  const meta = nextMeta(prev, false, nowMs, verifiedProfile(snapshot, args.itemId));
+  if (patch.rotateTtlDays !== undefined) {
+    const ttl = patch.rotateTtlDays;
+    if (ttl === null) delete meta[ROTATE_TTL_META_KEY];
+    else if (Number.isSafeInteger(ttl) && ttl >= 1 && ttl <= MAX_ROTATE_TTL_DAYS) meta[ROTATE_TTL_META_KEY] = ttl;
+    else throw new AppError('invalid_rotation');
+  }
+  let workflow = patch.rotation === undefined ? parseRotationWorkflow(prev.meta) : patch.rotation;
+  if (patch.confirmRevoked) {
+    const rotatedRaw = prev.meta['rotated_ms'];
+    const rotatedMs = isMs(rotatedRaw) ? rotatedRaw : null;
+    if (!workflow || workflow.state !== 'active' || rotatedMs === null || rotatedMs < workflow.startedMs) throw new AppError('rotation_not_ready');
+    // Never earlier than the value write: another device's clock may run ahead of this one.
+    workflow = { ...workflow, revokedMs: Math.max(nowMs, rotatedMs) };
+  }
+  if (workflow === null) delete meta[ROTATION_META_KEY];
+  else meta[ROTATION_META_KEY] = workflowToMeta(workflow);
+  const payload: ItemPayload = { name: prev.name, value: prev.value, meta, sensitivity: prev.sensitivity };
+  if (cjsonBytes(payload as unknown as JsonObject).length > MAX_PLAINTEXT_BYTES) throw new AppError('value_too_large');
+  const ctx = { vault_id: snapshot.vaultId, item_id: args.itemId, base_revision: state.revision, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: false };
   const env = sealItem({ ...ctx, vk, payload });
   const record = await signRecordAsync({ ...ctx, ts: nowMs, resolves: [], env }, args.signer);
-  const tag = nameTag(nameIndexKey(vk, snapshot.vaultId, snapshot.state.key_epoch), args.name);
-  return sendRecord(args.client, snapshot, record, tag);
+  return sendRecord(args.client, snapshot, record, nameTag(nameIndexKey(vk, snapshot.vaultId, snapshot.state.key_epoch), prev.name));
+}
+
+/**
+ * Replace the value of one live item (a provider credential rotation). Refuses
+ * a value equal to the current one: re-writing the old secret protects nothing
+ * and must not read as a rotation. Writing a new value clears a recorded
+ * revocation, since that confirmed the previous credential.
+ */
+export async function rotateValue(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; value: string; nowMs?: number }): Promise<WriteResult> {
+  const { snapshot } = args;
+  if (args.value === '' || !validItemValue(args.value)) throw new AppError('value_too_large');
+  const vk = writableKey(snapshot);
+  const state = snapshot.itemStates.get(args.itemId);
+  if (!state || state.revision === 0 || state.tombstone || !snapshot.items.some((i) => i.itemId === args.itemId)) throw new AppError('not_found');
+  const prev = openHead(snapshot, args.itemId);
+  if (prev.value === args.value) throw new AppError('rotation_value_unchanged');
+  const nowMs = args.nowMs ?? Date.now();
+  const meta = nextMeta(prev, true, nowMs, verifiedProfile(snapshot, args.itemId));
+  const workflow = parseRotationWorkflow(prev.meta);
+  if (workflow) meta[ROTATION_META_KEY] = workflowToMeta({ ...workflow, revokedMs: null });
+  const payload: ItemPayload = { name: prev.name, value: args.value, meta, sensitivity: prev.sensitivity };
+  if (cjsonBytes(payload as unknown as JsonObject).length > MAX_PLAINTEXT_BYTES) throw new AppError('value_too_large');
+  const ctx = { vault_id: snapshot.vaultId, item_id: args.itemId, base_revision: state.revision, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: false };
+  const env = sealItem({ ...ctx, vk, payload });
+  const record = await signRecordAsync({ ...ctx, ts: nowMs, resolves: [], env }, args.signer);
+  return sendRecord(args.client, snapshot, record, nameTag(nameIndexKey(vk, snapshot.vaultId, snapshot.state.key_epoch), prev.name));
 }
 
 /** Delete a live item with a signed tombstone at its verified head. */
 export async function deleteItem(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; nowMs?: number }): Promise<WriteResult> {
   const { snapshot } = args;
   const vk = writableKey(snapshot);
-  const state = snapshot.itemStates.get(args.itemId);
-  if (!state || state.revision === 0 || state.tombstone || !snapshot.items.some((i) => i.itemId === args.itemId)) throw new AppError('not_found');
+  const state = liveState(snapshot, args.itemId);
   const nowMs = args.nowMs ?? Date.now();
   const ctx = { vault_id: snapshot.vaultId, item_id: args.itemId, base_revision: state.revision, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: true };
   const env = sealItem({ ...ctx, vk, payload: { deleted: true } });

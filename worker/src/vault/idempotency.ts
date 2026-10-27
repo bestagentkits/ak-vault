@@ -36,6 +36,22 @@ export function lookupIdempotent(sql: SqlStorage, req: VaultRequest): ApiResult 
   return { status: row.status, body: JSON.parse(row.body_json) as unknown, headers: { 'Idempotent-Replayed': 'true' } };
 }
 
+/**
+ * True when a live stored result exists for this device, key and identical
+ * request, so `lookupIdempotent` will replay it. Mutations validate the key before
+ * authorization; a bad key here still answers false (fail closed), never throws.
+ */
+export function hasIdempotentResult(sql: SqlStorage, req: VaultRequest): boolean {
+  let key: string;
+  try {
+    key = keyHash(req);
+  } catch {
+    return false;
+  }
+  const row = sql.exec<{ request_hash: string }>('SELECT request_hash FROM idempotency WHERE key_hash = ? AND expires_at >= ?', key, req.nowMs).toArray()[0];
+  return row !== undefined && row.request_hash === requestHash(req);
+}
+
 /** Store a completed result inside the mutation's transaction. */
 export function storeIdempotent(sql: SqlStorage, req: VaultRequest, result: ApiResult): void {
   sql.exec(

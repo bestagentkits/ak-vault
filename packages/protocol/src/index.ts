@@ -51,7 +51,7 @@
  * and the head kept at the witnessed position to refuse a restored-then-regrown log).
  *
  * Audit (§7) — `deriveAuditKey`, `appendAuditEntry`, `verifyAuditChain(entries, {vaultKeys, vaultId, keyEpoch, witnessed?})`,
- * `auditEntryHash`, `signAuditCheckpoint`, `verifyAuditCheckpoint`.
+ * `auditEntryHash`, `parseAuditEventEnvelope`, `signAuditCheckpoint`, `verifyAuditCheckpoint`.
  *
  * Policy (§8) — `parsePolicy`, `effectiveGrant(localGrant, policy, sensitivity): LocalGrant`;
  * `resolveItemPolicy(targetItemId, items): {policy, sensitivity}` combines the policy items that
@@ -187,7 +187,7 @@ export {
   type RecoveryBundleWire,
 } from './recovery-bundle-parse.js';
 export { openRecoveryBundle, sealRecoveryBundle, type OpenRecoveryBundleArgs, type OpenedRecoveryBundle, type SealRecoveryBundleArgs } from './recovery-bundle.js';
-export { authorizeRecordWrite, parseRecord, recordDigest, signRecord, verifyRecord, verifyRecordSignature, type SignedRecord, type UnsignedRecord } from './records.js';
+export { authorizeRecordWrite, MAX_RESOLVES, parseRecord, recordDigest, signRecord, verifyRecord, verifyRecordSignature, type SignedRecord, type UnsignedRecord } from './records.js';
 export { applyRecord, computeStateDigest, emptyItemState, type ApplyOutcome, type ApplyRecordOptions, type ConflictBranch, type ItemState } from './record-state.js';
 export { verifyLoggedRecord } from './removal-fence.js';
 export {
@@ -207,11 +207,13 @@ export {
   auditEntryHash,
   deriveAuditKey,
   parseAuditCheckpoint,
+  parseAuditEventEnvelope,
   signAuditCheckpoint,
   verifyAuditChain,
   verifyAuditCheckpoint,
   type AppendAuditArgs,
   type AuditCheckpoint,
+  type AuditEventEnvelope,
   type AuditHead,
   type VerifyAuditOptions,
   type AuditChainEntry,

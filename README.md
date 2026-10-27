@@ -23,6 +23,14 @@ Landing page: https://vault.agentkit.best
 AgentKit's local vault works without this service and without a network
 connection. Sync is off unless you turn it on.
 
+**Remote access (staging only, pre-release, not for production credentials):** a
+browser dashboard at `/app`, where the browser is an enrolled device, and a remote
+MCP endpoint at `/mcp` for hosted AI tools. During a remote MCP call plaintext passes
+through Worker memory; it is never stored or logged
+([ADR 0002](./docs/adr/0002-browser-device-relay-and-remote-mcp.md) D7). User steps
+are in the [guide](./worker/public/guide/index.md), operations in the
+[runbooks](./docs/operations/runbooks.md#remote-access).
+
 ## Why
 
 AgentKit vault v1 keeps secrets on one machine. Using them on a second device, and

@@ -19,7 +19,7 @@
   <meta property="og:image" content="https://vault.agentkit.best/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, in security review.">
+  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, reviewed by the owner, not independently; sync is pre-release, not GA.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ak-vault FAQ">
   <meta name="twitter:description" content="Straight answers on status, privacy, agents, teams and recovery for ak-vault end-to-end encrypted secrets sync.">
@@ -48,7 +48,7 @@
           "name": "Can I use cloud sync today?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Only as a preview. Protocol v1 is proposed and in security review on issue #8, and cloud sync is not generally available. By owner decision the production sync API is live before that review as a pre-release preview: if you are signed in and run the preview ak secrets sync commands, your device syncs with it. It is not yet recommended for production credentials. The local ak secrets vault works today."
+            "text": "Only as a preview. Protocol v1 is proposed; its review gate was accepted by the owner, not by an independent third party (issue #8), and cloud sync is not generally available. By owner decision the production sync API went live before that review as a pre-release preview: if you are signed in and run the preview ak secrets sync commands, your device syncs with it. It is not yet recommended for production credentials. The local ak secrets vault works today."
           }
         },
         {
@@ -80,7 +80,7 @@
           "name": "Can AgentKit read my secrets?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the data classification. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met."
+            "text": "The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the data classification. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met. On staging only (pre-release, not for production credentials), remote MCP narrows this: during a call, plaintext passes through the server's memory, though it is never stored or logged."
           }
         },
         {
@@ -288,7 +288,7 @@
         <div class="faq-group reveal" id="status">
           <h2>Status and availability</h2>
           <div class="faq">
-            <details><summary>Can I use cloud sync today?</summary><div><p>Only as a preview. Protocol v1 is proposed and in security review on <a href="https://github.com/bestagentkits/ak-vault/issues/8">issue #8</a>, and cloud sync is not generally available. By owner decision the production sync API is live before that review as a pre-release preview: if you are signed in and run the preview <code>ak secrets sync</code> commands, your device syncs with it. It is not yet recommended for production credentials. The local <code>ak secrets</code> vault works today.</p></div></details>
+            <details><summary>Can I use cloud sync today?</summary><div><p>Only as a preview. Protocol v1 is proposed; its review gate was accepted by the owner, not by an independent third party (<a href="https://github.com/bestagentkits/ak-vault/issues/8">issue #8</a>), and cloud sync is not generally available. By owner decision the production sync API went live before that review as a pre-release preview: if you are signed in and run the preview <code>ak secrets sync</code> commands, your device syncs with it. It is not yet recommended for production credentials. The local <code>ak secrets</code> vault works today.</p></div></details>
             <details><summary>What works right now?</summary><div><p>The local vault in the AgentKit CLI: importing a <code>.env</code> file, setting, rotating and inspecting secrets, <code>${secret:NAME}</code> references, agent grants and approvals, and the access audit. See <a href="/guide/#local">Part 1 of the guide</a>.</p></div></details>
             <details><summary>Is there a date for general availability?</summary><div><p>No date is promised. Sync ships when every item in the <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/release-gates.md">release gates</a> is met at the release commit, including the owner's review. Progress is tracked on <a href="https://github.com/bestagentkits/ak-vault/issues/1">the epic</a>.</p></div></details>
             <details><summary>Is the server code open?</summary><div><p>Yes. The Worker, the TypeScript and Go protocol implementations and the cross-language test vectors are in the <a href="https://github.com/bestagentkits/ak-vault">public repository</a> under the MIT license.</p></div></details>
@@ -297,7 +297,7 @@
         <div class="faq-group reveal" id="privacy">
           <h2>Security and privacy</h2>
           <div class="faq">
-            <details><summary>Can AgentKit read my secrets?</summary><div><p>The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the <a href="/how-it-works/#data">data classification</a>. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met.</p></div></details>
+            <details><summary>Can AgentKit read my secrets?</summary><div><p>The design says no. The server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed in the <a href="/how-it-works/#data">data classification</a>. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met. On staging only (pre-release, not for production credentials), remote MCP narrows this: during a call, plaintext passes through the server's memory, though it is never stored or logged (<a href="/security/#remote-access">remote access</a>).</p></div></details>
             <details><summary>What can the server see?</summary><div><p>Random vault and item IDs, revisions, tombstone flags, key epochs, ciphertext sizes, timestamps, device public keys, roles, token claims and request metadata such as IP address and timing. Secret names, descriptions and values are encrypted.</p></div></details>
             <details><summary>What if the server is malicious or hacked?</summary><div><p>It cannot decrypt, and signed records, an owner-signed member list and checkpoints let devices detect tampering, rollback and forks. It can still withhold updates a device has never seen (a freeze attack) and observe metadata. <a href="/security/#t-server">See the threat card</a>.</p></div></details>
             <details><summary>Which cryptography does it use?</summary><div><p>XChaCha20-Poly1305, Ed25519, X25519, HKDF-SHA256 and Argon2id from audited libraries, plus ES256 tokens for transport. There is no custom cryptography, and an unknown algorithm is refused.</p></div></details>

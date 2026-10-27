@@ -23,11 +23,14 @@ import {
 } from './oauth/pkce-client.js';
 import { createAkvClient, isVaultApiError, type AkvClient } from './sync/akv-client.js';
 import { acceptOffer, DEFAULT_DEVICE_LABEL, joinCodeFor, newJoinNonce, sanitizeLabel } from './sync/enroll.js';
-import { pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
-import { deleteItem, findByName, setItem } from './sync/write-ops.js';
+import { buildItemHistory, type ItemHistory } from './sync/history.js';
+import { buildMembershipView, roleCanWrite, type MembershipView } from './sync/membership-view.js';
+import { openRecord, pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
+import { deleteItem, findByName, restoreRevision, resolveConflicts, rotateValue, setItem, updateRotation, type RotationPatch } from './sync/write-ops.js';
+import type { RotationWorkflow } from './sync/rotation.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
 
-export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'signed_out' };
+export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'restored' | 'resolved' | 'signed_out' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved' };
 
 export type Screen =
   | { kind: 'loading' }
@@ -35,7 +38,8 @@ export type Screen =
   | { kind: 'signed_out'; notice: Notice | null }
   | { kind: 'join'; joinCode: string; deviceId: string; notice: Notice | null }
   | { kind: 'approve'; sas: string; deviceId: string; notice: Notice | null }
-  | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; deviceId: string; notice: Notice | null; busy: boolean }
+  | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; canWrite: boolean; membership: MembershipView; nowMs: number; deviceId: string; notice: Notice | null; busy: boolean }
+  | { kind: 'history'; history: ItemHistory; canWrite: boolean; deviceId: string; notice: Notice | null; busy: boolean }
   | { kind: 'removed' };
 
 export interface ControllerDeps {
@@ -78,6 +82,8 @@ export class AppController {
   private kx: DeviceKx | null = null;
   private client: AkvClient | null = null;
   private snapshot: VaultSnapshot | null = null;
+  /** The item whose history is open; the screen follows it across pulls. */
+  private historyItemId: string | null = null;
   private readonly now: () => number;
   /** `deps.fetchFn` plus a note of the vault origin's clock, read from its `Date` header. */
   private readonly fetchFn: typeof fetch;
@@ -165,6 +171,7 @@ export class AppController {
     this.session = null;
     this.syncToken = null;
     this.snapshot = null;
+    this.historyItemId = null;
     this.client = null;
     this.signer = null;
     this.kx = null;
@@ -354,10 +361,46 @@ export class AppController {
 
   private showVault(notice: Notice | null, matches: string[] | null, busy = false): void {
     const s = this.snapshot!;
+    const history = this.historyItemId === null ? null : this.historyOf(this.historyItemId);
+    if (history) {
+      this.show({ kind: 'history', history, canWrite: this.canWrite(), deviceId: s.self.device_id, notice, busy });
+      return;
+    }
+    this.historyItemId = null;
+    const membership = buildMembershipView(s.state, s.self.device_id, new Map(s.items.map((i) => [i.itemId, i.name])));
     this.show({
       kind: 'vault', items: s.items, matches, unreadable: s.unreadable, hidden: s.hidden, rekeyRequired: s.state.rekey_required,
-      deviceId: s.self.device_id, notice, busy,
+      canWrite: roleCanWrite(membership.selfRole), membership, nowMs: this.now(), deviceId: s.self.device_id, notice, busy,
     });
+  }
+
+  private canWrite(): boolean {
+    const s = this.snapshot!;
+    return !s.state.rekey_required && s.self.kind === 'human' && roleCanWrite(s.self.role);
+  }
+
+  /** The metadata-only history of a live, listed item, from the log this device verified. */
+  private historyOf(itemId: string): ItemHistory | null {
+    const s = this.snapshot!;
+    const item = s.items.find((i) => i.itemId === itemId);
+    const itemState = s.itemStates.get(itemId);
+    if (!item || !itemState) return null;
+    return buildItemHistory({
+      itemId, name: item.name, itemState, log: s.log.get(itemId) ?? [], state: s.state, vaultKeys: s.vaultKeys,
+      selfDeviceId: s.self.device_id, open: openRecord,
+    });
+  }
+
+  openHistory(itemId: string): void {
+    if (!this.snapshot || !this.historyOf(itemId)) return;
+    this.historyItemId = itemId;
+    this.showVault(null, null);
+  }
+
+  closeHistory(): void {
+    if (!this.snapshot) return;
+    this.historyItemId = null;
+    this.showVault(null, null);
   }
 
   /** Exact-name search over the verified snapshot, with no server request; an empty query clears it. */
@@ -382,7 +425,52 @@ export class AppController {
     return this.write('deleted', () => deleteItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, nowMs: this.now() }));
   }
 
-  private async write(done: 'saved' | 'deleted', op: () => Promise<unknown>): Promise<boolean> {
+  /** Write a verified earlier revision's value as a new revision of the item. */
+  async restore(itemId: string, logSeq: number): Promise<boolean> {
+    return this.write('restored', () => restoreRevision({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, logSeq, nowMs: this.now() }));
+  }
+
+  /** Mark every open conflict branch of the item resolved, keeping the current value or adopting one branch's. */
+  async resolve(itemId: string, adopt: string | null): Promise<boolean> {
+    return this.write('resolved', () => resolveConflicts({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, adopt, nowMs: this.now() }));
+  }
+
+  /** Start a rotation: record it in signed metadata. The new credential is created at the provider, not here. */
+  async startRotation(itemId: string): Promise<boolean> {
+    const workflow: RotationWorkflow = { state: 'active', startedMs: this.now(), revokedMs: null };
+    return this.write('rotation_started', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation: workflow }, nowMs: this.now() }));
+  }
+
+  /** Pause, resume, fail or cancel the workflow, or clear it with `null`. */
+  async setRotationState(itemId: string, state: RotationWorkflow['state'] | null): Promise<boolean> {
+    const current = this.snapshot?.items.find((i) => i.itemId === itemId)?.rotation ?? null;
+    if (!current) return false;
+    // Only a paused rotation resumes; a failed or cancelled one starts again from scratch.
+    const allowed: Record<RotationWorkflow['state'], RotationWorkflow['state'][]> = {
+      active: ['paused', 'failed', 'cancelled'], paused: ['active', 'failed', 'cancelled'], failed: [], cancelled: [],
+    };
+    if (state !== null && !allowed[current.state].includes(state)) return false;
+    const rotation = state === null ? null : { ...current, state };
+    return this.write('rotation_updated', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation }, nowMs: this.now() }));
+  }
+
+  /** The operator says the old provider credential is revoked. Allowed only after the vault holds a new value. */
+  async confirmRevoked(itemId: string): Promise<boolean> {
+    return this.write('rotation_revoked', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { confirmRevoked: true }, nowMs: this.now() }));
+  }
+
+  /** Set or clear (`null`) the rotation interval in days. */
+  async setRotateTtl(itemId: string, days: number | null): Promise<boolean> {
+    const patch: RotationPatch = { rotateTtlDays: days };
+    return this.write('settings_saved', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch, nowMs: this.now() }));
+  }
+
+  /** Save the replacement value; the Vault step counts as done only once the new revision is pulled and verified. */
+  async rotate(itemId: string, value: string): Promise<boolean> {
+    return this.write('rotation_saved', () => rotateValue({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, value, nowMs: this.now() }));
+  }
+
+  private async write(done: Extract<Notice['code'], 'saved' | 'deleted' | 'restored' | 'resolved' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved'>, op: () => Promise<unknown>): Promise<boolean> {
     if (!this.snapshot || !this.client || !this.signer) return false;
     this.showVault(null, null, true);
     try {
@@ -396,11 +484,23 @@ export class AppController {
   }
 
   private async writeFailed(err: unknown): Promise<void> {
+    // A refused write may mean a stale role (an owner demoted this account since the last pull).
+    // Pull again before judging: a removed device is found by the pull itself, anything else keeps its keys.
+    if (isVaultApiError(err, 'forbidden')) {
+      await this.sync(null);
+      // The pull showed the vault (a removed device went to `fail`). Judge the refusal by the role it verified.
+      if (this.screen.kind === 'vault' && this.snapshot) {
+        const role = buildMembershipView(this.snapshot.state, this.snapshot.self.device_id, new Map()).selfRole;
+        this.showVault({ kind: 'error', code: roleCanWrite(role) ? 'write_refused' : 'role_forbidden' }, null);
+      }
+      return;
+    }
     const code = appErrorCode(err, 'server');
-    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'quota_exceeded', 'network', 'server'];
+    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'history_unavailable', 'restore_current', 'quota_exceeded', 'invalid_rotation', 'rotation_value_unchanged', 'rotation_not_ready', 'network', 'server'];
     if (!isVaultApiError(err) && recoverable.includes(code)) {
       // A conflict means the verified head is stale: pull again, then say why the write did not land.
-      if (code === 'conflict') await this.sync({ kind: 'error', code });
+      // A lost response may hide a write that landed: pull again so the screen shows the real head.
+      if (code === 'conflict' || code === 'network') await this.sync({ kind: 'error', code });
       else this.showVault({ kind: 'error', code }, null);
       return;
     }

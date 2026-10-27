@@ -153,12 +153,103 @@ echoing them, and only after `pnpm install` (as CI does).
    (`gh workflow run deploy.yml -R bestagentkits/ak-vault --ref main`) so production
    runs `main` again through the gated path, now with sync off in the config.
 
+## Remote access
+
+`VAULT_REMOTE_ACCESS_ENABLED` gates the vault dashboard (`/app`), remote MCP
+(`/mcp` and its protected-resource metadata), the device relay (`/v1/relay`) and the
+lookup, seal-key and sealed-queue routes. Any value other than exactly `true` turns
+them off, and each then answers `404` (the `/v1/vaults/…` ones answer
+`503 sync_disabled` instead while sync is also off). It is on for staging and off for production in
+`worker/wrangler.jsonc`; remote access is staging only, pre-release, and not for
+production credentials. The sync kill switch also stops it: with sync off, `/mcp`
+answers `503 sync_disabled`. Route behavior is owned by `worker/src/index.ts`,
+`worker/src/env.ts` and `worker/test/remote-access-flag.test.ts`; the design and its
+plaintext-in-memory boundary by
+[ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md) D7.
+
+### Remote access off
+
+Use when the dashboard, relay or MCP endpoint must stop but sync may stay on. When
+the cause could touch sync itself, use the [kill switch](#kill-switch) instead.
+
+1. Open the incident issue (no sensitive values).
+2. Set `VAULT_REMOTE_ACCESS_ENABLED` to `"false"` in the `vars` of the affected
+   environment in `worker/wrangler.jsonc` and land it through a pull request and the
+   Deploy workflow. When staging must stop faster, deploy staging directly from a clean
+   checkout of the commit it runs, as in the [staging rehearsal](#kill-switch), with
+   `--var VAULT_REMOTE_ACCESS_ENABLED:false` instead of the sync variable; land the
+   same change in `wrangler.jsonc` the same day, so the next deploy from `main` does
+   not turn it back on. Production already runs with it off; turning it on there is
+   a later owner decision, not an incident step.
+3. Verify from outside until several consecutive probes agree: `/mcp`, `/app` and
+   `/.well-known/oauth-protected-resource/mcp` answer `404`, and `GET /v1/meta` no
+   longer lists the relay, sealed-queue and MCP limits.
+4. Tell affected users: AI tools lose access, devices cannot open the relay, and
+   the dashboard stops loading. Sealed operations already queued stay in the vault
+   object, unserved, until they expire (`sealed_ttl_s` in
+   [`worker/src/limits.ts`](../../worker/src/limits.ts)). Local `resolve` and sync are
+   unaffected.
+5. Turn it back on only through a reviewed pull request after the incident issue
+   records the cause and fix.
+
+### Relay incident triage
+
+Relay and MCP log lines carry only stable codes, latency and hashed tags; they
+never hold arguments, results, names, values or raw IDs
+(`worker/src/http/operational-logger.ts`). Read them in the Worker's logs:
+
+- `/mcp` lines: `tool`, `outcome` (a tool error code from spec §9.8 and §10, `ok` or
+  `queued`), `ms`, hashed `client` and `account`, and whether an audit row was
+  written.
+- `relay` lines: `event` `close` with the close code the server sent and the hashed
+  `account`. Close codes are defined in [spec §9.7](../protocol/v1/spec.md#97-relay).
+
+A rise in `device_timeout` or `no_device_online` for one account is that account's
+devices, not the service. A rise across accounts, `internal` outcomes, or `503`s from
+`/mcp` point to the relay or vault objects or the revocation registry: check the
+[registry capacity alert](#revocation-registry-capacity-alert) first. If a relay
+result could be wrong or forged, or plaintext could reach a log, a store or an error,
+turn [remote access off](#remote-access-off) before investigating.
+
+### MCP client abuse
+
+An MCP client acting against its user (a prompt-injected agent, a leaked grant):
+
+1. Find it by the hashed `client` and `account` tags in the `/mcp` log lines. Never
+   ask for or paste raw client IDs, grant IDs or account identifiers in the issue.
+2. The account owner disconnects the app in ak-web (account page, Connected apps). ak-web
+   then sends the grant ID in `revoke_sids` to the revocation webhook, and the next
+   `/mcp` request with that grant is refused.
+3. Per-client and per-account call budgets bound the damage meanwhile
+   ([`worker/src/limits.ts`](../../worker/src/limits.ts)). Devices still apply their own
+   grants and approvals, and `run` needs an `exec` grant pinned on the device.
+4. Tell the user to rotate at the provider any secret a `run` command could have
+   printed in transformed form, and to review what the client wrote: a write lands as a
+   normal signed record with an audit entry.
+5. If many accounts are affected or the client cannot be identified, turn
+   [remote access off](#remote-access-off).
+
+### Sealed queue full
+
+`secrets_set` and `secrets_delete` answer `sealed_queue_full` when the vault already
+holds `sealed_queue_max` sealed operations. Acknowledged operations keep their ID until
+they expire, so a replay is refused, and they count toward the limit
+([spec §10](../protocol/v1/spec.md#10-errors-and-limits); values in
+[`worker/src/limits.ts`](../../worker/src/limits.ts)).
+
+- Not an outage. Writes that reach an online device are relayed, not queued, so the
+  user can keep a device online with relay support and write through it.
+- Draining frees no slot at once: space returns as acknowledged and unclaimed
+  operations reach `sealed_ttl_s`. Do not delete rows from the vault object by hand.
+- A queue that refills quickly from one client is the [abuse](#mcp-client-abuse) case.
+
 ## Deploy freeze
 
 The repository variable `DEPLOY_FREEZE` stops the
 [Deploy workflow](../../.github/workflows/deploy.yml): while it is `true` the gate job
-fails with an error and deploys neither staging nor production, and the production
-job checks it again after the reviewer's approval. Unset or `false` means not
+fails with an error and deploys neither staging nor production, and the staging and
+production jobs check it again when they start (production after the reviewer's
+approval), so a run already queued behind another deploy refuses too. Unset or `false` means not
 frozen; any other value also refuses. Use it during an incident whenever a deploy
 from `main` could undo a kill switch or a rollback. Set it at the repository level,
 not on an environment.
@@ -172,6 +263,21 @@ gh variable list -R bestagentkits/ak-vault                             # check
 Record freezing and unfreezing on the incident issue. Merges to `main` still land
 while frozen; their deploys fail at the gate and are not retried, so after
 unfreezing run the Deploy workflow on `main` once.
+
+The staging job also refuses, right before it deploys, when its commit is no longer
+the head of `main` (or when the head cannot be read), so a late or re-run CI run
+cannot put an older commit on staging. Production needs staging, so that run's
+production deploy is skipped as well. The newer commit deploys only once its own CI
+is green and deploys are not frozen, and a manual run needs a green CI push run for
+the head. While the head of `main` is red, no deploy goes through the workflow: land
+a fix, or use the emergency kill switch or the rollback below.
+
+The production job also refuses when its commit is no longer the head of `main`
+(or when the head cannot be read). If `main` moved while a run waited for
+approval, approving it fails with an error naming the newer head instead of
+overwriting a newer deploy: reject that run and approve the one for the newer
+commit. A red or still-running CI on the head of `main` therefore blocks
+production until a fix lands; for urgent recovery use the rollback runbook below.
 
 ## Worker rollback
 

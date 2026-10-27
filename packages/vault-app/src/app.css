@@ -58,3 +58,24 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .profile dt { color: var(--muted); }
 .profile dd { margin: 0; word-break: break-word; }
 .origin, .muted, .count { color: var(--muted); font-size: 0.85rem; }
+.history-entry { padding: 0.75rem 0; border-bottom: 1px solid var(--line); }
+.warn { border: 1px solid var(--danger); border-radius: 6px; padding: 0.75rem; margin: 0.75rem 0; }
+
+.badge-rot-needs_rotate, .badge-rot-overdue { border-color: var(--danger); color: var(--danger); }
+.badge-rot-due_soon { border-color: var(--accent); color: var(--accent); }
+.badge-rot-ok { border-color: var(--ok); color: var(--ok); }
+.health-list { list-style: none; padding: 0; margin: 0.25rem 0; }
+.rotation { margin: 0.6rem 0 0; padding: 0.75rem; border: 1px solid var(--line); border-radius: 6px; }
+.rotation h3 { font-size: 1rem; margin: 0 0 0.4rem; }
+.steps { padding-left: 1.2rem; }
+.step-done { color: var(--ok); }
+@media (max-width: 40rem) {
+  .item-head { flex-direction: column; align-items: stretch; }
+}
+
+
+.devices { list-style: none; margin: 0.25rem 0 0; padding: 0 0 0 0.5rem; color: var(--muted); font-size: 0.9rem; }
+.caps { list-style: none; padding: 0; }
+.caps li { padding: 0.2rem 0; }
+.badge-active { border-color: var(--ok); color: var(--ok); }
+.cap-no .badge { border-color: var(--muted); color: var(--muted); }

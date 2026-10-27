@@ -52,7 +52,9 @@ import type { Enrollment, StoredDevice, WitnessedState } from '../keys/device-st
 import { deviceIdOf } from '../keys/webcrypto-device-keys.js';
 import type { AkvClient } from './akv-client.js';
 import { deviceRecordOf, sasInputOf } from './enroll.js';
+import type { LoggedRecord } from './history.js';
 import { validItemName, validMetaText } from './item-names.js';
+import { parseRotationWorkflow, type RotationWorkflow } from './rotation.js';
 
 export const ITEM_META_SCHEMA = 'agentkit.secret/v1';
 const MEMBERSHIP_PAGE = 1000;
@@ -79,6 +81,11 @@ export interface ItemView {
   rotatedMs: number | null;
   creator: string | null;
   rotateTtlDays: number | null;
+  /** Rotation workflow an operator started (signed metadata), or null. */
+  rotation: RotationWorkflow | null;
+  /** Time and key epoch of the latest rekey that listed this item in `needs_rotate`; null when never listed. */
+  flaggedMs: number | null;
+  flaggedEpoch: number | null;
   profile: ProfileFieldView[];
   openConflicts: number;
 }
@@ -91,6 +98,10 @@ export interface VaultSnapshot {
   vaultKeys: Map<number, Uint8Array>;
   itemStates: Map<string, ItemState>;
   heads: Map<string, SignedRecord>;
+  /** Every verified log entry of each item (applied and preserved), in log order. Ciphertext only. */
+  log: Map<string, LoggedRecord[]>;
+  /** Each live item's profile at its head as this device verified it (fields the provenance check kept). A write carries this, never the raw payload. Absent when the base of the head could not be verified. */
+  profiles: Map<string, Profile>;
   items: ItemView[];
   /** Live items this device cannot open (an epoch it never held, or a bad ciphertext). */
   unreadable: number;
@@ -290,12 +301,15 @@ export function projectItem(
     rotatedMs: metaInt(meta, 'rotated_ms', 1),
     creator,
     rotateTtlDays: metaInt(meta, 'rotate_ttl_days', 1),
+    rotation: parseRotationWorkflow(meta),
+    flaggedMs: null,
+    flaggedEpoch: null,
     profile: (Object.keys(profile.profile) as ProfileKey[]).sort().map((key) => ({ key, value: profile.profile[key]!.value, origin: profile.origins[key] ?? 'sync' })),
     openConflicts,
   };
 }
 
-function openRecord(record: SignedRecord, vk: Uint8Array | undefined): ItemPayload | TombstonePayload | null {
+export function openRecord(record: SignedRecord, vk: Uint8Array | undefined): ItemPayload | TombstonePayload | null {
   if (!vk) return null;
   try {
     return openItem({
@@ -320,6 +334,8 @@ export function openHead(snapshot: VaultSnapshot, itemId: string): ItemPayload {
 export interface ProfileAt {
   profile: Profile;
   origins: Partial<Record<ProfileKey, ProfileOrigin>>;
+  /** False when this revision, or any revision it was built on, was kept without a held base to check against. */
+  verified: boolean;
 }
 
 /**
@@ -335,10 +351,10 @@ export function replayLog(
   enrollment: Enrollment,
   vaultKeys: Map<number, Uint8Array>,
   selfId: string,
-  prior?: Pick<VaultSnapshot, 'itemStates' | 'heads'> & { replay: ReplayBase },
+  prior?: Pick<VaultSnapshot, 'itemStates' | 'heads' | 'log'> & { replay: ReplayBase },
   /** This tab's own verified log position; kept even when the replay starts from the beginning. */
   own?: ReplayBase['head'],
-): Pick<VaultSnapshot, 'itemStates' | 'heads' | 'items' | 'unreadable' | 'hidden' | 'replay'> & { logHead: { log_seq: number; log_head: string } } {
+): Pick<VaultSnapshot, 'itemStates' | 'heads' | 'log' | 'profiles' | 'items' | 'unreadable' | 'hidden' | 'replay'> & { logHead: { log_seq: number; log_head: string } } {
   const kept = new Map<number, string>();
   if (prior) {
     // Records the cursor already passed were checked against the removals known then. A removal
@@ -363,6 +379,10 @@ export function replayLog(
   const heads = new Map<string, SignedRecord>(prior?.heads);
   const profiles = new Map<string, Map<number, ProfileAt>>(prior?.replay.profiles);
   const ownedProfiles = new Set<string>();
+  const log = new Map<string, LoggedRecord[]>(prior?.log);
+  const ownedLogs = new Set<string>();
+  /** Absolute change-log position of the first entry this replay applies. */
+  const offset = prior ? prior.replay.head.log_seq : 0;
   const digestAt = (n: number) => {
     // A continuation starts past the offer checkpoint, which the first pull already checked.
     if (!prior && n === cp.log_seq && computeStateDigest(itemStates.values()) !== cp.state_digest) throw new AppError('rollback');
@@ -380,6 +400,12 @@ export function replayLog(
     // The server's label for the entry must be what the replay derives.
     if ((conflictId === undefined) !== (applied.outcome.status === 'applied')) throw new AppError('vault_verification_failed');
     itemStates.set(record.item_id, applied.state);
+    // Copy on first write so a failed pull leaves the prior snapshot's history untouched.
+    if (!ownedLogs.has(record.item_id)) {
+      log.set(record.item_id, [...(log.get(record.item_id) ?? [])]);
+      ownedLogs.add(record.item_id);
+    }
+    log.get(record.item_id)!.push({ logSeq: offset + i + 1, conflictId: conflictId ?? null, record });
     if (applied.outcome.status === 'applied') {
       heads.set(record.item_id, record);
       // Copy on first write so a failed pull leaves the prior snapshot's profiles untouched.
@@ -390,7 +416,7 @@ export function replayLog(
       const byRevision = profiles.get(record.item_id)!;
       const revision = applied.outcome.revision;
       if (record.tombstone) {
-        byRevision.set(revision, { profile: {}, origins: {} });
+        byRevision.set(revision, { profile: {}, origins: {}, verified: true });
       } else {
         const payload = openRecord(record, vaultKeys.get(record.key_epoch));
         if (payload && !('deleted' in payload)) {
@@ -402,14 +428,15 @@ export function replayLog(
             next = {};
           }
           const checked = checkProfileProvenance(prev?.profile ?? (record.base_revision === 0 ? {} : null), next, record, { selfDeviceId: selfId, prevOrigins: prev?.origins ?? null });
-          byRevision.set(revision, { profile: checked.profile, origins: checked.origins });
+          byRevision.set(revision, { profile: checked.profile, origins: checked.origins, verified: record.base_revision === 0 || (prev !== null && prev.verified) });
         }
       }
     }
-    digestAt(prior ? prior.replay.head.log_seq + i + 1 : i + 1);
+    digestAt(offset + i + 1);
   });
 
   const items: ItemView[] = [];
+  const verifiedProfiles = new Map<string, Profile>();
   let unreadable = 0;
   let hidden = 0;
   for (const [itemId, itemState] of itemStates) {
@@ -420,13 +447,33 @@ export function replayLog(
       unreadable++;
       continue;
     }
-    const profile = profiles.get(itemId)?.get(itemState.revision) ?? { profile: {}, origins: {} };
+    const profile = profiles.get(itemId)?.get(itemState.revision) ?? { profile: {}, origins: {}, verified: false };
+    if (profile.verified) verifiedProfiles.set(itemId, profile.profile);
     const view = projectItem(payload, record, profile, itemState.conflicts.length);
     if (view) items.push(view);
     else hidden++;
   }
   items.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.itemId < b.itemId ? -1 : 1));
-  return { itemStates, heads, items, unreadable, hidden, logHead: verified.head, replay: { head: verified.head, state, profiles } };
+  return { itemStates, heads, log, profiles: verifiedProfiles, items, unreadable, hidden, logHead: verified.head, replay: { head: verified.head, state, profiles } };
+}
+
+/** Record, per item, the latest rekey that listed it in `needs_rotate` (a removal's exposure flag). */
+export function flagRotations(items: ItemView[], events: readonly MembershipEvent[]): void {
+  const latest = new Map<string, { ts: number; epoch: number }>();
+  for (const e of events) {
+    if (e.type !== 'rekey') continue;
+    const ids = e.body['needs_rotate'];
+    const epoch = e.body['new_key_epoch'];
+    if (!Array.isArray(ids) || typeof epoch !== 'number') continue;
+    for (const id of ids) if (typeof id === 'string') latest.set(id, { ts: e.ts, epoch });
+  }
+  for (const item of items) {
+    const flag = latest.get(item.itemId);
+    if (flag) {
+      item.flaggedMs = flag.ts;
+      item.flaggedEpoch = flag.epoch;
+    }
+  }
 }
 
 export interface PullResult {
@@ -462,17 +509,18 @@ export async function pullVault(client: AkvClient, device: StoredDevice, kx: Dev
       const replay = replayLog(feed.entries, state, enrollment, vaultKeys, selfId, base);
       // Nothing new proves nothing about a server whose log shrank or diverged below the cursor: its tip must be ours.
       if (!feed.head || feed.head.log_seq !== replay.logHead.log_seq || feed.head.log_head !== replay.logHead.log_head) throw new FullPullNeeded();
-      return finishPull(enrollment, state, selfId, vaultKeys, replay);
+      return finishPull(enrollment, state, parsed, selfId, vaultKeys, replay);
     } catch (err) {
       if (!(err instanceof FullPullNeeded) && !(err instanceof AppError && (err.code === 'vault_verification_failed' || err.code === 'rollback'))) throw err;
     }
   }
   const vaultKeys = await loadVaultKeys(client, enrollment.vaultId, selfId, parsed, addSeq, kx);
   const { entries } = await fetchChanges(client, enrollment.vaultId);
-  return finishPull(enrollment, state, selfId, vaultKeys, replayLog(entries, state, enrollment, vaultKeys, selfId, undefined, mine?.replay.head));
+  return finishPull(enrollment, state, parsed, selfId, vaultKeys, replayLog(entries, state, enrollment, vaultKeys, selfId, undefined, mine?.replay.head));
 }
 
-function finishPull(enrollment: Enrollment, state: MembershipState, selfId: string, vaultKeys: Map<number, Uint8Array>, replay: ReturnType<typeof replayLog>): PullResult {
+function finishPull(enrollment: Enrollment, state: MembershipState, events: readonly MembershipEvent[], selfId: string, vaultKeys: Map<number, Uint8Array>, replay: ReturnType<typeof replayLog>): PullResult {
+  flagRotations(replay.items, events);
   const witnessed: WitnessedState = {
     membership_seq: state.seq,
     membership_head: state.head,
@@ -484,7 +532,7 @@ function finishPull(enrollment: Enrollment, state: MembershipState, selfId: stri
   return {
     snapshot: {
       vaultId: enrollment.vaultId, self, state, vaultKeys,
-      itemStates: replay.itemStates, heads: replay.heads, items: replay.items, unreadable: replay.unreadable, hidden: replay.hidden, witnessed, replay: replay.replay,
+      itemStates: replay.itemStates, heads: replay.heads, log: replay.log, profiles: replay.profiles, items: replay.items, unreadable: replay.unreadable, hidden: replay.hidden, witnessed, replay: replay.replay,
     },
     enrollment: { ...enrollment, confirmed: true, witnessed },
   };
