@@ -473,7 +473,8 @@ reveal = "akr2-" || b64(cjson({"v":1,"ctx":"akv1/enroll-reveal","vault_id":…,"
 place of `nonce_j`; `reveal` has `vault_id` and `joiner` as IDs and a 16-byte `nonce_j`.
 Order:
 
-1. The joiner prints `join` and keeps `nonce_j`.
+1. The joiner prints `join` and keeps `nonce_j`. The joiner MUST create each join only
+   on an explicit human action; it MUST NOT retry a join automatically.
 2. The owner device parses it, draws `nonce_i` (16 fresh random bytes, drawn after the
    join is received), and answers with `offer`, echoing `nonce_j_commit`. It does not
    yet have `nonce_j` and shows no SAS. The owner device MUST issue each offer only on an
@@ -482,18 +483,22 @@ Order:
    `nonce_j_commit`, `nonce_i`). An owner device holds **at most one pending enrollment
    in total**, not one per joiner: answering a further join, for any joiner, discards the
    pending one and draws a new `nonce_i`, so a `nonce_i` is never paired with a second
-   commitment. A discarded or expired pending enrollment that never received a reveal is
-   **abandoned**; it counts as a failed attempt (see below), and the owner device SHOULD
-   tell the human plainly that it was abandoned. Because a join is public, anyone who
-   replays a joiner's join can, once the owner answers it, cancel that joiner's pending
-   enrollment; this affects availability only, since the replayer cannot reveal the
-   committed `nonce_j`.
+   commitment. A pending enrollment MUST expire 600 seconds (10 minutes) after its offer
+   is issued; a reveal that arrives later is refused (`forbidden`) because nothing is
+   pending. A pending enrollment that was discarded, expired, or lost because the owner
+   device restarted, without having received a reveal, is **abandoned**; it counts as a
+   failed attempt (see below), and the owner device SHOULD tell the human plainly that it
+   was abandoned. Because a join is public, anyone who replays a joiner's join can, once
+   the owner answers it, cancel that joiner's pending enrollment, and the abandoned offers
+   count toward the owner's stop limit and can trip it. Both affect availability only,
+   since the replayer cannot reveal the committed `nonce_j`.
 3. The joiner accepts the offer only if `joiner` is its own device ID and
    `nonce_j_commit` is its own commitment, then prints `reveal` and shows its SAS.
    **A joiner accepts at most one offer per join.** Once it has printed a reveal it
    discards `nonce_j` and refuses every further offer for that commitment; a retry
    starts with a new join and a fresh `nonce_j`. Otherwise a second offer could be
-   ground against the revealed `nonce_j`.
+   ground against the revealed `nonce_j`. Each reveal the joiner prints is one of its
+   attempts (see below).
 4. The owner device accepts `reveal` only if `vault_id` and `joiner` are those of the
    pending enrollment (otherwise `forbidden`) and `verifyNonceJReveal` passes
    (`nonce_j` hashes to the stored commitment; otherwise `forbidden`, and no SAS is
@@ -519,17 +524,37 @@ commitment before the owner device reveals `nonce_i`, so the owner's digits are 
 known to the forger when it fixes `nonce_j`. A forger that replaces the offer must pick
 `nonce_i` without knowing the honest `nonce_j`, which only the commitment hides. Given the
 single-use and fresh-nonce rules of steps 2 and 3, each attempt therefore matches with
-probability 10^-6 and costs a fresh offer from the owner device.
+probability 10^-6 and costs a fresh offer from the owner device or a fresh join and
+reveal from the joiner.
 
-An **attempt** is an offer the owner device issues. A forger on the code channel that
-sent its own join can compute the owner's digits once it holds the offer, and can simply
-never reveal when they do not match, then send another join. So the owner device MUST
-count every issued offer that does not end in a confirmed match toward its stop limit:
-a failed reveal, a mismatch the human reports, and an abandoned pending enrollment
-(superseded by a later join or expired without a reveal). It SHOULD stop issuing offers
-after three such attempts until the human deliberately resumes. A SAS shorter than the
-key material still cannot stop an attacker who is given unlimited attempts; this
-construction bounds each attempt, not the number the humans tolerate.
+**Attempts are counted on both devices.** A forger on the code channel can grind
+against either side without the other noticing. Against the owner: it sends its own
+join, computes the owner's digits once it holds the offer, never reveals when they do
+not match, and sends another join. Against the joiner: it obtains one offer from the
+owner with its own join and so learns the owner's digits, withholds its reveal, then
+answers each new join from the real joiner with a forged offer and compares the
+joiner's digits with the owner's until they match. Therefore:
+
+- On the owner device an **attempt** is an offer it issues. It MUST count every issued
+  offer that does not end in a confirmed match toward its stop limit: a failed reveal, a
+  mismatch the human reports, a reveal after which the SAS was shown but the human
+  neither confirmed nor rejected it, and an abandoned pending enrollment (superseded by
+  a later join, expired, or lost to a restart, without a reveal).
+- On the joiner an **attempt** is a reveal it prints. It MUST count every reveal that
+  is not followed by a `device_add` for its own device record that passes the final
+  check of §3.8, including a reveal whose SAS the human neither confirmed nor rejected.
+- Each device SHOULD stop after three counted attempts, show a visible notice, and
+  refuse to issue offers (owner) or create joins (joiner) until the human deliberately
+  resumes. The count MUST persist across restarts of the client until that deliberate
+  resume, and a pending enrollment lost to a restart counts as abandoned.
+- The limit is per device. Owner devices share no authenticated attempt state in v1,
+  so each owner device of an account counts separately, and an account with k owner
+  devices tolerates up to 3k counted owner-side attempts before every owner device
+  stops; the joiner's own limit still applies to each joining device.
+
+A SAS shorter than the key material still cannot stop an attacker who is given
+unlimited attempts; this construction bounds each attempt, not the number the humans
+tolerate.
 
 Compatibility. §3.8 codes remain accepted (§3.8), so the construction protects a
 joiner only when both sides use committed codes. An `akj2-` joiner accepts only

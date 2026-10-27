@@ -213,14 +213,21 @@ in production needs every box below, at the exact commit, plus an owner decision
       the `ak` CLI and the dashboard enroll with `akj2-`/`ako2-`/`akr2-` and the owner
       device refuses `akj1-`, so [threat model X9](./threat-model.md) can drop its
       uncommitted-SAS limitation. Client tests cover single-use `nonce_j` (a second offer for
-      the same join is refused) and a fresh `nonce_i` per join; the joiner refusing an offer
-      for another joiner or another commitment; and on the owner device: at most one
-      pending enrollment in total, an offer only on explicit human action (no automatic
-      answer to a relayed join), every issued offer without a confirmed match (failed
-      reveal, reported mismatch, or a pending enrollment superseded or expired without a
-      reveal) counted toward the stop limit, a visible notice when a pending enrollment is
-      abandoned, and `forbidden` for a reveal whose `vault_id` or `joiner` differs from the
-      pending enrollment.
+      the same join is refused) and a fresh `nonce_i` per join. On the joiner: refusing an
+      offer for another joiner or another commitment, a join only on explicit human action
+      (no automatic retry), every reveal not followed by a `device_add` for its own device
+      record counted as an attempt (including a SAS the human neither confirmed nor
+      rejected), and a stop with a visible notice after three until a deliberate resume.
+      On the owner device: at most one pending enrollment in total, an offer only on
+      explicit human action (no automatic answer to a relayed join), a pending enrollment
+      expiring 600 seconds after its offer (a later reveal is `forbidden`), every issued
+      offer without a confirmed match (failed reveal, reported mismatch, a SAS shown but
+      neither confirmed nor rejected, or a pending enrollment superseded, expired after
+      the 600-second time-to-live, or lost to a restart without a reveal) counted toward
+      the stop limit, a visible notice when a pending enrollment is abandoned, and
+      `forbidden` for a reveal whose `vault_id` or `joiner` differs from the pending
+      enrollment. On both: the attempt count survives a client restart until a deliberate
+      human resume.
 - [ ] Relay: Worker tests for the closed frame set and close codes, signed `hello` and
       `result`, `reauth` before expiry, revocation and membership checked before each
       call (a device removed mid-connection gets no further call), a replaced

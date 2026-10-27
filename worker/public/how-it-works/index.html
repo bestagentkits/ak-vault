@@ -165,7 +165,7 @@
               <span class="sas-actions" aria-hidden="true"><i class="no">Waiting for approval</i></span>
             </div></div>
           </div>
-          <figcaption id="sas-cap">Both devices derive the same six digits from one transcript: the vault, both device IDs and a random nonce from each side. The codes shipped today do not commit to the nonces, so copy them between your own screens: a service that relayed them could search for matching digits. With committed codes a swapped key makes the digits differ except with probability one in a million per offer the owner device issues. Spec §3.5, §3.8, §3.9.</figcaption>
+          <figcaption id="sas-cap">Both devices derive the same six digits from one transcript: the vault, both device IDs and a random nonce from each side. The codes shipped today do not commit to the nonces, so copy them between your own screens: a service that relayed them could search for matching digits. With committed codes a swapped key makes the digits differ except with probability one in a million per enrollment attempt, counted on both devices. Spec §3.5, §3.8, §3.9.</figcaption>
         </figure>
         <div class="reveal">
           <div class="section-head">
