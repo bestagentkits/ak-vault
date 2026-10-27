@@ -212,8 +212,9 @@ function infoOf(item: ItemView, nowMs: number): RotationInfo {
   }, nowMs);
 }
 
-function dueText(info: RotationInfo): string {
+export function dueText(info: RotationInfo): string {
   if (info.dueMs === null || info.daysUntilDue === null) return '';
+  if (info.daysUntilDue === 0) return `due ${fmtDate(info.dueMs)} (today)`;
   const d = Math.abs(info.daysUntilDue);
   const day = `${d} day${d === 1 ? '' : 's'}`;
   return info.daysUntilDue < 0 ? `due ${fmtDate(info.dueMs)} (${day} ago)` : `due ${fmtDate(info.dueMs)} (in ${day})`;

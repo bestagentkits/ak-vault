@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openItem, verifyAuditChain } from '@ak-vault/protocol';
 import { DAY_MS, parseRotationWorkflow, rotationInfo, stillNeedsRotate, type RotationInput } from '../src/sync/rotation.js';
+import { dueText } from '../src/ui/views.js';
 import { updateRotation } from '../src/sync/write-ops.js';
 import { appendRotationAudit } from '../src/sync/audit.js';
 import type { AkvClient } from '../src/sync/akv-client.js';
@@ -30,6 +31,22 @@ afterEach(() => {
 
 const NOW = 1_800_000_000_000;
 const base: RotationInput = { createdMs: NOW - 10 * DAY_MS, rotatedMs: null, rotateTtlDays: null, flaggedMs: null, flaggedEpoch: null, keyEpoch: 1, workflow: null };
+
+describe('rotation due text', () => {
+  const text = (offsetMs: number) => {
+    const info = rotationInfo({ ...base, rotatedMs: NOW + offsetMs - 30 * DAY_MS, rotateTtlDays: 30 }, NOW);
+    return dueText(info).replace(/^due \S+ /, '');
+  };
+  it('rounds whole days toward zero and says today within a day either side', () => {
+    expect(text(-1000)).toBe('(today)');
+    expect(text(0)).toBe('(today)');
+    expect(text(23 * 3_600_000)).toBe('(today)');
+    expect(text(-DAY_MS)).toBe('(1 day ago)');
+    expect(text(-2 * DAY_MS - 5)).toBe('(2 days ago)');
+    expect(text(DAY_MS)).toBe('(in 1 day)');
+    expect(text(2 * DAY_MS + 5)).toBe('(in 2 days)');
+  });
+});
 
 describe('rotation health', () => {
   it('is unknown without an interval or without any date, and never invents a due date', () => {
