@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openItem } from '@ak-vault/protocol';
 import { openRecord } from '../src/sync/vault-sync.js';
 import { ACCOUNT, FakeWorld } from './helpers/fake-world.js';
-import { Browser, allByTestId, byTestId, type Page } from './helpers/dashboard-page.js';
+import { Browser, allByTestId, byTestId, settle, type Page } from './helpers/dashboard-page.js';
 
 const S = (n: string) => `sentinel-history-${n}-4d1e8a07c3`;
 
@@ -170,7 +170,7 @@ describe('restore', () => {
     expect(byTestId(page.root, 'restore-confirm').textContent).toContain('rotate or revoke it there');
     expect(world.exchanges.filter((e) => e.method === 'PUT').length).toBe(puts);
     byTestId(page.root, 'confirm-restore').click();
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ kind: 'history', notice: { code: 'restored' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ kind: 'history', notice: { code: 'restored' } }));
 
     expect(world.log.length).toBe(before + 1);
     const written = world.log.at(-1)!;
@@ -204,7 +204,7 @@ describe('restore', () => {
     openHistory(page);
     allByTestId(page.root, 'restore')[0]!.click();
     byTestId(page.root, 'confirm-restore').click();
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'restored' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'restored' } }));
     expect(world.log[0]!.record.key_epoch).toBe(1);
     expect(world.log.at(-1)!.record).toMatchObject({ key_epoch: 2, base_revision: 2 });
     expect(readValue(world, world.log.length)).toBe(S('old'));
@@ -216,7 +216,7 @@ describe('restore', () => {
     world.ownerSet('prod-api-key', S('four')); // another device writes after this browser pulled
     allByTestId(page.root, 'restore')[1]!.click();
     byTestId(page.root, 'confirm-restore').click();
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'conflict' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'conflict' } }));
     const last = world.log.at(-1)!;
     expect(last.conflict_id).not.toBeNull();
     expect(readValue(world, 4)).toBe(S('four'));
@@ -239,7 +239,7 @@ describe('restore', () => {
     const puts = world.exchanges.filter((e) => e.method === 'PUT').length;
     allByTestId(page.root, 'restore')[1]!.click(); // revision 1 has the value of revision 3
     byTestId(page.root, 'confirm-restore').click();
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'restore_current' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'restore_current' } }));
     expect(world.exchanges.filter((e) => e.method === 'PUT').length).toBe(puts);
   });
 
@@ -286,7 +286,7 @@ describe('conflicts', () => {
     expect(byTestId(page.root, 'resolve-confirm').textContent).toContain('mark all 1 open branch resolved');
     expect(world.exchanges.filter((e) => e.method === 'PUT').length).toBe(puts);
     byTestId(page.root, 'confirm-resolve').click();
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'resolved' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'resolved' } }));
     const rec = world.log.at(-1)!.record;
     expect(rec).toMatchObject({ item_id: itemId, base_revision: 2, resolves: [conflictId] });
     expect(readValue(world, world.log.length)).toBe(S('head'));
@@ -301,7 +301,7 @@ describe('conflicts', () => {
     const { world, page, conflictId } = await conflicted();
     allByTestId(page.root, 'resolve-choice')[1]!.click();
     byTestId(page.root, 'confirm-resolve').click();
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'resolved' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'resolved' } }));
     expect(world.log.at(-1)!.record.resolves).toEqual([conflictId]);
     expect(readValue(world, world.log.length)).toBe(S('branch'));
   });
@@ -456,7 +456,7 @@ describe('device storage', () => {
     openHistory(page);
     allByTestId(page.root, 'restore')[1]!.click();
     byTestId(page.root, 'confirm-restore').click();
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'restored' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'restored' } }));
     for (const d of b.devices.entries.values()) expect(JSON.stringify({ ...d, keys: null })).not.toContain('sentinel-history-');
     expect(b.devices.entries.has(ACCOUNT)).toBe(true);
     noPlaintext(page, world);

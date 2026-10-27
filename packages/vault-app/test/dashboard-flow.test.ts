@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { b64encode, openItem, randomBytes, randomId, type MembershipEvent } from '@ak-vault/protocol';
 import { ACCOUNT, FakeWorld, ISSUER, ORIGIN } from './helpers/fake-world.js';
-import { Browser, allByTestId, byTestId } from './helpers/dashboard-page.js';
+import { Browser, allByTestId, byTestId, settle } from './helpers/dashboard-page.js';
 
 const SENTINEL = 'sentinel-value-7f3a9c1e5b';
 
@@ -261,7 +261,7 @@ describe('vault', () => {
     value.value = SENTINEL;
     (value.form as HTMLFormElement).dispatchEvent(new Event('submit', { cancelable: true }));
     expect(value.value).toBe('');
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ kind: 'vault', notice: { code: 'saved' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ kind: 'vault', notice: { code: 'saved' } }));
     expect(names(page.root)).toEqual(['typed-name']);
     expect(page.root.innerHTML).not.toContain(SENTINEL);
   });
@@ -282,7 +282,7 @@ describe('vault', () => {
       }
     };
     const older = page.controller.refresh();
-    await vi.waitFor(() => expect(holding).toBe(false));
+    await settle(() => expect(holding).toBe(false));
     world.ownerSet('two', 'b');
     await page.controller.refresh();
     const newer = b.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!;
@@ -299,7 +299,7 @@ describe('vault', () => {
     const { page } = await new Browser(world).enroll();
     byTestId(page.root, 'delete').click();
     byTestId(page.root, 'confirm-delete').click();
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ kind: 'vault', notice: { code: 'deleted' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ kind: 'vault', notice: { code: 'deleted' } }));
     expect(names(page.root)).toEqual([]);
     expect(world.log.at(-1)!.record.tombstone).toBe(true);
   });
