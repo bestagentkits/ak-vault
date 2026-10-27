@@ -173,7 +173,8 @@ membership whose session kind is `api_key_device` or `machine` is refused (`403`
 path (the bundle and membership reads) and on recovery enrollment, so a leaked API key or a CI
 runner cannot collect recovery bundles by itself. Once an owner device approves such a
 device with a signed `device_add`, it is a current member and its role decides: an owner-role
-device may read and replace the bundle and rotate the recovery key. Every other route answers such a device `forbidden`;
+device may read and replace the bundle and rotate the recovery key, but only in an
+`email_otp` session (§9 item 4). Every other route answers such a device `forbidden`;
 without the `AKV-Device-Key` header, a membership read by a non-member is `forbidden`
 as before. The membership log is metadata already visible to the server (§4,
 [data classification](../../security/data-classification.md)); reading it lets the
@@ -899,7 +900,14 @@ devices that honor it, not what a vault member can decrypt (§3).
    session (an AgentKit API key exchanged for a revocable device session) may create a
    new vault with genesis and, once enrolled, acts as a member under its role; it joins an
    existing vault only through a `device_add` signed by an existing owner device, never
-   through the recovery identity.
+   through the recovery identity. **Recovery operations** (`GET` and
+   `PUT /v1/vaults/{vid}/recovery`, and a `POST …/membership` carrying a
+   `recovery_rotate` event or a `bundle`) additionally require an `email_otp` session,
+   whatever the device's role: an `api_key_device` or `machine` session on an
+   owner-role device is refused with `403 forbidden` before anything is read or
+   stored, the same refusal as on the recovery identity. Such a device keeps every
+   other right of its role. A token without `session_kind` is read as `email_otp`
+   (item 1).
 5. Wrap routes. Wraps are uploaded only inside `PUT /v1/vaults/{vid}` (genesis) and
    `POST /v1/vaults/{vid}/membership` (`{"event","wraps"?,"bundle"?}`); there is no
    separate wrap upload. `GET /v1/vaults/{vid}/wraps?membership_seq=n` returns the

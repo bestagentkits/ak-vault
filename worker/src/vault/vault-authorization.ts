@@ -20,6 +20,10 @@
  *    plus a key it generates can fetch the bundle and attempt offline guessing of
  *    the bundle password, and can read membership metadata (accounts, roles,
  *    device public keys).
+ * Recovery operations by members (`GET`/`PUT /recovery` and `recovery_rotate`)
+ * also require an `email_otp` session, whatever the device's role (spec §9.4): a
+ * long-lived API key or machine credential may never read or replace the
+ * recovery material, even on an owner-role device.
  */
 import { b64decodeLength, deviceIdFromSignPub, parseMembershipEvent, type DeviceRecord, type JsonObject, type MembershipState } from '@ak-vault/protocol';
 import type { Scope } from '../auth/jwt-verify.js';
@@ -69,7 +73,11 @@ function refuseBrowserSession(req: VaultRequest): void {
   if (req.claims.kind === 'browser' && BROWSER_REFUSED.has(req.op)) throw new ApiError('forbidden');
 }
 
-/** Fail closed: outside membership only an `email_otp` session is admitted (spec §9.4). */
+/**
+ * Fail closed: only an `email_otp` session may take the recovery identity, enroll
+ * by recovery, or perform a recovery operation as a member (spec §9.4). A token
+ * without `session_kind` was verified as `email_otp`.
+ */
 function requireHumanSession(req: VaultRequest): void {
   if (req.claims.kind !== 'email_otp') throw new ApiError('forbidden');
 }
@@ -117,6 +125,7 @@ function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: Memb
     verifyRequestProof(sql, req, device.sign_pub);
     requireScope(req.claims.scope, WRITE);
     enforceRole(device, 'human_owner');
+    if (isRecoveryRotate(body)) requireHumanSession(req);
     // The chain is verified in the mutation step, after the idempotency lookup, so a
     // retried append returns its stored result instead of failing as a stale seq.
     return { state, device, body };
@@ -133,6 +142,20 @@ function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: Memb
   requireScope(req.claims.scope, WRITE);
   return { state, device, body, next };
 }
+
+/**
+ * A membership append that rotates the recovery key. A bundle marks one too: the
+ * mutation step refuses a bundle on any other event, so treating it as a rotation
+ * here only fails closed earlier.
+ */
+function isRecoveryRotate(body: JsonObject): boolean {
+  const event = body['event'];
+  const type = typeof event === 'object' && event !== null && !Array.isArray(event) ? (event as JsonObject)['type'] : undefined;
+  return type === 'recovery_rotate' || body['bundle'] !== undefined;
+}
+
+/** Member ops that read or replace the recovery bundle. */
+const RECOVERY_OPS: ReadonlySet<VaultOp> = new Set<VaultOp>(['recovery.get', 'recovery.put']);
 
 /**
  * The recovery identity: `GET /recovery` or `GET /membership` (the only ops a
@@ -170,5 +193,6 @@ export function authorize(req: VaultRequest, sql: SqlStorage, store: MembershipS
   const policy = POLICY[req.op];
   requireScope(req.claims.scope, policy.scope);
   enforceRole(device, policy.role);
+  if (RECOVERY_OPS.has(req.op)) requireHumanSession(req);
   return { state, device, body: isMutation(req.op) ? parseBodyObject(req.body) : null };
 }

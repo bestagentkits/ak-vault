@@ -3,12 +3,12 @@
  * for the owner account, a never-removed device ID, a presented `AKV-Device-Key`
  * whose kid equals the token `did`, a proof by that key and `vault:read` scope.
  */
-import { randomBytes, randomId } from '@ak-vault/protocol';
+import { b64encode, randomBytes, randomId, signKeyPairFromSeed } from '@ak-vault/protocol';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { call, createDevice, type CallOptions, type TestDevice } from './helpers/api-client.js';
 import { mintToken } from './helpers/issuer.js';
 import { putTestBundle, sealTestBundle } from './helpers/recovery-bundle.js';
-import { VaultFixture } from './helpers/vault-fixture.js';
+import { signerOf, VaultFixture } from './helpers/vault-fixture.js';
 
 let fx: VaultFixture;
 
@@ -141,7 +141,67 @@ describe('recovery identity is for human email-OTP sessions only', () => {
   it('a member-signed device_add approves an api_key_device, which then acts as a member under its role', async () => {
     const approved = await fx.addDevice({ account: fx.owner.account });
     expect((await fx.get(approved, `/items/${randomId()}`, { sessionKind: 'api_key_device' })).status).toBe(404);
-    // Pinned: an approved owner-role device is a member and may read the bundle.
-    expect((await fetchBundle(approved, { sessionKind: 'api_key_device' })).status).toBe(200);
+  });
+});
+
+describe('recovery operations by members need an email_otp session, whatever the role', () => {
+  const rotateEvent = (vault: VaultFixture, by: TestDevice) => {
+    const rotated = signKeyPairFromSeed(randomBytes(32));
+    const event = vault.buildEvent('recovery_rotate', { recovery_sign_pub: b64encode(rotated.publicKey) }, signerOf(by));
+    return { event, bundle: sealTestBundle(vault, 2, undefined, rotated.secretKey) as never };
+  };
+
+  it.each(['api_key_device', 'machine'])('refuses an owner-role %s session on GET /recovery, PUT /recovery and recovery_rotate', async (kind) => {
+    const vault = await VaultFixture.create();
+    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 1))).status).toBe(200);
+    const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });
+    const opts = { sessionKind: kind };
+
+    const read = await vault.get(device, '/recovery', opts);
+    expect(read.status).toBe(403);
+    expect(read.json.error.code).toBe('forbidden');
+    expect(JSON.stringify(read.json)).not.toContain('bundle');
+    // Presenting its own key does not turn a member into the recovery identity.
+    expect((await vault.get(device, '/recovery', { ...opts, headers: keyHeader(device) })).status).toBe(403);
+
+    const put = await putTestBundle(vault, device, sealTestBundle(vault, 2), vault.state.seq, opts);
+    expect(put.status).toBe(403);
+    expect(put.json.error.code).toBe('forbidden');
+
+    const seqBefore = vault.state.seq;
+    const rotate = rotateEvent(vault, device);
+    const refused = await vault.append(rotate.event, undefined, device, opts, { bundle: rotate.bundle });
+    expect(refused.status).toBe(403);
+    expect(refused.json.error.code).toBe('forbidden');
+
+    // Nothing changed: the chain did not advance and the stored bundle is still seq 1.
+    expect((await vault.get(vault.owner, '/membership')).json.membership.seq).toBe(seqBefore);
+    expect((await vault.get(vault.owner, '/recovery')).json.bundle.bundle_seq).toBe(1);
+    // The device stays a normal member for items.
+    const id = randomId();
+    expect((await vault.write(device, id, 0, { name: 'A', value: 'synthetic' }, opts)).status).toBe(200);
+    expect((await vault.get(device, `/items/${id}`, opts)).status).toBe(200);
+  });
+
+  it.each([['email_otp', { sessionKind: 'email_otp' }], ['a token without session_kind', {}]] as const)(
+    'an owner-role device with %s performs all three recovery operations',
+    async (_label, opts) => {
+      const vault = await VaultFixture.create();
+      const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });
+      expect((await putTestBundle(vault, device, sealTestBundle(vault, 1), vault.state.seq, opts)).status).toBe(200);
+      expect((await vault.get(device, '/recovery', opts)).json.bundle.bundle_seq).toBe(1);
+      const rotate = rotateEvent(vault, device);
+      const ok = await vault.append(rotate.event, undefined, device, opts, { bundle: rotate.bundle });
+      expect(ok.status).toBe(201);
+      expect(ok.json.bundle_seq).toBe(2);
+    },
+  );
+
+  it.each(['api_key_device', 'machine'])('a %s session may still append other membership events as an owner', async (kind) => {
+    const vault = await VaultFixture.create();
+    const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });
+    const added = vault.newDevice();
+    const { event, wraps } = vault.enrollEvent(added, undefined, signerOf(device));
+    expect((await vault.append(event, wraps, device, { sessionKind: kind })).status).toBe(201);
   });
 });
