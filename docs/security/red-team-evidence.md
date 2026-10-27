@@ -82,7 +82,7 @@ over a real Store, grants store, approval inbox and Resolver; only sync was fake
 | Case | Expected | Actual |
 |---|---|---|
 | `request` whose `purpose` is plain injection text | Filed as inert data, nothing granted | Answered `pending`. The purpose was stored verbatim in the inbox (`ak secrets approve` prints it escaped), and no allow was written |
-| `request` with a newline, ESC, bidi override or line separator in `purpose`, a zero-width space in the name, or an unregistered `project` | Refused before the inbox | `invalid_args` at argument validation, or `not_found` for the name, and nothing reached the inbox |
+| `request` with a newline, ESC, bidi override or line separator in `purpose`, a zero-width space in the name, or a shell-text `project` | Refused before the inbox | `invalid_args` at argument validation, or `not_found` for the name, and nothing reached the inbox |
 | `set` with a bidi, newline or ESC name | Refused | `invalid_args` |
 | `set` with shell and injection text in the name or value | Stored as inert data, no profile, nothing runs | Written as data with no profile, and no canary ran |
 | `search` with shell and injection text | Nothing runs | An empty result, and no canary ran |
