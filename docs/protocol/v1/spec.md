@@ -173,7 +173,10 @@ membership whose session kind is `api_key_device` or `machine` is refused (`403`
 path (the bundle and membership reads) and on recovery enrollment, so a leaked API key or a CI
 runner cannot collect recovery bundles by itself. Once an owner device approves such a
 device with a signed `device_add`, it is a current member and its role decides: an owner-role
-device may read and replace the bundle and rotate the recovery key. Every other route answers such a device `forbidden`;
+device may read and replace the bundle and rotate the recovery key, but only in an
+`email_otp` session; an `api_key_device` or `machine` session may only store the
+first bundle of a vault that has none (genesis seal, §9 item 4). Every other route
+answers such a device `forbidden`;
 without the `AKV-Device-Key` header, a membership read by a non-member is `forbidden`
 as before. The membership log is metadata already visible to the server (§4,
 [data classification](../../security/data-classification.md)); reading it lets the
@@ -940,7 +943,23 @@ devices that honor it, not what a vault member can decrypt (§3).
    session (an AgentKit API key exchanged for a revocable device session) may create a
    new vault with genesis and, once enrolled, acts as a member under its role; it joins an
    existing vault only through a `device_add` signed by an existing owner device, never
-   through the recovery identity.
+   through the recovery identity. **Recovery operations** (`GET` and
+   `PUT /v1/vaults/{vid}/recovery`, and a `POST …/membership` carrying a
+   `recovery_rotate` event or a `bundle`) additionally require an `email_otp` session,
+   whatever the device's role, with one exception, the **genesis seal**: an
+   `api_key_device` or `machine` session on an owner-role device may
+   `PUT /v1/vaults/{vid}/recovery` while the vault has no stored bundle, under the
+   usual role, scope and proof checks. Every other recovery operation by such a
+   session (a read, a `PUT` that would replace a stored bundle, a rotation) is
+   refused with `403 forbidden` before its proof is consumed, the same refusal as on
+   the recovery identity; an exact idempotent retry of the genesis seal (§5) is
+   answered with its stored result, so a client whose answer was lost MUST retry
+   with the same `Idempotency-Key` and body (it cannot read the bundle to check). The server re-checks "no stored bundle" in the
+   transaction that stores it. Such a device keeps every other right of its role,
+   removal and rekey included, but cannot reseal: after a rekey it makes, the stored
+   bundle cannot enroll a device (§3.5) until an owner device in an `email_otp`
+   session reseals it. A token without `session_kind` is read as `email_otp`
+   (item 1).
 5. Wrap routes. Wraps are uploaded only inside `PUT /v1/vaults/{vid}` (genesis) and
    `POST /v1/vaults/{vid}/membership` (`{"event","wraps"?,"bundle"?}`); there is no
    separate wrap upload. `GET /v1/vaults/{vid}/wraps?membership_seq=n` returns the

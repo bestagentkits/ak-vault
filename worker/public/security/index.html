@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Security model and threat model | ak-vault</title>
-  <meta name="description" content="The ak-vault threat model in plain language: who we defend against, how protocol v1 defends, and the limitations that remain. Protocol v1 is proposed and in security review.">
+  <meta name="description" content="The ak-vault threat model in plain language: who we defend against, how protocol v1 defends, and the limitations that remain. Protocol v1 is proposed and was reviewed by the owner, not by an independent third party.">
   <link rel="canonical" href="https://vault.agentkit.best/security/">
   <link rel="alternate" type="text/markdown" href="https://vault.agentkit.best/security/index.md" title="Markdown version">
   <meta name="theme-color" content="#08090c" media="(prefers-color-scheme: dark)">
@@ -19,7 +19,7 @@
   <meta property="og:image" content="https://vault.agentkit.best/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, in security review.">
+  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, reviewed by the owner, not independently; sync is pre-release, not GA.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ak-vault security model: guarantees and limitations">
   <meta name="twitter:description" content="Threat model summary for ak-vault protocol v1: malicious server, stolen devices, removed members, rollback and more.">
@@ -97,7 +97,7 @@
   <main id="main">
     <section class="page-hero" aria-labelledby="page-title">
       <div class="container">
-        <span class="badge badge-review hero-badge reveal"><span class="dot" aria-hidden="true"></span>Protocol v1 · in security review</span>
+        <span class="badge badge-review hero-badge reveal"><span class="dot" aria-hidden="true"></span>Protocol v1 · owner-reviewed · sync pre-release</span>
         <h1 id="page-title" class="reveal">Security model, in <span class="grad">plain language</span>.</h1>
         <p class="lede reveal">Who ak-vault defends against, how protocol v1 does it, and what remains your risk. This page summarizes the normative <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/protocol/v1/spec.md">protocol v1 specification</a> and <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/threat-model.md">threat model</a>; where they differ, they win.</p>
         <nav class="toc reveal" aria-label="On this page">

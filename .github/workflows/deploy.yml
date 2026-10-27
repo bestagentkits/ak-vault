@@ -5,11 +5,22 @@ name: Deploy
 # first, then production behind the protected `production` GitHub Environment
 # (human reviewer, deployment branch main). Cloudflare credentials are exposed
 # only to the deploy step, never to checkout, setup or `pnpm install` scripts.
+# Staging and production queue in separate job-level concurrency groups: a run
+# waiting for the production reviewer holds only `deploy-production`, so newer
+# merges keep deploying to staging instead of replacing each other as the single
+# pending run of one shared group. At most one production job waits behind the
+# one holding the group, and a newer one replaces it; a running deploy is never
+# cancelled. Before approving production, check that the waiting run's commit is
+# still the head of `main`.
 # Missing credentials fail the job instead of finishing green without a deploy.
 # The repository variable DEPLOY_FREEZE (unset or `false` = not frozen) stops
-# every deploy during an incident; the production job re-checks it after the
-# reviewer's approval, because a run can wait there for hours. Any other value
+# every deploy during an incident; the staging and production jobs re-check it
+# when they start, because a run can wait in a queue or at the reviewer's
+# approval for hours. Any other value
 # refuses (fail closed). Procedure: docs/operations/runbooks.md#deploy-freeze.
+# Staging (right before it deploys) and production (after that check) also refuse
+# when their commit is no longer the head of main, so a late CI run or a stale
+# approved run cannot overwrite a newer deploy.
 on:
   workflow_run:
     workflows: [CI]
@@ -19,10 +30,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: deploy
-  cancel-in-progress: false
 
 jobs:
   gate:
@@ -73,7 +80,23 @@ jobs:
     needs: gate
     runs-on: ubuntu-latest
     environment: staging
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     steps:
+      - name: Refuse while deploys are frozen
+        env:
+          DEPLOY_FREEZE: ${{ vars.DEPLOY_FREEZE }}
+        run: |
+          case "${DEPLOY_FREEZE}" in
+            ""|false) ;;
+            true)
+              echo "::error::DEPLOY_FREEZE is true: deploys are frozen for an incident; refusing to deploy staging (see docs/operations/runbooks.md#deploy-freeze)"
+              exit 1 ;;
+            *)
+              echo "::error::DEPLOY_FREEZE has an unrecognised value; expected true, false or unset; refusing to deploy staging"
+              exit 1 ;;
+          esac
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.gate.outputs.sha }}
@@ -84,6 +107,23 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # CI runs can finish out of order and an old CI run can be re-run, so an
+      # older commit must never replace a newer one on staging. Fails closed
+      # when the head of main cannot be read.
+      - name: Refuse when the commit is no longer the head of main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          head=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha') || head=""
+          if [ -z "$head" ]; then
+            echo "::error::could not read the head of main; refusing to deploy staging"
+            exit 1
+          fi
+          if [ "$head" != "$SHA" ]; then
+            echo "::error::${SHA} is no longer the head of main (now ${head}); refusing to deploy staging. The Deploy run for the newer commit deploys it"
+            exit 1
+          fi
       - name: Deploy
         working-directory: worker
         env:
@@ -101,6 +141,9 @@ jobs:
     needs: [gate, staging]
     runs-on: ubuntu-latest
     environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     steps:
       - name: Refuse while deploys are frozen
         env:
@@ -115,6 +158,23 @@ jobs:
               echo "::error::DEPLOY_FREEZE has an unrecognised value; expected true, false or unset; refusing to deploy production"
               exit 1 ;;
           esac
+      # A run can wait for the reviewer for hours, and a manual run can race a
+      # merge, so an older commit must never replace a newer one. Fails closed
+      # when the head of main cannot be read.
+      - name: Refuse when the commit is no longer the head of main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          head=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha') || head=""
+          if [ -z "$head" ]; then
+            echo "::error::could not read the head of main; refusing to deploy production"
+            exit 1
+          fi
+          if [ "$head" != "$SHA" ]; then
+            echo "::error::${SHA} is no longer the head of main (now ${head}); refusing to deploy production. Reject this run and approve the Deploy run for the newer commit instead"
+            exit 1
+          fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.gate.outputs.sha }}

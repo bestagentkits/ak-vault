@@ -8,7 +8,7 @@
 
 const ALLOWED_ATTRS = new Set([
   'class', 'id', 'type', 'name', 'for', 'role', 'autocomplete', 'autocapitalize', 'spellcheck', 'inputmode', 'placeholder',
-  'maxlength', 'rows', 'disabled', 'readonly', 'required', 'title', 'aria-label', 'aria-live', 'aria-describedby', 'aria-busy', 'aria-labelledby', 'aria-pressed', 'data-testid',
+  'maxlength', 'rows', 'disabled', 'readonly', 'required', 'title', 'aria-label', 'aria-live', 'aria-describedby', 'aria-busy', 'aria-expanded', 'aria-labelledby', 'aria-pressed', 'min', 'max', 'step', 'data-testid',
   // Password-manager opt-outs (1Password, LastPass, Bitwarden, Dashlane and others).
   'data-1p-ignore', 'data-lpignore', 'data-bwignore', 'data-form-type',
 ]);

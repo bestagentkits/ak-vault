@@ -12,7 +12,9 @@ decided that production sync is fully live, with ak-web production minting vault
 tokens ([owner waivers](#owner-waivers)). Any logged-in user running the preview
 `ak secrets sync` commands can sync to production. That is an owner waiver, not a
 review sign-off: production sync is pre-release, not externally reviewed and not yet
-recommended for production credentials. It was enabled while these remain open:
+recommended for production credentials. The external-review requirement was later
+dropped; the review gate is the [review by the owner](#review-by-the-owner).
+Production sync was enabled while these remain open:
 every red-team scenario executed (scenario 13), the staging restore (since
 rehearsed), the staging cost measurement (since met by a lab-Worker measurement of
 the staging build, accepted by the owner), the review (by the owner;
@@ -80,6 +82,13 @@ page and docs, and its own CI run is linked from its pull request.
       recipient, reader and machine write denial.
       Evidence: the CI TypeScript job (above) runs [`worker/test/`](../../worker/test/)
       in workerd; the cases are mapped in the [red-team evidence](./red-team-evidence.md).
+      Added after that run: `api_key_device` and `machine` sessions refused on
+      `GET /recovery`, a replacing `PUT /recovery` and recovery-key rotation whatever
+      their role, with the genesis seal (first bundle of a vault without one) allowed
+      ([#90](https://github.com/bestagentkits/ak-vault/issues/90),
+      [`recovery-fetch.test.ts`](../../worker/test/recovery-fetch.test.ts)); its
+      evidence is the CI run of [#152](https://github.com/bestagentkits/ak-vault/pull/152). The
+      [red-team evidence](./red-team-evidence.md) mapping (scenario 11) cites it.
 - [x] Disclosure scan, **ticked by owner waiver for live tail; the waiver's complement (Workers Tail access restricted on production) confirmed by the owner on 2026-10-16**: a full Durable Object dump, Worker logs, traces, metrics and
       every error response from a run seeded with known plaintext values and names
       contain none of them ([data classification](./data-classification.md)).
@@ -121,13 +130,14 @@ page and docs, and its own CI run is linked from its pull request.
       scenarios 1 to 12, 14 and 15 executed, findings filed as issues
       ([#41](https://github.com/bestagentkits/ak-vault/issues/41) fixed; open include
       [#42](https://github.com/bestagentkits/ak-vault/issues/42), blocked on ak-web
-      marking non-human sessions). **Open:**
-      scenario 13 must run again when
-      [#7](https://github.com/bestagentkits/ak-vault/issues/7) or agentkit#2299 lands.
-      Its 2026-10-16 run ([#80](https://github.com/bestagentkits/ak-vault/issues/80))
-      passed against what exists (the protocol policy evaluator and the sync client's
-      handling of pulled policy and profile items), but the features it attacks are
-      not built ([red-team evidence](./red-team-evidence.md#scenario-13-hostile-policy-and-profile-text)).
+      marking non-human sessions). Scenario 13 was re-run on 2026-10-27 against
+      agentkit `dev` with synced profiles, enforced synced policy and MCP relay
+      arguments as the hostile input: no grant widened, no command ran and no
+      forged profile field passed the provenance check; hardening filed as
+      [#150](https://github.com/bestagentkits/ak-vault/issues/150) and
+      [agentkit#2745](https://github.com/bestagentkits/agentkit/issues/2745)
+      ([red-team evidence](./red-team-evidence.md#scenario-13-hostile-policy-and-profile-text);
+      first run [#80](https://github.com/bestagentkits/ak-vault/issues/80)).
 - [x] Two-device round trip and soak (below): replaced by the
       [Docker two-device e2e](../../e2e/docker/README.md)
       ([#55](https://github.com/bestagentkits/ak-vault/pull/55)) by owner decision
@@ -218,6 +228,10 @@ in production needs every box below, at the exact commit, plus an owner decision
       [data classification](./data-classification.md#transits-worker-memory-never-stored-or-logged-remote-access-only)).
 - [ ] Red-team scenarios 16–21 executed and scenario 13 rerun with synced profiles
       (`meta.profile` provenance) and MCP-originated text as the hostile input.
+      Scenario 13 part: done on 2026-10-27, with hostile synced profiles, synced
+      policy and MCP relay arguments as input
+      ([red-team evidence](./red-team-evidence.md#scenario-13-hostile-policy-and-profile-text)).
+      Scenarios 16–21: open.
 - [ ] The D7 boundary (plaintext transits Worker memory) is stated on the MCP consent
       screen and in the vault guide, matching the
       [threat model](./threat-model.md#explicit-limitations).
@@ -259,8 +273,8 @@ does not satisfy the [review](#review-by-the-owner).
 |---|---|---|
 | 2026-10-16 | Live `wrangler tail` shows `AKV-Proof` and `AKV-Webhook-Signature` values to account members with tail access. Accepted as account-operator access: proofs are single-use, bound to token hash, method, URL and body within a ±60 s window; webhook signatures cover one timestamped body with a single-use `event_id`. Complement: restrict Workers Tail permission on production. The header rename stays open as hardening. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248), [#61](https://github.com/bestagentkits/ak-vault/issues/61#issuecomment-6209133562); scan evidence [#62](https://github.com/bestagentkits/ak-vault/pull/62) |
 | 2026-10-16 | The Docker two-device e2e replaces the staging two-device round trip and the staging soak; no authenticated staging session is used. Residual risk is stated under [staging soak](#staging-soak). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6207406980) |
-| 2026-10-16 | The external-review gate is waived for enabling `VAULT_SYNC_ENABLED=true` on the production Worker. The external review stays open on #8. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248) |
-| 2026-10-16 | Production sync is fully live: ak-web production mints vault tokens together with the Worker flag, so any logged-in user running the preview `ak secrets sync` commands can sync to production before the external review. Docs say it is pre-release, not externally reviewed and not yet recommended for production credentials. This supersedes the earlier statement that minting stays off. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209425010) |
+| 2026-10-16 | The external-review gate is waived for enabling `VAULT_SYNC_ENABLED=true` on the production Worker. The external review stays open on #8. **Superseded on 2026-10-27:** no external or independent review is a GA gate; the review gate is the [review by the owner](#review-by-the-owner), accepted 2026-10-16. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248); superseded by [#99](https://github.com/bestagentkits/ak-vault/issues/99#issuecomment-6435169217) |
+| 2026-10-16 | Production sync is fully live: ak-web production mints vault tokens together with the Worker flag, so any logged-in user running the preview `ak secrets sync` commands can sync to production before the external review. Docs say it is pre-release, not externally reviewed and not yet recommended for production credentials. This supersedes the earlier statement that minting stays off. The external review it refers to is no longer a gate (row above). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209425010) |
 | 2026-10-16 | The review gate is a review by the owner, not an independent third-party review: the owner posts the result on #8 personally, and agents never post, attest or tick it. The gate stays open until then. Residual risk: no reviewer outside the project ([review by the owner](#review-by-the-owner)). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235) |
 | 2026-10-16 | The owner told an agent in chat to tick the review gate as accepted by the owner, and the agent recorded it on #8 on the owner's behalf. This supersedes the previous row's rule that the owner posts the result personally and agents never tick it. No written findings; the open items listed in the record stay open. Still not an independent third-party review. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212706397) |
 | 2026-10-16 | API-key sign-ins may use sync through a revocable device session (opt-in per API key, at most 5 devices per key, email notice on enrolment). Recorded in the ADR [amendment](../adr/0001-opt-in-zero-knowledge-sync.md#amendment-api-key-bootstrapped-device-sessions); the Worker refuses the recovery path for these sessions. Production rollout only through the gated Deploy workflow with owner approval; the ak-web endpoint and the CLI enrolment ship separately. Not a review. | [#74](https://github.com/bestagentkits/ak-vault/issues/74) |
@@ -355,7 +369,10 @@ rule that the owner posts the result personally. The open items listed in the re
 until every remaining gate on this page is met at the release commit.
 
 This replaces the earlier requirement of an independent reviewer with cryptographic
-expertise who did not implement the protocol.
+expertise who did not implement the protocol. By owner decision on 2026-10-27
+(relayed in chat and recorded by an agent on [#99](https://github.com/bestagentkits/ak-vault/issues/99#issuecomment-6435169217)
+and [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6435169673)), an independent third-party review is
+**not** a GA gate. Residual risk: no reviewer outside the project.
 
 ## Performance targets
 
