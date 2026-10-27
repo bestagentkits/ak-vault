@@ -25,7 +25,8 @@ time; older ones stay in the signed log.
   current key epoch, signed by this device, compare-and-swap on the verified
   head. A concurrent write turns it into a preserved conflict branch. Only the
   value is taken from the old revision; name, sensitivity and profile stay the
-  current head's. A deleted item, a deletion entry, a branch, a revision that
+  current head's; the profile is the one this device verified (spec §5.1), so a
+  field the provenance check dropped is not signed again by any dashboard write. A deleted item, a deletion entry, a branch, a revision that
   already equals the current value, a value from before the item's latest
   deletion, and a value a since-removed device wrote or could hold (its key
   epoch is at or below the epoch current at the removal) are refused; a value

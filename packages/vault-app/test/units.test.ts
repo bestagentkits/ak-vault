@@ -10,6 +10,8 @@ import {
   utf8Encode,
   verifyDetached,
   wrapToDevice,
+  buildNextProfile,
+  randomId,
   type ItemPayload,
 } from '@ak-vault/protocol';
 import { parseAppConfig } from '../src/config.js';
@@ -116,13 +118,20 @@ describe('write metadata', () => {
     name: 'n',
     value: 'old',
     sensitivity: 'high',
-    meta: { schema: 'agentkit.secret/v1', created_ms: 5, creator: 'ci', rotate_ttl_days: 30, value_encoding: 'base64', profile: { tags: { value: ['a'], by: 'd', at: 1, src: 'local' } }, kind: 'x', custom: 1 },
+    meta: { schema: 'agentkit.secret/v1', created_ms: 5, creator: 'ci', rotate_ttl_days: 30, value_encoding: 'base64', profile: { tags: { value: ['raw'], by: 'd', at: 1, src: 'local' } }, kind: 'x', custom: 1 },
   };
+  const verified = buildNextProfile({}, { tags: ['a'] }, { deviceId: randomId(), ts: 1, src: 'local' });
   it('follows the CLI mapping', () => {
-    expect(nextMeta(null, true, 9)).toEqual({ schema: 'agentkit.secret/v1', created_ms: 9 });
-    const m = nextMeta(prev, true, 9);
-    expect(m).toEqual({ schema: 'agentkit.secret/v1', created_ms: 5, rotated_ms: 9, creator: 'ci', rotate_ttl_days: 30, custom: 1, profile: prev.meta['profile'] });
-    expect(nextMeta(prev, false, 9)).not.toHaveProperty('rotated_ms');
+    expect(nextMeta(null, true, 9, null)).toEqual({ schema: 'agentkit.secret/v1', created_ms: 9 });
+    const m = nextMeta(prev, true, 9, verified);
+    expect(m).toEqual({ schema: 'agentkit.secret/v1', created_ms: 5, rotated_ms: 9, creator: 'ci', rotate_ttl_days: 30, custom: 1, profile: verified });
+    expect(nextMeta(prev, false, 9, verified)).not.toHaveProperty('rotated_ms');
+  });
+
+  it('carries the verified profile, never the raw one', () => {
+    expect(nextMeta(prev, false, 9, null)).not.toHaveProperty('profile');
+    expect(nextMeta(prev, false, 9, {})).not.toHaveProperty('profile');
+    expect(nextMeta(prev, false, 9, verified)['profile']).not.toBe(verified);
   });
 
   it('applies the CLI name rules', () => {
