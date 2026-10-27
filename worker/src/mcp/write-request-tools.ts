@@ -95,9 +95,6 @@ async function prepareWrite(env: Env, claims: McpClaims, args: Record<string, un
   const sensitivity = args['sensitivity'];
   if (sensitivity !== undefined && sensitivity !== 'normal' && sensitivity !== 'high') return fail('invalid_args');
 
-  const rate = await relayStub(env, claims.sub).takeRate(claims.client_id, 'prepare_write');
-  if (!rate.ok) return fail('rate_limited', { retry_after_s: rate.retryAfterS ?? 60 });
-
   const selected = await selectVault(env, claims, args);
   if ('result' in selected) return selected;
   const { vaultId } = selected;
@@ -149,8 +146,6 @@ async function prepareWrite(env: Env, claims: McpClaims, args: Record<string, un
 async function writeStatus(env: Env, claims: McpClaims, args: Record<string, unknown>): Promise<Outcome> {
   if (!checkArgs(args, { request_id: 'string' }, ['request_id'])) return fail('invalid_args');
   const requestId = args['request_id'] as string;
-  const rate = await relayStub(env, claims.sub).takeRate(claims.client_id, null);
-  if (!rate.ok) return fail('rate_limited', { retry_after_s: rate.retryAfterS ?? 60 });
   try {
     b64decodeLength(requestId, 16);
   } catch {
@@ -163,12 +158,18 @@ async function writeStatus(env: Env, claims: McpClaims, args: Record<string, unk
   return ok({ ...(status as unknown as JsonObject) }, status.state);
 }
 
-/** Run one Worker-local tool for an authenticated token whose scopes cover it. Never throws. */
+/**
+ * Run one Worker-local tool for an authenticated token whose scopes cover it. Never throws.
+ * The rate budget is charged before the arguments are checked, as for relay tools: a call
+ * refused for its arguments still spends it.
+ */
 export async function callLocalTool(env: Env, claims: McpClaims, tool: LocalTool, rawArgs: unknown): Promise<CallToolResult> {
   const started = Date.now();
   let outcome: Outcome;
   try {
-    if (!isObject(rawArgs)) outcome = fail('invalid_args');
+    const rate = await relayStub(env, claims.sub).takeRate(claims.client_id, tool === 'prepare_write' ? 'prepare_write' : null);
+    if (!rate.ok) outcome = fail('rate_limited', { retry_after_s: rate.retryAfterS ?? 60 });
+    else if (!isObject(rawArgs)) outcome = fail('invalid_args');
     else outcome = tool === 'prepare_write' ? await prepareWrite(env, claims, rawArgs) : await writeStatus(env, claims, rawArgs);
   } catch {
     outcome = fail('internal');

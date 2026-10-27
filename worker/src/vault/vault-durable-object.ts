@@ -252,10 +252,13 @@ export class VaultDurableObject extends DurableObject<Env> {
     return this.ctx.storage.transactionSync(() => writeRequestStatus(this.sql, requestId, origin, nowMs));
   }
 
-  /** The grant behind an open write request, for the Worker's live revocation check; null when none is open. */
-  async writeRequestGrant(requestId: string, nowMs: number = Date.now()): Promise<{ sub: string; sid: string; iat: number } | null> {
+  /**
+   * The grant behind an open write request of account `sub` (the caller's verified token),
+   * for the Worker's live revocation check; null when none is open or it is another account's.
+   */
+  async writeRequestGrant(requestId: string, sub: string, nowMs: number = Date.now()): Promise<{ sub: string; sid: string; iat: number } | null> {
     if (!this.remoteState()) return null;
-    return openWriteRequestGrant(this.sql, requestId, nowMs);
+    return openWriteRequestGrant(this.sql, requestId, sub, nowMs);
   }
 
   /** Cancel an open write request whose grant the Worker found revoked. */
@@ -302,7 +305,7 @@ export class VaultDurableObject extends DurableObject<Env> {
         return handleMembershipPost(this.sql, this.membership, req.vaultId, body, auth.next ?? this.membership.verifyAppend(body['event']));
       case 'item.put': {
         const put = () => putRecord(this.sql, auth.state, req.claims.did, req.itemId!, body, { remoteAccess: req.remoteAccess });
-        return req.writeRequestId === undefined ? put() : completeWithItemPut(this.sql, req, req.itemId!, put);
+        return req.writeRequestId === undefined ? put() : completeWithItemPut(this.sql, req, req.itemId!, body, put);
       }
       case 'sealkey.put':
         return putSealKey(this.sql, auth.state, req.claims.did, this.membership.chain(), body);

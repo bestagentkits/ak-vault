@@ -54,6 +54,12 @@ export type WriteNoticeCode =
 
 export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | WriteNoticeCode | 'locked' | 'saved' | 'deleted' | 'restored' | 'resolved' | 'signed_out' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved' };
 
+/** The write request on screen: its link and, once fetched and opened, its target. */
+interface WriteInFlight {
+  link: WriteLink;
+  opened: OpenedWriteRequest | null;
+}
+
 /** What the write-request screen shows about the request. Never a value. */
 export interface WriteRequestView {
   name: string;
@@ -125,7 +131,7 @@ export class AppController {
   /** A write-request link waiting for sign-in, enrollment and sync. */
   private writeLink: WriteLink | null = null;
   /** The write request on screen. */
-  private writeReq: { link: WriteLink; opened: OpenedWriteRequest | null } | null = null;
+  private writeReq: WriteInFlight | null = null;
   private readonly now: () => number;
 
   constructor(private readonly deps: ControllerDeps) {
@@ -190,6 +196,11 @@ export class AppController {
     const link = this.takeWriteLink(url);
     if (!link) return;
     const kind = this.screen.kind;
+    // A save or close in flight keeps its request; the new link opens once the person leaves that screen.
+    if (kind === 'write' && this.screen.busy) {
+      this.writeLink = link;
+      return;
+    }
     if (this.snapshot && (kind === 'vault' || kind === 'write')) {
       await this.openWrite(link);
       return;
@@ -598,9 +609,10 @@ export class AppController {
         request: { requestId: o.requestId, operation: o.operation, sensitivity: o.sensitivity },
       })).receipt;
     } catch (err) {
-      await this.submitFailed(err);
+      if (this.writeReq === w) await this.submitFailed(err, w);
       return false;
     }
+    if (this.writeReq !== w) return true;
     this.showWrite({ receipt: receipt ?? null, notice: { kind: 'info', code: 'write_saved' } });
     return true;
   }
@@ -652,11 +664,11 @@ export class AppController {
   }
 
   /** The device cannot complete the request: close it with the matching closed reason. */
-  private async refuseWrite(err: unknown): Promise<void> {
+  private async refuseWrite(err: unknown, w = this.writeReq): Promise<void> {
     const code = appErrorCode(err, 'server');
-    if (code === 'already_exists') await this.closeWrite({ outcome: 'failed', reason: 'already_exists' }, { kind: 'error', code: 'write_exists' }, false);
-    else if (code === 'not_found') await this.closeWrite({ outcome: 'failed', reason: 'not_found' }, { kind: 'error', code: 'write_missing' }, false);
-    else await this.closeWrite({ outcome: 'failed', reason: 'device_error' }, { kind: 'error', code: 'write_device_error' }, false);
+    if (code === 'already_exists') await this.closeWrite({ outcome: 'failed', reason: 'already_exists' }, { kind: 'error', code: 'write_exists' }, false, w);
+    else if (code === 'not_found') await this.closeWrite({ outcome: 'failed', reason: 'not_found' }, { kind: 'error', code: 'write_missing' }, false, w);
+    else await this.closeWrite({ outcome: 'failed', reason: 'device_error' }, { kind: 'error', code: 'write_device_error' }, false, w);
   }
 
   /**
@@ -664,8 +676,7 @@ export class AppController {
    * open to try again; a refusal is shown either way, since the request also
    * lapses on its own at expiry.
    */
-  private async closeWrite(close: WriteCloseOutcome, done: Notice, retryable: boolean): Promise<void> {
-    const w = this.writeReq;
+  private async closeWrite(close: WriteCloseOutcome, done: Notice, retryable: boolean, w = this.writeReq): Promise<void> {
     if (!w || !this.client) return;
     this.showWrite({ open: retryable, busy: true });
     try {
@@ -680,19 +691,22 @@ export class AppController {
     this.showWrite({ notice: done });
   }
 
-  private async submitFailed(err: unknown): Promise<void> {
+  /** Handle a refused completion of `w`, the request the save started with. */
+  private async submitFailed(err: unknown, w: WriteInFlight): Promise<void> {
     const code = appErrorCode(err, 'server');
     if (isVaultApiError(err)) {
       if (err.status === 400 || err.status === 404) {
         // The request may have closed or expired meanwhile: ask before offering a retry.
         try {
-          await fetchWriteRequest(this.client!, this.writeReq!.link);
+          await fetchWriteRequest(this.client!, w.link);
         } catch (again) {
           if (await this.writeRouteFailed(again)) return;
         }
         // Still open yet refused (the target changed after the last sync): retrying the same record cannot succeed.
+        // The screen moved on (signed out or locked) while asking: nothing left to report.
+        if (this.writeReq !== w) return;
         if (err.status === 400) {
-          await this.refuseWrite(err);
+          await this.refuseWrite(err, w);
           return;
         }
       } else if (await this.writeRouteFailed(err)) {
@@ -704,7 +718,7 @@ export class AppController {
     if (code === 'conflict') this.showWrite({ notice: { kind: 'error', code: 'write_conflict' } });
     else if (code === 'rekey_required') this.showWrite({ notice: { kind: 'error', code: 'rekey_required' } });
     else if (code === 'value_too_large' || code === 'quota_exceeded' || code === 'network' || code === 'server') this.showWrite({ open: true, notice: { kind: 'error', code } });
-    else await this.refuseWrite(err);
+    else await this.refuseWrite(err, w);
   }
 
   /** Terminal handling: a removed device wipes its local state; a lost sign-in returns to the start. */

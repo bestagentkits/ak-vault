@@ -5,6 +5,7 @@
  * output the device redacted.
  */
 import { RELAY_TOOLS, SEARCH_FIELDS, TOOL_SCOPE, b64decodeLength, parseToolArgs, type JsonObject, type McpScope, type RelayTool } from '@ak-vault/protocol';
+import { REMOTE_ACCESS_LIMITS } from '../limits.js';
 
 export interface ToolAnnotations {
   title: string;
@@ -138,13 +139,16 @@ export type LocalTool = (typeof LOCAL_TOOLS)[number];
 
 const LOCAL_SCOPE: Record<LocalTool, McpScope> = { prepare_write: 'vault-mcp:write', write_status: 'vault-mcp:write' };
 
+/** Default and maximum write-request lifetime, in whole minutes, for the tool description. */
+const WRITE_TTL_MINUTES = Math.floor(REMOTE_ACCESS_LIMITS.write_request_ttl_s / 60);
+
 const requestId = { type: 'string', minLength: 1, maxLength: 64, description: 'request_id returned by secrets_prepare_write.' };
 
 const LOCAL_DEFINITIONS: Record<LocalTool, Omit<ToolDefinition, 'name'>> = {
   prepare_write: {
     title: 'Ask the user to enter a secret',
     description:
-      'Create or replace a secret WITHOUT seeing its value: returns a one-time form_url for the user to open in their browser and type the value there. Never ask the user to paste a secret value into this chat and never pass one to any tool. Give the form_url to the user, then poll secrets_write_status with request_id. The link expires (default 10 minutes), works once, and only the signed-in user who owns the vault can use it. ' +
+      `Create or replace a secret WITHOUT seeing its value: returns a one-time form_url for the user to open in their browser and type the value there. Never ask the user to paste a secret value into this chat and never pass one to any tool. Give the form_url to the user, then poll secrets_write_status with request_id. The link expires (default ${WRITE_TTL_MINUTES} minutes), works once, and only the signed-in user who owns the vault can use it. ` +
       NEVER_VALUES,
     inputSchema: schema(
       {
@@ -152,7 +156,12 @@ const LOCAL_DEFINITIONS: Record<LocalTool, Omit<ToolDefinition, 'name'>> = {
         operation: { type: 'string', enum: ['create', 'replace'], description: '"create" (default) refuses a name that already exists; "replace" needs one that does.' },
         purpose: { type: 'string', minLength: 1, maxLength: 200, description: 'Why the secret is needed; shown to the user on the form.' },
         sensitivity: { type: 'string', enum: ['normal', 'high'] },
-        ttl_s: { type: 'integer', minimum: 60, maximum: 600, description: 'How long the link stays valid; default 600.' },
+        ttl_s: {
+          type: 'integer',
+          minimum: REMOTE_ACCESS_LIMITS.write_request_min_ttl_s,
+          maximum: REMOTE_ACCESS_LIMITS.write_request_ttl_s,
+          description: `How long the link stays valid, in seconds; default ${REMOTE_ACCESS_LIMITS.write_request_ttl_s}.`,
+        },
       },
       ['name'],
     ),

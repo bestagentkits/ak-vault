@@ -115,6 +115,28 @@ describe('write-request link', () => {
     expect(page.controller.current()).toMatchObject({ kind: 'write', open: true });
   });
 
+  it('keeps a save in flight when another link arrives, and opens that link afterwards', async () => {
+    const world = new FakeWorld();
+    const first = world.prepareWrite({ name: NAME });
+    const second = world.prepareWrite({ name: 'second-key' });
+    const { page } = await openLink(world, world.formUrl(first));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    world.requestGate = (method) => (method === 'PUT' ? held : Promise.resolve());
+    const saving = page.controller.submitWrite(SENTINEL);
+    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ kind: 'write', busy: true }));
+    await page.controller.openLink(new URL(world.formUrl(second)));
+    expect(page.controller.current()).toMatchObject({ kind: 'write', busy: true, request: { name: NAME } });
+    release();
+    expect(await saving).toBe(true);
+    expect(page.controller.current()).toMatchObject({ kind: 'write', notice: { code: 'write_saved' }, request: { name: NAME } });
+    expect(world.writeRequests.get(first)).toMatchObject({ state: 'completed' });
+    expect(world.writeRequests.get(second)).toMatchObject({ state: 'pending_user' });
+    world.requestGate = null;
+    await page.controller.leaveWrite();
+    expect(page.controller.current()).toMatchObject({ kind: 'write', open: true, request: { name: 'second-key' } });
+  });
+
   it('ignores a malformed fragment and calls no write-request route', async () => {
     const world = new FakeWorld();
     const b = new Browser(world);

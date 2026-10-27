@@ -51,8 +51,9 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
   const stub = env.VAULT.get(env.VAULT.idFromName(route.vaultId));
   const writeRequestId = route.writeRequestId ?? writeRequestParam(url, route.op, remoteAccess);
   // A human write request lives only while the MCP grant that asked for it does (spec §3.10).
+  // Only the caller's own request is looked up; the vault object then runs membership and proof.
   if (writeRequestId !== undefined && route.op !== 'writereq.close') {
-    const grant = await stub.writeRequestGrant(writeRequestId);
+    const grant = await stub.writeRequestGrant(writeRequestId, claims.sub);
     if (grant && (await isGrantRevoked(env, grant))) await stub.cancelRevokedWriteRequest(writeRequestId);
   }
   return stub.handle({

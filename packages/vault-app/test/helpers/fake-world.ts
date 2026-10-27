@@ -392,11 +392,15 @@ export class FakeWorld {
     return json(200, { access_token: access, token_type: 'Bearer', expires_in: 600, refresh_token: refresh, scope: 'vault-app:session' });
   }
 
+  /** Awaited before a request is served, so a test can hold one in flight. */
+  requestGate: ((method: string, url: URL) => Promise<void>) | null = null;
+
   readonly fetch = async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = (init.method ?? 'GET').toUpperCase();
     const requestBody = typeof init.body === 'string' ? init.body : '';
     if (this.hostile.offline) throw new TypeError('network down');
+    if (this.requestGate) await this.requestGate(method, new URL(url));
     const res = await this.route(new URL(url), method, requestBody, new Headers(init.headers));
     const responseBody = await res.clone().text();
     this.exchanges.push({ method, url, requestBody, responseBody, status: res.status });

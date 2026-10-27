@@ -235,6 +235,21 @@ describe('completing a write request from the dashboard', () => {
     expect(await status(s, replace.request_id)).toMatchObject({ state: 'completed' });
   });
 
+  it('refuses a deletion record as the completion and leaves the request open', async () => {
+    const s = await setup();
+    const existing = randomId();
+    expect((await s.fx.write(s.fx.owner, existing, 0, { name: 'D', value: '1' })).status).toBe(200);
+    const { body } = await prepare(s, { operation: 'replace', name: 'D' });
+    const tombstone = s.fx.record(s.fx.owner, existing, 1, null);
+    const res = await call(s.fx.owner, 'PUT', `/v1/vaults/${s.fx.vaultId}/items/${existing}?write_request=${body.request_id}`, tombstone, BROWSER);
+    expect(res.status).toBe(400);
+    const item = await s.fx.get(s.fx.owner, `/items/${existing}`);
+    expect(item.json).toMatchObject({ revision: 1, tombstone: false });
+    expect(await status(s, body.request_id)).toMatchObject({ state: 'pending_user' });
+    // The same request still completes with a value record.
+    expect((await complete(s.fx, body.request_id, existing, 1)).status).toBe(200);
+  });
+
   it('closes as conflict on a stale base revision and keeps the preserved branch', async () => {
     const s = await setup();
     const existing = randomId();

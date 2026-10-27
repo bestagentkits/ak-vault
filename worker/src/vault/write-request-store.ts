@@ -19,6 +19,7 @@
 import { SEALED_MAX_FUTURE_MS, cjson, parseWriteIntent, randomId, type JsonObject, type MembershipState, type WriteIntentWire } from '@ak-vault/protocol';
 import { ApiError, errorResult, okResult, toApiError, type ApiResult } from '../http/errors.js';
 import { REMOTE_ACCESS_LIMITS as L } from '../limits.js';
+import { parseItemPutBody } from './lookup-store.js';
 import { requireKeys } from './request-body.js';
 import type { VaultRequest } from './vault-request.js';
 
@@ -139,10 +140,13 @@ export function writeRequestStatus(sql: SqlStorage, requestId: string, origin: W
   };
 }
 
-/** The grant behind an open request, so the Worker can re-check its revocation; null when none is open. */
-export function openWriteRequestGrant(sql: SqlStorage, requestId: string, nowMs: number): { sub: string; sid: string; iat: number } | null {
+/**
+ * The grant behind an open request of account `account`, so the Worker can re-check its
+ * revocation; null when none is open or the request belongs to another account.
+ */
+export function openWriteRequestGrant(sql: SqlStorage, requestId: string, account: string, nowMs: number): { sub: string; sid: string; iat: number } | null {
   const row = load(sql, requestId);
-  if (!row || row.state !== 'pending_user' || row.expires_at <= nowMs) return null;
+  if (!row || row.account !== account || row.state !== 'pending_user' || row.expires_at <= nowMs) return null;
   return { sub: row.account, sid: row.grant_id, iat: row.token_iat };
 }
 
@@ -201,13 +205,18 @@ export function closeWriteRequest(sql: SqlStorage, req: VaultRequest, body: Json
  * Run an item PUT that completes a write request, in the caller's transaction. The
  * request must be open and the caller's own, from a `browser` session, and the
  * target item must match the operation (`create`: no live item; `replace`: a live
- * item). A compare-and-swap conflict keeps the preserved branch (spec §5) and closes
+ * item), and the record must carry a value: a request never completes with a
+ * deletion. A compare-and-swap conflict keeps the preserved branch (spec §5) and closes
  * the request as `conflict`; any other failure rolls everything back and leaves the
  * request open so the person can retry or cancel.
  */
-export function completeWithItemPut(sql: SqlStorage, req: VaultRequest, itemId: string, put: () => ApiResult): ApiResult {
+export function completeWithItemPut(sql: SqlStorage, req: VaultRequest, itemId: string, body: JsonObject, put: () => ApiResult): ApiResult {
   if (req.claims.kind !== 'browser') throw new ApiError('forbidden');
   const row = openRow(sql, req);
+  const record = parseItemPutBody(body, req.remoteAccess).record;
+  if (typeof record !== 'object' || record === null || Array.isArray(record) || (record as JsonObject)['tombstone'] !== false) {
+    throw new ApiError('bad_request', { message: 'a write request completes only with a value record' });
+  }
   const live = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM items WHERE item_id = ? AND tombstone = 0', itemId).one().n > 0;
   if (row.operation === 'create' && live) throw new ApiError('bad_request', { message: 'write request targets a new secret' });
   if (row.operation === 'replace' && !live) throw new ApiError('bad_request', { message: 'write request targets an existing secret' });
