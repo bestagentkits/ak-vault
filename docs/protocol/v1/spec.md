@@ -476,9 +476,18 @@ Order:
 1. The joiner prints `join` and keeps `nonce_j`.
 2. The owner device parses it, draws `nonce_i` (16 fresh random bytes, drawn after the
    join is received), and answers with `offer`, echoing `nonce_j_commit`. It does not
-   yet have `nonce_j` and shows no SAS. The pending enrollment is bound to
-   (`joiner`, `nonce_j_commit`, `nonce_i`); a further join for the same joiner discards
-   it and draws a new `nonce_i`, so a `nonce_i` is never paired with a second commitment.
+   yet have `nonce_j` and shows no SAS. The owner device MUST issue each offer only on an
+   explicit human action for that join; it MUST NOT answer joins automatically, including
+   joins relayed by a service. The pending enrollment is bound to (`joiner`,
+   `nonce_j_commit`, `nonce_i`). An owner device holds **at most one pending enrollment
+   in total**, not one per joiner: answering a further join, for any joiner, discards the
+   pending one and draws a new `nonce_i`, so a `nonce_i` is never paired with a second
+   commitment. A discarded or expired pending enrollment that never received a reveal is
+   **abandoned**; it counts as a failed attempt (see below), and the owner device SHOULD
+   tell the human plainly that it was abandoned. Because a join is public, anyone who
+   replays a joiner's join can, once the owner answers it, cancel that joiner's pending
+   enrollment; this affects availability only, since the replayer cannot reveal the
+   committed `nonce_j`.
 3. The joiner accepts the offer only if `joiner` is its own device ID and
    `nonce_j_commit` is its own commitment, then prints `reveal` and shows its SAS.
    **A joiner accepts at most one offer per join.** Once it has printed a reveal it
@@ -488,8 +497,8 @@ Order:
 4. The owner device accepts `reveal` only if `vault_id` and `joiner` are those of the
    pending enrollment (otherwise `forbidden`) and `verifyNonceJReveal` passes
    (`nonce_j` hashes to the stored commitment; otherwise `forbidden`, and no SAS is
-   computed). It then shows its SAS. An owner device holds at most one pending
-   enrollment per joiner and discards it on the first failed reveal.
+   computed). It then shows its SAS. The owner device discards the pending enrollment
+   on the first failed reveal.
 
 ```
 transcript = cjson({"ctx":"akv1/sas2","vault_id","vault_origin","trust_anchor",
@@ -510,9 +519,17 @@ commitment before the owner device reveals `nonce_i`, so the owner's digits are 
 known to the forger when it fixes `nonce_j`. A forger that replaces the offer must pick
 `nonce_i` without knowing the honest `nonce_j`, which only the commitment hides. Given the
 single-use and fresh-nonce rules of steps 2 and 3, each attempt therefore matches with
-probability 10^-6 and costs a fresh enrollment that the owner sees fail. An implementation SHOULD stop after three mismatches. A SAS shorter
-than the key material still cannot stop an attacker who is given unlimited attempts;
-this construction bounds each attempt, not the number the humans tolerate.
+probability 10^-6 and costs a fresh offer from the owner device.
+
+An **attempt** is an offer the owner device issues. A forger on the code channel that
+sent its own join can compute the owner's digits once it holds the offer, and can simply
+never reveal when they do not match, then send another join. So the owner device MUST
+count every issued offer that does not end in a confirmed match toward its stop limit:
+a failed reveal, a mismatch the human reports, and an abandoned pending enrollment
+(superseded by a later join or expired without a reveal). It SHOULD stop issuing offers
+after three such attempts until the human deliberately resumes. A SAS shorter than the
+key material still cannot stop an attacker who is given unlimited attempts; this
+construction bounds each attempt, not the number the humans tolerate.
 
 Compatibility. §3.8 codes remain accepted (§3.8), so the construction protects a
 joiner only when both sides use committed codes. An `akj2-` joiner accepts only
@@ -530,7 +547,7 @@ commitment, matching and mismatching reveals (`forbidden`); the SAS transcript, 
 digest as known answers, with each field (origin, anchor, initiator, joiner, both
 nonces) changing the digest; a ground nonce that reproduces the six digits but is refused
 against the forger's commitment (`forbidden`); and wrong prefix, legacy context, extra or
-missing key, a plain `nonce_j` in the join, a short commitment or nonce, a non-owner or
+missing key, a plain `nonce_j` in the join, a short commitment or nonce, a reader-role or
 machine device, a non-canonical origin, another vault's checkpoint → `bad_request`;
 `v` 2 → `unsupported_version`.
 

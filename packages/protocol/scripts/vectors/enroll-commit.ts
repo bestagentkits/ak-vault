@@ -68,6 +68,7 @@ export function enrollCommitVectors(): Record<string, unknown> {
   const text = (base: object, change: Record<string, unknown>) => cjson({ ...base, ...change } as never);
   const without = (o: Record<string, unknown>, key: string) => cjson(Object.fromEntries(Object.entries(o).filter(([k]) => k !== key)) as never);
   const machineOwner = device('alice-ci', 'acct_alice', 'owner', 'machine');
+  const humanReader = device('alice-reader', 'acct_alice', 'reader');
   const otherVaultCp = signCheckpoint({ ...cpFields, vault_id: VAULT_PERSONAL }, alicePhone.signSecret);
   const origins = ['https://Vault.example.com', 'https://vault.example.com/', 'https://vault.example.com:443', 'http://vault.example.com', 'https://user@vault.example.com'];
 
@@ -135,6 +136,7 @@ export function enrollCommitVectors(): Record<string, unknown> {
       badJoin('short_commit', 'bad_request', raw('akj2-', text(joinObj, { nonce_j_commit: nonce_j }))),
       badJoin('non_canonical_json', 'bad_request', raw('akj2-', json(joinObj))),
       badJoin('machine_device', 'bad_request', raw('akj2-', text(joinObj, { device: machineOwner.record }))),
+      badJoin('reader_device', 'bad_request', raw('akj2-', text(joinObj, { device: humanReader.record }))),
       badJoin('non_ascii_label', 'bad_request', raw('akj2-', text(joinObj, { label: 'Téléphone' }))),
       badJoin('version_2', 'unsupported_version', raw('akj2-', text(joinObj, { v: 2 }))),
     ],

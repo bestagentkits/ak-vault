@@ -275,6 +275,11 @@
       "expect_error": "bad_request"
     },
     {
+      "name": "reader_device",
+      "code_text": "akj2-eyJhY2NvdW50IjoiYWNjdF9hbGljZSIsImN0eCI6ImFrdjEvZW5yb2xsLWpvaW4iLCJkZXZpY2UiOnsiYWNjb3VudCI6ImFjY3RfYWxpY2UiLCJkZXZpY2VfaWQiOiJsYVZ4UGNTMUZCTTkta3UxZU9WY0Z3Iiwia2luZCI6Imh1bWFuIiwia3hfcHViIjoiMGl4VHNXMzlnYnRDTExCRFBiakttSDUzZ1NXLWk3ZkhsZFpaOEQwMDJHOCIsInJvbGUiOiJyZWFkZXIiLCJzaWduX3B1YiI6IllVYWlvYnhHWk5BNV9FTl9ReFRkVUZjZWRWeXdOUDRjQVFFTmJuclczUkkifSwibGFiZWwiOiJBbGljZSBuZXcgcGhvbmUiLCJub25jZV9qX2NvbW1pdCI6Imt1MTFOZXcyTGRReG14aTB4MGpNTDdUQ1ZDT3hBU2xUUjFIMndBTEUtU2ciLCJ2IjoxfQ",
+      "expect_error": "bad_request"
+    },
+    {
       "name": "non_ascii_label",
       "code_text": "akj2-eyJhY2NvdW50IjoiYWNjdF9hbGljZSIsImN0eCI6ImFrdjEvZW5yb2xsLWpvaW4iLCJkZXZpY2UiOnsiYWNjb3VudCI6ImFjY3RfYWxpY2UiLCJkZXZpY2VfaWQiOiJhbEdNU1BnakhpRmliQ2JjdUJEbGVBIiwia2luZCI6Imh1bWFuIiwia3hfcHViIjoiMXY1MlMzS283bTYxcWtPQkJycldqMndhWmp4ZjBoYnBoa2dUb2l4N2R3byIsInJvbGUiOiJvd25lciIsInNpZ25fcHViIjoic0FyVk5iandTVFdteVh6Xzl0eURWSFZIQUFYYmtZSm1jNDlIQk5naEE0byJ9LCJsYWJlbCI6IlTDqWzDqXBob25lIiwibm9uY2Vfal9jb21taXQiOiJrdTExTmV3MkxkUXhteGkweDBqTUw3VENWQ094QVNsVFIxSDJ3QUxFLVNnIiwidiI6MX0",
       "expect_error": "bad_request"

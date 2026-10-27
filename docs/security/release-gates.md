@@ -213,7 +213,14 @@ in production needs every box below, at the exact commit, plus an owner decision
       the `ak` CLI and the dashboard enroll with `akj2-`/`ako2-`/`akr2-` and the owner
       device refuses `akj1-`, so [threat model X9](./threat-model.md) can drop its
       uncommitted-SAS limitation. Client tests cover single-use `nonce_j` (a second offer for
-      the same join is refused) and a fresh `nonce_i` per join.
+      the same join is refused) and a fresh `nonce_i` per join; the joiner refusing an offer
+      for another joiner or another commitment; and on the owner device: at most one
+      pending enrollment in total, an offer only on explicit human action (no automatic
+      answer to a relayed join), every issued offer without a confirmed match (failed
+      reveal, reported mismatch, or a pending enrollment superseded or expired without a
+      reveal) counted toward the stop limit, a visible notice when a pending enrollment is
+      abandoned, and `forbidden` for a reveal whose `vault_id` or `joiner` differs from the
+      pending enrollment.
 - [ ] Relay: Worker tests for the closed frame set and close codes, signed `hello` and
       `result`, `reauth` before expiry, revocation and membership checked before each
       call (a device removed mid-connection gets no further call), a replaced
