@@ -493,7 +493,8 @@ export async function pullVault(client: AkvClient, device: StoredDevice, kx: Dev
   const events = await fetchMembership(client, enrollment.vaultId);
   const { state, parsed, addSeq } = verifyEnrollmentChain(events, device, enrollment);
   const selfId = deviceIdOf(device.keys);
-  const mine = prior && prior.vaultId === enrollment.vaultId ? prior : null;
+  // Only this device's own snapshot of this vault is a base; anything else is replayed from scratch.
+  const mine = prior && prior.vaultId === enrollment.vaultId && prior.self.device_id === selfId ? prior : null;
   if (mine) {
     // The chain must still contain the membership head this tab verified, whatever another tab stored.
     const own = parsed[mine.witnessed.membership_seq];
@@ -501,7 +502,7 @@ export async function pullVault(client: AkvClient, device: StoredDevice, kx: Dev
   }
   // A kept position below the cursor is not re-checked by a continuation, so replay in full.
   const w = enrollment.witnessed;
-  const base = prior && prior.vaultId === enrollment.vaultId && (!w || w.log_seq >= prior.replay.head.log_seq) ? prior : null;
+  const base = mine && (!w || w.log_seq >= mine.replay.head.log_seq) ? mine : null;
   if (base) {
     try {
       const vaultKeys = state.key_epoch === base.state.key_epoch ? base.vaultKeys : await loadVaultKeys(client, enrollment.vaultId, selfId, parsed, addSeq, kx);

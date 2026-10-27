@@ -11,6 +11,9 @@ import { ACCOUNT, FakeWorld, ISSUER, ORIGIN } from './helpers/fake-world.js';
 import { Browser, allByTestId, byTestId } from './helpers/dashboard-page.js';
 import { deviceIdOf } from '../src/keys/webcrypto-device-keys.js';
 import type { StoredDevice, WitnessedState } from '../src/keys/device-store.js';
+import type { DeviceKx } from '@ak-vault/protocol';
+import type { AkvClient } from '../src/sync/akv-client.js';
+import { pullVault, type VaultSnapshot } from '../src/sync/vault-sync.js';
 
 const SENTINEL = 'sentinel-value-7f3a9c1e5b';
 
@@ -345,6 +348,23 @@ describe('vault', () => {
     expect(await page.controller.remove(doomed)).toBe(true);
     expect(names(page.root)).not.toContain('item-0');
     expect(b.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!.log_seq).toBe(world.log.length);
+  });
+
+  it('continues only from a snapshot of this same device, and replays in full for any other', async () => {
+    const world = new FakeWorld();
+    for (let i = 0; i < 3; i++) world.ownerSet(`item-${i}`, 'a');
+    const { page } = await new Browser(world).enroll();
+    // The controller's pull inputs are private; this reaches them to call the pull with a prior
+    // snapshot the controller itself never passes (one recorded as another device's).
+    const inner = page.controller as unknown as { client: AkvClient; kx: DeviceKx; device: StoredDevice; snapshot: VaultSnapshot };
+    const cursors = () => world.exchanges.filter((e) => e.url.includes('/changes')).map((e) => Number(new URL(e.url).searchParams.get('cursor')));
+    const own = inner.snapshot;
+    await pullVault(inner.client, inner.device, inner.kx, own);
+    expect(cursors().at(-1)).toBe(3);
+    const foreign: VaultSnapshot = { ...own, self: { ...own.self, device_id: 'another-device-id' } };
+    const { snapshot } = await pullVault(inner.client, inner.device, inner.kx, foreign);
+    expect(cursors().at(-1)).toBe(0);
+    expect(snapshot.items.map((i) => i.name)).toEqual(['item-0', 'item-1', 'item-2']);
   });
 
   it('replays in full when a removal learned later is fenced below the cursor, and refuses the removed device\'s later records', async () => {

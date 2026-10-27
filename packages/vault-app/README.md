@@ -72,7 +72,9 @@ after the cursor this browser computed itself, and repeat the full replay when
 anything does not line up (a removal it had not seen, a mismatch with the server's
 claimed tip, a verification failure). The verified position is merged and saved by
 one IndexedDB transaction, so no counter moves backward; a counter reached again
-with a different head is refused and shown as an integrity alarm. A device clock more than 60 seconds
+with a different head is refused and shown as an integrity alarm. The atomicity of
+that IndexedDB transaction itself is not covered by an automated test (the test
+environment has no real IndexedDB); the memory store and the merge rule are. A device clock more than 60 seconds
 from the vault's `Date` header is reported as such. What the browser keeps locally
 is listed in [data classification](../../docs/security/data-classification.md).
 

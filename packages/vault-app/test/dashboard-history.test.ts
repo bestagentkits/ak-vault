@@ -385,7 +385,8 @@ describe('hostile history fails closed', () => {
   });
 
   // An open tab continues from its verified cursor and never re-reads earlier entries, so a
-  // tampered entry below it is met by the full replay of the next sign-in.
+  // tampered entry below it is met by the full replay of the next sign-in; a tampered entry past
+  // it is met by the open tab's own pull.
   it('refuses a log whose record signature was tampered with', async () => {
     const { world, b } = await threeRevisions();
     world.hostile.mutateEntry = (e) => (e.log_seq === 2 ? { ...e, record: { ...e.record, ts: e.record.ts + 1 } } : e);
@@ -402,6 +403,24 @@ describe('hostile history fails closed', () => {
     expect(page.controller.current().kind).toBe('fatal');
   });
 
+  it('refuses, in an open tab, a new entry whose record signature was tampered with', async () => {
+    const { world, page } = await threeRevisions();
+    world.ownerSet('z', S('z'));
+    world.hostile.mutateEntry = (e) => (e.log_seq === 4 ? { ...e, record: { ...e.record, ts: e.record.ts + 1 } } : e);
+    await page.controller.refresh();
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'vault_verification_failed' });
+    expect(page.root.querySelector('[data-testid="history-list"]')).toBeNull();
+  });
+
+  it('refuses, in an open tab, a new entry whose branch label was changed', async () => {
+    const { world, page } = await threeRevisions();
+    world.ownerSet('z', S('z'));
+    world.hostile.mutateEntry = (e) => (e.log_seq === 4 ? { ...e, conflict_id: 'AAAAAAAAAAAAAAAAAAAAAA' } : e);
+    await page.controller.refresh();
+    expect(['rollback', 'vault_verification_failed']).toContain((page.controller.current() as { code: string }).code);
+    expect(page.controller.current().kind).toBe('fatal');
+  });
+
   it('refuses a rolled-back log while the history is open', async () => {
     const { world, page } = await threeRevisions();
     openHistory(page);
@@ -410,10 +429,21 @@ describe('hostile history fails closed', () => {
     expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
   });
 
+  // Positions below an open tab's cursor are re-read by the next sign-in's full replay.
   it('refuses a log whose positions were reordered, by the head this browser kept', async () => {
-    const { world, page } = await threeRevisions();
+    const { world, b } = await threeRevisions();
     const [two, three] = [world.log[1]!, world.log[2]!];
     world.hostile.mutateEntry = (e) => (e.log_seq === 2 ? { ...three, log_seq: 2 } : e.log_seq === 3 ? { ...two, log_seq: 3 } : e);
+    const page = await b.signIn();
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+    expect(page.root.querySelector('[data-testid="history-list"]')).toBeNull();
+  });
+
+  it('refuses, in an open tab, a log whose positions across the cursor were reordered, by the head this tab kept', async () => {
+    const { world, page } = await threeRevisions();
+    world.ownerSet('z', S('z'));
+    const [three, four] = [world.log[2]!, world.log[3]!];
+    world.hostile.mutateEntry = (e) => (e.log_seq === 3 ? { ...four, log_seq: 3 } : e.log_seq === 4 ? { ...three, log_seq: 4 } : e);
     await page.controller.refresh();
     expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
     expect(page.root.querySelector('[data-testid="history-list"]')).toBeNull();
