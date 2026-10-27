@@ -909,6 +909,9 @@ never stops an older device from verifying or appending. A new type needs no
 protocol change; a writer MUST choose a name no existing type uses, and MUST NOT
 reuse a defined name with another field set. For example, a `rotation_started`
 event from another writer is an unknown type to the CLI, which keeps its envelope only.
+The browser dashboard writes `rotation_started`, `rotation_vault_written`,
+`rotation_revoked`, `rotation_paused`, `rotation_resumed`, `rotation_failed`,
+`rotation_cancelled` and `rotation_cleared`, each carrying `item_id` only.
 
 A writer that does not use this envelope (for example `action` in place of `type`,
 or no `v`) makes a CLI device refuse the chain and stop appending audit entries

@@ -129,7 +129,15 @@ sees none of it, and nothing here decides access.
   least-privilege credentials and the operator's consent. Anyone who held the old
   value (a removed member included) still knows it until the provider revokes it. The
   signed revisions, with their author device and time, are the record of each state
-  change; the dashboard does not append entries to the encrypted audit stream.
+  change. After each one lands, the dashboard also appends an entry to the encrypted
+  audit stream (`rotation_started`, `rotation_vault_written`, `rotation_revoked`,
+  `rotation_paused`, `rotation_resumed`, `rotation_failed`, `rotation_cancelled`,
+  `rotation_cleared`) holding only the type, the opaque item ID, the author device
+  and the time, never a name or value. Before appending, the dashboard checks that the
+  stored entry at the head the server reports hashes to that head, but it cannot detect a
+  server that truncated or forked the chain; only a witnessed audit checkpoint bounds
+  that, and the dashboard neither reads nor signs one. The append is best effort: if it fails the
+  write stays and the dashboard says the audit entry was not recorded.
 
 ## Password and parameter upgrade
 

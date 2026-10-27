@@ -26,6 +26,7 @@ import { acceptOffer, DEFAULT_DEVICE_LABEL, joinCodeFor, newJoinNonce, sanitizeL
 import { buildItemHistory, type ItemHistory } from './sync/history.js';
 import { buildMembershipView, roleCanWrite, type MembershipView } from './sync/membership-view.js';
 import { openRecord, pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
+import { appendRotationAudit, type RotationAuditAction } from './sync/audit.js';
 import { deleteItem, findByName, requestTarget, restoreRevision, resolveConflicts, rotateValue, setItem, updateRotation, type RotationPatch } from './sync/write-ops.js';
 import type { RotationWorkflow } from './sync/rotation.js';
 import {
@@ -39,6 +40,14 @@ import {
   type WriteLink,
 } from './sync/write-request.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
+
+const STATE_AUDIT_ACTION: Record<RotationWorkflow['state'] | 'cleared', RotationAuditAction> = {
+  active: 'rotation_resumed',
+  paused: 'rotation_paused',
+  failed: 'rotation_failed',
+  cancelled: 'rotation_cancelled',
+  cleared: 'rotation_cleared',
+};
 
 export type WriteNoticeCode =
   | 'write_signin'
@@ -449,27 +458,26 @@ export class AppController {
   }
 
   async set(name: string, value: string): Promise<boolean> {
-    return this.write('saved', () => setItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, name, value, nowMs: this.now() }));
+    return this.write('saved', (nowMs) => setItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, name, value, nowMs }));
   }
 
   async remove(itemId: string): Promise<boolean> {
-    return this.write('deleted', () => deleteItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, nowMs: this.now() }));
+    return this.write('deleted', (nowMs) => deleteItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, nowMs }));
   }
 
   /** Write a verified earlier revision's value as a new revision of the item. */
   async restore(itemId: string, logSeq: number): Promise<boolean> {
-    return this.write('restored', () => restoreRevision({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, logSeq, nowMs: this.now() }));
+    return this.write('restored', (nowMs) => restoreRevision({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, logSeq, nowMs }));
   }
 
   /** Mark every open conflict branch of the item resolved, keeping the current value or adopting one branch's. */
   async resolve(itemId: string, adopt: string | null): Promise<boolean> {
-    return this.write('resolved', () => resolveConflicts({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, adopt, nowMs: this.now() }));
+    return this.write('resolved', (nowMs) => resolveConflicts({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, adopt, nowMs }));
   }
 
   /** Start a rotation: record it in signed metadata. The new credential is created at the provider, not here. */
   async startRotation(itemId: string): Promise<boolean> {
-    const workflow: RotationWorkflow = { state: 'active', startedMs: this.now(), revokedMs: null };
-    return this.write('rotation_started', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation: workflow }, nowMs: this.now() }));
+    return this.write('rotation_started', (nowMs) => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation: { state: 'active', startedMs: nowMs, revokedMs: null } }, nowMs }), { action: 'rotation_started', itemId });
   }
 
   /** Pause, resume, fail or cancel the workflow, or clear it with `null`. */
@@ -482,35 +490,46 @@ export class AppController {
     };
     if (state !== null && !allowed[current.state].includes(state)) return false;
     const rotation = state === null ? null : { ...current, state };
-    return this.write('rotation_updated', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation }, nowMs: this.now() }));
+    const action = state === null ? STATE_AUDIT_ACTION.cleared : STATE_AUDIT_ACTION[state];
+    return this.write('rotation_updated', (nowMs) => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation }, nowMs }), { action, itemId });
   }
 
   /** The operator says the old provider credential is revoked. Allowed only after the vault holds a new value. */
   async confirmRevoked(itemId: string): Promise<boolean> {
-    return this.write('rotation_revoked', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { confirmRevoked: true }, nowMs: this.now() }));
+    return this.write('rotation_revoked', (nowMs) => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { confirmRevoked: true }, nowMs }), { action: 'rotation_revoked', itemId });
   }
 
   /** Set or clear (`null`) the rotation interval in days. */
   async setRotateTtl(itemId: string, days: number | null): Promise<boolean> {
     const patch: RotationPatch = { rotateTtlDays: days };
-    return this.write('settings_saved', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch, nowMs: this.now() }));
+    return this.write('settings_saved', (nowMs) => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch, nowMs }));
   }
 
   /** Save the replacement value; the Vault step counts as done only once the new revision is pulled and verified. */
   async rotate(itemId: string, value: string): Promise<boolean> {
-    return this.write('rotation_saved', () => rotateValue({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, value, nowMs: this.now() }));
+    return this.write('rotation_saved', (nowMs) => rotateValue({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, value, nowMs }), { action: 'rotation_vault_written', itemId });
   }
 
-  private async write(done: Extract<Notice['code'], 'saved' | 'deleted' | 'restored' | 'resolved' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved'>, op: () => Promise<unknown>): Promise<boolean> {
+  private async write(done: Extract<Notice['code'], 'saved' | 'deleted' | 'restored' | 'resolved' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved'>, op: (nowMs: number) => Promise<unknown>, audit?: { action: RotationAuditAction; itemId: string }): Promise<boolean> {
     if (!this.snapshot || !this.client || !this.signer) return false;
     this.showVault(null, null, true);
+    const nowMs = this.now();
     try {
-      await op();
+      await op(nowMs);
     } catch (err) {
       await this.writeFailed(err);
       return false;
     }
-    await this.sync({ kind: 'info', code: done });
+    // The write has landed and its signed revision is the record; a failed audit append is reported, never undone.
+    let auditFailed = false;
+    if (audit) {
+      try {
+        await appendRotationAudit({ client: this.client, snapshot: this.snapshot, action: audit.action, itemId: audit.itemId, nowMs });
+      } catch {
+        auditFailed = true;
+      }
+    }
+    await this.sync(auditFailed ? { kind: 'error', code: 'audit_failed' } : { kind: 'info', code: done });
     return true;
   }
 

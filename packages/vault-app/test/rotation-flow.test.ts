@@ -5,9 +5,11 @@
  * real controller, views and protocol library against the in-memory world.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { openItem } from '@ak-vault/protocol';
+import { openItem, verifyAuditChain } from '@ak-vault/protocol';
 import { DAY_MS, parseRotationWorkflow, rotationInfo, stillNeedsRotate, type RotationInput } from '../src/sync/rotation.js';
 import { updateRotation } from '../src/sync/write-ops.js';
+import { appendRotationAudit } from '../src/sync/audit.js';
+import type { AkvClient } from '../src/sync/akv-client.js';
 import type { ItemView, VaultSnapshot } from '../src/sync/vault-sync.js';
 import { FakeWorld } from './helpers/fake-world.js';
 import { Browser, allByTestId, byTestId, type Page } from './helpers/dashboard-page.js';
@@ -396,3 +398,148 @@ describe('guided rotation', () => {
     expect(world.log.at(-1)!.record.author).toBe((page.controller.current() as { deviceId: string }).deviceId);
   });
 });
+
+
+function auditPosts(world: FakeWorld): number {
+  return world.exchanges.filter((x) => x.method === 'POST' && new URL(x.url).pathname.endsWith('/audit')).length;
+}
+
+function auditEvents(world: FakeWorld) {
+  const keyEpoch = world.state().key_epoch;
+  const out = verifyAuditChain(world.audit, { vaultKeys: (e) => world.vks.get(e), vaultId: world.vaultId, keyEpoch });
+  return out.events.map((e) => {
+    if (e.opaque) throw new Error('unexpected opaque audit entry');
+    return e.event;
+  });
+}
+
+describe('rotation audit stream', () => {
+  it('appends one encrypted entry per state change, chained and without a name or value', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    const deviceId = (page.controller.current() as { deviceId: string }).deviceId;
+    await page.controller.startRotation(itemId);
+    await page.controller.rotate(itemId, NEW_SENTINEL);
+    await page.controller.confirmRevoked(itemId);
+    await page.controller.setRotationState(itemId, 'paused');
+    await page.controller.setRotationState(itemId, 'active');
+    await page.controller.setRotationState(itemId, 'failed');
+    await page.controller.startRotation(itemId);
+    await page.controller.setRotationState(itemId, 'cancelled');
+    await page.controller.setRotationState(itemId, null);
+
+    const events = auditEvents(world);
+    expect(events.map((e) => e['type'])).toEqual([
+      'rotation_started', 'rotation_vault_written', 'rotation_revoked', 'rotation_paused', 'rotation_resumed',
+      'rotation_failed', 'rotation_started', 'rotation_cancelled', 'rotation_cleared',
+    ]);
+    for (const e of events) {
+      expect(Object.keys(e).sort()).toEqual(['device_id', 'item_id', 'ts', 'type', 'v']);
+      expect(e['v']).toBe(1);
+      expect(e['type']).toMatch(/^[a-z][a-z0-9_]{0,63}$/); // the CLI reader's rule for an event type it does not know
+      expect(e).toMatchObject({ item_id: itemId, device_id: deviceId });
+      expect(typeof e['ts']).toBe('number');
+    }
+    // nothing readable on the wire or at rest: the stored entries are ciphertext
+    const stored = JSON.stringify(world.audit);
+    expect(stored).not.toMatch(/stripe-key|rotation-sentinel|rotation_started|item_id/);
+    for (const e of world.exchanges) expect(e.requestBody).not.toMatch(/stripe-key|rotation-sentinel/);
+  });
+
+  it('writes no audit entry for an interval edit, a refused change or a failed write', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    await page.controller.setRotateTtl(itemId, 90);
+    await page.controller.confirmRevoked(itemId); // refused: nothing in the vault yet
+    await page.controller.rotate(itemId, SENTINEL); // refused: same value
+    world.ownerSet('stripe-key', 'changed-elsewhere', { schema: 'agentkit.secret/v1', created_ms: 1_700_000_000_000 });
+    await page.controller.startRotation(itemId); // conflict
+    expect(world.audit).toHaveLength(0);
+  });
+
+  it('reads the chain head again and re-seals when another device appended first', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    world.hostile.auditConflicts = 1;
+    expect(await page.controller.startRotation(itemId)).toBe(true);
+    expect(page.controller.current()).toMatchObject({ notice: { kind: 'info', code: 'rotation_started' } });
+    const events = auditEvents(world);
+    expect(events.map((e) => e['type'])).toEqual(['item_put', 'rotation_started']);
+  });
+
+  it('keeps the write and says the audit entry was not recorded when the append fails', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    world.hostile.auditAppendStatus = 500;
+    expect(await page.controller.startRotation(itemId)).toBe(true);
+    expect(page.controller.current()).toMatchObject({ notice: { kind: 'error', code: 'audit_failed' } });
+    expect(item(page, itemId).rotation).toMatchObject({ state: 'active' });
+    expect(world.audit).toHaveLength(0);
+    world.hostile.auditAppendStatus = null;
+    await page.controller.setRotationState(itemId, 'paused');
+    expect(auditEvents(world).map((e) => e['type'])).toEqual(['rotation_paused']);
+  });
+
+  it('gives up after repeated head conflicts without undoing the write', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    world.hostile.auditConflicts = 10;
+    expect(await page.controller.startRotation(itemId)).toBe(true);
+    expect(page.controller.current()).toMatchObject({ notice: { code: 'audit_failed' } });
+    expect(item(page, itemId).rotation).toMatchObject({ state: 'active' });
+  });
+
+  it('refuses to chain onto a head the stored chain does not hold', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    await page.controller.startRotation(itemId);
+    expect(world.audit).toHaveLength(1);
+    world.hostile.auditForgedHead = true;
+    const posted = auditPosts(world);
+    expect(await page.controller.setRotationState(itemId, 'paused')).toBe(true);
+    expect(page.controller.current()).toMatchObject({ notice: { kind: 'error', code: 'audit_failed' } });
+    // the server would accept an entry chained on its forged head; the client never sends one
+    expect(auditPosts(world)).toBe(posted);
+    expect(world.audit).toHaveLength(1);
+  });
+
+  it('refuses to append for a vault waiting on a rekey or without the current epoch key, sending nothing', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    // The controller never builds these snapshots; the guards are defence in depth, exercised directly.
+    const real = (page.controller as unknown as { snapshot: VaultSnapshot }).snapshot;
+    const client = (page.controller as unknown as { client: AkvClient }).client;
+    const args = { client, action: 'rotation_started' as const, itemId, nowMs: Date.now() };
+    const before = world.exchanges.length;
+    await expect(appendRotationAudit({ ...args, snapshot: { ...real, state: { ...real.state, rekey_required: true } } })).rejects.toMatchObject({ code: 'audit_failed' });
+    const vaultKeys = new Map(real.vaultKeys);
+    vaultKeys.delete(real.state.key_epoch);
+    await expect(appendRotationAudit({ ...args, snapshot: { ...real, vaultKeys } })).rejects.toMatchObject({ code: 'audit_failed' });
+    expect(world.exchanges.length).toBe(before);
+    expect(world.audit).toHaveLength(0);
+  });
+
+  it('seals under the current key epoch after a rekey', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    await page.controller.startRotation(itemId);
+    world.ownerRekey([itemId]);
+    await page.controller.refresh();
+    await page.controller.setRotationState(itemId, 'paused');
+    expect(page.controller.current()).toMatchObject({ notice: { kind: 'info', code: 'rotation_updated' } });
+    expect(world.audit.map((e) => e.kid)).toEqual(['e1', 'e2']);
+    // the chain verifies across the epoch change, each entry under its own epoch's audit key
+    expect(auditEvents(world).map((e) => e['type'])).toEqual(['rotation_started', 'rotation_paused']);
+  });
+
+  it('audits a transition from the previous and next state, and nothing for a no-op', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    await page.controller.setRotationState(itemId, 'paused'); // no workflow: nothing to pause
+    await page.controller.startRotation(itemId);
+    await page.controller.setRotationState(itemId, 'active'); // already active
+    await page.controller.setRotationState(itemId, 'paused');
+    expect(auditEvents(world).map((e) => e['type'])).toEqual(['rotation_started', 'rotation_paused']);
+  });
+});
+
