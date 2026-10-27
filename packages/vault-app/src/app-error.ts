@@ -19,6 +19,8 @@ export const APP_ERROR_CODES = [
   'enroll_sas_mismatch',
   'vault_verification_failed',
   'rollback',
+  'fork',
+  'clock_skew',
   'conflict',
   'rekey_required',
   'role_forbidden',

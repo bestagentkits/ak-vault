@@ -18,6 +18,8 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   enroll_sas_mismatch: 'The approval on the vault does not match the code shown here, so it was refused. Start the enrollment again.',
   vault_verification_failed: 'The vault data did not verify. Nothing was shown or changed. Try again later or check the vault from an owner device.',
   rollback: 'The server returned an older or different vault history than this browser already verified. Nothing was shown or changed.',
+  fork: 'Two verified views of this vault reached the same position with different contents, so the server showed this browser two histories. Nothing was shown or changed. Check the vault from an owner device and report it.',
+  clock_skew: 'This device\'s clock is more than a minute off. Sign-in and vault requests are time-bound and fail until it is corrected. Set the date and time automatically, then sign in again.',
   conflict: 'Another device changed this item at the same time. The list was refreshed; review it and try again.',
   rekey_required: 'An owner device must rekey this vault before changes are accepted.',
   role_forbidden: 'Your role in this vault does not allow that change. The membership view was refreshed.',
