@@ -52,7 +52,11 @@ export interface RotationInfo {
   /** Null when the verified profile carries no valid `expires_at`. */
   expiry: ExpiryHealth | null;
   expiresMs: number | null;
-  /** Whole days until expiry (negative once expired); null when no expiry. */
+  /**
+   * Whole days to expiry, counted toward zero: a future expiry rounds up (23 h ahead is 1),
+   * a past one rounds toward zero (1 s past is 0), so 0 means "today". Negative once
+   * expired by a full day or more; null when no expiry.
+   */
   daysUntilExpiry: number | null;
 }
 
@@ -86,8 +90,9 @@ export function parseExpiresMs(value: unknown): number | null {
     return null;
   }
   if (typeof text !== 'string') return null;
+  // The protocol rule already fixed the form and calendar; a date before 1970 is still a real (past) expiry.
   const ms = Date.parse(text);
-  return isMs(ms) ? ms : null;
+  return Number.isSafeInteger(ms) ? ms : null;
 }
 
 /** Parse the workflow from `meta`; anything not exactly the expected shape is no workflow. */
@@ -139,7 +144,9 @@ export function rotationInfo(i: RotationInput, nowMs: number): RotationInfo {
   else if (dueMs - nowMs <= DUE_SOON_DAYS * DAY_MS) health = 'due_soon';
   else health = 'ok';
   const expiresMs = i.expiresMs;
-  const daysUntilExpiry = expiresMs === null ? null : Math.floor((expiresMs - nowMs) / DAY_MS);
+  const daysUntilExpiry = expiresMs === null
+    ? null
+    : expiresMs > nowMs ? Math.ceil((expiresMs - nowMs) / DAY_MS) : Math.trunc((expiresMs - nowMs) / DAY_MS) || 0;
   const expiry: ExpiryHealth | null = expiresMs === null
     ? null
     : expiresMs <= nowMs ? 'expired' : expiresMs - nowMs <= EXPIRING_SOON_DAYS * DAY_MS ? 'expiring_soon' : 'ok';

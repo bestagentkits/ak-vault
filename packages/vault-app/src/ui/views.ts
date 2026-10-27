@@ -230,9 +230,12 @@ function dueText(info: RotationInfo): string {
   return `due ${fmtDate(info.dueMs)} (${relativeDays(info.daysUntilDue)})`;
 }
 
+/** The date is the UTC calendar day of `expires_at`; 0 whole days either side reads "today". */
 function expiryText(info: RotationInfo): string {
   if (info.expiresMs === null || info.daysUntilExpiry === null) return '';
-  return `${info.expiry === 'expired' ? 'expired' : 'expires'} ${fmtDate(info.expiresMs)} (${relativeDays(info.daysUntilExpiry)})`;
+  const verb = info.expiry === 'expired' ? 'expired' : 'expires';
+  const date = `${fmtDate(info.expiresMs)} UTC`;
+  return info.daysUntilExpiry === 0 ? `${verb} today (${date})` : `${verb} ${date} (${relativeDays(info.daysUntilExpiry)})`;
 }
 
 /** Informational: the warning changes no grant and blocks no action. */
