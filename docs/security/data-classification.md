@@ -19,6 +19,8 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Vault keys | Wrapped to devices, password KEK and recovery KEK only |
 | Recovery bundle contents (vault keys, owner anchor, checkpoint) | AEAD under password and recovery KEKs |
 | Sealed operation contents (`op`, name, value, sensitivity) at rest | Sealed to the epoch's `seal_pub`; only member devices derive `SealSK[e]` ([spec §3.6](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)). The Worker saw them in plaintext before sealing ([transit table](#transits-worker-memory-never-stored-or-logged-remote-access-only)) |
+| Write intent contents (requested name, purpose, sensitivity) at rest | Sealed to the epoch's `seal_pub` under its own context; carries no value; cleared when the request closes, or lazily after it expires ([spec §3.10](../protocol/v1/spec.md#310-write-intents-human-write-requests)). The Worker saw them in plaintext before sealing |
+| Value typed into a write-request form | Encrypted and signed by the browser device as a normal item record; never in the MCP client or Worker in plaintext |
 | Audit of drained sealed operations and dropped profile fields (`sealed_applied`, `sealed_refused`, `profile_invalid`, `profile_provenance_invalid`) and of dashboard rotation state changes (`rotation_*`: type, item ID, author device, time) | Encrypted audit stream |
 
 ## Visible operational metadata (unavoidable)
@@ -38,6 +40,7 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | `name_tag` per record head (16-byte keyed tag and its `key_epoch`) | `lookup`; reveals which records share a name within an epoch, not the name ([spec §3.7](../protocol/v1/spec.md#37-name-tags-keyed-blind-index)) |
 | Seal-key document (vault ID, key epoch, membership position, `seal_pub`, author, time, signature) | Serving the key the MCP handler seals to |
 | Sealed operation envelope: `sealed_id`, key epoch, queue position, `origin` (`account`, `client_id`, `grant_id`), time, ciphertext size, and the `applied`/`refused` outcome of its ack | Queueing, deduplication, expiry and audit attribution |
+| Write request row: `request_id`, requesting `account`, `client_id`, `grant_id`, the MCP token's `iat`, operation (`create`/`replace`), state, closed reason, opaque receipt, created, expiry and close times, intent ciphertext size | Binding the request to its account and grant, revocation re-checks, single use, expiry and status for the requesting client |
 | Lookup requests: the requested `(key_epoch, tag)` pairs and the hits served | Answering name lookups; reveals which names a reader looks for, not the names |
 | Relay connection and call metadata: device ID, vault IDs and tool names from `hello`, `call_id`, vault ID and tool of each call, caller `client_id`/`grant_id`/scopes, result `ok` and error code, timing | Routing calls to a device and enforcing scopes, deadlines and rate limits |
 | Quota and rate-limit counters | Abuse protection |
@@ -57,6 +60,7 @@ termination and are held only for the request or relayed call
 | Data | Path |
 |---|---|
 | MCP tool arguments, including a `set` value | MCP client → Worker → relayed to a device or sealed |
+| `secrets_prepare_write` name and purpose | MCP client → Worker → sealed into a write intent |
 | Relayed results: names, profile fields, sensitivity, timestamps, request status | Device → Worker → MCP client |
 | Redacted `run` output (`stdout`, `stderr`) | Device → Worker → MCP client |
 
@@ -66,6 +70,11 @@ history, restore and conflict resolution add no field and no route: they read th
 change log it already verifies and write ordinary signed records. A restored value
 is opened and sealed again in browser memory and is never rendered, copied or sent
 in clear.
+
+Opening a write-request link (`/app#write=<request_id>&vault=<vault_id>`) keeps the two
+opaque IDs in the browser's `sessionStorage` only for the sign-in redirect, and removes
+them when the callback reads them. The request ID authorizes nothing by itself. The
+dashboard never stores or logs the typed value, which is cleared on submit and cancel.
 
 ## Kept in the browser (dashboard device)
 
@@ -153,6 +162,12 @@ vault. IndexedDB is readable by script running in the page, which is why the
 - Tombstones are kept for the life of the vault; deleting one would re-open
   resurrection.
 - Conflict branches are kept until a record resolves them.
+- A write request's intent ciphertext is cleared when it closes. Expiry and purge are
+  lazy: an expired request is never served, and its ciphertext is cleared (and rows
+  closed more than `write_request_retention_s` ago are purged) the next time the
+  vault handles a write request
+  ([`worker/src/limits.ts`](../../worker/src/limits.ts)). The row holds no name or
+  value.
 - Membership events are kept for the life of the vault; the chain is replayed
   from genesis or from a trusted checkpoint.
 - Change-log compaction, audit retention and operational-log retention periods are

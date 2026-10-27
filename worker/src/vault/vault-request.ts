@@ -25,6 +25,9 @@ export const VAULT_OPS = [
   'sealkey.put',
   'sealed.get',
   'sealed.ack',
+  // Human write requests (spec §9.6), routed only where remote access is enabled.
+  'writereq.get',
+  'writereq.close',
 ] as const;
 export type VaultOp = (typeof VAULT_OPS)[number];
 
@@ -34,6 +37,8 @@ export interface VaultRequest {
   itemId?: string;
   /** `sealed_id` path segment of `POST …/sealed/{sealed_id}/ack`. */
   sealedId?: string;
+  /** `request_id` path segment of `…/write-requests/{request_id}`, or the `write_request` query of an item PUT. */
+  writeRequestId?: string;
   method: string;
   /** Exact request URL compared with the proof `htu`. */
   htu: string;
@@ -56,5 +61,5 @@ export interface VaultRequest {
 
 /** Ops that mutate state: Idempotency-Key is required and the handler runs in one transaction. */
 export function isMutation(op: VaultOp): boolean {
-  return op === 'genesis' || op === 'sealed.ack' || op.endsWith('.post') || op.endsWith('.put');
+  return op === 'genesis' || op === 'sealed.ack' || op === 'writereq.close' || op.endsWith('.post') || op.endsWith('.put');
 }

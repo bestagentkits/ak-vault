@@ -11,6 +11,7 @@ import { edgeCaseVectors } from './edge-cases.js';
 import { deviceAddWrapsVectors } from './device-add-wraps.js';
 import { removalFenceVectors } from './removal-fence.js';
 import { nameTagVectors, sealedOpVectors, sealKeyVectors } from './seal-and-name-tag.js';
+import { writeIntentVectors } from './write-intent.js';
 import { enrollCodeVectors } from './enroll-codes.js';
 import { enrollCommitVectors } from './enroll-commit.js';
 import { profileVectors } from './profile-provenance.js';
@@ -39,6 +40,7 @@ const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'seal-key.json': sealKeyVectors,
   'sealed-op.json': sealedOpVectors,
   'name-tag.json': nameTagVectors,
+  'write-intent.json': writeIntentVectors,
   'enroll-codes.json': enrollCodeVectors,
   'enroll-commit.json': enrollCommitVectors,
   'profile.json': profileVectors,

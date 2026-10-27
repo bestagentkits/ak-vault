@@ -2,8 +2,10 @@
  * Minimal same-origin client for the vault API (spec §9): a sync token as
  * bearer, a fresh `AKV-Proof` per attempt (single-use `jti`), and an
  * `Idempotency-Key` on writes that stays the same across a retry. A 401 gets
- * one retry with a freshly exchanged token. Errors carry only the status and the
- * server's stable code, never the response text.
+ * one retry with a freshly exchanged token. The proof's `htu` is the full URL,
+ * query included (the Worker compares it with the request URL), so a query such
+ * as `?write_request=` is covered by the signature. Errors carry only the status
+ * and the server's stable code, never the response text.
  */
 import { buildProofAsync, randomBytes, utf8Encode, b64encode, type DeviceSigner } from '@ak-vault/protocol';
 import { AppError } from '../app-error.js';
@@ -39,6 +41,8 @@ export interface AkvClientDeps {
 }
 
 const STABLE_CODE = /^[a-z_]{1,64}$/;
+/** A request that has not answered by then is a network failure the person can retry. */
+export const REQUEST_TIMEOUT_MS = 30_000;
 
 async function errorCode(res: Response): Promise<string> {
   const body = (await res.json().catch(() => null)) as unknown;
@@ -67,7 +71,10 @@ export function createAkvClient(deps: AkvClientDeps): AkvClient {
       if (method !== 'GET') headers['Content-Type'] = 'application/json';
       let res: Response;
       try {
-        res = await deps.fetchFn(url, { method, headers, credentials: 'omit', cache: 'no-store', ...(method !== 'GET' ? { body: text } : {}) });
+        res = await deps.fetchFn(url, {
+          method, headers, credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          ...(method !== 'GET' ? { body: text } : {}),
+        });
       } catch {
         throw new AppError('network');
       }

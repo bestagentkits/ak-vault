@@ -1,6 +1,6 @@
 /**
- * Dashboard controller: sign-in, device, enrollment, sync and writes, behind
- * one observable screen state. It holds every token, vault key and the verified
+ * Dashboard controller: sign-in, device, enrollment, sync, writes and human
+ * write requests, behind one observable screen state. It holds every token, vault key and the verified
  * snapshot in memory only; locking, signing out or leaving the page drops them
  * and revokes the sign-in grant. Errors become fixed codes; nothing a server or
  * another device wrote reaches an error message.
@@ -27,8 +27,18 @@ import { buildItemHistory, type ItemHistory } from './sync/history.js';
 import { buildMembershipView, roleCanWrite, type MembershipView } from './sync/membership-view.js';
 import { openRecord, pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
 import { appendRotationAudit, type RotationAuditAction } from './sync/audit.js';
-import { deleteItem, findByName, restoreRevision, resolveConflicts, rotateValue, setItem, updateRotation, type RotationPatch } from './sync/write-ops.js';
+import { deleteItem, findByName, requestTarget, restoreRevision, resolveConflicts, rotateValue, setItem, updateRotation, type RotationPatch } from './sync/write-ops.js';
 import type { RotationWorkflow } from './sync/rotation.js';
+import {
+  closeWriteRequest,
+  fetchWriteRequest,
+  isWriteFragment,
+  openWriteRequest,
+  parseWriteLink,
+  type OpenedWriteRequest,
+  type WriteCloseOutcome,
+  type WriteLink,
+} from './sync/write-request.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
 
 const STATE_AUDIT_ACTION: Record<RotationWorkflow['state'] | 'cleared', RotationAuditAction> = {
@@ -39,7 +49,35 @@ const STATE_AUDIT_ACTION: Record<RotationWorkflow['state'] | 'cleared', Rotation
   cleared: 'rotation_cleared',
 };
 
-export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'restored' | 'resolved' | 'signed_out' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved' };
+export type WriteNoticeCode =
+  | 'write_signin'
+  | 'write_enroll'
+  | 'write_wrong_vault'
+  | 'write_unavailable'
+  | 'write_saved'
+  | 'write_conflict'
+  | 'write_cancelled'
+  | 'write_exists'
+  | 'write_missing'
+  | 'write_device_error';
+
+export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | WriteNoticeCode | 'locked' | 'saved' | 'deleted' | 'restored' | 'resolved' | 'signed_out' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved' };
+
+/** The write request on screen: its link and, once fetched and opened, its target. */
+interface WriteInFlight {
+  link: WriteLink;
+  opened: OpenedWriteRequest | null;
+}
+
+/** What the write-request screen shows about the request. Never a value. */
+export interface WriteRequestView {
+  name: string;
+  purpose: string | null;
+  clientId: string;
+  operation: 'create' | 'replace';
+  /** Unix ms. */
+  expiresAt: number;
+}
 
 export type Screen =
   | { kind: 'loading' }
@@ -49,7 +87,16 @@ export type Screen =
   | { kind: 'approve'; sas: string; deviceId: string; notice: Notice | null }
   | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; canWrite: boolean; membership: MembershipView; nowMs: number; deviceId: string; notice: Notice | null; busy: boolean }
   | { kind: 'history'; history: ItemHistory; canWrite: boolean; deviceId: string; notice: Notice | null; busy: boolean }
+  | { kind: 'write'; deviceId: string; request: WriteRequestView | null; open: boolean; busy: boolean; retry: boolean; receipt: string | null; notice: Notice | null }
   | { kind: 'removed' };
+
+interface WriteScreenState {
+  open?: boolean;
+  busy?: boolean;
+  retry?: boolean;
+  receipt?: string | null;
+  notice?: Notice | null;
+}
 
 export interface ControllerDeps {
   origin: string;
@@ -93,6 +140,10 @@ export class AppController {
   private snapshot: VaultSnapshot | null = null;
   /** The item whose history is open; the screen follows it across pulls. */
   private historyItemId: string | null = null;
+  /** A write-request link waiting for sign-in, enrollment and sync. */
+  private writeLink: WriteLink | null = null;
+  /** The write request on screen. */
+  private writeReq: WriteInFlight | null = null;
   private readonly now: () => number;
   /** `deps.fetchFn` plus a note of the vault origin's clock, read from its `Date` header. */
   private readonly fetchFn: typeof fetch;
@@ -142,13 +193,16 @@ export class AppController {
     }
     if (!isAuthorizationResponse(url)) {
       this.deps.pending.take();
-      this.show({ kind: 'signed_out', notice: this.clockSkewed() ? { kind: 'error', code: 'clock_skew' } : null });
+      this.writeLink = this.takeWriteLink(url);
+      this.show({ kind: 'signed_out', notice: this.clockSkewed() ? { kind: 'error', code: 'clock_skew' } : this.writeLink ? { kind: 'info', code: 'write_signin' } : null });
       return;
     }
     // The code and state leave the address bar and history before anything else runs.
     this.deps.replaceUrl(this.config.redirectUri);
     try {
-      this.session = await completeSignIn(url, { config: this.config, as: this.as, store: this.deps.pending, fetchFn: this.fetchFn, now: this.now() });
+      const done = await completeSignIn(url, { config: this.config, as: this.as, store: this.deps.pending, fetchFn: this.fetchFn, now: this.now() });
+      this.session = done.session;
+      this.writeLink = done.writeLink;
     } catch (err) {
       const code = appErrorCode(err, 'signin_refused');
       this.show({ kind: 'signed_out', notice: { kind: 'error', code: this.clockSkewed() && (code === 'signin_refused' || code === 'token_exchange_failed') ? 'clock_skew' : code } });
@@ -157,11 +211,41 @@ export class AppController {
     await this.openDevice();
   }
 
-  /** Begin a sign-in. A grant still held in memory is revoked first. */
+  /**
+   * Read a write-request link from the URL fragment. Any `#write=` fragment
+   * leaves the address bar and history at once; only an exact one is kept.
+   */
+  private takeWriteLink(url: URL): WriteLink | null {
+    if (!this.config || !isWriteFragment(url.hash)) return null;
+    this.deps.replaceUrl(this.config.redirectUri);
+    return parseWriteLink(url.hash);
+  }
+
+  /** A write-request link opened in a page that is already running (the fragment changed). */
+  async openLink(url: URL): Promise<void> {
+    const link = this.takeWriteLink(url);
+    if (!link) return;
+    const kind = this.screen.kind;
+    // A save or close in flight keeps its request; the new link opens once the person leaves that screen.
+    if (kind === 'write' && this.screen.busy) {
+      this.writeLink = link;
+      return;
+    }
+    if (this.snapshot && (kind === 'vault' || kind === 'write')) {
+      await this.openWrite(link);
+      return;
+    }
+    this.writeLink = link;
+    if (kind === 'signed_out') this.show({ kind: 'signed_out', notice: { kind: 'info', code: 'write_signin' } });
+    else if (kind === 'join' || kind === 'approve') await this.route();
+  }
+
+  /** Begin a sign-in. A grant still held in memory is revoked first; a pending write-request link carries over. */
   async signIn(): Promise<void> {
     if (!this.config || !this.as) return;
+    const link = this.writeLink ?? this.writeReq?.link ?? null;
     await this.dropSession(false);
-    this.deps.navigate(beginSignIn(this.config, this.as, this.deps.pending, this.now()));
+    this.deps.navigate(beginSignIn(this.config, this.as, this.deps.pending, this.now(), link));
   }
 
   /** Lock: forget tokens, keys and the snapshot and revoke the grant. The device stays enrolled. */
@@ -185,6 +269,8 @@ export class AppController {
     this.signer = null;
     this.kx = null;
     this.device = null;
+    this.writeLink = null;
+    this.writeReq = null;
     if (session && this.config && this.as) await revokeSession(session, { config: this.config, as: this.as, fetchFn: this.fetchFn, keepalive });
   }
 
@@ -227,6 +313,7 @@ export class AppController {
   private async route(notice: Notice | null = null): Promise<void> {
     const device = this.device!;
     const deviceId = deviceIdOf(device.keys);
+    if (!device.enrollment?.confirmed && this.writeLink) notice ??= { kind: 'info', code: 'write_enroll' };
     if (!device.enrollment) {
       this.show({ kind: 'join', joinCode: joinCodeFor(device), deviceId, notice });
       return;
@@ -327,6 +414,12 @@ export class AppController {
       this.device = { ...latest, enrollment: { ...enrollment, witnessed: position } };
       // Another tab is further along: keep the newer view already shown, if any.
       if (!(saved.outcome === 'older' && this.snapshot)) this.snapshot = snapshot;
+      const link = this.writeLink;
+      if (link) {
+        this.writeLink = null;
+        await this.openWrite(link);
+        return;
+      }
       this.showVault(notice, null);
     } catch (err) {
       // Locked, signed out or replaced while the pull was in flight: that state stands, not this pull's error.
@@ -524,6 +617,189 @@ export class AppController {
       return;
     }
     await this.fail(err);
+  }
+
+  /**
+   * Open a write request for this enrolled, synced device. A link for another
+   * vault, or a vault that needs a rekey, is refused without calling the
+   * write-request routes.
+   */
+  private async openWrite(link: WriteLink): Promise<void> {
+    const snapshot = this.snapshot;
+    if (!snapshot) return;
+    this.writeReq = null;
+    if (link.vaultId !== snapshot.vaultId) {
+      this.showVault({ kind: 'error', code: 'write_wrong_vault' }, null);
+      return;
+    }
+    this.writeReq = { link, opened: null };
+    if (snapshot.state.rekey_required) {
+      this.showWrite({ notice: { kind: 'error', code: 'rekey_required' } });
+      return;
+    }
+    await this.loadWrite();
+  }
+
+  /** Fetch and open the request, then check its target against the verified snapshot. */
+  private async loadWrite(): Promise<void> {
+    const w = this.writeReq;
+    const { snapshot, client } = this;
+    if (!w || !snapshot || !client) return;
+    this.showWrite({ busy: true });
+    let raw: unknown;
+    try {
+      raw = await fetchWriteRequest(client, w.link);
+    } catch (err) {
+      if (await this.writeRouteFailed(err)) return;
+      this.showWrite({ retry: true, notice: { kind: 'error', code: appErrorCode(err, 'server') === 'network' ? 'network' : 'server' } });
+      return;
+    }
+    if (this.writeReq !== w) return;
+    try {
+      w.opened = openWriteRequest(snapshot, w.link, raw);
+      requestTarget(snapshot, w.opened.name, w.opened.operation);
+    } catch (err) {
+      await this.refuseWrite(err);
+      return;
+    }
+    this.showWrite({ open: true });
+  }
+
+  /** Try loading the request again after a network or server failure. */
+  async retryWrite(): Promise<void> {
+    const s = this.screen;
+    if (s.kind !== 'write' || !s.retry || s.busy) return;
+    await this.loadWrite();
+  }
+
+  /**
+   * Seal, sign and send the value the person typed, completing the request.
+   * The value is passed straight to the write and never kept.
+   */
+  async submitWrite(value: string): Promise<boolean> {
+    const s = this.screen;
+    const w = this.writeReq;
+    const { snapshot, client, signer } = this;
+    if (s.kind !== 'write' || !s.open || s.busy || !w?.opened || !snapshot || !client || !signer) return false;
+    const o = w.opened;
+    this.showWrite({ open: true, busy: true });
+    let receipt: string | undefined;
+    try {
+      receipt = (await setItem({
+        client, snapshot, signer, name: o.name, value, nowMs: this.now(),
+        request: { requestId: o.requestId, operation: o.operation, sensitivity: o.sensitivity },
+      })).receipt;
+    } catch (err) {
+      if (this.writeReq === w) await this.submitFailed(err, w);
+      return false;
+    }
+    if (this.writeReq !== w) return true;
+    this.showWrite({ receipt: receipt ?? null, notice: { kind: 'info', code: 'write_saved' } });
+    return true;
+  }
+
+  /** Cancel the request: nothing is written and the requesting client sees `cancelled`. */
+  async cancelWrite(): Promise<void> {
+    const s = this.screen;
+    if (s.kind !== 'write' || !s.open || s.busy) return;
+    await this.closeWrite({ outcome: 'cancelled', reason: 'user_cancelled' }, { kind: 'info', code: 'write_cancelled' }, true);
+  }
+
+  /** Leave the write-request screen for the vault list, refreshed. */
+  async leaveWrite(): Promise<void> {
+    if (this.screen.kind !== 'write' || this.screen.busy) return;
+    this.writeReq = null;
+    await this.sync(null);
+  }
+
+  private showWrite(st: WriteScreenState): void {
+    const o = this.writeReq?.opened ?? null;
+    this.show({
+      kind: 'write',
+      deviceId: this.snapshot!.self.device_id,
+      request: o ? { name: o.name, purpose: o.purpose, clientId: o.clientId, operation: o.operation, expiresAt: o.expiresAt } : null,
+      open: st.open ?? false,
+      busy: st.busy ?? false,
+      retry: st.retry ?? false,
+      receipt: st.receipt ?? null,
+      notice: st.notice ?? null,
+    });
+  }
+
+  /**
+   * Route failures shared by every write-request call. A removed device or a
+   * lost sign-in is terminal; a request that is no longer open (closed, expired,
+   * revoked or unknown) gets the stale-link message. Returns false when the
+   * caller should offer a retry instead.
+   */
+  private async writeRouteFailed(err: unknown): Promise<boolean> {
+    if (isVaultApiError(err, 'forbidden') || isVaultApiError(err, 'unauthorized')) {
+      await this.fail(err);
+      return true;
+    }
+    if (isVaultApiError(err) && (err.status === 400 || err.status === 404)) {
+      this.showWrite({ notice: { kind: 'error', code: 'write_unavailable' } });
+      return true;
+    }
+    return false;
+  }
+
+  /** The device cannot complete the request: close it with the matching closed reason. */
+  private async refuseWrite(err: unknown, w = this.writeReq): Promise<void> {
+    const code = appErrorCode(err, 'server');
+    if (code === 'already_exists') await this.closeWrite({ outcome: 'failed', reason: 'already_exists' }, { kind: 'error', code: 'write_exists' }, false, w);
+    else if (code === 'not_found') await this.closeWrite({ outcome: 'failed', reason: 'not_found' }, { kind: 'error', code: 'write_missing' }, false, w);
+    else await this.closeWrite({ outcome: 'failed', reason: 'device_error' }, { kind: 'error', code: 'write_device_error' }, false, w);
+  }
+
+  /**
+   * Report the outcome. A cancel that does not reach the server keeps the form
+   * open to try again; a refusal is shown either way, since the request also
+   * lapses on its own at expiry.
+   */
+  private async closeWrite(close: WriteCloseOutcome, done: Notice, retryable: boolean, w = this.writeReq): Promise<void> {
+    if (!w || !this.client) return;
+    this.showWrite({ open: retryable, busy: true });
+    try {
+      await closeWriteRequest(this.client, w.link, close);
+    } catch (err) {
+      if (await this.writeRouteFailed(err)) return;
+      if (retryable) {
+        this.showWrite({ open: true, notice: { kind: 'error', code: appErrorCode(err, 'server') === 'network' ? 'network' : 'server' } });
+        return;
+      }
+    }
+    this.showWrite({ notice: done });
+  }
+
+  /** Handle a refused completion of `w`, the request the save started with. */
+  private async submitFailed(err: unknown, w: WriteInFlight): Promise<void> {
+    const code = appErrorCode(err, 'server');
+    if (isVaultApiError(err)) {
+      if (err.status === 400 || err.status === 404) {
+        // The request may have closed or expired meanwhile: ask before offering a retry.
+        try {
+          await fetchWriteRequest(this.client!, w.link);
+        } catch (again) {
+          if (await this.writeRouteFailed(again)) return;
+        }
+        // Still open yet refused (the target changed after the last sync): retrying the same record cannot succeed.
+        // The screen moved on (signed out or locked) while asking: nothing left to report.
+        if (this.writeReq !== w) return;
+        if (err.status === 400) {
+          await this.refuseWrite(err, w);
+          return;
+        }
+      } else if (await this.writeRouteFailed(err)) {
+        return;
+      }
+      this.showWrite({ open: true, notice: { kind: 'error', code: 'server' } });
+      return;
+    }
+    if (code === 'conflict') this.showWrite({ notice: { kind: 'error', code: 'write_conflict' } });
+    else if (code === 'rekey_required') this.showWrite({ notice: { kind: 'error', code: 'rekey_required' } });
+    else if (code === 'value_too_large' || code === 'quota_exceeded' || code === 'network' || code === 'server') this.showWrite({ open: true, notice: { kind: 'error', code } });
+    else await this.refuseWrite(err, w);
   }
 
   /** Terminal handling: a removed device wipes its local state; a lost sign-in returns to the start. */

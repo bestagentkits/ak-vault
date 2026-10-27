@@ -14,6 +14,7 @@ export interface MatchedRoute {
   vaultId: string;
   itemId?: string;
   sealedId?: string;
+  writeRequestId?: string;
 }
 
 const COLLECTIONS: Record<string, Partial<Record<string, VaultOp>>> = {
@@ -59,6 +60,13 @@ export function matchVaultRoute(method: string, pathname: string, opts: { remote
   if (opts.remoteAccess && collection === 'sealed' && parts.length === 7 && parts[5] && parts[6] === 'ack') {
     if (method !== 'POST') return null;
     return { op: 'sealed.ack', template: 'POST /v1/vaults/:vid/sealed/:sid/ack', vaultId: opaqueId(vid), sealedId: opaqueId(parts[5]) };
+  }
+  if (opts.remoteAccess && collection === 'write-requests' && parts[5]) {
+    if (parts.length === 6 && method === 'GET') return { op: 'writereq.get', template: 'GET /v1/vaults/:vid/write-requests/:rid', vaultId: opaqueId(vid), writeRequestId: opaqueId(parts[5]) };
+    if (parts.length === 7 && parts[6] === 'close' && method === 'POST') {
+      return { op: 'writereq.close', template: 'POST /v1/vaults/:vid/write-requests/:rid/close', vaultId: opaqueId(vid), writeRequestId: opaqueId(parts[5]) };
+    }
+    return null;
   }
   if (parts.length !== 5) return null;
   const op = COLLECTIONS[collection]?.[method] ?? (opts.remoteAccess ? REMOTE_COLLECTIONS[collection]?.[method] : undefined);

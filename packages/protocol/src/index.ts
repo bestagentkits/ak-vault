@@ -67,6 +67,7 @@
  * Remote access
  * - Seal key (§3.6): `deriveSealKeyPair(vk, vaultId, keyEpoch)`, `buildSealKeyDoc`, `signSealKeyDoc`,
  *   `parseSealKeyDoc`, `verifySealKeyDoc(doc, chain, {vaultId, vk?, trustedAnchor?, witnessedCheckpoint?})`, `checkSealKeyDocReplace(stored, incoming)`.
+ * - Write intents (§3.10): `sealWriteIntent(sealPub, args)`, `openWriteIntent(sealSecret, wire, {vaultId})`, `parseWriteIntent`.
  * - Sealed operations (§3.6): `sealOp(sealPub, args)`, `openSealedOp(sealSecret, wire, {vaultId})`,
  *   `checkSealedDrain(opened, {account, now, sealedTtlS, seen})` (on the `openSealedOp` result), `parseSealedOp`,
  *   `parseSealedOperation`, `parseSealedOrigin`.
@@ -276,6 +277,20 @@ export {
   type SealedOperation,
   type SealedOrigin,
 } from './sealed-op.js';
+export {
+  MAX_WRITE_PURPOSE,
+  WRITE_INTENT_ALG,
+  WRITE_INTENT_OPERATIONS,
+  openWriteIntent,
+  parseWriteIntent,
+  parseWriteIntentTarget,
+  sealWriteIntent,
+  type OpenedWriteIntent,
+  type SealWriteIntentArgs,
+  type WriteIntentOperation,
+  type WriteIntentTarget,
+  type WriteIntentWire,
+} from './write-intent.js';
 export { NAME_TAG_BYTES, nameIndexKey, nameTag } from './name-tag.js';
 export {
   JOIN_CODE_CONTEXT,

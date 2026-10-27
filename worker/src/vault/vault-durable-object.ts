@@ -31,6 +31,18 @@ import { getRecovery, putRecovery } from './recovery-store.js';
 import { lookupNameTags } from './lookup-store.js';
 import { currentSealKey, getSealKey, putSealKey } from './seal-key-store.js';
 import { ackSealedOp, enqueueSealedOp, listSealedOps, type EnqueueSealedResult } from './sealed-store.js';
+import {
+  cancelRevokedWriteRequest,
+  closeWriteRequest,
+  completeWithItemPut,
+  createWriteRequest,
+  getWriteRequest,
+  openWriteRequestGrant,
+  writeRequestStatus,
+  type CreateWriteRequestResult,
+  type WriteRequestOrigin,
+  type WriteRequestStatus,
+} from './write-request-store.js';
 import { enforceRateLimit, requireRateBudget } from './request-guard.js';
 import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
 import { isMutation, type VaultRequest } from './vault-request.js';
@@ -227,6 +239,34 @@ export class VaultDurableObject extends DurableObject<Env> {
     return this.ctx.storage.transactionSync(() => enqueueSealedOp(this.sql, state, wire, nowMs));
   }
 
+  /** Store a write request built by the MCP handler (the only way one is created). */
+  async createWriteRequest(wire: unknown, tokenIat: number, nowMs: number = Date.now()): Promise<CreateWriteRequestResult> {
+    const state = this.remoteState();
+    if (!state) return 'refused';
+    return this.ctx.storage.transactionSync(() => createWriteRequest(this.sql, state, wire, tokenIat, nowMs));
+  }
+
+  /** Status of a write request for the MCP client that made it; null for an unknown or another client's. */
+  async writeRequestStatus(requestId: string, origin: WriteRequestOrigin, nowMs: number = Date.now()): Promise<WriteRequestStatus | null> {
+    if (!this.remoteState()) return null;
+    return this.ctx.storage.transactionSync(() => writeRequestStatus(this.sql, requestId, origin, nowMs));
+  }
+
+  /**
+   * The grant behind an open write request of account `sub` (the caller's verified token),
+   * for the Worker's live revocation check; null when none is open or it is another account's.
+   */
+  async writeRequestGrant(requestId: string, sub: string, nowMs: number = Date.now()): Promise<{ sub: string; sid: string; iat: number } | null> {
+    if (!this.remoteState()) return null;
+    return openWriteRequestGrant(this.sql, requestId, sub, nowMs);
+  }
+
+  /** Cancel an open write request whose grant the Worker found revoked. */
+  async cancelRevokedWriteRequest(requestId: string, nowMs: number = Date.now()): Promise<void> {
+    if (!this.remoteState()) return;
+    this.ctx.storage.transactionSync(() => cancelRevokedWriteRequest(this.sql, requestId, nowMs));
+  }
+
   private read(req: VaultRequest, auth: Authorized): ApiResult {
     switch (req.op) {
       case 'membership.get':
@@ -249,6 +289,8 @@ export class VaultDurableObject extends DurableObject<Env> {
         return getSealKey(this.sql, auth.state);
       case 'sealed.get':
         return listSealedOps(this.sql, req);
+      case 'writereq.get':
+        return this.ctx.storage.transactionSync(() => getWriteRequest(this.sql, req));
       default:
         throw new ApiError('not_found');
     }
@@ -261,12 +303,16 @@ export class VaultDurableObject extends DurableObject<Env> {
         return handleGenesis(this.sql, this.membership, body, auth.state);
       case 'membership.post':
         return handleMembershipPost(this.sql, this.membership, req.vaultId, body, auth.next ?? this.membership.verifyAppend(body['event']));
-      case 'item.put':
-        return putRecord(this.sql, auth.state, req.claims.did, req.itemId!, body, { remoteAccess: req.remoteAccess });
+      case 'item.put': {
+        const put = () => putRecord(this.sql, auth.state, req.claims.did, req.itemId!, body, { remoteAccess: req.remoteAccess });
+        return req.writeRequestId === undefined ? put() : completeWithItemPut(this.sql, req, req.itemId!, body, put);
+      }
       case 'sealkey.put':
         return putSealKey(this.sql, auth.state, req.claims.did, this.membership.chain(), body);
       case 'sealed.ack':
         return ackSealedOp(this.sql, req, body);
+      case 'writereq.close':
+        return closeWriteRequest(this.sql, req, body);
       case 'checkpoints.post':
         return postCheckpoint(this.sql, this.membership, auth.state, req.claims.did, body);
       case 'audit.post':

@@ -39,11 +39,12 @@ import {
   type ProtocolVersion,
 } from './protocol-version.js';
 import { callTool } from './tool-dispatch.js';
-import { TOOL_DEFINITIONS, relayToolOf, scopeOf } from './tools.js';
+import { TOOL_DEFINITIONS, localScopeOf, localToolOf, relayToolOf, scopeOf } from './tools.js';
+import { callLocalTool } from './write-request-tools.js';
 
 const SERVER_INFO = { name: 'ak-vault', title: 'AgentKit Vault', version: WORKER_VERSION };
 const INSTRUCTIONS =
-  'Search, describe and use the secrets in your AgentKit Vault. Secret values are never returned. Reads, requests and run need one of your devices online with `ak secrets sync now --watch --relay`; a set or delete with no device online is sealed and queued until a device applies it.';
+  'Search, describe and use the secrets in your AgentKit Vault. Secret values are never returned. To store a secret you do not have, call secrets_prepare_write (name only) and give the user the form_url so they type the value in their browser; never ask for or pass a secret value in chat. Reads, requests and run need one of your devices online with `ak secrets sync now --watch --relay`; a set or delete with no device online is sealed and queued until a device applies it.';
 const CAPABILITIES = { tools: { listChanged: false } };
 
 export async function handleMcp(request: Request, env: Env): Promise<Response> {
@@ -210,9 +211,16 @@ async function toolsCall(env: Env, claims: McpClaims, version: ProtocolVersion, 
   const { id, params } = message;
   const name = params['name'];
   const tool = typeof name === 'string' ? relayToolOf(name) : null;
+  const local = typeof name === 'string' ? localToolOf(name) : null;
   const args = params['arguments'] ?? {};
   // A call refused before its tool runs is still charged, as a non-tool request.
   const refuse = async (refusal: Response) => (await rateRefusal(env, claims)) ?? refusal;
+  if (local !== null) {
+    if (!isObject(args)) return refuse(rpcError(id, RPC.invalidParams, 'Invalid params: arguments must be an object', 200));
+    const localScope = localScopeOf(local);
+    if (!hasScope(claims, localScope)) return refuse(insufficientScope(env, claims, localScope));
+    return rpcResult(id, complete(version, { ...(await callLocalTool(env, claims, local, args)) }));
+  }
   if (tool === null) return refuse(rpcError(id, RPC.invalidParams, 'Unknown tool', 200));
   if (!isObject(args)) return refuse(rpcError(id, RPC.invalidParams, 'Invalid params: arguments must be an object', 200));
   const needed = scopeOf(tool);

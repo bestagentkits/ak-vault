@@ -22,6 +22,8 @@ import {
   parseOfferCode,
   parseRelayFrame,
   parseSealedOp,
+  openWriteIntent,
+  sealWriteIntent,
   parseToolArgs,
   parseToolResult,
   sealOp,
@@ -45,6 +47,7 @@ import {
   type SealedDrainContext,
 } from '../src/index.js';
 import { sealOpWithVectorValues } from '../src/sealed-op.js';
+import { sealWriteIntentWithVectorValues } from '../src/write-intent.js';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { expectCode, loadVector, named } from './helpers.js';
 
@@ -142,6 +145,40 @@ describe('sealed-op.json', () => {
     expect(Object.isFrozen(drainOpened.wire)).toBe(true);
     expect(Object.isFrozen(drainOpened.wire.origin)).toBe(true);
     expect(Object.isFrozen(drainOpened.op)).toBe(true);
+  });
+});
+
+describe('write-intent.json', () => {
+  const v = loadVector('write-intent.json');
+  const keys = loadVector('seal-key.json').seal_keys as { key_epoch: number; seal_sk: string; seal_pub: string }[];
+  const key = (e: number) => keys.find((k) => k.key_epoch === e)!;
+  it.each(named(v.cases))('reproduces and opens %s', (_n, c) => {
+    const wire = sealWriteIntentWithVectorValues(
+      key(c.key_epoch).seal_pub,
+      { vaultId: c.wire.vault_id, keyEpoch: c.key_epoch, origin: c.wire.origin, operation: c.operation, ts: c.wire.ts, expiresAt: c.wire.expires_at, target: c.target },
+      { requestId: c.wire.request_id, ephemeralSecret: b64decode(c.ephemeral_secret), nonce: b64decode(c.wire.n) },
+    );
+    expect(wire).toEqual(c.wire);
+    expect(cjson(c.target)).toBe(c.plaintext);
+    expect(openWriteIntent(b64decode(key(c.key_epoch).seal_sk), c.wire, { vaultId: c.wire.vault_id }).target).toEqual(c.target);
+  });
+  it.each(named(v.invalid))('refuses to open %s', (_n, c) => {
+    expectCode(() => openWriteIntent(b64decode(key(c.open_with_epoch).seal_sk), c.wire, { vaultId: c.vault_id }), c.expect_error);
+  });
+  it.each(named(v.seal_invalid))('refuses to seal %s', (_n, c) => {
+    expectCode(() => sealWriteIntent(key(3).seal_pub, { vaultId: v.cases[0].wire.vault_id, keyEpoch: 3, origin: v.origin, operation: 'create', ts: 1, expiresAt: 2, target: c.target }), c.expect_error);
+  });
+  it('fresh seals differ and open', () => {
+    const args = { vaultId: v.cases[0].wire.vault_id, keyEpoch: 3, origin: v.origin, operation: 'create' as const, ts: 1, expiresAt: 2, target: { name: 'A' } };
+    const a = sealWriteIntent(key(3).seal_pub, args);
+    const b = sealWriteIntent(key(3).seal_pub, args);
+    expect(a.epk).not.toBe(b.epk);
+    expect(a.request_id).not.toBe(b.request_id);
+    expect(openWriteIntent(b64decode(key(3).seal_sk), a, { vaultId: args.vaultId }).target).toEqual(args.target);
+  });
+  it('freezes the opened result', () => {
+    const o = openWriteIntent(b64decode(key(3).seal_sk), v.cases[0].wire, { vaultId: v.cases[0].wire.vault_id });
+    expect(Object.isFrozen(o) && Object.isFrozen(o.wire) && Object.isFrozen(o.wire.origin) && Object.isFrozen(o.target)).toBe(true);
   });
 });
 

@@ -156,9 +156,10 @@ echoing them, and only after `pnpm install` (as CI does).
 ## Remote access
 
 `VAULT_REMOTE_ACCESS_ENABLED` gates the vault dashboard (`/app`), remote MCP
-(`/mcp` and its protected-resource metadata), the device relay (`/v1/relay`) and the
-lookup, seal-key and sealed-queue routes. Any value other than exactly `true` turns
-them off, and each then answers `404` (the `/v1/vaults/…` ones answer
+(`/mcp` and its protected-resource metadata), the device relay (`/v1/relay`), the
+lookup, seal-key, sealed-queue and write-request routes. Any value other than
+exactly `true` turns them off, and each then answers `404` (an item PUT with
+`?write_request=` answers `400`; the `/v1/vaults/…` ones answer
 `503 sync_disabled` instead while sync is also off). It is on for staging and off for production in
 `worker/wrangler.jsonc`; remote access is staging only, pre-release, and not for
 production credentials. The sync kill switch also stops it: with sync off, `/mcp`
@@ -187,8 +188,8 @@ the cause could touch sync itself, use the [kill switch](#kill-switch) instead.
 4. Tell affected users: AI tools lose access, devices cannot open the relay, and
    the dashboard stops loading. Sealed operations already queued stay in the vault
    object, unserved, until they expire (`sealed_ttl_s` in
-   [`worker/src/limits.ts`](../../worker/src/limits.ts)). Local `resolve` and sync are
-   unaffected.
+   [`worker/src/limits.ts`](../../worker/src/limits.ts)). Open write-request links stop
+   working and lapse at their expiry. Local `resolve` and sync are unaffected.
 5. Turn it back on only through a reviewed pull request after the incident issue
    records the cause and fix.
 
@@ -219,7 +220,8 @@ An MCP client acting against its user (a prompt-injected agent, a leaked grant):
    ask for or paste raw client IDs, grant IDs or account identifiers in the issue.
 2. The account owner disconnects the app in ak-web (account page, Connected apps). ak-web
    then sends the grant ID in `revoke_sids` to the revocation webhook, and the next
-   `/mcp` request with that grant is refused.
+   `/mcp` request with that grant is refused. A write request that grant opened is
+   cancelled (`grant_revoked`) when the dashboard next opens or completes it.
 3. Per-client and per-account call budgets bound the damage meanwhile
    ([`worker/src/limits.ts`](../../worker/src/limits.ts)). Devices still apply their own
    grants and approvals, and `run` needs an `exec` grant pinned on the device.
@@ -242,6 +244,11 @@ they expire, so a replay is refused, and they count toward the limit
 - Draining frees no slot at once: space returns as acknowledged and unclaimed
   operations reach `sealed_ttl_s`. Do not delete rows from the vault object by hand.
 - A queue that refills quickly from one client is the [abuse](#mcp-client-abuse) case.
+
+`secrets_prepare_write` answers `too_many_requests` on the same terms when an account
+or one of its MCP clients has too many open write requests in a vault, or the vault holds too many, closed ones
+kept until purge included (spec §10). Open requests expire within minutes; closed
+rows free their slot only when purged, so do not delete them by hand either.
 
 ## Deploy freeze
 

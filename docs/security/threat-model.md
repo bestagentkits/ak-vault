@@ -66,14 +66,20 @@ What the server can see is in
    memory, and its `browser` session kind is refused on genesis, membership,
    recovery, seal-key publication and the sealed queue
    ([spec §9](../protocol/v1/spec.md#9-transport-authentication-worker)).
+9. **MCP client ↔ person, through a write request.** An MCP client names a secret it
+   must not see; the person types the value into their own browser device, which
+   writes it. The client chose the name and purpose the form shows; the value never
+   crosses back to the client or through the Worker in plaintext
+   ([ADR 0002 D8](../adr/0002-browser-device-relay-and-remote-mcp.md#decision)).
 
 ## Invariants
 
 - The server never stores plaintext values, names, profiles, policy or audit, and
   never holds a key that decrypts them. It never receives them either, except, while
   remote access is enabled, the plaintext in transit through Worker memory that
-  ADR 0002 D7 names (an MCP set's `value`, relayed metadata results and redacted run
-  output); that plaintext is never logged, stored or put into an error.
+  ADR 0002 D7 names (an MCP set's `value`, the name and purpose of a write request
+  until they are sealed, relayed metadata results and redacted run output); that
+  plaintext is never logged, stored or put into an error.
 - No write is accepted unless its base revision matches (CAS); no write silently
   overwrites another.
 - A write below a tombstone never becomes live.
@@ -138,11 +144,13 @@ directories themselves are the authority for exact file names.
 | X7 | Browser session changes membership or reads recovery | XSS in `/app`, stolen browser token | `browser` session kind refused (`403`) on genesis, every membership POST, recovery bundle and identity routes, seal-key PUT and the sealed queue; strict CSP, SRI, no third-party code; sync token TTL 300 s | Worker tests: browser session refusals; CSP header test |
 | X8 | Synced profile field forged in another device's name | Malicious member, server relaying old fields | Per-field provenance: changed fields carry the record author and time, unchanged fields keep prior provenance; violating fields dropped and audited `profile_provenance_invalid`; another device's field shown as `sync`; the own label is transitive and comes only from this device's own write history, so a field kept without a held base revision stays `sync` while carried, even through the device's own later records ([spec §5.1](../protocol/v1/spec.md#51-profile-layout)) | Vectors: `profile.json` cases and `chains` (`forged_without_prev_never_becomes_own`); `red-team-profile-provenance.test.ts` / `red_team_profile_provenance_test.go` |
 | X9 | Malformed or substituted enrollment code joins the wrong device | Network, phishing | Closed key set, exact contexts, version and size checks; owner role and `human` kind required; SAS confirmation on approval ([spec §3.8](../protocol/v1/spec.md#38-enrollment-codes)). Committed codes (`akj2-`/`ako2-`/`akr2-`, [spec §3.9](../protocol/v1/spec.md#39-committed-enrollment-codes)) bind the SAS to a prior commitment, so, when a joiner creates each join only on explicit human action, accepts one offer per join and counts every reveal not followed by its own `device_add`, and an owner draws a fresh `nonce_i` per commitment, holds at most one pending enrollment that expires after 10 minutes, issues each offer only on explicit human action and counts abandoned offers, and both keep their counts across restarts and stop after three, a forged code matches with probability 10^-6 per enrollment attempt, counted on both devices. The stop limit is per device: each owner device of an account counts separately, so k owner devices allow up to 3k owner-side attempts. The uncommitted `akj1-`/`ako1-` SAS does not: an attacker who can alter the codes finds a matching nonce in about 10^6 hashes, so those codes must travel over an authentic channel, see the limitation "Uncommitted enrollment SAS" below | Vectors: `enroll-codes.json`, `enroll-commit.json` (ground nonce refused) |
-| X10 | Relay or MCP flood exhausts an account | MCP client, stolen token | Per-client and per-account MCP rate limits, per-device in-flight cap, per-account connection cap, sealed queue cap with `sealed_queue_full` ([spec §10](../protocol/v1/spec.md#10-errors-and-limits)) | Relay and MCP rate-limit tests |
+| X10 | Relay or MCP flood exhausts an account | MCP client, stolen token | Per-client and per-account MCP rate limits, per-device in-flight cap, per-account connection cap, sealed queue cap with `sealed_queue_full`; for write requests a per-client `secrets_prepare_write` rate, a per-client open cap and per-account caps (open and retained, per vault) with `too_many_requests` ([spec §10](../protocol/v1/spec.md#10-errors-and-limits)) | Relay and MCP rate-limit tests; `write-request.test.ts` rate limit |
 | X11 | Server shows a browser device two histories, rolls its log back, or serves a removed device's later records through an incremental pull | Compromised or restored server, a second tab with older state | The verified position is merged and saved in one transaction (each component only moves forward); a counter reached again with another head, from the store or another tab, is refused as `fork` or `rollback` and nothing is written; each pull first adopts the newest stored position. Within a visit the dashboard fetches only entries after its own verified cursor. Any removal it had not seen that is fenced below the cursor, any mismatch with the server's claimed tip (a cheap consistency check, not a guarantee: a lying server only forces a full replay) and any verification failure repeat the full replay, whose verdict is final. A clock more than 60 s off the vault's `Date` header is reported as such instead of looping the sign-in. A server that keeps serving one consistent history, including one that withholds updates, is not detectable (limitation in [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md)). The IndexedDB transaction itself is not covered by an automated test | `packages/vault-app/test/dashboard-flow.test.ts` (shrunk log, stale tab, fork alarm, incremental cursor, removal at a seen fence, clock skew, lock during a pull); `test/units.test.ts` (merge and compare-and-save rule) |
 | X12 | Dashboard history or restore used to bypass CAS, a tombstone, a removal fence or key rotation, or to reveal a value | Hostile server, concurrent device, XSS in `/app` | History is projected only from the log the browser verified (a gap, a forged record, a relabelled branch and a withheld entry are refused before any history shows); entries are metadata and never carry a payload. Restore and resolve write a new record under the current key epoch at the verified head by CAS, so a concurrent write becomes a preserved branch and the Worker still refuses a non-current epoch, a removed author or a pending rekey; a deletion, a deleted item, a branch, an unreadable revision, a value from before the item's latest deletion and a value a removed device wrote or could hold cannot be restored; resolving is refused while any open branch is a deletion or unreadable; both need an explicit confirmation. Limits: restore opens the old value in browser memory (the same trust as every head the dashboard opens, ADR 0002) and a script running in `/app` could therefore read it, which the strict CSP, SRI and Trusted Types are there to prevent; restoring an old credential does not make it valid at its provider; history older than 200 entries per item is in the signed log but not listed | `packages/vault-app/test/dashboard-history.test.ts`, `packages/vault-app/test/history.test.ts` |
+| X13 | A write request is read, completed or replayed by someone other than the person who owns it: a phished or leaked link, another account's device, a non-browser session, a second completion, a request outliving its grant, or a completion that overwrites another secret | Phishing, another member, stolen token, revoked MCP client | The request ID authorizes nothing: every route needs a `browser` session of the requesting account with a device proof; another account's or an unknown request is `not_found`; completion is single-use and in the same transaction as the item PUT; the server checks the operation against the target item and expiry, re-checks the requesting grant's revocation before serving or completing it and fails closed; a stale base revision closes it as `conflict` with a preserved branch, never an overwrite; the browser device resolves the name before writing ([spec §3.10](../protocol/v1/spec.md#310-write-intents-human-write-requests)) | `write-request.test.ts`: account, vault and session-kind binding, single use, operation mismatch, conflict, revoked grant, malformed parameter |
+| X14 | Write-request target tampered or exposed: the stored name read from a dump, an intent swapped between requests or vaults, or opened as a sealed operation | Storage reader, server | The name and purpose are stored only inside the write intent, sealed to the current epoch's `seal_pub` with AAD over vault, request ID, epoch, origin, operation and times under its own context `akv1/write-intent`; ciphertext cleared on close or expiry; the MCP tool takes no value and never echoes an argument | Vectors: `write-intent.json`; `write-request.test.ts` storage dump and log scan for the planted name and value, refused `value` argument |
 
-Rows X1–X12 cover remote access (ADR 0002); their vectors and tests land with the
+Rows X1–X14 cover remote access (ADR 0002); their vectors and tests land with the
 implementation, before the feature leaves staging.
 
 ## Explicit limitations
@@ -295,8 +303,8 @@ These are accepted and must be stated wherever the guarantees are described:
   older epoch cannot read items still at that epoch; they are rotated forward by a
   device that can, never delivered by an unsigned late wrap.
 - **Remote access puts plaintext in Worker memory** (ADR 0002 D7). While remote access
-  is enabled, an MCP set's `value`, relayed names and profile fields, and redacted run
-  output pass through the Worker after TLS termination on their way to or from a
+  is enabled, an MCP set's `value`, the name and purpose of a write request, relayed
+  names and profile fields, and redacted run output pass through the Worker after TLS termination on their way to or from a
   device. A compromised Worker sees them; it still stores none and holds no key.
 - **A compromised Worker can forge relay calls and sealed operations** for devices that
   opted in, within any MCP scope it claims. Devices apply their own grants and
@@ -313,6 +321,19 @@ These are accepted and must be stated wherever the guarantees are described:
   client with anything.
 - **Old writers drop synced profiles.** A client that predates the profile layout
   does not carry `meta.profile` forward, so its edit removes the item's profile.
+- **A write request shows what the AI chose.** The name, purpose and operation on the
+  form come from the MCP client, so a prompt-injected client can ask the person to
+  store a value under a misleading name. The form shows the requesting client;
+  `create` never overwrites an existing name, but the person decides what to type.
+  The binding of the typed value to the requested name is enforced by the browser
+  device only: the server cannot read names (ADR 0002 D8).
+- **Write-request spam is bounded, not prevented.** The retained-row cap counts closed
+  requests until they are purged, per account, so a runaway client can lock only its own
+  account out of new write requests for up to the retention period
+  ([`worker/src/limits.ts`](../../worker/src/limits.ts)).
+- **`secrets_set` exposes the value to the AI.** The value is in the MCP client's
+  context and tool call before the Worker sees it. A secret the AI must not see goes
+  through `secrets_prepare_write` instead.
 - **Offline MCP cannot read.** With no opted-in device online, MCP reads answer
   `no_device_online`; only sealed writes work (ADR 0002 D3).
 - **Name tags leak name equality** within a key epoch, across that epoch's revisions.
