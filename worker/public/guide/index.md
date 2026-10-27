@@ -42,7 +42,7 @@ Everything stays on this machine: values live in the OS keychain by default, or 
 
 ## Part 2: Sync a second device (preview)
 
-The end-to-end encrypted sync described on this site. A pre-release preview is live in production, before the external security review; the steps below are not a supported workflow until that review closes, and production credentials do not belong in it yet.
+The end-to-end encrypted sync described on this site. A pre-release preview is live in production, enabled before the owner's review, which is not an independent third-party review. Sync is not generally available: the steps below are not a supported workflow until every release gate is met, and production credentials do not belong in it yet.
 
 1. **Sign in to your AgentKit account** (available). `ak login` exists today for your AgentKit account; the preview sync commands use that sign-in.
 2. **Opt in to sync on your first device** (preview). Sync stays off until you turn it on. Enabling it creates the vault key on this device, wraps it to your device key, a password-derived key and a recovery key, and uploads only ciphertext.

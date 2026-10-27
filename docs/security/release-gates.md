@@ -12,7 +12,9 @@ decided that production sync is fully live, with ak-web production minting vault
 tokens ([owner waivers](#owner-waivers)). Any logged-in user running the preview
 `ak secrets sync` commands can sync to production. That is an owner waiver, not a
 review sign-off: production sync is pre-release, not externally reviewed and not yet
-recommended for production credentials. It was enabled while these remain open:
+recommended for production credentials. The external-review requirement was later
+dropped; the review gate is the [review by the owner](#review-by-the-owner).
+Production sync was enabled while these remain open:
 every red-team scenario executed (scenario 13), the staging restore (since
 rehearsed), the staging cost measurement (since met by a lab-Worker measurement of
 the staging build, accepted by the owner), the review (by the owner;
@@ -271,8 +273,8 @@ does not satisfy the [review](#review-by-the-owner).
 |---|---|---|
 | 2026-10-16 | Live `wrangler tail` shows `AKV-Proof` and `AKV-Webhook-Signature` values to account members with tail access. Accepted as account-operator access: proofs are single-use, bound to token hash, method, URL and body within a ±60 s window; webhook signatures cover one timestamped body with a single-use `event_id`. Complement: restrict Workers Tail permission on production. The header rename stays open as hardening. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248), [#61](https://github.com/bestagentkits/ak-vault/issues/61#issuecomment-6209133562); scan evidence [#62](https://github.com/bestagentkits/ak-vault/pull/62) |
 | 2026-10-16 | The Docker two-device e2e replaces the staging two-device round trip and the staging soak; no authenticated staging session is used. Residual risk is stated under [staging soak](#staging-soak). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6207406980) |
-| 2026-10-16 | The external-review gate is waived for enabling `VAULT_SYNC_ENABLED=true` on the production Worker. The external review stays open on #8. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248) |
-| 2026-10-16 | Production sync is fully live: ak-web production mints vault tokens together with the Worker flag, so any logged-in user running the preview `ak secrets sync` commands can sync to production before the external review. Docs say it is pre-release, not externally reviewed and not yet recommended for production credentials. This supersedes the earlier statement that minting stays off. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209425010) |
+| 2026-10-16 | The external-review gate is waived for enabling `VAULT_SYNC_ENABLED=true` on the production Worker. The external review stays open on #8. **Superseded on 2026-10-27:** no external or independent review is a GA gate; the review gate is the [review by the owner](#review-by-the-owner), accepted 2026-10-16. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209133248); superseded by [#99](https://github.com/bestagentkits/ak-vault/issues/99#issuecomment-6435169217) |
+| 2026-10-16 | Production sync is fully live: ak-web production mints vault tokens together with the Worker flag, so any logged-in user running the preview `ak secrets sync` commands can sync to production before the external review. Docs say it is pre-release, not externally reviewed and not yet recommended for production credentials. This supersedes the earlier statement that minting stays off. The external review it refers to is no longer a gate (row above). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6209425010) |
 | 2026-10-16 | The review gate is a review by the owner, not an independent third-party review: the owner posts the result on #8 personally, and agents never post, attest or tick it. The gate stays open until then. Residual risk: no reviewer outside the project ([review by the owner](#review-by-the-owner)). | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212137235) |
 | 2026-10-16 | The owner told an agent in chat to tick the review gate as accepted by the owner, and the agent recorded it on #8 on the owner's behalf. This supersedes the previous row's rule that the owner posts the result personally and agents never tick it. No written findings; the open items listed in the record stay open. Still not an independent third-party review. | [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6212706397) |
 | 2026-10-16 | API-key sign-ins may use sync through a revocable device session (opt-in per API key, at most 5 devices per key, email notice on enrolment). Recorded in the ADR [amendment](../adr/0001-opt-in-zero-knowledge-sync.md#amendment-api-key-bootstrapped-device-sessions); the Worker refuses the recovery path for these sessions. Production rollout only through the gated Deploy workflow with owner approval; the ak-web endpoint and the CLI enrolment ship separately. Not a review. | [#74](https://github.com/bestagentkits/ak-vault/issues/74) |
@@ -367,7 +369,10 @@ rule that the owner posts the result personally. The open items listed in the re
 until every remaining gate on this page is met at the release commit.
 
 This replaces the earlier requirement of an independent reviewer with cryptographic
-expertise who did not implement the protocol.
+expertise who did not implement the protocol. By owner decision on 2026-10-27
+(relayed in chat and recorded by an agent on [#99](https://github.com/bestagentkits/ak-vault/issues/99#issuecomment-6435169217)
+and [#8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6435169673)), an independent third-party review is
+**not** a GA gate. Residual risk: no reviewer outside the project.
 
 ## Performance targets
 
