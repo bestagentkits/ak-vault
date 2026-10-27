@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ak-vault: end-to-end encrypted sync for ak secrets | AgentKit</title>
-  <meta name="description" content="ak-vault is the opt-in, local-first, end-to-end encrypted sync layer for AgentKit's ak secrets. Secrets are sealed on your device; the server stores only ciphertext. Protocol v1 is in security review; cloud sync is not generally available yet.">
+  <meta name="description" content="ak-vault is the opt-in, local-first, end-to-end encrypted sync layer for AgentKit's ak secrets. Secrets are sealed on your device; the server stores only ciphertext. Protocol v1 was reviewed by the owner, not by an independent third party; cloud sync is a pre-release preview, not generally available.">
   <link rel="canonical" href="https://vault.agentkit.best/">
   <link rel="alternate" type="text/markdown" href="https://vault.agentkit.best/index.md" title="Markdown version">
   <meta name="theme-color" content="#08090c" media="(prefers-color-scheme: dark)">
@@ -16,14 +16,14 @@
   <meta property="og:site_name" content="ak-vault by AgentKit">
   <meta property="og:url" content="https://vault.agentkit.best/">
   <meta property="og:title" content="ak-vault: your secrets sync, the server sees only ciphertext">
-  <meta property="og:description" content="Opt-in, local-first, end-to-end encrypted sync for ak secrets across trusted devices. Protocol v1 in security review.">
+  <meta property="og:description" content="Opt-in, local-first, end-to-end encrypted sync for ak secrets across trusted devices. Protocol v1 reviewed by the owner, not independently; sync is pre-release, not GA.">
   <meta property="og:image" content="https://vault.agentkit.best/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, in security review.">
+  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, reviewed by the owner, not independently; sync is pre-release, not GA.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ak-vault: your secrets sync, the server sees only ciphertext">
-  <meta name="twitter:description" content="Opt-in, local-first, end-to-end encrypted sync for ak secrets. Protocol v1 in security review.">
+  <meta name="twitter:description" content="Opt-in, local-first, end-to-end encrypted sync for ak secrets. Protocol v1 reviewed by the owner, not independently; sync is pre-release, not GA.">
   <meta name="twitter:image" content="https://vault.agentkit.best/og.png">
 
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -57,7 +57,7 @@
         "name": "ak-vault",
         "url": "https://vault.agentkit.best/",
         "applicationCategory": "SecurityApplication",
-        "description": "Opt-in, local-first, end-to-end encrypted sync for ak secrets across trusted devices. The server stores only ciphertext and minimal operational metadata. Protocol v1 is proposed and in security review; cloud sync is not generally available.",
+        "description": "Opt-in, local-first, end-to-end encrypted sync for ak secrets across trusted devices. The server stores only ciphertext and minimal operational metadata. Protocol v1 is proposed and was reviewed by the owner, not by an independent third party; cloud sync is a pre-release preview, not generally available.",
         "license": "https://opensource.org/licenses/MIT",
         "isAccessibleForFree": true,
         "publisher": { "@id": "https://agentkit.best/#organization" },
@@ -92,7 +92,7 @@
     <!-- Hero: value proposition, honest status, and the animated sealing scene. -->
     <section class="hero" aria-labelledby="hero-title">
       <div class="container">
-        <span class="badge badge-review hero-badge reveal"><span class="dot" aria-hidden="true"></span>Protocol v1 · in security review</span>
+        <span class="badge badge-review hero-badge reveal"><span class="dot" aria-hidden="true"></span>Protocol v1 · owner-reviewed · sync pre-release</span>
         <h1 id="hero-title" class="reveal"><span class="line">Your secrets sync.</span> <span class="line grad">The server only sees ciphertext.</span></h1>
         <p class="lede reveal">ak-vault is the opt-in, end-to-end encrypted sync layer for AgentKit's <code>ak secrets</code>. Secrets are sealed on your device before they leave it, agents keep reading from the local vault, and with sync off nothing touches the network. A browser dashboard and remote MCP run on staging only, pre-release and not for production credentials; remote MCP passes plaintext through server memory during a call (<a href="/security/#remote-access">details</a>).</p>
         <div class="cta-row reveal">
@@ -412,7 +412,7 @@
           <h2 id="faq-title">Questions worth asking a secrets product.</h2>
         </div>
         <div class="faq reveal">
-          <details><summary>Can I use cloud sync today?</summary><div><p>Only as a preview. Protocol v1 is proposed and in security review (<a href="https://github.com/bestagentkits/ak-vault/issues/8">#8</a>), and cloud sync is not generally available. By owner decision the production sync API is live before that review as a pre-release preview: if you are signed in and run the preview <code>ak secrets sync</code> commands, your device syncs with it. It is not yet recommended for production credentials. The local <code>ak secrets</code> vault works today.</p></div></details>
+          <details><summary>Can I use cloud sync today?</summary><div><p>Only as a preview. Protocol v1 is proposed; its review gate was accepted by the owner, not by an independent third party (<a href="https://github.com/bestagentkits/ak-vault/issues/8">#8</a>), and cloud sync is not generally available. By owner decision the production sync API went live before that review as a pre-release preview: if you are signed in and run the preview <code>ak secrets sync</code> commands, your device syncs with it. It is not yet recommended for production credentials. The local <code>ak secrets</code> vault works today.</p></div></details>
           <details><summary>Can AgentKit read my secrets?</summary><div><p>The design says no: the server stores ciphertext and wrapped keys only, and never receives your master password, recovery key or device private keys. It can see the metadata listed under <a href="#server-view">two views of one secret</a>. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met. On staging only (pre-release, not for production credentials), remote MCP narrows this: during a call, plaintext passes through the server's memory, though it is never stored or logged (<a href="/security/#remote-access">remote access</a>).</p></div></details>
           <details><summary>What happens if the server is down?</summary><div><p>Nothing changes for running agents. <code>resolve</code> reads the local vault and never waits on the network. Changes made while offline sync on the next successful connection, and conflicting edits are kept for you to resolve.</p></div></details>
           <details><summary>Can I give a teammate access to just one secret?</summary><div><p>Not within one vault. A vault key decrypts every item in the vault, so v1 makes no per-secret access claim. Put the secrets you want to share in a separate shared vault.</p></div></details>
