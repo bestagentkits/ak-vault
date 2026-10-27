@@ -38,7 +38,8 @@ export function lookupIdempotent(sql: SqlStorage, req: VaultRequest): ApiResult 
 
 /**
  * True when a live stored result exists for this device, key and identical
- * request, so `lookupIdempotent` will replay it. Never throws on a bad key.
+ * request, so `lookupIdempotent` will replay it. Mutations validate the key before
+ * authorization; a bad key here still answers false (fail closed), never throws.
  */
 export function hasIdempotentResult(sql: SqlStorage, req: VaultRequest): boolean {
   let key: string;

@@ -175,7 +175,8 @@ runner cannot collect recovery bundles by itself. Once an owner device approves 
 device with a signed `device_add`, it is a current member and its role decides: an owner-role
 device may read and replace the bundle and rotate the recovery key, but only in an
 `email_otp` session; an `api_key_device` or `machine` session may only store the
-first bundle of a vault that has none (genesis seal, §9 item 4). Every other route answers such a device `forbidden`;
+first bundle of a vault that has none (genesis seal, §9 item 4). Every other route
+answers such a device `forbidden`;
 without the `AKV-Device-Key` header, a membership read by a non-member is `forbidden`
 as before. The membership log is metadata already visible to the server (§4,
 [data classification](../../security/data-classification.md)); reading it lets the
@@ -911,7 +912,8 @@ devices that honor it, not what a vault member can decrypt (§3).
    session (a read, a `PUT` that would replace a stored bundle, a rotation) is
    refused with `403 forbidden` before its proof is consumed, the same refusal as on
    the recovery identity; an exact idempotent retry of the genesis seal (§5) is
-   answered with its stored result. The server re-checks "no stored bundle" in the
+   answered with its stored result, so a client whose answer was lost MUST retry
+   with the same `Idempotency-Key` and body (it cannot read the bundle to check). The server re-checks "no stored bundle" in the
    transaction that stores it. Such a device keeps every other right of its role,
    removal and rekey included, but cannot reseal: after a rekey it makes, the stored
    bundle cannot enroll a device (§3.5) until an owner device in an `email_otp`

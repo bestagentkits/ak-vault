@@ -148,12 +148,14 @@ describe('recovery identity is for human email-OTP sessions only', () => {
   });
 });
 
+/** A `recovery_rotate` signed by `by` plus its resealed bundle (`bundle_seq` 2). */
+const rotateEvent = (vault: VaultFixture, by: TestDevice) => {
+  const rotated = signKeyPairFromSeed(randomBytes(32));
+  const event = vault.buildEvent('recovery_rotate', { recovery_sign_pub: b64encode(rotated.publicKey) }, signerOf(by));
+  return { event, bundle: sealTestBundle(vault, 2, undefined, rotated.secretKey) as never };
+};
+
 describe('recovery operations by members need an email_otp session, whatever the role', () => {
-  const rotateEvent = (vault: VaultFixture, by: TestDevice) => {
-    const rotated = signKeyPairFromSeed(randomBytes(32));
-    const event = vault.buildEvent('recovery_rotate', { recovery_sign_pub: b64encode(rotated.publicKey) }, signerOf(by));
-    return { event, bundle: sealTestBundle(vault, 2, undefined, rotated.secretKey) as never };
-  };
 
   it.each(['api_key_device', 'machine'])('refuses an owner-role %s session on GET /recovery, PUT /recovery and recovery_rotate', async (kind) => {
     const vault = await VaultFixture.create();
@@ -259,10 +261,7 @@ describe('genesis seal: a non-human session may store the first bundle of a vaul
     expect(second.status).toBe(403);
     expect(second.json.error.code).toBe('forbidden');
     expect((await vault.get(vault.owner, '/recovery', opts)).status).toBe(403);
-    const rotate = (() => {
-      const rotated = signKeyPairFromSeed(randomBytes(32));
-      return { event: vault.buildEvent('recovery_rotate', { recovery_sign_pub: b64encode(rotated.publicKey) }), bundle: sealTestBundle(vault, 2, undefined, rotated.secretKey) as never };
-    })();
+    const rotate = rotateEvent(vault, vault.owner);
     expect((await vault.append(rotate.event, undefined, vault.owner, opts, { bundle: rotate.bundle })).status).toBe(403);
 
     // The stored bundle is still the genesis seal, and an email_otp owner session may replace it.
