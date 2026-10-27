@@ -84,7 +84,7 @@ page and docs, and its own CI run is linked from its pull request.
       `GET`/`PUT /recovery` and recovery-key rotation whatever their role
       ([#90](https://github.com/bestagentkits/ak-vault/issues/90),
       [`recovery-fetch.test.ts`](../../worker/test/recovery-fetch.test.ts)); its
-      evidence is the CI run of the pull request that closes #90. The
+      evidence is the CI run of [#152](https://github.com/bestagentkits/ak-vault/pull/152). The
       [red-team evidence](./red-team-evidence.md) mapping (scenario 11) cites it.
 - [x] Disclosure scan, **ticked by owner waiver for live tail; the waiver's complement (Workers Tail access restricted on production) confirmed by the owner on 2026-10-16**: a full Durable Object dump, Worker logs, traces, metrics and
       every error response from a run seeded with known plaintext values and names
