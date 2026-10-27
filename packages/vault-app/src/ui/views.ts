@@ -12,7 +12,7 @@ import type { ItemView } from '../sync/vault-sync.js';
 import { h, replaceChildren, type Child } from './dom.js';
 import { membersScreen } from './members-view.js';
 import { messageFor } from './messages.js';
-import { MAX_ROTATE_TTL_DAYS, rotationInfo, type RotationHealth, type RotationInfo } from '../sync/rotation.js';
+import { MAX_ROTATE_TTL_DAYS, rotationInfo, type ExpiryHealth, type RotationHealth, type RotationInfo } from '../sync/rotation.js';
 
 /** Keep the browser and password managers from storing, suggesting or correcting a field. */
 export const NO_CAPTURE = {
@@ -205,18 +205,47 @@ const HEALTH_LABEL: Record<RotationHealth, string> = {
   unknown: 'rotation unknown',
 };
 
+/** Expiry warnings only; a far-off expiry needs no badge. */
+const EXPIRY_LABEL: Record<Exclude<ExpiryHealth, 'ok'>, string> = {
+  expired: 'expired',
+  expiring_soon: 'expires soon',
+};
+
 function infoOf(item: ItemView, nowMs: number): RotationInfo {
   return rotationInfo({
     createdMs: item.createdMs, rotatedMs: item.rotatedMs, rotateTtlDays: item.rotateTtlDays,
     flaggedMs: item.flaggedMs, flaggedEpoch: item.flaggedEpoch, keyEpoch: item.keyEpoch, workflow: item.rotation,
+    expiresMs: item.expiresMs,
   }, nowMs);
+}
+
+function relativeDays(days: number): string {
+  const d = Math.abs(days);
+  const day = `${d} day${d === 1 ? '' : 's'}`;
+  return days < 0 ? `${day} ago` : `in ${day}`;
 }
 
 function dueText(info: RotationInfo): string {
   if (info.dueMs === null || info.daysUntilDue === null) return '';
-  const d = Math.abs(info.daysUntilDue);
-  const day = `${d} day${d === 1 ? '' : 's'}`;
-  return info.daysUntilDue < 0 ? `due ${fmtDate(info.dueMs)} (${day} ago)` : `due ${fmtDate(info.dueMs)} (in ${day})`;
+  return `due ${fmtDate(info.dueMs)} (${relativeDays(info.daysUntilDue)})`;
+}
+
+/** The date is the UTC calendar day of `expires_at`; 0 whole days either side reads "today". */
+function expiryText(info: RotationInfo): string {
+  if (info.expiresMs === null || info.daysUntilExpiry === null) return '';
+  const verb = info.expiry === 'expired' ? 'expired' : 'expires';
+  const date = `${fmtDate(info.expiresMs)} UTC`;
+  return info.daysUntilExpiry === 0 ? `${verb} today (${date})` : `${verb} ${date} (${relativeDays(info.daysUntilExpiry)})`;
+}
+
+/** Informational: the warning changes no grant and blocks no action. */
+function expiryBadge(info: RotationInfo): HTMLElement | null {
+  if (info.expiry === null || info.expiry === 'ok') return null;
+  return h('span', {
+    class: `badge badge-exp-${info.expiry}`,
+    title: 'From the expires_at date in this secret’s verified profile. Replace it at the provider; this warning does not change access.',
+    'data-testid': 'expiry-health',
+  }, [EXPIRY_LABEL[info.expiry]]);
 }
 
 function healthBadge(item: ItemView, info: RotationInfo): HTMLElement {
@@ -319,6 +348,7 @@ function itemRow(c: AppController, item: ItemView, s: Extract<Screen, { kind: 'v
     item.creator ? h('span', {}, [`by ${item.creator}`]) : null,
     item.rotateTtlDays !== null ? h('span', {}, [`rotate every ${item.rotateTtlDays} days`]) : null,
     info.dueMs !== null ? h('span', { 'data-testid': 'rotation-due' }, [dueText(info)]) : null,
+    info.expiresMs !== null ? h('span', { 'data-testid': 'expiry-due' }, [expiryText(info)]) : null,
     item.rotation ? h('span', { 'data-testid': 'rotation-flow' }, [`rotation ${item.rotation.state}${info.vaultUpdated ? ', vault updated' : ''}${info.providerRevoked ? ', old key revoked (member-confirmed)' : info.vaultUpdated ? ', old key not confirmed revoked' : ''}`]) : null,
     item.openConflicts > 0 ? h('span', { class: 'badge badge-conflict' }, [`${item.openConflicts} unresolved conflict${item.openConflicts > 1 ? 's' : ''}`]) : null,
   ];
@@ -352,6 +382,7 @@ function itemRow(c: AppController, item: ItemView, s: Extract<Screen, { kind: 'v
       h('span', { class: 'name', 'data-testid': 'item-name' }, [item.name]),
       h('div', { class: 'row' }, [
         healthBadge(item, info),
+        expiryBadge(info),
         history,
         h('button', { type: 'button', class: 'secondary', 'aria-expanded': rotating ? 'true' : 'false', 'data-testid': 'rotate' }, [rotating ? 'Hide rotation' : 'Rotation'], { click: () => { vs.rotating = rotating ? null : item.itemId; rerender(); } }),
         actions,
@@ -366,11 +397,19 @@ function itemRow(c: AppController, item: ItemView, s: Extract<Screen, { kind: 'v
 /** Counts per health state, and the rekey versus provider-rotation distinction. */
 function rotationSummary(s: Extract<Screen, { kind: 'vault' }>): HTMLElement {
   const counts: Record<RotationHealth, number> = { needs_rotate: 0, awaiting_revoke: 0, overdue: 0, due_soon: 0, ok: 0, unknown: 0 };
-  for (const i of s.items) counts[infoOf(i, s.nowMs).health]++;
+  const expiryCounts: Record<Exclude<ExpiryHealth, 'ok'>, number> = { expired: 0, expiring_soon: 0 };
+  for (const i of s.items) {
+    const info = infoOf(i, s.nowMs);
+    counts[info.health]++;
+    if (info.expiry === 'expired' || info.expiry === 'expiring_soon') expiryCounts[info.expiry]++;
+  }
   const order: RotationHealth[] = ['needs_rotate', 'awaiting_revoke', 'overdue', 'due_soon', 'unknown', 'ok'];
+  const expiryOrder: Exclude<ExpiryHealth, 'ok'>[] = ['expired', 'expiring_soon'];
   return h('section', { class: 'rotation-summary', 'aria-label': 'Rotation health', 'data-testid': 'rotation-summary' }, [
     h('h2', {}, ['Rotation health']),
     h('ul', { class: 'row health-list' }, order.map((k) => h('li', { class: `badge badge-rot-${k}`, 'data-testid': `health-${k}` }, [`${counts[k]} ${HEALTH_LABEL[k]}`]))),
+    // Expiry is its own dimension: listed apart so it never reads as a rotation state.
+    h('ul', { class: 'row health-list', 'aria-label': 'Credential expiry', 'data-testid': 'expiry-summary' }, expiryOrder.map((k) => h('li', { class: `badge badge-exp-${k}`, 'data-testid': `expiry-${k}` }, [`${expiryCounts[k]} ${EXPIRY_LABEL[k]}`]))),
     h('p', { class: 'muted' }, [
       'Two different things are called rotation. A vault rekey (key epoch) re-wraps the vault key for the devices that remain after a removal and replaces no credential. Provider credential rotation replaces the secret at its provider. Items marked needs rotation were readable by a removed member or device; the mark stays until a member confirms the old provider credential is revoked after a new value was saved.',
     ]),

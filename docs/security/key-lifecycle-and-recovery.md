@@ -113,6 +113,14 @@ sees none of it, and nothing here decides access.
   unchanged; the dashboard is stricter because it cannot see the provider.) The check
   uses writer-supplied dates, so a member with write access can misstate them; it is a
   display aid, not an authorization input.
+- **Expiry.** Shown beside the health, not folded into it, so neither hides the
+  other: *expired* once the profile's `expires_at` has passed, *expires soon* within
+  `EXPIRING_SOON_DAYS` (14 days) of it, nothing otherwise
+  ([`rotation.ts`](../../packages/vault-app/src/sync/rotation.ts)). The date is read
+  only from the profile this device verified at the item's head; a field the
+  provenance check dropped, an invalid profile, or a head whose base this device
+  never held raises no warning. Like the health, it is a writer-supplied date and a
+  display aid only: it changes no grant and blocks no action.
 - **Workflow.** `meta.rotation` is `{state: active|paused|failed|cancelled, started_ms,
   revoked_ms?}`. A value not in that exact shape reads as no workflow. Older writers
   carry the key forward unchanged.
