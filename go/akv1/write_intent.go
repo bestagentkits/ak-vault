@@ -1,6 +1,6 @@
 package akv1
 
-// Write intents (spec §3.9): the target of a human-entered write that an MCP
+// Write intents (spec §3.10): the target of a human-entered write that an MCP
 // client requested, encrypted to seal_pub[e] so the Worker never stores the
 // secret name. An enrolled browser device opens it with SealSK[e] to show the
 // person what they are about to write. The plaintext never carries a value.
@@ -256,7 +256,7 @@ func (o OpenedWriteIntent) Wire() WriteIntent { return o.wire }
 func (o OpenedWriteIntent) Target() WriteIntentTarget { return o.target }
 
 // OpenWriteIntent parses and decrypts an untrusted write intent with
-// SealSK[e], in the order of spec §3.9: wire shape (unsupported_version /
+// SealSK[e], in the order of spec §3.10: wire shape (unsupported_version /
 // bad_request), vault_id ≠ vaultID (bad_request), all-zero shared secret
 // (bad_request), AEAD failure (decrypt_failed), target not canonical or
 // invalid (bad_request).

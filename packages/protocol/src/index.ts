@@ -66,7 +66,7 @@
  * Remote access
  * - Seal key (§3.6): `deriveSealKeyPair(vk, vaultId, keyEpoch)`, `buildSealKeyDoc`, `signSealKeyDoc`,
  *   `parseSealKeyDoc`, `verifySealKeyDoc(doc, chain, {vaultId, vk?, trustedAnchor?, witnessedCheckpoint?})`, `checkSealKeyDocReplace(stored, incoming)`.
- * - Write intents (§3.9): `sealWriteIntent(sealPub, args)`, `openWriteIntent(sealSecret, wire, {vaultId})`, `parseWriteIntent`.
+ * - Write intents (§3.10): `sealWriteIntent(sealPub, args)`, `openWriteIntent(sealSecret, wire, {vaultId})`, `parseWriteIntent`.
  * - Sealed operations (§3.6): `sealOp(sealPub, args)`, `openSealedOp(sealSecret, wire, {vaultId})`,
  *   `checkSealedDrain(opened, {account, now, sealedTtlS, seen})` (on the `openSealedOp` result), `parseSealedOp`,
  *   `parseSealedOperation`, `parseSealedOrigin`.

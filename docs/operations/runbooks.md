@@ -246,7 +246,7 @@ they expire, so a replay is refused, and they count toward the limit
 - A queue that refills quickly from one client is the [abuse](#mcp-client-abuse) case.
 
 `secrets_prepare_write` answers `too_many_requests` on the same terms when an account
-has too many open write requests in a vault, or the vault holds too many, closed ones
+or one of its MCP clients has too many open write requests in a vault, or the vault holds too many, closed ones
 kept until purge included (spec §10). Open requests expire within minutes; closed
 rows free their slot only when purged, so do not delete them by hand either.
 

@@ -1,5 +1,5 @@
 /**
- * Human write requests (spec §3.9): an MCP client asked for a secret it must
+ * Human write requests (spec §3.10): an MCP client asked for a secret it must
  * never see, and the person types the value here. The link carries only two
  * opaque IDs in the fragment (`#write=<request_id>&vault=<vault_id>`); the
  * secret name is inside the sealed write intent, which this device opens with

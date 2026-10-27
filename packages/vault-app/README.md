@@ -69,7 +69,7 @@ It also completes human write requests: an MCP client's `form_url`
 device checks, a form that shows the sealed request (name, purpose, operation,
 requesting client, expiry) and takes the value in a password field. The browser
 opens the intent with its own seal key, checks the name against its synced items,
-and writes a normal signed record with `?write_request=`. See spec §3.9.
+and writes a normal signed record with `?write_request=`. See spec §3.10.
 
 ## Build
 

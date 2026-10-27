@@ -10,7 +10,7 @@
   epic [#1](https://github.com/bestagentkits/ak-vault/issues/1); profile, describe,
   request and run [agentkit#2299](https://github.com/bestagentkits/agentkit/issues/2299);
   human write requests (D8) [#119](https://github.com/bestagentkits/ak-vault/issues/119)
-- **Wire contract:** [protocol v1 spec](../protocol/v1/spec.md) §3.6–§3.9, §5.1,
+- **Wire contract:** [protocol v1 spec](../protocol/v1/spec.md) §3.6–§3.10, §5.1,
   §9 item 1, §9.6, §9.7 and §10. This ADR records *why*; the spec owns *what goes on
   the wire*. If they disagree, the spec wins and this ADR is corrected.
 - **Rollout:** staging only, behind `VAULT_REMOTE_ACCESS_ENABLED` (Worker) and the
@@ -124,7 +124,7 @@ old clients keep verifying every chain they verify today.
    role, caps and a per-client rate); the browser device enforces what only it can see
    (the name binding and the compare-and-swap base). The MCP client polls
    `secrets_write_status` and gets a state, a closed reason and an opaque receipt,
-   never the value (spec §3.9, §9.6, §9.8).
+   never the value (spec §3.10, §9.6, §9.8).
 
 ## Alternatives rejected
 

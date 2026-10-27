@@ -75,7 +75,7 @@ function apiError(status: number, code: string): Response {
   return json(status, { error: { code, message: 'synthetic' } });
 }
 
-/** A write request as the Worker keeps it (spec §3.9); the intent is cleared on close. */
+/** A write request as the Worker keeps it (spec §3.10); the intent is cleared on close. */
 export interface FakeWriteRequest {
   account: string;
   clientId: string;

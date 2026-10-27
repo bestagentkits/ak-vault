@@ -45,7 +45,7 @@ export function writeIntentVectors(): Record<string, unknown> {
   return {
     version: 1,
     description:
-      'Write intents x25519-xc20p-seal (spec §3.9), sealed to seal_pub[e] of seal-key.json seal_keys (vault shared). The target is the secret name (and optional purpose and sensitivity) an MCP client asked a human to write; it never carries a value. ' +
+      'Write intents x25519-xc20p-seal (spec §3.10), sealed to seal_pub[e] of seal-key.json seal_keys (vault shared). The target is the secret name (and optional purpose and sensitivity) an MCP client asked a human to write; it never carries a value. ' +
       'epk = X25519(ephemeral_secret, 9); shared = X25519(ephemeral_secret, seal_pub) (all-zero: bad_request); key = HKDF-SHA256(ikm=shared, salt=epk || seal_pub, info=utf8("akv1/write-intent"), L=32); aad = cjson({"ctx":"akv1/write-intent","vault_id","request_id","key_epoch","origin","operation","ts","expires_at"}); ct = XChaCha20-Poly1305(key, n, cjson(target), aad). ' +
       'cases: sealWriteIntent with the given ephemeral_secret, nonce wire.n and request_id MUST reproduce wire byte for byte, and openWriteIntent(SealSK[key_epoch], wire, {vault_id}) MUST yield target. ' +
       'openWriteIntent order: parse (v or alg unknown: unsupported_version; exact keys, IDs, epk 32 B, n 24 B, ct 16..16400 B, origin as in sealed-op.json, operation "create" or "replace", ts, expires_at > ts: bad_request); vault_id other than expected (bad_request); all-zero shared secret (bad_request); AEAD failure (decrypt_failed); pt not canonical, no name, unknown keys, purpose over 200 or an unknown sensitivity (bad_request). ' +

@@ -74,7 +74,7 @@ const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: r
  */
 const BROWSER_REFUSED: ReadonlySet<VaultOp> = new Set<VaultOp>(['genesis', 'membership.post', 'recovery.get', 'recovery.put', 'sealkey.put', 'sealed.get', 'sealed.ack']);
 
-/** Ops only a `browser` (dashboard) session may call: the person's side of a human write request (spec §3.9). */
+/** Ops only a `browser` (dashboard) session may call: the person's side of a human write request (spec §3.10). */
 const BROWSER_ONLY: ReadonlySet<VaultOp> = new Set<VaultOp>(['writereq.get', 'writereq.close']);
 
 function refuseBrowserSession(req: VaultRequest): void {

@@ -130,7 +130,7 @@ const DEFINITIONS: Record<RelayTool, Omit<ToolDefinition, 'name'>> = {
 };
 
 /**
- * Tools the Worker answers itself, without a device: a human write request (spec §3.9).
+ * Tools the Worker answers itself, without a device: a human write request (spec §3.10).
  * Neither takes a secret value: the person types it into the dashboard.
  */
 export const LOCAL_TOOLS = ['prepare_write', 'write_status'] as const;

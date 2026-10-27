@@ -28,8 +28,8 @@ Algorithm identifiers are closed sets. A verifier MUST reject an unknown `v`, `a
 event `type` or `suite` value (fail closed). Crypto agility = a new identifier plus a
 new protocol version; never silent negotiation down.
 
-Remote access (§3.6–§3.9, §9.6, §9.7) adds no primitive. The seal construction
-(§3.6), and the write intent (§3.9) that reuses it under its own HKDF `info` and AAD
+Remote access (§3.6–§3.10, §9.6, §9.7) adds no primitive. The seal construction
+(§3.6), and the write intent (§3.10) that reuses it under its own HKDF `info` and AAD
 context, is the §3.3 shape (X25519, HKDF-SHA256, XChaCha20-Poly1305) aimed at a
 recipient key derived from `VK[e]`, and a name tag (§3.7) is HKDF-SHA256 output used
 as a keyed pseudorandom function. Its new identifiers (`x25519-xc20p-seal`, the
@@ -441,7 +441,7 @@ prefix, wrong `ctx`, an extra or missing key, non-canonical JSON, a non-owner or
 machine device, a non-ASCII label and a non-canonical origin → `bad_request`; `v` 2 →
 `unsupported_version`.
 
-### 3.9 Write intents (human write requests)
+### 3.10 Write intents (human write requests)
 
 A **write request** lets an MCP client ask for a secret it must never see: the client
 names the secret, the person types the value into the dashboard, and an enrolled
@@ -488,7 +488,8 @@ ct       = XC20P(key, n, pt, aad)
 document of the current key epoch, and no pending `rekey_required`. The vault object
 stores the request only with a `ts` within 300 s of its own clock, a lifetime between
 `write_request_min_ttl_s` and `write_request_ttl_s`, a `request_id` it does not hold, and
-room under `write_requests_pending_per_account` and `write_requests_retained_per_account` (§10).
+room under `write_requests_pending_per_account`, `write_requests_pending_per_client` and
+`write_requests_retained_per_account` (§10).
 It keeps the intent ciphertext and, in the clear, the requesting account, `client_id`,
 `grant_id`, the MCP token's `iat`, the operation, the state and the times.
 
@@ -1037,7 +1038,7 @@ devices that honor it, not what a vault member can decrypt (§3).
    recovery-identity reads (§3.5), on `PUT /v1/vaults/{vid}/seal-key` and on draining
    sealed operations (`GET …/sealed`, `POST …/sealed/{id}/ack`). Conversely, only a
    `browser` session may read or close a write request or complete one with an item
-   PUT (§3.9, §9.6); every other kind is `403 forbidden` there. Every other route
+   PUT (§3.10, §9.6); every other kind is `403 forbidden` there. Every other route
    treats it as the member device it is. Header `alg`
    MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. If the JWKS
    cannot be loaded the server fails closed (`503`) and backs off for 30 s before
@@ -1136,7 +1137,7 @@ Served only where the deployment enables remote access (every route below answer
   unknown or already acknowledged `sealed_id`, or one of another account, is
   `not_found`, which the device treats as done. There is no route that creates a sealed operation.
 - **Item PUT.** Also accepts the `{record, name_tag}` wrapper (§3.7).
-- **Write requests** (§3.9). A request is served only to its requesting account: an
+- **Write requests** (§3.10). A request is served only to its requesting account: an
   unknown `request_id` or another account's is `not_found`, a closed or expired one
   `bad_request`. `GET` returns
   `{"request_id","operation","client_id","expires_at","intent":<write intent>}`.
@@ -1305,17 +1306,17 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   answer `{"status":"queued","sealed_id"}`; every other tool answers
   `no_device_online`. A `set` puts the value in the MCP client's own tool call, and so
   in the AI's context; a secret the AI must not see goes through a write request.
-- **Write requests** (§3.9), scope `vault-mcp:write`, answered by the Worker with no
+- **Write requests** (§3.10), scope `vault-mcp:write`, answered by the Worker with no
   device online:
   - `secrets_prepare_write` takes exactly `{"name","operation"?:"create"|"replace","purpose"?,"sensitivity"?,"ttl_s"?,"vault_id"?}`
     (`operation` default `create`; `ttl_s` from `write_request_min_ttl_s` to
     `write_request_ttl_s`, default the maximum). It takes no value: any other key, a
     `value` included, is `invalid_args` and is not echoed. It seals the intent and
     answers `{"status":"pending_user","request_id","vault_id","form_url","expires_at","next"}`,
-    `form_url` being the §3.9 link. Besides the general budgets it spends one call
+    `form_url` being the §3.10 link. Besides the general budgets it spends one call
     from `mcp_prepare_write_per_minute_per_client`.
   - `secrets_write_status` takes `{"request_id","vault_id"?}` and answers
-    `{"state","reason"?,"receipt"?,"expires_at"}` (§3.9 states), only to the account,
+    `{"state","reason"?,"receipt"?,"expires_at"}` (§3.10 states), only to the account,
     `client_id` and `grant_id` that asked; any other caller gets `not_found`, as for
     an unknown ID.
   - Vault selection follows the relay tools: without `vault_id` the Worker uses the
@@ -1358,9 +1359,10 @@ device of the account holds the vault, or none is online for a read or `use` cal
 without `vault_id`, and the call cannot be sealed),
 `device_timeout` (the device missed `deadline_ms`) and `sealed_queue_full` (the vault
 already holds `sealed_queue_max` operations, acknowledged ones kept for replay refusal
-included). Write requests (§3.9) add two more MCP tool errors: `no_seal_key` (the vault
+included). Write requests (§3.10) add two more MCP tool errors: `no_seal_key` (the vault
 has no seal-key document for its current epoch) and `too_many_requests` (the account
-already has `write_requests_pending_per_account` open requests in the vault, or it
+already has `write_requests_pending_per_account` open requests in the vault, the requesting
+client already has `write_requests_pending_per_client` of them, or the account
 holds `write_requests_retained_per_account` rows in the vault, closed ones kept until their retention
 ends included). `worker/src/limits.ts` owns the relay and MCP limits and `GET /v1/meta`
 publishes them where remote access is enabled; the table lists them for orientation,
@@ -1387,6 +1389,7 @@ and `limits.ts` wins on any difference:
 | `write_request_min_ttl_s` | 60 |
 | `write_request_retention_s` | 86400 |
 | `write_requests_pending_per_account` (per vault) | 8 |
+| `write_requests_pending_per_client` (per account and vault) | 4 |
 | `write_requests_retained_per_account` (open and retained, per vault) | 64 |
 
 ## 11. Clarifications fixed by the reference implementation (normative)
@@ -1550,7 +1553,7 @@ under an earlier revision does not verify and is reset rather than migrated.
   that ignore these additions keep verifying and syncing and no data is reset. One
   limitation: a writer that predates §5.1 does not carry `meta.profile` forward, so
   its edit of an item drops that item's synced profile.
-- **2026-10 (issue #119):** human write requests, additive: the write intent (§3.9),
+- **2026-10 (issue #119):** human write requests, additive: the write intent (§3.10),
   the write-request routes and the `write_request` item-PUT query (§9.6), the
   `secrets_prepare_write` and `secrets_write_status` MCP tools (§9.8) and their errors
   and limits (§10). Nothing existing changes meaning.

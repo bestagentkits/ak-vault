@@ -1,5 +1,5 @@
 /**
- * Human write requests (spec §3.9): `secrets_prepare_write` hands the AI a link,
+ * Human write requests (spec §3.10): `secrets_prepare_write` hands the AI a link,
  * never a value; the dashboard (a `browser` session) completes the request with a
  * sealed, signed record. The Worker stores neither the name nor the value.
  */
@@ -7,7 +7,7 @@ import { env } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { deriveSealKeyPair, openWriteIntent, randomId, type WriteIntentWire } from '@ak-vault/protocol';
-import { REMOTE_ACCESS_LIMITS as L } from '../src/limits.js';
+import { LIMITS, REMOTE_ACCESS_LIMITS as L } from '../src/limits.js';
 import { call, type CallOptions, type TestDevice } from './helpers/api-client.js';
 import { callTool, mintMcpToken, publishSealKey, structured } from './helpers/mcp-client.js';
 import { sendRevocation } from './helpers/webhook.js';
@@ -114,9 +114,36 @@ describe('secrets_prepare_write', () => {
     expect((await prepare(s)).body.code).toBe('no_seal_key');
   });
 
+  it('caps the open requests of one client, so it cannot take every slot of the account', async () => {
+    const s = await setup();
+    const tokenFor = (n: number) => mintMcpToken({ sub: s.fx.owner.account, scope: 'vault-mcp:write', clientId: `client-${n}-${randomId()}`, grantId: s.grantId });
+    for (let i = 0; i < L.write_requests_pending_per_client; i++) expect((await prepare(s, { name: `C${i}` })).body.status).toBe('pending_user');
+    expect((await prepare(s, { name: 'one-more' })).body.code).toBe('too_many_requests');
+    // Another client of the same account still gets a slot, up to the account's cap.
+    let opened = L.write_requests_pending_per_client;
+    for (let c = 0; opened < L.write_requests_pending_per_account; c++) {
+      const other = await tokenFor(c);
+      for (let i = 0; i < L.write_requests_pending_per_client && opened < L.write_requests_pending_per_account; i++, opened++) {
+        expect((await prepare(s, { name: `O${c}-${i}` }, other)).body.status).toBe('pending_user');
+      }
+    }
+    expect((await prepare(s, { name: 'over-account' }, await tokenFor(99))).body.code).toBe('too_many_requests');
+    // Closing one frees that client's slot only while the account has room.
+    const ids = await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(s.fx.vaultId)), (_i: unknown, state: DurableObjectState) =>
+      state.storage.sql.exec<{ request_id: string }>('SELECT request_id FROM write_requests WHERE client_id = ?', s.clientId).toArray().map((r) => r.request_id),
+    );
+    expect((await call(s.fx.owner, 'POST', requestPath(s.fx, ids[0]!, '/close'), { outcome: 'cancelled', reason: 'user_cancelled' }, BROWSER)).status).toBe(200);
+    expect((await prepare(s, { name: 'after-close' })).body.status).toBe('pending_user');
+  });
+
   it('rate-limits per client and caps open requests per account', async () => {
     const s = await setup();
-    for (let i = 0; i < L.mcp_prepare_write_per_minute_per_client; i++) expect((await prepare(s, { name: `N${i}` })).body.status).toBe('pending_user');
+    for (let i = 0; i < L.mcp_prepare_write_per_minute_per_client; i++) {
+      const { body } = await prepare(s, { name: `N${i}` });
+      expect(body.status).toBe('pending_user');
+      // Cancel each one so the per-client open cap is not what refuses the overflow.
+      expect((await call(s.fx.owner, 'POST', requestPath(s.fx, body.request_id, '/close'), { outcome: 'cancelled', reason: 'user_cancelled' }, BROWSER)).status).toBe(200);
+    }
     const limited = await prepare(s, { name: 'overflow' });
     expect(limited.body.code).toBe('rate_limited');
     expect(limited.body.retry_after_s).toBeGreaterThan(0);
@@ -299,5 +326,147 @@ describe('completing a write request from the dashboard', () => {
     const logged = lines.join('\n');
     expect(logged).not.toContain(SENTINEL_NAME);
     expect(logged).not.toContain(SENTINEL_VALUE);
+  });
+});
+
+describe('write request concurrency and single use', () => {
+  it('many concurrent completions of one request: exactly one wins', async () => {
+    const s = await setup();
+    const { body } = await prepare(s, { operation: 'create' });
+    const itemIds = Array.from({ length: 6 }, () => randomId());
+    const results = await Promise.all(itemIds.map((itemId) => complete(s.fx, body.request_id, itemId, 0)));
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(results.filter((r) => r.status === 400)).toHaveLength(itemIds.length - 1);
+    expect(await status(s, body.request_id)).toMatchObject({ state: 'completed' });
+    // Only the winner's item was written.
+    const written = await Promise.all(itemIds.map(async (itemId) => (await s.fx.get(s.fx.owner, `/items/${itemId}`)).status));
+    expect(written.filter((code) => code === 200)).toHaveLength(1);
+  });
+
+  it('a completion racing a cancel leaves exactly one outcome', async () => {
+    const s = await setup();
+    const { body } = await prepare(s);
+    const itemId = randomId();
+    const [done, cancel] = await Promise.all([
+      complete(s.fx, body.request_id, itemId, 0),
+      call(s.fx.owner, 'POST', requestPath(s.fx, body.request_id, '/close'), { outcome: 'cancelled', reason: 'user_cancelled' }, BROWSER),
+    ]);
+    expect([done.status, cancel.status].sort()).toEqual([200, 400]);
+    const final = await status(s, body.request_id);
+    expect(final.state).toBe(done.status === 200 ? 'completed' : 'cancelled');
+    expect((await s.fx.get(s.fx.owner, `/items/${itemId}`)).status).toBe(done.status === 200 ? 200 : 404);
+  });
+
+  it('two requests for the same item and revision: one record settles one request, the other is a preserved conflict', async () => {
+    const s = await setup();
+    const itemId = randomId();
+    expect((await s.fx.write(s.fx.owner, itemId, 0, { name: 'K', value: 'v1' })).status).toBe(200);
+    const first = (await prepare(s, { operation: 'replace', name: 'K' })).body;
+    const second = (await prepare(s, { operation: 'replace', name: 'K' })).body;
+
+    // The winning record cannot be replayed to settle the second request too.
+    const record = s.fx.record(s.fx.owner, itemId, 1, { name: 'K', value: 'v2' });
+    const put = (id: string) => call(s.fx.owner, 'PUT', `/v1/vaults/${s.fx.vaultId}/items/${itemId}?write_request=${id}`, record, BROWSER);
+    expect((await put(first.request_id)).status).toBe(200);
+    expect((await put(second.request_id)).status).toBe(409);
+    expect(await status(s, second.request_id)).toMatchObject({ state: 'pending_user' });
+
+    // A different record at the same base revision loses compare-and-swap and closes the second request.
+    const stale = await complete(s.fx, second.request_id, itemId, 1);
+    expect(stale.status).toBe(409);
+    expect(stale.json.error.code).toBe('conflict');
+    expect(await status(s, first.request_id)).toMatchObject({ state: 'completed' });
+    expect(await status(s, second.request_id)).toMatchObject({ state: 'conflict', reason: 'revision_conflict' });
+    const item = await s.fx.get(s.fx.owner, `/items/${itemId}`);
+    expect(item.json.revision).toBe(2);
+    expect(item.json.conflicts).toHaveLength(1);
+  });
+
+  it('a device proof is single-use', async () => {
+    const s = await setup();
+    const { body } = await prepare(s);
+    const first = await fetchIntent(s.fx, body.request_id);
+    expect(first.status).toBe(200);
+    const replay = await call(s.fx.owner, 'GET', requestPath(s.fx, body.request_id), undefined, { ...BROWSER, token: first.token, proof: first.proof });
+    expect(replay.status).toBe(401);
+  });
+});
+
+describe('write request device and route checks', () => {
+  it('refuses a removed device', async () => {
+    const s = await setup();
+    const { body } = await prepare(s);
+    const device = await s.fx.addDevice({ account: s.fx.owner.account });
+    expect((await fetchIntent(s.fx, body.request_id, device)).status).toBe(200);
+    expect((await s.fx.removeDevice(device)).status).toBe(201);
+    expect((await fetchIntent(s.fx, body.request_id, device)).status).toBe(403);
+    expect((await complete(s.fx, body.request_id, randomId(), 0, device)).status).toBe(403);
+    expect(await status(s, body.request_id)).toMatchObject({ state: 'pending_user' });
+  });
+
+  it("refuses a device of the same account that is not in the request's vault", async () => {
+    const s = await setup();
+    const { body } = await prepare(s);
+    const outsider = s.fx.newDevice({ account: s.fx.owner.account });
+    expect((await fetchIntent(s.fx, body.request_id, outsider)).status).toBe(403);
+    expect((await complete(s.fx, body.request_id, randomId(), 0, outsider)).status).toBe(403);
+    expect(await status(s, body.request_id)).toMatchObject({ state: 'pending_user' });
+  });
+
+  it('is a 404 while remote access is off, and the item PUT refuses the parameter', async () => {
+    const s = await setup();
+    const { body } = await prepare(s);
+    const off: CallOptions = { ...BROWSER, env: { VAULT_REMOTE_ACCESS_ENABLED: 'false' } };
+    expect((await fetchIntent(s.fx, body.request_id, s.fx.owner, off)).status).toBe(404);
+    expect((await call(s.fx.owner, 'POST', requestPath(s.fx, body.request_id, '/close'), { outcome: 'cancelled', reason: 'user_cancelled' }, off)).status).toBe(404);
+    const itemId = randomId();
+    expect((await complete(s.fx, body.request_id, itemId, 0, s.fx.owner, off)).status).toBe(400);
+    expect((await s.fx.get(s.fx.owner, `/items/${itemId}`)).status).toBe(404);
+    expect(await status(s, body.request_id)).toMatchObject({ state: 'pending_user' });
+  });
+
+  it('spends the per-device request budget of the browser device', async () => {
+    const s = await setup();
+    const { body } = await prepare(s);
+    const did = s.fx.owner.keys.record.device_id;
+    await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(s.fx.vaultId)), (_i: unknown, state: DurableObjectState) => {
+      const windowMs = LIMITS.rate_window_seconds * 1000;
+      const windowStart = Math.floor(Date.now() / windowMs) * windowMs;
+      state.storage.sql.exec(
+        'INSERT INTO rate_counters (did, window_start, count) VALUES (?, ?, ?) ON CONFLICT (did) DO UPDATE SET window_start = excluded.window_start, count = excluded.count',
+        did,
+        windowStart,
+        LIMITS.rate_requests_per_window - 1,
+      );
+    });
+    expect((await fetchIntent(s.fx, body.request_id)).status).toBe(200);
+    const limited = await fetchIntent(s.fx, body.request_id);
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
+  });
+
+  it('answers 503 and changes nothing when the grant revocation lookup fails', async () => {
+    const s = await setup();
+    const { body } = await prepare(s);
+    // Device revocation answers normally; only the requesting grant's lookup fails.
+    const real = env.REVOCATIONS;
+    const grantLookupDown = {
+      idFromName: (name: string) => real.idFromName(name),
+      get: (id: DurableObjectId) => {
+        const stub = real.get(id);
+        return {
+          isRevoked: (q: Parameters<typeof stub.isRevoked>[0]) => stub.isRevoked(q),
+          isGrantRevoked: () => Promise.reject(new Error('registry unavailable')),
+        };
+      },
+    } as unknown as typeof env.REVOCATIONS;
+    const down: CallOptions = { ...BROWSER, env: { REVOCATIONS: grantLookupDown } };
+    const got = await fetchIntent(s.fx, body.request_id, s.fx.owner, down);
+    expect(got.status).toBe(503);
+    expect(JSON.stringify(got.json)).not.toContain('intent');
+    const itemId = randomId();
+    expect((await complete(s.fx, body.request_id, itemId, 0, s.fx.owner, down)).status).toBe(503);
+    expect((await s.fx.get(s.fx.owner, `/items/${itemId}`)).status).toBe(404);
+    expect(await status(s, body.request_id)).toMatchObject({ state: 'pending_user' });
   });
 });

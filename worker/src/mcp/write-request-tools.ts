@@ -1,5 +1,5 @@
 /**
- * `secrets_prepare_write` and `secrets_write_status` (spec §3.9, §9.8): the
+ * `secrets_prepare_write` and `secrets_write_status` (spec §3.10, §9.8): the
  * Worker-local tools for a secret the AI must never see. `prepare_write` takes a
  * name, never a value: it seals the target to the vault's seal key, stores the
  * request and answers a link for the person to open in the dashboard. The name

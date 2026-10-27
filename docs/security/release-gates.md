@@ -207,7 +207,7 @@ in production needs every box below, at the exact commit, plus an owner decision
       exception scopes.
 - [ ] Go and TypeScript reproduce `seal-key.json`, `sealed-op.json`, `name-tag.json`,
       `enroll-codes.json`, `write-intent.json`, `profile.json` and `relay-frames.json`,
-      including every negative case ([spec §3.6–§3.9, §5.1, §9.7](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)).
+      including every negative case ([spec §3.6–§3.10, §5.1, §9.7](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)).
 - [ ] Relay: Worker tests for the closed frame set and close codes, signed `hello` and
       `result`, `reauth` before expiry, revocation and membership checked before each
       call (a device removed mid-connection gets no further call), a replaced
