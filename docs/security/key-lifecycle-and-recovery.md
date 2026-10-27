@@ -137,8 +137,7 @@ sees none of it, and nothing here decides access.
   stored entry at the head the server reports hashes to that head, but it cannot detect a
   server that truncated or forked the chain; only a witnessed audit checkpoint bounds
   that, and the dashboard neither reads nor signs one. The append is best effort: if it fails the
-  write stays and the dashboard says the audit entry was not recorded. It does not
-  sign an audit checkpoint; only a rekey requires one.
+  write stays and the dashboard says the audit entry was not recorded.
 
 ## Password and parameter upgrade
 

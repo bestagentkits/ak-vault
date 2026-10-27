@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openItem, verifyAuditChain } from '@ak-vault/protocol';
 import { DAY_MS, parseRotationWorkflow, rotationInfo, stillNeedsRotate, type RotationInput } from '../src/sync/rotation.js';
 import { updateRotation } from '../src/sync/write-ops.js';
+import { appendRotationAudit } from '../src/sync/audit.js';
+import type { AkvClient } from '../src/sync/akv-client.js';
 import type { ItemView, VaultSnapshot } from '../src/sync/vault-sync.js';
 import { FakeWorld } from './helpers/fake-world.js';
 import { Browser, allByTestId, byTestId, type Page } from './helpers/dashboard-page.js';
@@ -398,6 +400,10 @@ describe('guided rotation', () => {
 });
 
 
+function auditPosts(world: FakeWorld): number {
+  return world.exchanges.filter((x) => x.method === 'POST' && new URL(x.url).pathname.endsWith('/audit')).length;
+}
+
 function auditEvents(world: FakeWorld) {
   const keyEpoch = world.state().key_epoch;
   const out = verifyAuditChain(world.audit, { vaultKeys: (e) => world.vks.get(e), vaultId: world.vaultId, keyEpoch });
@@ -489,9 +495,28 @@ describe('rotation audit stream', () => {
     await page.controller.startRotation(itemId);
     expect(world.audit).toHaveLength(1);
     world.hostile.auditForgedHead = true;
+    const posted = auditPosts(world);
     expect(await page.controller.setRotationState(itemId, 'paused')).toBe(true);
     expect(page.controller.current()).toMatchObject({ notice: { kind: 'error', code: 'audit_failed' } });
+    // the server would accept an entry chained on its forged head; the client never sends one
+    expect(auditPosts(world)).toBe(posted);
     expect(world.audit).toHaveLength(1);
+  });
+
+  it('refuses to append for a vault waiting on a rekey or without the current epoch key, sending nothing', async () => {
+    const world = new FakeWorld();
+    const { page, itemId } = await open(world, (w) => seedAged(w));
+    // The controller never builds these snapshots; the guards are defence in depth, exercised directly.
+    const real = (page.controller as unknown as { snapshot: VaultSnapshot }).snapshot;
+    const client = (page.controller as unknown as { client: AkvClient }).client;
+    const args = { client, action: 'rotation_started' as const, itemId, nowMs: Date.now() };
+    const before = world.exchanges.length;
+    await expect(appendRotationAudit({ ...args, snapshot: { ...real, state: { ...real.state, rekey_required: true } } })).rejects.toMatchObject({ code: 'audit_failed' });
+    const vaultKeys = new Map(real.vaultKeys);
+    vaultKeys.delete(real.state.key_epoch);
+    await expect(appendRotationAudit({ ...args, snapshot: { ...real, vaultKeys } })).rejects.toMatchObject({ code: 'audit_failed' });
+    expect(world.exchanges.length).toBe(before);
+    expect(world.audit).toHaveLength(0);
   });
 
   it('seals under the current key epoch after a rekey', async () => {

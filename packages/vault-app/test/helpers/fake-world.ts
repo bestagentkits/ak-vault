@@ -145,7 +145,7 @@ export class FakeWorld {
     auditAppendStatus: null as number | null,
     /** Answer the next n audit appends with a 409 as if another device appended first. */
     auditConflicts: 0,
-    /** Serve a head the stored chain does not have (a lying server). */
+    /** Serve a head the stored chain does not have, and accept appends chained on it (a lying server). */
     auditForgedHead: false,
   };
 
@@ -427,6 +427,14 @@ export class FakeWorld {
     return json(404, { error: 'not_found' });
   }
 
+  /** The fixed hash a lying server reports as its head while `auditForgedHead` is set. */
+  private readonly forgedAuditHash = b64encode(randomBytes(32));
+
+  /** The head the server reports: the real one, or the forged one while lying. */
+  private servedAuditHead(): { seq: number; head: string } | null {
+    return this.hostile.auditForgedHead ? { seq: Math.max(0, this.audit.length - 1), head: this.forgedAuditHash } : this.auditHead();
+  }
+
   private auditHead(): { seq: number; head: string } | null {
     const last = this.audit.length - 1;
     return last >= 0 ? { seq: last, head: auditEntryHash(this.audit[last]!) } : null;
@@ -437,8 +445,7 @@ export class FakeWorld {
       const cursor = Number(url.searchParams.get('cursor') ?? 0);
       const limit = Number(url.searchParams.get('limit') ?? 500);
       const page = this.audit.map((entry, seq) => ({ seq, entry })).filter((e) => e.seq >= cursor).slice(0, limit);
-      const head = this.hostile.auditForgedHead ? { seq: Math.max(0, this.audit.length - 1), head: b64encode(randomBytes(32)) } : this.auditHead();
-      return json(200, { entries: page, next_cursor: cursor, has_more: false, head, checkpoints: [] });
+      return json(200, { entries: page, next_cursor: cursor, has_more: false, head: this.servedAuditHead(), checkpoints: [] });
     }
     if (method !== 'POST') return apiError(404, 'not_found');
     if (!headers.get('Idempotency-Key')) return apiError(400, 'bad_request');
@@ -452,7 +459,9 @@ export class FakeWorld {
       this.audit.push(appendAuditEntry({ vk: this.vks.get(epoch)!, vaultId: this.vaultId, keyEpoch: epoch, head, event: { v: 1, type: 'item_put', device_id: this.owner.record.device_id, ts: Date.now() } }).entry);
       return apiError(409, 'conflict');
     }
-    if (b.start_seq !== (head ? head.seq + 1 : 0) || b.prev !== (head ? head.head : '')) return apiError(409, 'conflict');
+    // A lying server checks the append against the head it served, so only the client's own check refuses it.
+    const served = this.servedAuditHead();
+    if (b.start_seq !== (served ? served.seq + 1 : 0) || b.prev !== (served ? served.head : '')) return apiError(409, 'conflict');
     const kid = epochTag(this.state().key_epoch);
     const entries = b.entries.map((e) => parseEnvelope(e, 'audit entry'));
     if (entries.some((e) => e.kid !== kid)) return apiError(400, 'bad_request');
