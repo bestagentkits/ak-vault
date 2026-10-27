@@ -37,6 +37,12 @@ describe('rotation due text', () => {
     const info = rotationInfo({ ...base, rotatedMs: NOW + offsetMs - 30 * DAY_MS, rotateTtlDays: 30 }, NOW);
     return dueText(info).replace(/^due \S+ /, '');
   };
+  it('keeps the health state independent of the day rounding', () => {
+    const health = (offsetMs: number) => rotationInfo({ ...base, rotatedMs: NOW + offsetMs - 30 * DAY_MS, rotateTtlDays: 30 }, NOW).health;
+    expect(health(-1000)).toBe('overdue');
+    expect(health(0)).toBe('overdue');
+    expect(health(23 * 3_600_000)).toBe('due_soon');
+  });
   it('rounds whole days toward zero and says today within a day either side', () => {
     expect(text(-1000)).toBe('(today)');
     expect(text(0)).toBe('(today)');
