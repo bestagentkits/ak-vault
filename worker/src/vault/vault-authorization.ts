@@ -22,13 +22,16 @@
  *    membership metadata (accounts, roles, device public keys).
  * Recovery operations by members (`GET`/`PUT /recovery` and `recovery_rotate`)
  * also require an `email_otp` session, whatever the device's role (spec §9.4): a
- * long-lived API key or machine credential may never read or replace the
- * recovery material, even on an owner-role device.
+ * long-lived API key or machine credential may never read, replace or rotate the
+ * recovery material, even on an owner-role device. It may only store the first
+ * bundle of a vault that has none (the genesis seal).
  */
 import { b64decodeLength, deviceIdFromSignPub, parseMembershipEvent, type DeviceRecord, type JsonObject, type MembershipState } from '@ak-vault/protocol';
 import type { Scope } from '../auth/jwt-verify.js';
 import { ApiError } from '../http/errors.js';
 import { MembershipStore } from './membership-store.js';
+import { hasIdempotentResult } from './idempotency.js';
+import { hasRecoveryBundle } from './recovery-store.js';
 import { parseBodyObject, requireKeys } from './request-body.js';
 import { enforceRole, memberDevice, requireScope, verifyRequestProof, type RoleRule } from './request-guard.js';
 import { isMutation, type VaultOp, type VaultRequest } from './vault-request.js';
@@ -141,17 +144,15 @@ function authorizeMembershipPost(req: VaultRequest, sql: SqlStorage, store: Memb
   return { state, device, body, next };
 }
 
-/** Ops that read or replace the recovery bundle. */
-const RECOVERY_OPS: ReadonlySet<VaultOp> = new Set<VaultOp>(['recovery.get', 'recovery.put']);
-
 /**
- * A recovery operation: a bundle read or replacement, or a membership append that
- * rotates the recovery key. A `bundle` marks a rotation too: the mutation step
- * refuses a bundle on any other event, so counting it here only fails closed
- * earlier. A body that does not parse is not classified; it fails later as before.
+ * A recovery operation other than `PUT /recovery`: a bundle read, or a membership
+ * append that rotates the recovery key. A `bundle` marks a rotation too: the
+ * mutation step refuses a bundle on any other event, so counting it here only
+ * fails closed earlier. A body that does not parse is not classified; it fails
+ * later as before.
  */
-function isRecoveryOperation(req: VaultRequest): boolean {
-  if (RECOVERY_OPS.has(req.op)) return true;
+function isRecoveryReadOrRotate(req: VaultRequest): boolean {
+  if (req.op === 'recovery.get') return true;
   if (req.op !== 'membership.post') return false;
   let body: JsonObject;
   try {
@@ -166,11 +167,17 @@ function isRecoveryOperation(req: VaultRequest): boolean {
 
 /**
  * Recovery operations need an `email_otp` session whatever the device's role,
- * member or not (spec §9.4). Checked before any state is read or proof burned,
- * like the recovery-identity refusal.
+ * member or not (spec §9.4), with one exception: the genesis seal. A non-human
+ * session may `PUT /recovery` while the vault has no bundle yet, so a vault it
+ * created gets its first bundle; replacing a stored bundle is refused, except an
+ * exact idempotent retry of that seal, which is answered from the stored result.
+ * Checked before the proof is consumed, like the recovery-identity refusal; the
+ * bundle store re-checks inside the mutation's transaction.
  */
-function refuseNonHumanRecovery(req: VaultRequest): void {
-  if (req.claims.kind !== 'email_otp' && isRecoveryOperation(req)) throw new ApiError('forbidden');
+function refuseNonHumanRecovery(req: VaultRequest, sql: SqlStorage): void {
+  if (req.claims.kind === 'email_otp') return;
+  if (isRecoveryReadOrRotate(req)) throw new ApiError('forbidden');
+  if (req.op === 'recovery.put' && hasRecoveryBundle(sql) && !hasIdempotentResult(sql, req)) throw new ApiError('forbidden');
 }
 
 /**
@@ -197,7 +204,7 @@ function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: Membe
 
 export function authorize(req: VaultRequest, sql: SqlStorage, store: MembershipStore): Authorized {
   refuseBrowserSession(req);
-  refuseNonHumanRecovery(req);
+  refuseNonHumanRecovery(req, sql);
   if (req.op === 'genesis') return authorizeGenesis(req, sql);
   if (req.op === 'membership.post') return authorizeMembershipPost(req, sql, store);
   const state = store.requireState();

@@ -81,7 +81,8 @@ page and docs, and its own CI run is linked from its pull request.
       Evidence: the CI TypeScript job (above) runs [`worker/test/`](../../worker/test/)
       in workerd; the cases are mapped in the [red-team evidence](./red-team-evidence.md).
       Added after that run: `api_key_device` and `machine` sessions refused on
-      `GET`/`PUT /recovery` and recovery-key rotation whatever their role
+      `GET /recovery`, a replacing `PUT /recovery` and recovery-key rotation whatever
+      their role, with the genesis seal (first bundle of a vault without one) allowed
       ([#90](https://github.com/bestagentkits/ak-vault/issues/90),
       [`recovery-fetch.test.ts`](../../worker/test/recovery-fetch.test.ts)); its
       evidence is the CI run of [#152](https://github.com/bestagentkits/ak-vault/pull/152). The

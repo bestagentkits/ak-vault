@@ -3,7 +3,11 @@
  * for the owner account, a never-removed device ID, a presented `AKV-Device-Key`
  * whose kid equals the token `did`, a proof by that key and `vault:read` scope.
  */
-import { b64encode, randomBytes, randomId, signKeyPairFromSeed } from '@ak-vault/protocol';
+import { b64encode, randomBytes, randomId, signKeyPairFromSeed, type JsonObject } from '@ak-vault/protocol';
+import { env } from 'cloudflare:workers';
+import { runInDurableObject } from 'cloudflare:test';
+import { ApiError } from '../src/http/errors.js';
+import { putRecovery } from '../src/vault/recovery-store.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { call, createDevice, type CallOptions, type TestDevice } from './helpers/api-client.js';
 import { mintToken } from './helpers/issuer.js';
@@ -210,10 +214,13 @@ describe('recovery operations by members need an email_otp session, whatever the
 
   it.each(['api_key_device', 'machine'])('refuses a %s session before checking its proof', async (kind) => {
     const vault = await VaultFixture.create();
+    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 1))).status).toBe(200);
     const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });
     const opts = { sessionKind: kind, proofSecret: randomBytes(32) };
     expect((await vault.get(device, '/recovery', opts)).status).toBe(403);
-    expect((await putTestBundle(vault, device, sealTestBundle(vault, 1), vault.state.seq, opts)).status).toBe(403);
+    expect((await putTestBundle(vault, device, sealTestBundle(vault, 2), vault.state.seq, opts)).status).toBe(403);
+    const rotate = rotateEvent(vault, device);
+    expect((await vault.append(rotate.event, undefined, device, opts, { bundle: rotate.bundle })).status).toBe(403);
     // The same bad proof on a route that is not a recovery operation fails the proof check.
     expect((await vault.get(device, '/membership', opts)).status).toBe(401);
   });
@@ -235,5 +242,77 @@ describe('recovery operations by members need an email_otp session, whatever the
     const added = vault.newDevice();
     const { event, wraps } = vault.enrollEvent(added, undefined, signerOf(device));
     expect((await vault.append(event, wraps, device, { sessionKind: kind })).status).toBe(201);
+  });
+});
+
+describe('genesis seal: a non-human session may store the first bundle of a vault, nothing more', () => {
+  it.each(['api_key_device', 'machine'])('a vault created by a %s session gets its first bundle; read, replace and rotate stay refused', async (kind) => {
+    const opts = { sessionKind: kind };
+    const vault = VaultFixture.local('personal', `acct-${randomId()}`);
+    expect((await vault.putGenesis(opts)).status).toBe(201);
+
+    const sealed = await putTestBundle(vault, vault.owner, sealTestBundle(vault, 1), vault.state.seq, opts);
+    expect(sealed.status).toBe(200);
+    expect(sealed.json.bundle_seq).toBe(1);
+
+    const second = await putTestBundle(vault, vault.owner, sealTestBundle(vault, 2), vault.state.seq, opts);
+    expect(second.status).toBe(403);
+    expect(second.json.error.code).toBe('forbidden');
+    expect((await vault.get(vault.owner, '/recovery', opts)).status).toBe(403);
+    const rotate = (() => {
+      const rotated = signKeyPairFromSeed(randomBytes(32));
+      return { event: vault.buildEvent('recovery_rotate', { recovery_sign_pub: b64encode(rotated.publicKey) }), bundle: sealTestBundle(vault, 2, undefined, rotated.secretKey) as never };
+    })();
+    expect((await vault.append(rotate.event, undefined, vault.owner, opts, { bundle: rotate.bundle })).status).toBe(403);
+
+    // The stored bundle is still the genesis seal, and an email_otp owner session may replace it.
+    expect((await vault.get(vault.owner, '/recovery')).json.bundle.bundle_seq).toBe(1);
+    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 2), vault.state.seq, { sessionKind: 'email_otp' })).status).toBe(200);
+  });
+
+  it('an exact retry of the genesis seal is replayed, a different body under the same key is not', async () => {
+    const opts = { sessionKind: 'api_key_device' };
+    const vault = VaultFixture.local('personal', `acct-${randomId()}`);
+    expect((await vault.putGenesis(opts)).status).toBe(201);
+    const bundle = sealTestBundle(vault, 1);
+    const first = await putTestBundle(vault, vault.owner, bundle, vault.state.seq, { ...opts, idempotencyKey: 'seal-retry' });
+    expect(first.status).toBe(200);
+    const retry = await putTestBundle(vault, vault.owner, bundle, vault.state.seq, { ...opts, idempotencyKey: 'seal-retry' });
+    expect(retry.status).toBe(200);
+    expect(retry.headers.get('Idempotent-Replayed')).toBe('true');
+    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 2), vault.state.seq, { ...opts, idempotencyKey: 'seal-retry' })).status).toBe(403);
+  });
+
+  it('a non-human genesis seal still needs an owner-role device and a valid proof', async () => {
+    const vault = await VaultFixture.create('shared');
+    const editor = await vault.addDevice({ account: `acct-${randomId()}`, role: 'editor' });
+    expect((await putTestBundle(vault, editor, sealTestBundle(vault, 1), vault.state.seq, { sessionKind: 'api_key_device' })).status).toBe(403);
+    const bad = await putTestBundle(vault, vault.owner, sealTestBundle(vault, 1), vault.state.seq, { sessionKind: 'api_key_device', proofSecret: randomBytes(32) });
+    expect(bad.status).toBe(401);
+    expect((await vault.get(vault.owner, '/recovery')).status).toBe(404);
+  });
+
+  it('the bundle store itself refuses a first-only PUT once a bundle exists (in-transaction re-check)', async () => {
+    const vault = await VaultFixture.create();
+    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 1))).status).toBe(200);
+    const body = { bundle: sealTestBundle(vault, 2), membership_seq: vault.state.seq } as unknown as JsonObject;
+    const code = await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(vault.vaultId)), (_i: unknown, state: DurableObjectState) => {
+      try {
+        putRecovery(state.storage.sql, vault.state, vault.vaultId, body, true);
+        return 'stored';
+      } catch (err) {
+        return err instanceof ApiError ? err.code : 'other';
+      }
+    });
+    expect(code).toBe('forbidden');
+    expect((await vault.get(vault.owner, '/recovery')).json.bundle.bundle_seq).toBe(1);
+  });
+
+  it('email_otp and a token without session_kind replace a stored bundle as before', async () => {
+    const vault = await VaultFixture.create();
+    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 1), vault.state.seq, { sessionKind: 'email_otp' })).status).toBe(200);
+    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 2))).status).toBe(200);
+    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 3), vault.state.seq, { sessionKind: 'email_otp' })).status).toBe(200);
+    expect((await vault.get(vault.owner, '/recovery')).json.bundle.bundle_seq).toBe(3);
   });
 });
