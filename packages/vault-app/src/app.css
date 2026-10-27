@@ -63,6 +63,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .badge-rot-needs_rotate, .badge-rot-overdue { border-color: var(--danger); color: var(--danger); }
 .badge-rot-due_soon { border-color: var(--accent); color: var(--accent); }
+.badge-exp-expired { border-color: var(--danger); color: var(--danger); }
+.badge-exp-expiring_soon { border-color: var(--accent); color: var(--accent); }
 .badge-rot-ok { border-color: var(--ok); color: var(--ok); }
 .health-list { list-style: none; padding: 0; margin: 0.25rem 0; }
 .rotation { margin: 0.6rem 0 0; padding: 0.75rem; border: 1px solid var(--line); border-radius: 6px; }

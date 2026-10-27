@@ -54,7 +54,7 @@ import type { AkvClient } from './akv-client.js';
 import { deviceRecordOf, sasInputOf } from './enroll.js';
 import type { LoggedRecord } from './history.js';
 import { validItemName, validMetaText } from './item-names.js';
-import { parseRotationWorkflow, type RotationWorkflow } from './rotation.js';
+import { parseExpiresMs, parseRotationWorkflow, type RotationWorkflow } from './rotation.js';
 
 export const ITEM_META_SCHEMA = 'agentkit.secret/v1';
 const MEMBERSHIP_PAGE = 1000;
@@ -86,6 +86,8 @@ export interface ItemView {
   /** Time and key epoch of the latest rekey that listed this item in `needs_rotate`; null when never listed. */
   flaggedMs: number | null;
   flaggedEpoch: number | null;
+  /** The profile's `expires_at` as unix ms, only when this device verified the profile at the head; null otherwise. */
+  expiresMs: number | null;
   profile: ProfileFieldView[];
   openConflicts: number;
 }
@@ -304,6 +306,7 @@ export function projectItem(
     rotation: parseRotationWorkflow(meta),
     flaggedMs: null,
     flaggedEpoch: null,
+    expiresMs: null,
     profile: (Object.keys(profile.profile) as ProfileKey[]).sort().map((key) => ({ key, value: profile.profile[key]!.value, origin: profile.origins[key] ?? 'sync' })),
     openConflicts,
   };
@@ -450,8 +453,11 @@ export function replayLog(
     const profile = profiles.get(itemId)?.get(itemState.revision) ?? { profile: {}, origins: {}, verified: false };
     if (profile.verified) verifiedProfiles.set(itemId, profile.profile);
     const view = projectItem(payload, record, profile, itemState.conflicts.length);
-    if (view) items.push(view);
-    else hidden++;
+    if (view) {
+      // Only a verified profile may raise an expiry warning; an unverifiable one shows its fields as `sync` and nothing more.
+      if (profile.verified) view.expiresMs = parseExpiresMs(profile.profile.expires_at?.value);
+      items.push(view);
+    } else hidden++;
   }
   items.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.itemId < b.itemId ? -1 : 1));
   return { itemStates, heads, log, profiles: verifiedProfiles, items, unreadable, hidden, logHead: verified.head, replay: { head: verified.head, state, profiles } };
