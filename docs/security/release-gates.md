@@ -122,9 +122,9 @@ page and docs, and its own CI run is linked from its pull request.
       ([#41](https://github.com/bestagentkits/ak-vault/issues/41) fixed; open include
       [#42](https://github.com/bestagentkits/ak-vault/issues/42), blocked on ak-web
       marking non-human sessions). Scenario 13 was re-run on 2026-10-27 against
-      agentkit `dev` with synced profiles and enforced synced policy: no grant
-      widened, no command ran and no forged profile field passed the provenance
-      check; hardening filed as
+      agentkit `dev` with synced profiles, enforced synced policy and MCP relay
+      arguments as the hostile input: no grant widened, no command ran and no
+      forged profile field passed the provenance check; hardening filed as
       [#150](https://github.com/bestagentkits/ak-vault/issues/150) and
       [agentkit#2745](https://github.com/bestagentkits/agentkit/issues/2745)
       ([red-team evidence](./red-team-evidence.md#scenario-13-hostile-policy-and-profile-text);
@@ -219,7 +219,8 @@ in production needs every box below, at the exact commit, plus an owner decision
       [data classification](./data-classification.md#transits-worker-memory-never-stored-or-logged-remote-access-only)).
 - [ ] Red-team scenarios 16–21 executed and scenario 13 rerun with synced profiles
       (`meta.profile` provenance) and MCP-originated text as the hostile input.
-      Scenario 13 part: done on 2026-10-27
+      Scenario 13 part: done on 2026-10-27, with hostile synced profiles, synced
+      policy and MCP relay arguments as input
       ([red-team evidence](./red-team-evidence.md#scenario-13-hostile-policy-and-profile-text)).
       Scenarios 16–21: open.
 - [ ] The D7 boundary (plaintext transits Worker memory) is stated on the MCP consent
