@@ -261,7 +261,9 @@ Animate only `transform` and `opacity`, apart from the SVG stroke-dash route flo
   static files under them.
 - **AX and SEO surfaces:**
   - canonical URL, plus OG and Twitter meta;
-  - `og.png`, 1200×630, rendered from the site's own CSS, fonts and static scene;
+  - `og.png`, 1200×630, rendered from the site's own CSS, fonts and static scene; there is no
+    generator in the repo, so when the hero badge text changes, redraw the badge in the image
+    to match;
   - `favicon.svg`, the gradient cube mark;
   - `apple-touch-icon.png`, 180px full-bleed;
   - `robots.txt`, `sitemap.xml`, `llms.txt` and the Markdown twins;
