@@ -6,8 +6,8 @@
  * branch instead of a lost update.
  *
  * Metadata follows the AgentKit CLI mapping: schema `agentkit.secret/v1`,
- * `created_ms` on create, `rotated_ms` when the value changes, the profile and
- * every other carried key kept byte for byte, `value_encoding` dropped because
+ * `created_ms` on create, `rotated_ms` when the value changes, the verified profile (the
+ * fields the provenance check kept) and every other carried key kept byte for byte, `value_encoding` dropped because
  * the dashboard writes text. The previous value is compared and dropped inside
  * this function; it is never returned or kept.
  */
@@ -24,9 +24,11 @@ import {
   recordDigest,
   sealItem,
   signRecordAsync,
+  validateProfile,
   type DeviceSigner,
   type ItemPayload,
   type JsonObject,
+  type Profile,
   type SignedRecord,
 } from '@ak-vault/protocol';
 import { AppError } from '../app-error.js';
@@ -50,22 +52,31 @@ function writableKey(snapshot: VaultSnapshot): Uint8Array {
   return vk;
 }
 
-/** The meta for a set over `prev` (null on create). */
-export function nextMeta(prev: ItemPayload | null, valueChanged: boolean, nowMs: number): JsonObject {
+/** The profile a write over `itemId`'s head may carry: the fields this device's provenance check kept, byte for byte, or none when the base was not verified. */
+function verifiedProfile(snapshot: VaultSnapshot, itemId: string): Profile | null {
+  return snapshot.profiles.get(itemId) ?? null;
+}
+
+/**
+ * The meta for a set over `prev` (null on create). `verified` is the head's
+ * profile as this device checked it (spec §5.1); the raw `prev.meta.profile` is
+ * never carried, since it can hold fields the check already dropped.
+ */
+export function nextMeta(prev: ItemPayload | null, valueChanged: boolean, nowMs: number, verified: Profile | null): JsonObject {
   const meta: JsonObject = prev ? carryForwardMeta(prev.meta) : {};
   delete meta['value_encoding'];
   meta['schema'] = ITEM_META_SCHEMA;
   if (!prev || typeof meta['created_ms'] !== 'number') meta['created_ms'] = nowMs;
   if (prev && valueChanged) meta['rotated_ms'] = nowMs;
-  if (prev && prev.meta['profile'] !== undefined) meta['profile'] = prev.meta['profile'];
+  if (prev && verified && Object.keys(verified).length > 0) meta['profile'] = validateProfile(verified) as unknown as JsonObject;
   return meta;
 }
 
 /** The meta for a value taken from `source`: a base64 value (a binary secret the CLI wrote) stays marked as such; any other encoding is refused. */
-function metaForValueFrom(prev: ItemPayload, source: ItemPayload, valueChanged: boolean, nowMs: number): JsonObject {
+function metaForValueFrom(prev: ItemPayload, source: ItemPayload, valueChanged: boolean, nowMs: number, verified: Profile | null): JsonObject {
   const enc = source.meta['value_encoding'];
   if (enc !== undefined && enc !== 'base64') throw new AppError('history_unavailable');
-  const meta = nextMeta(prev, valueChanged, nowMs);
+  const meta = nextMeta(prev, valueChanged, nowMs, verified);
   if (enc === 'base64') meta['value_encoding'] = 'base64';
   return meta;
 }
@@ -122,10 +133,10 @@ export async function setItem(args: { client: AkvClient; snapshot: VaultSnapshot
   if (matches[0]) {
     const prev = openHead(snapshot, itemId);
     base = snapshot.itemStates.get(itemId)!.revision;
-    meta = nextMeta(prev, prev.value !== args.value, nowMs);
+    meta = nextMeta(prev, prev.value !== args.value, nowMs, verifiedProfile(snapshot, itemId));
     sensitivity = prev.sensitivity;
   } else {
-    meta = nextMeta(null, true, nowMs);
+    meta = nextMeta(null, true, nowMs, null);
   }
   const payload: ItemPayload = { name: args.name, value: args.value, meta, sensitivity };
   return writeRevision({ ...args, itemId, base, vk, payload, resolves: [], nowMs });
@@ -171,7 +182,7 @@ export async function restoreRevision(args: { client: AkvClient; snapshot: Vault
   const prev = openHead(snapshot, args.itemId);
   if (old.value === prev.value) throw new AppError('restore_current');
   const nowMs = args.nowMs ?? Date.now();
-  const payload: ItemPayload = { name: prev.name, value: old.value, meta: metaForValueFrom(prev, old, true, nowMs), sensitivity: prev.sensitivity };
+  const payload: ItemPayload = { name: prev.name, value: old.value, meta: metaForValueFrom(prev, old, true, nowMs, verifiedProfile(snapshot, args.itemId)), sensitivity: prev.sensitivity };
   return writeRevision({ ...args, base: state.revision, vk, payload, resolves: [], nowMs });
 }
 
@@ -206,7 +217,7 @@ export async function resolveConflicts(args: { client: AkvClient; snapshot: Vaul
     source = payload;
   }
   const nowMs = args.nowMs ?? Date.now();
-  const next: ItemPayload = { name: prev.name, value, meta: source === prev ? nextMeta(prev, false, nowMs) : metaForValueFrom(prev, source, value !== prev.value, nowMs), sensitivity: prev.sensitivity };
+  const next: ItemPayload = { name: prev.name, value, meta: source === prev ? nextMeta(prev, false, nowMs, verifiedProfile(snapshot, args.itemId)) : metaForValueFrom(prev, source, value !== prev.value, nowMs, verifiedProfile(snapshot, args.itemId)), sensitivity: prev.sensitivity };
   return writeRevision({ ...args, base: state.revision, vk, payload: next, resolves: open.map((c) => c.conflict_id), nowMs });
 }
 
@@ -232,7 +243,7 @@ export async function updateRotation(args: { client: AkvClient; snapshot: VaultS
   if (!item || !state || state.revision === 0 || state.tombstone) throw new AppError('not_found');
   const nowMs = args.nowMs ?? Date.now();
   const prev = openHead(snapshot, args.itemId);
-  const meta = nextMeta(prev, false, nowMs);
+  const meta = nextMeta(prev, false, nowMs, verifiedProfile(snapshot, args.itemId));
   if (patch.rotateTtlDays !== undefined) {
     const ttl = patch.rotateTtlDays;
     if (ttl === null) delete meta[ROTATE_TTL_META_KEY];
@@ -272,7 +283,7 @@ export async function rotateValue(args: { client: AkvClient; snapshot: VaultSnap
   const prev = openHead(snapshot, args.itemId);
   if (prev.value === args.value) throw new AppError('rotation_value_unchanged');
   const nowMs = args.nowMs ?? Date.now();
-  const meta = nextMeta(prev, true, nowMs);
+  const meta = nextMeta(prev, true, nowMs, verifiedProfile(snapshot, args.itemId));
   const workflow = parseRotationWorkflow(prev.meta);
   if (workflow) meta[ROTATION_META_KEY] = workflowToMeta({ ...workflow, revokedMs: null });
   const payload: ItemPayload = { name: prev.name, value: args.value, meta, sensitivity: prev.sensitivity };

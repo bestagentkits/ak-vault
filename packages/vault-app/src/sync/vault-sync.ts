@@ -94,6 +94,8 @@ export interface VaultSnapshot {
   heads: Map<string, SignedRecord>;
   /** Every verified log entry of each item (applied and preserved), in log order. Ciphertext only. */
   log: Map<string, LoggedRecord[]>;
+  /** Each live item's profile at its head as this device verified it (fields the provenance check kept). A write carries this, never the raw payload. Absent when the base of the head could not be verified. */
+  profiles: Map<string, Profile>;
   items: ItemView[];
   /** Live items this device cannot open (an epoch it never held, or a bad ciphertext). */
   unreadable: number;
@@ -297,6 +299,8 @@ export function openHead(snapshot: VaultSnapshot, itemId: string): ItemPayload {
 interface ProfileAt {
   profile: Profile;
   origins: Partial<Record<ProfileKey, ProfileOrigin>>;
+  /** False when this revision, or any revision it was built on, was kept without a held base to check against. */
+  verified: boolean;
 }
 
 /** Replay the verified log into item states; check the offer checkpoint's state digest on the way. */
@@ -306,7 +310,7 @@ export function replayLog(
   enrollment: Enrollment,
   vaultKeys: Map<number, Uint8Array>,
   selfId: string,
-): Pick<VaultSnapshot, 'itemStates' | 'heads' | 'log' | 'items' | 'unreadable' | 'hidden'> & { logHead: { log_seq: number; log_head: string } } {
+): Pick<VaultSnapshot, 'itemStates' | 'heads' | 'log' | 'profiles' | 'items' | 'unreadable' | 'hidden'> & { logHead: { log_seq: number; log_head: string } } {
   const kept = new Map<number, string>();
   if (enrollment.witnessed && enrollment.witnessed.log_seq > 0) kept.set(enrollment.witnessed.log_seq, enrollment.witnessed.log_head);
   let verified;
@@ -347,7 +351,7 @@ export function replayLog(
       profiles.set(record.item_id, byRevision);
       const revision = applied.outcome.revision;
       if (record.tombstone) {
-        byRevision.set(revision, { profile: {}, origins: {} });
+        byRevision.set(revision, { profile: {}, origins: {}, verified: true });
       } else {
         const payload = openRecord(record, vaultKeys.get(record.key_epoch));
         if (payload && !('deleted' in payload)) {
@@ -359,7 +363,7 @@ export function replayLog(
             next = {};
           }
           const checked = checkProfileProvenance(prev?.profile ?? (record.base_revision === 0 ? {} : null), next, record, { selfDeviceId: selfId, prevOrigins: prev?.origins ?? null });
-          byRevision.set(revision, { profile: checked.profile, origins: checked.origins });
+          byRevision.set(revision, { profile: checked.profile, origins: checked.origins, verified: record.base_revision === 0 || (prev !== null && prev.verified) });
         }
       }
     }
@@ -367,6 +371,7 @@ export function replayLog(
   });
 
   const items: ItemView[] = [];
+  const verifiedProfiles = new Map<string, Profile>();
   let unreadable = 0;
   let hidden = 0;
   for (const [itemId, itemState] of itemStates) {
@@ -377,13 +382,14 @@ export function replayLog(
       unreadable++;
       continue;
     }
-    const profile = profiles.get(itemId)?.get(itemState.revision) ?? { profile: {}, origins: {} };
+    const profile = profiles.get(itemId)?.get(itemState.revision) ?? { profile: {}, origins: {}, verified: false };
+    if (profile.verified) verifiedProfiles.set(itemId, profile.profile);
     const view = projectItem(payload, record, profile, itemState.conflicts.length);
     if (view) items.push(view);
     else hidden++;
   }
   items.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.itemId < b.itemId ? -1 : 1));
-  return { itemStates, heads, log, items, unreadable, hidden, logHead: verified.head };
+  return { itemStates, heads, log, profiles: verifiedProfiles, items, unreadable, hidden, logHead: verified.head };
 }
 
 /** Record, per item, the latest rekey that listed it in `needs_rotate` (a removal's exposure flag). */
@@ -432,7 +438,7 @@ export async function pullVault(client: AkvClient, device: StoredDevice, kx: Dev
   return {
     snapshot: {
       vaultId: enrollment.vaultId, self, state, vaultKeys,
-      itemStates: replay.itemStates, heads: replay.heads, log: replay.log, items: replay.items, unreadable: replay.unreadable, hidden: replay.hidden, witnessed,
+      itemStates: replay.itemStates, heads: replay.heads, log: replay.log, profiles: replay.profiles, items: replay.items, unreadable: replay.unreadable, hidden: replay.hidden, witnessed,
     },
     enrollment: { ...enrollment, confirmed: true, witnessed },
   };
