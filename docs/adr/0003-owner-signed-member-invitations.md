@@ -101,7 +101,12 @@ offer with a key that reached it outside the Worker.
    a small cap of open invitations per vault, an invitation lifetime defaulting to 24
    hours and never above 72, a join that expires 15 minutes after its commit, and one
    live join per account per invitation. These Worker limits protect availability only;
-   the security bound in D5 is enforced by the owner device. A join post is allowed
+   the security bound in D5 is enforced by the owner device. A join does not use up the
+   invitation and arriving first gives it no priority: the invitation ends only by
+   acceptance, a cancellation of scope `invitation` or expiry (D9), and the owner chooses
+   which join to answer (D5). Someone who saw a code therefore cannot lock the real
+   invitee out by joining first; the attempts such a join can still cost are under
+   [Limits](#limits-stated-plainly). A join post is allowed
    only to an account outside the vault, for an `email_otp` session (the
    recovery-identity precedent in spec §3.5, with the `browser` refusal from spec §9
    item 1), with a device-key proof, and only when the secret hashes to `secret_hash`;
@@ -150,7 +155,10 @@ offer with a key that reached it outside the Worker.
    (not the device ID alone, which does not cover `kx_pub` or the account). The owner
    device refuses to proceed until the owner types the digits the invitee reads out. A
    wrong entry ends that join: the device signs a cancellation scoped to the join and
-   the attempt count stays spent. The owner then signs `invite_accept` and
+   the attempt count stays spent. The owner device also counts wrong entries per
+   invitation and after the third signs a cancellation of scope `invitation`; the owner
+   issues a new invitation to try again. This client limit sits beside `a` and does not
+   change the D5 bound. The owner then signs `invite_accept` and
    **afterwards** a normal `member_add`. `member_add` carries the byte-identical device
    record the owner checked against the commit, the invited role and the signed wrap
    set; the wrap set MUST hold the current epoch
@@ -189,6 +197,22 @@ offer with a key that reached it outside the Worker.
    and joins is allowed to owner devices and, read-only, to the browser session. Editors
    and readers see nothing of it.
 
+## Fallback if D4 is rejected (Stage A)
+
+If the owner rejects the Worker-held pending state of D4, invitations are kept only on
+the inviting owner device and the Worker holds no invitation state. That device keeps a
+local record per invitation (role, expiry, its nonce and state), never synced, and the
+code, the join and the owner's reply travel out of band as codes in the spec §3.8 style.
+Each side still commits before the other reveals: the owner device commits to its nonce
+in the code and reveals it only after it holds the join. The typed SAS over the full
+device record, the limit of three wrong entries and the normal `member_add` of D6 apply
+unchanged; there are no Worker-held documents, so a cancellation is a local state change
+on the issuing device. The invitee verifies the chain as in D8. Limits of this fallback: only the issuing device can
+complete an invitation, losing that device ends its open invitations, and other owner
+devices and the dashboard cannot see them. It needs code formats, vectors and parsers in
+TypeScript and Go, and no Worker or chain change. It follows the same spec-change
+procedure and is not authorized before the owner decides.
+
 ## Limits stated plainly
 
 - The server can withhold, delay or drop an invitation or a join (availability, not
@@ -201,7 +225,8 @@ offer with a key that reached it outside the Worker.
   leaked code and reaches the owner on the same channel can be enrolled by an owner who
   does not do this: the code is not enough for membership, the owner's own comparison is.
 - A leaked code lets a stranger spend attempts and block the intended invitee until the
-  owner cancels and reissues.
+  owner cancels and reissues. It spends an attempt only when the owner selects the
+  stranger's join; joining first does not use up the invitation (D4).
 - A browser device is a human owner device; a compromise of the dashboard origin (ADR
   0002) could sign invitation documents that another channel delivers.
 - A member who joins holds the vault-wide key (ADR 0001): an invitation grants vault
@@ -277,8 +302,9 @@ Each step is its own reviewed pull request and follows the spec-change procedure
 
 ## Open questions for the owner
 
-- Accept D4: bounded, non-secret pending state on the Worker. If not, only offline
-  codes ship and the dashboard stays blind.
+- Accept D4: bounded, non-secret pending state on the Worker. If not, only the
+  [Stage A fallback](#fallback-if-d4-is-rejected-stage-a) ships and the dashboard stays
+  blind.
 - Accept D7 (documents beside the chain) over a `sas` field on `member_add`.
 - Show the owner the invitee's AgentKit account email (verified by ak-web), or only the
   account ID and label? An email reveals personal data and needs an ak-web lookup; it
