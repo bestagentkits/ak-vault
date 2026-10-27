@@ -236,6 +236,17 @@ in production needs every box below, at the exact commit, plus an owner decision
       screen and in the vault guide, matching the
       [threat model](./threat-model.md#explicit-limitations).
 
+Staging status (2026-10-20): the live staging run passed part of the MCP and dashboard
+header checks, and no box above is ticked, because each box covers more than the live
+checks reached. Live passes: the MCP challenge, the path-suffixed protected-resource
+metadata, the origin-level PRM path, the stateless POST-only `/mcp`, the audience
+refusals of forged tokens, and the `/app` CSP, isolation headers and SRI. Still open
+on staging: the ak-web authorization-server checks, the signed-in dashboard and MCP
+tool flows, the sync-token and MCP-token audience checks, the revoked-client step, and
+scenarios 16 to 21. These wait on ak-web's OAuth configuration and a signed-in staging
+test account. Details are in the
+[red-team evidence](./red-team-evidence.md#remote-access-staging-run-2026-10-20).
+
 ## Staging soak
 
 The owner decided on 2026-10-16

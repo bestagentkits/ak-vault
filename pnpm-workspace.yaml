@@ -1,3 +1,4 @@
 packages:
   - packages/*
   - worker
+  - e2e/remote-access
