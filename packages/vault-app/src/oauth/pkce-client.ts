@@ -6,13 +6,15 @@
  *
  * Tokens live in memory only (`OAuthSession`). The only thing that survives the
  * redirect to the authorization server and back is the pending `{state,
- * verifier}` pair in `sessionStorage`, removed the moment the callback reads it.
+ * verifier}` pair in `sessionStorage` (with the two opaque IDs of a write-request
+ * link the sign-in was started from), removed the moment the callback reads it.
  * Revocation (RFC 7009) ends the grant when the dashboard signs out, locks, is
  * closed, or signs in again.
  */
 import { b64decode, b64encode, randomBytes, sha256, utf8Decode, utf8Encode } from '@ak-vault/protocol';
 import { AppError } from '../app-error.js';
 import { APP_SCOPE, type AppConfig } from '../config.js';
+import { isOpaqueId, type WriteLink } from '../sync/write-request.js';
 
 /** The subset of RFC 8414 metadata the dashboard uses, validated. */
 export interface AuthServerMetadata {
@@ -44,6 +46,8 @@ export interface PendingSignIn {
   verifier: string;
   /** Unix ms when the sign-in started. */
   createdAt: number;
+  /** The write-request link this sign-in continues to. */
+  writeLink?: WriteLink;
 }
 
 /** Where the pending sign-in waits across the redirect (sessionStorage in the browser). */
@@ -69,7 +73,14 @@ export function sessionPendingStore(storage: Storage): PendingStore {
       try {
         const v = JSON.parse(raw) as Record<string, unknown>;
         if (typeof v['state'] !== 'string' || typeof v['verifier'] !== 'string' || typeof v['createdAt'] !== 'number') return null;
-        return { state: v['state'], verifier: v['verifier'], createdAt: v['createdAt'] };
+        const pending: PendingSignIn = { state: v['state'], verifier: v['verifier'], createdAt: v['createdAt'] };
+        const link = v['writeLink'] as Record<string, unknown> | undefined;
+        if (link !== undefined) {
+          const { requestId, vaultId } = link ?? {};
+          if (typeof requestId !== 'string' || typeof vaultId !== 'string' || !isOpaqueId(requestId) || !isOpaqueId(vaultId)) return null;
+          pending.writeLink = { requestId, vaultId };
+        }
+        return pending;
       } catch {
         return null;
       }
@@ -126,8 +137,8 @@ export function pkceChallenge(verifier: string): string {
  * Start a sign-in: store `{state, verifier}` and return the authorization URL.
  * The verifier is 32 random bytes in base64url (43 characters, RFC 7636 §4.1).
  */
-export function beginSignIn(config: AppConfig, as: AuthServerMetadata, store: PendingStore, now = Date.now()): string {
-  const pending: PendingSignIn = { state: b64encode(randomBytes(32)), verifier: b64encode(randomBytes(32)), createdAt: now };
+export function beginSignIn(config: AppConfig, as: AuthServerMetadata, store: PendingStore, now = Date.now(), writeLink: WriteLink | null = null): string {
+  const pending: PendingSignIn = { state: b64encode(randomBytes(32)), verifier: b64encode(randomBytes(32)), createdAt: now, ...(writeLink ? { writeLink } : {}) };
   store.save(pending);
   const url = new URL(as.authorization_endpoint);
   const params: Record<string, string> = {
@@ -200,11 +211,12 @@ async function tokenRequest(fetchFn: typeof fetch, as: AuthServerMetadata, confi
  * Finish a sign-in from the callback URL. Refused, without any token request,
  * when no sign-in is pending, the pending one is stale, `state` differs, the
  * server reports an error, or `iss` is missing (when advertised) or differs.
+ * Returns the session and the write-request link the sign-in was started from.
  */
 export async function completeSignIn(
   url: URL,
   deps: { config: AppConfig; as: AuthServerMetadata; store: PendingStore; fetchFn: typeof fetch; now?: number },
-): Promise<OAuthSession> {
+): Promise<{ session: OAuthSession; writeLink: WriteLink | null }> {
   const now = deps.now ?? Date.now();
   const pending = deps.store.take();
   const q = url.searchParams;
@@ -217,7 +229,7 @@ export async function completeSignIn(
   if (q.has('error')) throw new AppError('signin_refused');
   const code = q.getAll('code');
   if (code.length !== 1 || !code[0]) throw new AppError('signin_refused');
-  return tokenRequest(deps.fetchFn, deps.as, deps.config, {
+  const session = await tokenRequest(deps.fetchFn, deps.as, deps.config, {
     grant_type: 'authorization_code',
     code: code[0],
     redirect_uri: deps.config.redirectUri,
@@ -225,6 +237,7 @@ export async function completeSignIn(
     code_verifier: pending.verifier,
     resource: deps.config.resource,
   }, now);
+  return { session, writeLink: pending.writeLink ?? null };
 }
 
 /** Rotate the in-memory refresh token for a fresh access token of the same grant. */

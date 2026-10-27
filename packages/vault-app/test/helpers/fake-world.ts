@@ -41,7 +41,11 @@ import {
   wrapsDigest,
   nameIndexKey,
   nameTag,
+  deriveSealKeyPair,
+  sealWriteIntent,
   type DeviceKeys,
+  type WriteIntentOperation,
+  type WriteIntentTarget,
   type Envelope,
   type ItemState,
   type JsonObject,
@@ -75,6 +79,20 @@ function json(status: number, body: unknown): Response {
 function apiError(status: number, code: string): Response {
   return json(status, { error: { code, message: 'synthetic' } });
 }
+
+/** A write request as the Worker keeps it (spec §3.10); the intent is cleared on close. */
+export interface FakeWriteRequest {
+  account: string;
+  clientId: string;
+  operation: WriteIntentOperation;
+  state: 'pending_user' | 'completed' | 'conflict' | 'cancelled' | 'expired' | 'failed';
+  reason: string | null;
+  receipt: string | null;
+  intent: JsonObject | null;
+  expiresAt: number;
+}
+
+const CLOSE_REASONS: Record<string, string[]> = { cancelled: ['user_cancelled'], failed: ['already_exists', 'not_found', 'device_error'] };
 
 export interface LoggedExchange {
   method: string;
@@ -111,6 +129,7 @@ export class FakeWorld {
   itemStates = new Map<string, ItemState>();
   readonly tags = new Map<string, { key_epoch: number; tag: string }>();
   readonly exchanges: LoggedExchange[] = [];
+  readonly writeRequests = new Map<string, FakeWriteRequest>();
   readonly revoked: string[] = [];
   /** The encrypted audit stream, as the Worker stores it. */
   readonly audit: Envelope[] = [];
@@ -325,6 +344,43 @@ export class FakeWorld {
     }
   }
 
+  /**
+   * What `secrets_prepare_write` does: seal the target to the epoch's seal key
+   * and keep the request. `vaultId` seals for another vault (a forged intent).
+   */
+  prepareWrite(target: WriteIntentTarget, opts: { operation?: WriteIntentOperation; ttlMs?: number; clientId?: string; vaultId?: string } = {}): string {
+    const st = this.state();
+    const now = Date.now();
+    const clientId = opts.clientId ?? 'https://assistant.example.test/client';
+    const vaultId = opts.vaultId ?? this.vaultId;
+    const wire = sealWriteIntent(deriveSealKeyPair(this.vks.get(st.key_epoch)!, vaultId, st.key_epoch).publicKey, {
+      vaultId, keyEpoch: st.key_epoch, origin: { kind: 'mcp', account: ACCOUNT, client_id: clientId, grant_id: 'grant-mcp' },
+      operation: opts.operation ?? 'create', ts: now, expiresAt: now + (opts.ttlMs ?? 600_000), target,
+    });
+    this.writeRequests.set(wire.request_id, {
+      account: ACCOUNT, clientId, operation: wire.operation, state: 'pending_user', reason: null, receipt: null,
+      intent: wire as unknown as JsonObject, expiresAt: wire.expires_at,
+    });
+    return wire.request_id;
+  }
+
+  formUrl(requestId: string, vaultId = this.vaultId): string {
+    return `${ORIGIN}/app#write=${requestId}&vault=${vaultId}`;
+  }
+
+  /** The caller's open request: 404 unknown or another account's, 400 closed or expired. */
+  private openRequest(id: string, sub: string): FakeWriteRequest | Response {
+    const row = this.writeRequests.get(id);
+    if (!row || row.account !== sub) return apiError(404, 'not_found');
+    if (row.state === 'pending_user' && row.expiresAt <= Date.now()) Object.assign(row, { state: 'expired', intent: null });
+    if (row.state !== 'pending_user') return apiError(400, 'bad_request');
+    return row;
+  }
+
+  private closeRequest(row: FakeWriteRequest, state: FakeWriteRequest['state'], reason: string | null, receipt: string | null): void {
+    Object.assign(row, { state, reason, receipt, intent: null });
+  }
+
   /** What the authorization server does with the dashboard's redirect: returns the callback URL. */
   authorize(authUrl: string, opts: { state?: string; iss?: string } = {}): URL {
     const u = new URL(authUrl);
@@ -349,11 +405,15 @@ export class FakeWorld {
     return json(200, { access_token: access, token_type: 'Bearer', expires_in: 600, refresh_token: refresh, scope: 'vault-app:session' });
   }
 
+  /** Awaited before a request is served, so a test can hold one in flight. */
+  requestGate: ((method: string, url: URL) => Promise<void>) | null = null;
+
   readonly fetch = async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = (init.method ?? 'GET').toUpperCase();
     const requestBody = typeof init.body === 'string' ? init.body : '';
     if (this.hostile.offline) throw new TypeError('network down');
+    if (this.requestGate) await this.requestGate(method, new URL(url));
     const res = await this.route(new URL(url), method, requestBody, new Headers(init.headers));
     const responseBody = await res.clone().text();
     this.exchanges.push({ method, url, requestBody, responseBody, status: res.status });
@@ -522,12 +582,44 @@ export class FakeWorld {
         .map(([item_id, t]) => ({ item_id, revision: this.itemStates.get(item_id)!.revision, key_epoch: t.key_epoch, tag: t.tag }));
       return json(200, { hits });
     }
+    if (coll === 'write-requests' && parts[5]) {
+      const row = this.openRequest(parts[5], who.sub);
+      if (method === 'GET' && parts.length === 6) {
+        if (row instanceof Response) return row;
+        return json(200, { request_id: parts[5], operation: row.operation, client_id: row.clientId, expires_at: row.expiresAt, intent: row.intent });
+      }
+      if (method === 'POST' && parts.length === 7 && parts[6] === 'close') {
+        if (!headers.get('Idempotency-Key')) return apiError(400, 'bad_request');
+        const b = JSON.parse(body) as { outcome?: string; reason?: string };
+        if (Object.keys(b).length !== 2 || !CLOSE_REASONS[b.outcome ?? '']?.includes(b.reason ?? '')) return apiError(400, 'bad_request');
+        if (row instanceof Response) return row;
+        this.closeRequest(row, b.outcome as FakeWriteRequest['state'], b.reason!, null);
+        return json(200, { state: b.outcome });
+      }
+      return apiError(404, 'not_found');
+    }
     if (method === 'PUT' && coll === 'items') {
       if (this.hostile.forbidWrites) return apiError(403, 'forbidden');
       if (!headers.get('Idempotency-Key')) return apiError(400, 'bad_request');
       const b = JSON.parse(body) as { record: SignedRecord; name_tag?: { key_epoch: number; tag: string } };
       if (b.record.item_id !== decodeURIComponent(parts[5] ?? '')) return apiError(400, 'bad_request');
+      const requestId = url.searchParams.get('write_request');
+      if (requestId === null) {
+        const res = this.applyServer(b.record, b.name_tag?.tag ?? null);
+        return json(res.status, res.body);
+      }
+      const row = this.openRequest(requestId, who.sub);
+      if (row instanceof Response) return row;
+      const head = this.itemStates.get(b.record.item_id);
+      const live = !!head && head.revision > 0 && !head.tombstone;
+      if (live !== (row.operation === 'replace')) return apiError(400, 'bad_request');
       const res = this.applyServer(b.record, b.name_tag?.tag ?? null);
+      if (res.status === 200) {
+        const receipt = randomId();
+        this.closeRequest(row, 'completed', null, receipt);
+        return json(200, { ...(res.body as JsonObject), write_request: { state: 'completed', receipt } });
+      }
+      if (res.status === 409 && (res.body as { error: { code: string } }).error.code === 'conflict') this.closeRequest(row, 'conflict', 'revision_conflict', null);
       return json(res.status, res.body);
     }
     return apiError(404, 'not_found');

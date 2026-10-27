@@ -5,6 +5,10 @@
  * dashboard verified, so a concurrent edit becomes a server-side conflict
  * branch instead of a lost update.
  *
+ * A set that completes a human write request (`write-request.ts`) is the same
+ * record, sent with `?write_request=<id>` and checked against the request's
+ * operation first: `create` needs no live item of that name, `replace` exactly one.
+ *
  * Metadata follows the AgentKit CLI mapping: schema `agentkit.secret/v1`,
  * `created_ms` on create, `rotated_ms` when the value changes, the verified profile (the
  * fields the provenance check kept) and every other carried key kept byte for byte, `value_encoding` dropped because
@@ -29,7 +33,9 @@ import {
   type ItemPayload,
   type JsonObject,
   type Profile,
+  type Sensitivity,
   type SignedRecord,
+  type WriteIntentOperation,
 } from '@ak-vault/protocol';
 import { AppError } from '../app-error.js';
 import { isVaultApiError, type AkvClient } from './akv-client.js';
@@ -41,7 +47,19 @@ import { ITEM_META_SCHEMA, openHead, openRecord, type VaultSnapshot } from './va
 export interface WriteResult {
   itemId: string;
   revision: number;
+  /** The Worker's opaque receipt when the write completed a write request. */
+  receipt?: string;
 }
+
+/** The write request a set completes. */
+export interface RequestedWrite {
+  requestId: string;
+  operation: WriteIntentOperation;
+  /** Requested sensitivity; the write never lowers the head's. */
+  sensitivity: Sensitivity | null;
+}
+
+const RECEIPT = /^[A-Za-z0-9_-]{22}$/;
 
 function writableKey(snapshot: VaultSnapshot): Uint8Array {
   if (snapshot.state.rekey_required) throw new AppError('rekey_required');
@@ -90,7 +108,7 @@ function mapWriteError(err: unknown): never {
   throw err;
 }
 
-async function sendRecord(client: AkvClient, snapshot: VaultSnapshot, record: SignedRecord, nameTagValue: string | null): Promise<WriteResult> {
+async function sendRecord(client: AkvClient, snapshot: VaultSnapshot, record: SignedRecord, nameTagValue: string | null, requestId: string | null = null): Promise<WriteResult> {
   try {
     authorizeRecordWrite(snapshot.state, record);
   } catch (err) {
@@ -98,15 +116,20 @@ async function sendRecord(client: AkvClient, snapshot: VaultSnapshot, record: Si
     throw new AppError('device_mismatch');
   }
   const body = nameTagValue === null ? { record } : { record, name_tag: { key_epoch: record.key_epoch, tag: nameTagValue } };
+  const query = requestId === null ? '' : `?write_request=${encodeURIComponent(requestId)}`;
   let res: unknown;
   try {
-    res = await client.put(`/v1/vaults/${encodeURIComponent(snapshot.vaultId)}/items/${encodeURIComponent(record.item_id)}`, body);
+    res = await client.put(`/v1/vaults/${encodeURIComponent(snapshot.vaultId)}/items/${encodeURIComponent(record.item_id)}${query}`, body);
   } catch (err) {
     mapWriteError(err);
   }
   const revision = (res as Record<string, unknown> | null)?.['revision'];
   if (typeof revision !== 'number' || revision !== record.base_revision + 1) throw new AppError('server');
-  return { itemId: record.item_id, revision };
+  if (requestId === null) return { itemId: record.item_id, revision };
+  const done = (res as Record<string, unknown>)['write_request'] as Record<string, unknown> | undefined;
+  const receipt = done?.['receipt'];
+  if (done?.['state'] !== 'completed' || typeof receipt !== 'string' || !RECEIPT.test(receipt)) throw new AppError('server');
+  return { itemId: record.item_id, revision, receipt };
 }
 
 /** Live items with exactly this name. */
@@ -115,22 +138,48 @@ function itemsNamed(snapshot: VaultSnapshot, name: string): string[] {
 }
 
 /**
+ * The item a write request targets in the verified snapshot: null for a
+ * `create` (any live item with the name is `already_exists`), the single live
+ * item for a `replace` (none, or more than one, is `not_found`). Resolution uses
+ * the device's synced state, never a lookup.
+ */
+export function requestTarget(snapshot: VaultSnapshot, name: string, operation: WriteIntentOperation): string | null {
+  if (!validItemName(name)) throw new AppError('invalid_name');
+  const matches = itemsNamed(snapshot, name);
+  if (operation === 'create') {
+    if (matches.length > 0) throw new AppError('already_exists');
+    return null;
+  }
+  if (matches.length !== 1) throw new AppError('not_found');
+  return matches[0]!;
+}
+
+/**
  * Set `name` to `value`: a new item, or a new revision of the one live item
  * with that name. Two live items sharing a name are refused (`duplicate_name`).
+ * With `request`, the set completes that write request (see `requestTarget`).
  */
-export async function setItem(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; name: string; value: string; nowMs?: number }): Promise<WriteResult> {
-  const { snapshot } = args;
+export async function setItem(args: {
+  client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; name: string; value: string; nowMs?: number; request?: RequestedWrite;
+}): Promise<WriteResult> {
+  const { snapshot, request } = args;
   if (!validItemName(args.name)) throw new AppError('invalid_name');
   if (!validItemValue(args.value)) throw new AppError('value_too_large');
   const vk = writableKey(snapshot);
   const nowMs = args.nowMs ?? Date.now();
-  const matches = itemsNamed(snapshot, args.name);
-  if (matches.length > 1) throw new AppError('duplicate_name');
-  const itemId = matches[0] ?? randomId();
+  let existing: string | null;
+  if (request) {
+    existing = requestTarget(snapshot, args.name, request.operation);
+  } else {
+    const matches = itemsNamed(snapshot, args.name);
+    if (matches.length > 1) throw new AppError('duplicate_name');
+    existing = matches[0] ?? null;
+  }
+  const itemId = existing ?? randomId();
   let base = 0;
   let meta: JsonObject;
   let sensitivity: ItemPayload['sensitivity'] = 'normal';
-  if (matches[0]) {
+  if (existing) {
     const prev = openHead(snapshot, itemId);
     base = snapshot.itemStates.get(itemId)!.revision;
     meta = nextMeta(prev, prev.value !== args.value, nowMs, verifiedProfile(snapshot, itemId));
@@ -138,19 +187,21 @@ export async function setItem(args: { client: AkvClient; snapshot: VaultSnapshot
   } else {
     meta = nextMeta(null, true, nowMs, null);
   }
+  // A requested sensitivity only ever raises the head's.
+  if (request?.sensitivity === 'high') sensitivity = 'high';
   const payload: ItemPayload = { name: args.name, value: args.value, meta, sensitivity };
-  return writeRevision({ ...args, itemId, base, vk, payload, resolves: [], nowMs });
+  return writeRevision({ ...args, itemId, base, vk, payload, resolves: [], nowMs, requestId: request?.requestId ?? null });
 }
 
 /** Seal `payload` under the current key epoch, sign it at `base` and send it as one compare-and-swap write. */
-async function writeRevision(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; base: number; vk: Uint8Array; payload: ItemPayload; resolves: string[]; nowMs: number }): Promise<WriteResult> {
+async function writeRevision(args: { client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; itemId: string; base: number; vk: Uint8Array; payload: ItemPayload; resolves: string[]; nowMs: number; requestId?: string | null }): Promise<WriteResult> {
   const { snapshot, payload } = args;
   if (cjsonBytes(payload as unknown as JsonObject).length > MAX_PLAINTEXT_BYTES) throw new AppError('value_too_large');
   const ctx = { vault_id: snapshot.vaultId, item_id: args.itemId, base_revision: args.base, key_epoch: snapshot.state.key_epoch, author: snapshot.self.device_id, tombstone: false };
   const env = sealItem({ ...ctx, vk: args.vk, payload });
   const record = await signRecordAsync({ ...ctx, ts: args.nowMs, resolves: args.resolves, env }, args.signer);
   const tag = nameTag(nameIndexKey(args.vk, snapshot.vaultId, snapshot.state.key_epoch), payload.name);
-  return sendRecord(args.client, snapshot, record, tag);
+  return sendRecord(args.client, snapshot, record, tag, args.requestId ?? null);
 }
 
 /** A live, listed item's verified state, or `not_found`. */

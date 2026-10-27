@@ -206,8 +206,8 @@ in production needs every box below, at the exact commit, plus an owner decision
 - [ ] ADR 0002 accepted by the owner, and REVIEW.md and AGENTS.md carry its
       exception scopes.
 - [ ] Go and TypeScript reproduce `seal-key.json`, `sealed-op.json`, `name-tag.json`,
-      `enroll-codes.json`, `profile.json` and `relay-frames.json`, including every
-      negative case ([spec §3.6–§3.8, §5.1, §9.7](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)).
+      `enroll-codes.json`, `write-intent.json`, `profile.json` and `relay-frames.json`,
+      including every negative case ([spec §3.6–§3.8, §3.10, §5.1, §9.7](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)).
 - [ ] Committed enrollment: Go and TypeScript reproduce `enroll-commit.json` including the
       ground nonce refusal ([spec §3.9](../protocol/v1/spec.md#39-committed-enrollment-codes));
       the `ak` CLI and the dashboard enroll with `akj2-`/`ako2-`/`akr2-` and the owner
@@ -242,8 +242,13 @@ in production needs every box below, at the exact commit, plus an owner decision
       SRI and no third-party code; `browser` session refused on genesis, membership,
       recovery, seal-key PUT and the sealed queue; enrollment needs SAS approval from
       an existing owner device.
+- [ ] Write requests ([ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md)
+      D8): Worker tests for the no-value tool input, browser-session and account
+      binding, single use with the item PUT, grant revocation, caps and rate; the
+      dashboard form opens the intent, shows the requesting client, enforces the name
+      binding and closes with the right reason.
 - [ ] Disclosure scan rerun with remote access on: planted values and names sent
-      through MCP set, relayed results and `run` output are absent from the Durable
+      through MCP set, `secrets_prepare_write`, relayed results and `run` output are absent from the Durable
       Object dump, Worker logs, live tail and errors (scenario 15 and
       [data classification](./data-classification.md#transits-worker-memory-never-stored-or-logged-remote-access-only)).
 - [ ] Red-team scenarios 16–21 executed and scenario 13 rerun with synced profiles

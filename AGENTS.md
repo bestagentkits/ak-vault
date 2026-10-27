@@ -53,8 +53,10 @@ Node 22+ and pnpm (version pinned in `package.json`) are required.
   [ADR 0002](./docs/adr/0002-browser-device-relay-and-remote-mcp.md) and
   [REVIEW.md](./REVIEW.md#hard-rejection-criteria): the browser dashboard at `/app`
   decrypts only as an enrolled device with its own keys; `/app`, the MCP
-  protected-resource metadata, `/mcp`, `/v1/relay` and the lookup, seal-key and
-  sealed-queue routes are the only new routes, each with the auth REVIEW.md lists;
+  protected-resource metadata, `/mcp`, `/v1/relay`, the lookup, seal-key and
+  sealed-queue routes, and the write-request routes with the `?write_request` item PUT
+  (`browser` session of the requesting account only, ADR 0002 D8) are the only new
+  routes, each with the auth REVIEW.md lists;
   plaintext may transit Worker memory only as ADR 0002 D7 describes and is never
   logged, stored or put in an error. Nothing else widens.
 - Never commit `.env`, `.dev.vars`, tokens, keys, account identifiers or personal

@@ -46,6 +46,8 @@ function main(): void {
   const rerender = () => render(root, controller, controller.current(), vs, rerender);
   controller.subscribe(() => rerender());
   startIdleLock(controller, window);
+  // A write-request link opened in this tab while it is running changes only the fragment.
+  window.addEventListener('hashchange', () => void controller.openLink(new URL(window.location.href)));
   window.addEventListener('pagehide', (ev) => {
     if (!(ev as PageTransitionEvent).persisted) controller.revokeOnExit();
   });

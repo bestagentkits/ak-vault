@@ -1,9 +1,10 @@
 /**
- * Screens. Every string from an item, a profile or a code is inserted as text.
- * Values are write-only: the value field is a CSS-masked text input (never a
- * password input, so no password manager offers to save it) with autofill,
- * spellcheck and manager capture off, cleared on submit, and no screen has a
- * reveal or copy action.
+ * Screens. Every string from an item, a profile, a write request or a code is
+ * inserted as text. Values are write-only: the vault screen's value field is a
+ * CSS-masked text input (never a password input, so a name field beside it does
+ * not read as a login form), the write-request field, which has no name field
+ * beside it, is a password input; both have autofill, spellcheck and manager
+ * capture off and are cleared on submit, and no screen has a reveal or copy action.
  */
 import type { AppController, Notice, Screen } from '../app-controller.js';
 import type { HistoryEntry } from '../sync/history.js';
@@ -106,6 +107,78 @@ function approveScreen(c: AppController, s: Extract<Screen, { kind: 'approve' }>
         h('button', { type: 'button', 'data-testid': 'check-approval' }, ['I approved it, continue'], { click: () => void c.checkApproval() }),
         h('button', { type: 'button', class: 'secondary' }, ['Start over'], { click: () => void c.restartEnrollment() }),
       ]),
+    ]),
+  ];
+}
+
+/** Remaining time as text, e.g. `9m 05s`; `expired` once past. */
+export function remaining(expiresAt: number, nowMs: number): string {
+  const s = Math.floor((expiresAt - nowMs) / 1000);
+  if (s <= 0) return 'expired';
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+}
+
+/** A countdown that ticks while it is in the document and stops once a re-render removes it. */
+function countdown(expiresAt: number): HTMLElement {
+  const el = h('span', { 'data-testid': 'write-expiry' }, [remaining(expiresAt, Date.now())]);
+  const timer = setInterval(() => {
+    if (!el.isConnected) {
+      clearInterval(timer);
+      return;
+    }
+    el.textContent = remaining(expiresAt, Date.now());
+  }, 1000);
+  return el;
+}
+
+function writeScreen(c: AppController, s: Extract<Screen, { kind: 'write' }>): HTMLElement[] {
+  const r = s.request;
+  const details = r
+    ? h('dl', { class: 'profile', 'data-testid': 'write-request' }, [
+      h('dt', {}, ['Secret']), h('dd', { class: 'name', 'data-testid': 'write-name' }, [r.name]),
+      r.purpose !== null ? h('dt', {}, ['Purpose']) : null, r.purpose !== null ? h('dd', { 'data-testid': 'write-purpose' }, [r.purpose]) : null,
+      h('dt', {}, ['Requested by']), h('dd', { 'data-testid': 'write-client' }, [r.clientId]),
+      h('dt', {}, ['Action']), h('dd', { 'data-testid': 'write-operation' }, [r.operation === 'create' ? 'Create a new secret' : 'Replace the value of an existing secret']),
+      s.open ? h('dt', {}, ['Expires in']) : null, s.open ? h('dd', {}, [countdown(r.expiresAt)]) : null,
+    ])
+    : null;
+  let form: HTMLElement | null = null;
+  if (s.open && r) {
+    const valueInput = h('input', { id: 'write-value', type: 'password', required: true, 'data-testid': 'write-value', ...NO_CAPTURE }) as HTMLInputElement;
+    form = h('form', { class: 'set', 'aria-busy': s.busy ? 'true' : 'false' }, [
+      h('label', { for: 'write-value' }, ['Value (typed here, encrypted in this browser, never shown again or sent to the assistant)']),
+      valueInput,
+      h('div', { class: 'row' }, [
+        h('button', { type: 'submit', disabled: s.busy, 'data-testid': 'write-save' }, ['Save']),
+        h('button', { type: 'button', class: 'secondary', disabled: s.busy, 'data-testid': 'write-cancel' }, ['Cancel request'], {
+          click: () => {
+            valueInput.value = '';
+            void c.cancelWrite();
+          },
+        }),
+      ]),
+    ], {
+      submit: (ev) => {
+        ev.preventDefault();
+        const value = valueInput.value;
+        // Clear the field before anything else so the value does not linger in the DOM.
+        valueInput.value = '';
+        void c.submitWrite(value);
+      },
+    });
+  }
+  return [
+    header(c, s.deviceId),
+    h('main', {}, [
+      noticeEl(s.notice),
+      h('h2', {}, ['Write request']),
+      s.busy && !r ? h('p', { 'aria-busy': 'true' }, ['Opening the request…']) : null,
+      details,
+      form,
+      s.receipt ? h('p', { class: 'muted', 'data-testid': 'write-receipt' }, [`Receipt ${s.receipt.slice(0, 8)}`]) : null,
+      s.retry ? h('button', { type: 'button', 'data-testid': 'write-retry' }, ['Try again'], { click: () => void c.retryWrite() }) : null,
+      !s.open && !s.busy ? h('button', { type: 'button', class: 'secondary', 'data-testid': 'write-done' }, ['Back to the vault'], { click: () => void c.leaveWrite() }) : null,
     ]),
   ];
 }
@@ -502,6 +575,9 @@ export function render(root: Element, c: AppController, screen: Screen, vs: View
       break;
     case 'history':
       nodes = historyScreen(c, screen, vs, rerender);
+      break;
+    case 'write':
+      nodes = writeScreen(c, screen);
       break;
     case 'removed':
       nodes = [header(c, null), h('main', {}, [
