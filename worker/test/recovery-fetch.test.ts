@@ -197,6 +197,27 @@ describe('recovery operations by members need an email_otp session, whatever the
     },
   );
 
+  it.each(['api_key_device', 'machine'])('refuses a %s recovery_rotate without a bundle as forbidden, not as a malformed rotation', async (kind) => {
+    const vault = await VaultFixture.create();
+    const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });
+    const { event } = rotateEvent(vault, device);
+    const res = await vault.append(event, undefined, device, { sessionKind: kind });
+    expect(res.status).toBe(403);
+    expect(res.json.error.code).toBe('forbidden');
+    // An email_otp session reaches the mutation step, which requires the resealed bundle.
+    expect((await vault.append(event, undefined, device)).status).toBe(400);
+  });
+
+  it.each(['api_key_device', 'machine'])('refuses a %s session before checking its proof', async (kind) => {
+    const vault = await VaultFixture.create();
+    const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });
+    const opts = { sessionKind: kind, proofSecret: randomBytes(32) };
+    expect((await vault.get(device, '/recovery', opts)).status).toBe(403);
+    expect((await putTestBundle(vault, device, sealTestBundle(vault, 1), vault.state.seq, opts)).status).toBe(403);
+    // The same bad proof on a route that is not a recovery operation fails the proof check.
+    expect((await vault.get(device, '/membership', opts)).status).toBe(401);
+  });
+
   it.each(['api_key_device', 'machine'])('refuses a %s session that sends a bundle on any membership event', async (kind) => {
     const vault = await VaultFixture.create();
     const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });
