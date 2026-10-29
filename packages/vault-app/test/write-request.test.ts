@@ -105,6 +105,37 @@ describe('write-request link', () => {
     expect(input.getAttribute('autocomplete')).toBe('off');
   });
 
+  it('shows the clock error over the link notice at boot, and keeps the link through the sign-in', async () => {
+    const world = new FakeWorld();
+    const id = world.prepareWrite({ name: NAME });
+    const b = new Browser(world);
+    await b.enroll();
+    world.hostile.dateOffsetMs = 5 * 60_000;
+    const linkPage = await b.load(world.formUrl(id));
+    expect(linkPage.replaced).toEqual([`${ORIGIN}/app/`]);
+    expect(linkPage.controller.current()).toMatchObject({ kind: 'signed_out', notice: { kind: 'error', code: 'clock_skew' } });
+    // The person fixes the clock and signs in from that page: the callback still opens the request.
+    world.hostile.dateOffsetMs = 0;
+    const page = await b.signIn();
+    expect(page.controller.current()).toMatchObject({ kind: 'write', open: true, request: { name: NAME } });
+  });
+
+  it('keeps the clock error when a link arrives on the signed-out page, and keeps the link through the sign-in', async () => {
+    const world = new FakeWorld();
+    const id = world.prepareWrite({ name: NAME });
+    const b = new Browser(world);
+    await b.enroll();
+    world.hostile.dateOffsetMs = 5 * 60_000;
+    const start = await b.load();
+    expect(start.controller.current()).toMatchObject({ kind: 'signed_out', notice: { kind: 'error', code: 'clock_skew' } });
+    await start.controller.openLink(new URL(world.formUrl(id)));
+    expect(start.replaced.at(-1)).toBe(`${ORIGIN}/app/`);
+    expect(start.controller.current()).toMatchObject({ kind: 'signed_out', notice: { kind: 'error', code: 'clock_skew' } });
+    world.hostile.dateOffsetMs = 0;
+    const page = await b.signIn();
+    expect(page.controller.current()).toMatchObject({ kind: 'write', open: true, request: { name: NAME } });
+  });
+
   it('opens a link pasted into a running dashboard (fragment change)', async () => {
     const world = new FakeWorld();
     const b = new Browser(world);

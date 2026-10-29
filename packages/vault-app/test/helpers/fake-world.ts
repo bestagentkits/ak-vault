@@ -156,6 +156,10 @@ export class FakeWorld {
     /** Replace the membership chain served. */
     membership: null as MembershipEvent[] | null,
     omitIss: false,
+    /** Offset of the vault origin's `Date` header from this machine's clock (a skewed device clock). */
+    dateOffsetMs: 0,
+    /** Answer every vault request 401, as a proof timestamp outside the window would be. */
+    rejectProofs: false,
     /** Refuse every item write with 403, as a Worker does for a role the chain no longer grants. */
     forbidWrites: false,
     /** Every request fails at the network layer. */
@@ -265,11 +269,12 @@ export class FakeWorld {
     return epoch;
   }
 
-  removeDevice(deviceId: string): void {
+  /** Remove a device; `fence` defaults to the current log position (a hostile server may accept an older one). */
+  removeDevice(deviceId: string, fence = this.log.length): void {
     const st = this.state();
     const ev = nextMembershipEvent(st, {
       type: 'device_remove', ts: Date.now(), author: this.owner.record.device_id,
-      body: { device_id: deviceId, reason: 'retired', log_fence: this.log.length, log_head: this.logHeads[this.log.length]! },
+      body: { device_id: deviceId, reason: 'retired', log_fence: fence, log_head: this.logHeads[fence]! },
     }, this.owner.signSecret);
     this.events.push(ev);
   }
@@ -414,7 +419,12 @@ export class FakeWorld {
     const requestBody = typeof init.body === 'string' ? init.body : '';
     if (this.hostile.offline) throw new TypeError('network down');
     if (this.requestGate) await this.requestGate(method, new URL(url));
-    const res = await this.route(new URL(url), method, requestBody, new Headers(init.headers));
+    let res = await this.route(new URL(url), method, requestBody, new Headers(init.headers));
+    if (this.hostile.dateOffsetMs !== 0 && new URL(url).origin === ORIGIN) {
+      const headers = new Headers(res.headers);
+      headers.set('Date', new Date(Date.now() + this.hostile.dateOffsetMs).toUTCString());
+      res = new Response(await res.text(), { status: res.status, headers });
+    }
     const responseBody = await res.clone().text();
     this.exchanges.push({ method, url, requestBody, responseBody, status: res.status });
     return res;
@@ -532,7 +542,7 @@ export class FakeWorld {
   private routeVault(url: URL, method: string, body: string, headers: Headers): Response {
     const token = (headers.get('Authorization') ?? '').replace(/^Bearer /, '');
     const who = this.syncTokens.get(token);
-    if (!who) return apiError(401, 'unauthorized');
+    if (!who || this.hostile.rejectProofs) return apiError(401, 'unauthorized');
     const st = this.state();
     const device = st.devices.find((d) => d.device_id === who.did && d.account === who.sub);
     if (!device) return apiError(403, 'forbidden');
@@ -570,7 +580,7 @@ export class FakeWorld {
         changes: page.map((e) => ({ ...e, kind: 'item', item_id: e.record.item_id, revision: 0, resolved_revision: null, log_head: '' })),
         next_cursor: page.length ? page[page.length - 1]!.log_seq : cursor,
         has_more: served.some((e) => e.log_seq > (page.length ? page[page.length - 1]!.log_seq : cursor)),
-        head: {},
+        head: { log_seq: served.length, log_head: this.logHeads[served.length] ?? '' },
       });
     }
     if (coll === 'audit') return this.routeAudit(url, method, body, headers);

@@ -46,6 +46,17 @@ describe('MCP audience separation', () => {
     }
   });
 
+  it('reads the Bearer scheme case-insensitively and refuses other schemes', async () => {
+    const token = await mintMcpToken({ sub: `acct-${randomId()}` });
+    for (const scheme of ['bearer', 'BEARER', 'bEaReR']) {
+      expect((await modern(token, 'tools/list', {}, { headers: { Authorization: `${scheme} ${token}` } })).status, scheme).toBe(200);
+    }
+    for (const header of [`Basic ${token}`, `Bearer${token}`, 'Bearer ', 'Bearer']) {
+      const res = await modern(token, 'tools/list', {}, { headers: { Authorization: header } });
+      expect(res.status, header).toBe(401);
+    }
+  });
+
   it('the /v1 routes refuse an MCP token', async () => {
     const fx = await VaultFixture.create();
     const mcp = await mintMcpToken({ sub: fx.owner.account });

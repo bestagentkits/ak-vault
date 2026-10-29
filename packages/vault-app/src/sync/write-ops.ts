@@ -132,32 +132,84 @@ async function sendRecord(client: AkvClient, snapshot: VaultSnapshot, record: Si
   return { itemId: record.item_id, revision, receipt };
 }
 
-/** Live items with exactly this name. */
-function itemsNamed(snapshot: VaultSnapshot, name: string): string[] {
-  return snapshot.items.filter((i) => i.name === name).map((i) => i.itemId);
+/** Every live head whose name equals a name, as spec §3.6 step 3 resolves it. */
+interface NameMatches {
+  /** Matching items the dashboard lists (and so may write). */
+  listed: string[];
+  /** Matching items it does not list: policy items and items of another schema. */
+  unlisted: number;
+  /** Live heads this device cannot open, so whose name it cannot rule out. */
+  unreadable: number;
+}
+
+/**
+ * Resolve `name` against every live head in the verified snapshot, not only the
+ * listed ones, comparing names after NFC normalization of both (the name tag is
+ * NFC too, so two spellings of one name are one name to every other device).
+ * Each head is opened here and its value dropped at once.
+ */
+function resolveName(snapshot: VaultSnapshot, name: string): NameMatches {
+  const want = name.normalize('NFC');
+  const listed = new Set(snapshot.items.map((i) => i.itemId));
+  const out: NameMatches = { listed: [], unlisted: 0, unreadable: 0 };
+  for (const [itemId, state] of snapshot.itemStates) {
+    if (state.revision === 0 || state.tombstone) continue;
+    const record = snapshot.heads.get(itemId);
+    const payload = record ? openRecord(record, snapshot.vaultKeys.get(record.key_epoch)) : null;
+    if (!payload || 'deleted' in payload || typeof payload.name !== 'string') {
+      out.unreadable++;
+      continue;
+    }
+    if (payload.name.normalize('NFC') !== want) continue;
+    if (listed.has(itemId)) out.listed.push(itemId);
+    else out.unlisted++;
+  }
+  return out;
+}
+
+/**
+ * The one listed item `matches` names, or null when nothing matches. More than
+ * one match is `duplicate_name`; a match the dashboard does not manage (a policy
+ * item, another schema) is `name_not_writable`; no match while a live head is
+ * unreadable is `name_unverifiable`, since that head may carry the name.
+ */
+function singleTarget(matches: NameMatches): string | null {
+  if (matches.listed.length + matches.unlisted > 1) throw new AppError('duplicate_name');
+  if (matches.unlisted > 0) throw new AppError('name_not_writable');
+  if (matches.listed.length === 1) return matches.listed[0]!;
+  if (matches.unreadable > 0) throw new AppError('name_unverifiable');
+  return null;
 }
 
 /**
  * The item a write request targets in the verified snapshot: null for a
- * `create` (any live item with the name is `already_exists`), the single live
- * item for a `replace` (none, or more than one, is `not_found`). Resolution uses
- * the device's synced state, never a lookup.
+ * `create` (any live item with the name, listed or not, is `already_exists`;
+ * an unreadable head with no match is `name_unverifiable`), the single listed
+ * live item for a `replace` (none, or more than one, is `not_found`; a policy
+ * or other-schema item is `name_not_writable`). Resolution uses the device's
+ * synced state, never a lookup.
  */
 export function requestTarget(snapshot: VaultSnapshot, name: string, operation: WriteIntentOperation): string | null {
   if (!validItemName(name)) throw new AppError('invalid_name');
-  const matches = itemsNamed(snapshot, name);
+  const matches = resolveName(snapshot, name);
+  const total = matches.listed.length + matches.unlisted;
   if (operation === 'create') {
-    if (matches.length > 0) throw new AppError('already_exists');
+    if (total > 0) throw new AppError('already_exists');
+    if (matches.unreadable > 0) throw new AppError('name_unverifiable');
     return null;
   }
-  if (matches.length !== 1) throw new AppError('not_found');
-  return matches[0]!;
+  if (total !== 1) throw new AppError('not_found');
+  if (matches.unlisted > 0) throw new AppError('name_not_writable');
+  return matches.listed[0]!;
 }
 
 /**
  * Set `name` to `value`: a new item, or a new revision of the one live item
- * with that name. Two live items sharing a name are refused (`duplicate_name`).
- * With `request`, the set completes that write request (see `requestTarget`).
+ * with that name (compared after NFC normalization). Two live items sharing a
+ * name are refused (`duplicate_name`), as are a policy or other-schema item of
+ * that name (`name_not_writable`) and a new item while some live head cannot be
+ * opened (`name_unverifiable`). With `request`, the set completes that write
+ * request (see `requestTarget`).
  */
 export async function setItem(args: {
   client: AkvClient; snapshot: VaultSnapshot; signer: DeviceSigner; name: string; value: string; nowMs?: number; request?: RequestedWrite;
@@ -171,25 +223,29 @@ export async function setItem(args: {
   if (request) {
     existing = requestTarget(snapshot, args.name, request.operation);
   } else {
-    const matches = itemsNamed(snapshot, args.name);
-    if (matches.length > 1) throw new AppError('duplicate_name');
-    existing = matches[0] ?? null;
+    existing = singleTarget(resolveName(snapshot, args.name));
   }
   const itemId = existing ?? randomId();
   let base = 0;
   let meta: JsonObject;
   let sensitivity: ItemPayload['sensitivity'] = 'normal';
+  let name: string;
   if (existing) {
     const prev = openHead(snapshot, itemId);
     base = snapshot.itemStates.get(itemId)!.revision;
     meta = nextMeta(prev, prev.value !== args.value, nowMs, verifiedProfile(snapshot, itemId));
     sensitivity = prev.sensitivity;
+    // The stored spelling stays: devices that match names byte for byte must still find this item.
+    name = prev.name;
   } else {
     meta = nextMeta(null, true, nowMs, null);
+    // A new item is always stored under the NFC spelling, the one its name tag is computed from.
+    name = args.name.normalize('NFC');
+    if (!validItemName(name)) throw new AppError('invalid_name');
   }
   // A requested sensitivity only ever raises the head's.
   if (request?.sensitivity === 'high') sensitivity = 'high';
-  const payload: ItemPayload = { name: args.name, value: args.value, meta, sensitivity };
+  const payload: ItemPayload = { name, value: args.value, meta, sensitivity };
   return writeRevision({ ...args, itemId, base, vk, payload, resolves: [], nowMs, requestId: request?.requestId ?? null });
 }
 
@@ -358,11 +414,13 @@ export async function deleteItem(args: { client: AkvClient; snapshot: VaultSnaps
 }
 
 /**
- * Exact-name search over the verified snapshot. Every name this device can read
- * is already in memory, so the search stays local: the server's blind-index
- * lookup would only tell it which item was looked for, and when.
+ * Exact-name search (after NFC normalization) over the listed items of the
+ * verified snapshot. Every name this device can read is already in memory, so
+ * the search stays local: the server's blind-index lookup would only tell it
+ * which item was looked for, and when.
  */
 export function findByName(snapshot: VaultSnapshot, name: string): string[] {
   if (!validItemName(name)) throw new AppError('invalid_name');
-  return itemsNamed(snapshot, name);
+  const want = name.normalize('NFC');
+  return snapshot.items.filter((i) => i.name.normalize('NFC') === want).map((i) => i.itemId);
 }

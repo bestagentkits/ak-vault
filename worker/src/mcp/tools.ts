@@ -148,7 +148,7 @@ const LOCAL_DEFINITIONS: Record<LocalTool, Omit<ToolDefinition, 'name'>> = {
   prepare_write: {
     title: 'Ask the user to enter a secret',
     description:
-      `Create or replace a secret WITHOUT seeing its value: returns a one-time form_url for the user to open in their browser and type the value there. Never ask the user to paste a secret value into this chat and never pass one to any tool. Give the form_url to the user, then poll secrets_write_status with request_id. The link expires (default ${WRITE_TTL_MINUTES} minutes), works once, and only the signed-in user who owns the vault can use it. ` +
+      `Create or replace a secret WITHOUT seeing its value: returns a one-time form_url for the user to open in their browser and type the value there. Never ask the user to paste a secret value into this chat and never pass one to any tool. Give the form_url to the user, then poll secrets_write_status with request_id. The link expires (default ${WRITE_TTL_MINUTES} minutes), works once, and only the signed-in vault owner can use it, so a request from an editor account is refused (use secrets_set instead). ` +
       NEVER_VALUES,
     inputSchema: schema(
       {

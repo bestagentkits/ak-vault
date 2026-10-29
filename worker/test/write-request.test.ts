@@ -107,6 +107,16 @@ describe('secrets_prepare_write', () => {
     expect(structured(await callTool(stranger, 'secrets_prepare_write', { name: 'A', vault_id: fx.vaultId })).code).toBe('invalid_args');
   });
 
+  it('refuses an editor account: only an owner can complete a request in the dashboard', async () => {
+    const fx = await VaultFixture.create('shared');
+    await publishSealKey(fx);
+    const editor = await fx.addDevice({ account: `acct-${randomId()}`, role: 'editor' });
+    const editorToken = await mintMcpToken({ sub: editor.account, scope: 'vault-mcp:write' });
+    const res = structured(await callTool(editorToken, 'secrets_prepare_write', { name: 'A', vault_id: fx.vaultId }));
+    expect(res.code).toBe('invalid_args');
+    expect(res.message).toContain('owner');
+    expect(res.request_id).toBeUndefined();
+  });
   it('refuses while a rekey is pending', async () => {
     const s = await setup();
     expect((await s.fx.rekey()).status).toBe(201);

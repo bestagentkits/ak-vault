@@ -57,7 +57,14 @@ function plainError(status: number, code: 'bad_request' | 'forbidden', message: 
   return jsonResponse({ error: { code, message } }, status, headers);
 }
 
-/** Absent → allowed (non-browser clients); present → must be an `https:` origin (DNS-rebinding guard). */
+/**
+ * Absent → allowed (non-browser clients); present → must be a well-formed `https:` origin.
+ * This is a coarse filter, not an allowlist: it refuses `null`, `http:` (including loopback)
+ * and `file:` origins but accepts any `https:` site. The actual cross-site guard is that
+ * `/mcp` takes only an `Authorization: Bearer` token (never a cookie or query token) and
+ * sends no CORS headers, so a web page can neither attach a credential nor read a reply
+ * (spec §9.8).
+ */
 function originAllowed(origin: string | null): boolean {
   if (origin === null) return true;
   try {
@@ -182,6 +189,9 @@ function modernHeaderRefusal(request: Request, message: JsonRpcRequest, version:
   return null;
 }
 
+/** Cache hints for `tools/list`: `private` because the list is served behind the caller's token. */
+const TOOLS_LIST_CACHE = { ttlMs: 5 * 60_000, cacheScope: 'private' } as const;
+
 function complete(version: ProtocolVersion, result: Record<string, unknown>): Record<string, unknown> {
   return isModern(version) ? { resultType: 'complete', ...result, _meta: { [META_SERVER_INFO]: SERVER_INFO } } : result;
 }
@@ -199,7 +209,8 @@ async function dispatchMethod(env: Env, claims: McpClaims, version: ProtocolVers
     case 'ping':
       return rpcResult(id, complete(version, {}));
     case 'tools/list':
-      return rpcResult(id, complete(version, { tools: TOOL_DEFINITIONS }));
+      // 2026-07-28 list results must carry cache hints; the tool set only changes on deploy.
+      return rpcResult(id, complete(version, isModern(version) ? { tools: TOOL_DEFINITIONS, ...TOOLS_LIST_CACHE } : { tools: TOOL_DEFINITIONS }));
     case 'tools/call':
       return toolsCall(env, claims, version, message);
   }

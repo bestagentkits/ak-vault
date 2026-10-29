@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 const NOW = 1_800_000_000_000;
-const base: RotationInput = { createdMs: NOW - 10 * DAY_MS, rotatedMs: null, rotateTtlDays: null, flaggedMs: null, flaggedEpoch: null, keyEpoch: 1, workflow: null };
+const base: RotationInput = { createdMs: NOW - 10 * DAY_MS, rotatedMs: null, rotateTtlDays: null, flaggedMs: null, flaggedEpoch: null, keyEpoch: 1, workflow: null, expiresMs: null };
 
 describe('rotation due text', () => {
   const text = (offsetMs: number) => {

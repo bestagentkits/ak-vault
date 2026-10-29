@@ -33,6 +33,7 @@ binary.
 | `VAULT_E2E_VAULT_ID` | The first account's vault id, for cross-tenant checks. |
 | `AK_BIN` | Path to a phase-10 relay-capable `ak`. Never the installed binary on the machine. |
 | `AK_E2E_OWNER_HOME` | Temp HOME prepared for the owner device. Never the real home. |
+| `VAULT_E2E_ALLOW_UNSCANNED` | Set to `1` to let a run pass although the leak scan's log tail was unavailable. Unset, an unavailable tail fails the run. |
 
 No credential is stored in the repo, printed, or written to a report. Storage-state
 files and HOME directories belong in a temp location outside the checkout.
@@ -48,7 +49,9 @@ names by design.
 `leak-scan.ts` runs `wrangler tail --env staging` for the whole run and searches
 each chunk in memory. It reports counts only. If the tail cannot start or stops
 during the run, the result is `unavailable` and the teardown prints a `BLOCKED`
-line. That is not a clean scan.
+line and the run fails, because an unscanned run proves nothing about leaks. Set
+`VAULT_E2E_ALLOW_UNSCANNED=1` only for a local run that cannot reach the tail; it still
+prints the BLOCKED line.
 
 ## Known state
 
@@ -57,7 +60,7 @@ line. That is not a clean scan.
   [red-team evidence](../../docs/security/red-team-evidence.md#remote-access-staging-run-2026-10-20).
 - The leak scan's `wrangler tail` needs one Cloudflare account. When the Wrangler login
   covers several accounts, set `CLOUDFLARE_ACCOUNT_ID` to the account that owns the
-  staging Worker for the run. Without it the tail exits and the scan is BLOCKED.
+  staging Worker for the run. Without it the tail exits and the scan is BLOCKED (the run fails).
 - The `ak` argument shapes in `dashboard-flow.spec.ts` match the relay-capable
   build's `--help`. Build it with a `-staging.N` version (for example
   `-ldflags "-X main.Version=3.0.0-staging.1"`) so it targets the staging registry

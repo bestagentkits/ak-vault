@@ -29,6 +29,7 @@ const MESSAGES: Record<LocalErrorCode, string> = {
 
 const VAULT_REQUIRED = 'Pass vault_id: your online devices hold several vaults, or none is online to choose one.';
 const REFUSED = 'The vault cannot take a write request now (a key rotation is pending, or the account lost write access). Retry after the vault syncs.';
+const OWNER_ONLY = 'Only a vault owner can fill in a write request: it is completed in the dashboard, and a browser device enrolls only as an owner. Ask an owner of the vault, or use secrets_set with a device online.';
 const VAULT_UNKNOWN = 'vault_id does not name a vault this account can use.';
 
 interface Outcome {
@@ -101,7 +102,8 @@ async function prepareWrite(env: Env, claims: McpClaims, args: Record<string, un
   const vault = vaultStub(env, vaultId);
   const role = await vault.accountRole(claims.sub);
   if (role === null) return fail('invalid_args', {}, args['vault_id'] === undefined ? undefined : VAULT_UNKNOWN);
-  if (role !== 'owner' && role !== 'editor') return fail('invalid_args', {}, VAULT_UNKNOWN);
+  if (role === 'editor') return fail('invalid_args', {}, OWNER_ONLY);
+  if (role !== 'owner') return fail('invalid_args', {}, VAULT_UNKNOWN);
   const doc = await vault.getSealKey();
   if (!doc) return fail('no_seal_key');
 

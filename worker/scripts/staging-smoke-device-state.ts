@@ -17,7 +17,7 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, re
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { b64decodeLength, b64encode, randomBytes, randomId } from '@ak-vault/protocol';
-import { assertOutsideRepo, assertPrivatePath, fail } from './staging-smoke-ak-web-token.js';
+import { assertOutsideRepo, assertPrivatePath, fail, SmokeFailure } from './staging-smoke-ak-web-token.js';
 
 export const DEFAULT_STATE_PATH = join(homedir(), '.ak-vault', 'staging-smoke-devices.json');
 
@@ -100,7 +100,8 @@ export function loadDeviceSecrets(path: string, account: string, labels: readonl
       if (!parsed) fail('the smoke device state file is malformed (delete it to start over)');
       state = parsed;
     }
-  } catch {
+  } catch (err) {
+    if (err instanceof SmokeFailure) throw err;
     fail('cannot read the smoke device state file');
   }
   if (state.account !== account) fail('the smoke device state file belongs to another account (set AK_STAGING_SMOKE_STATE_PATH)');
@@ -110,7 +111,8 @@ export function loadDeviceSecrets(path: string, account: string, labels: readonl
     for (const label of missing) state.devices[label] = { sign_seed: b64encode(randomBytes(32)), kx_secret: b64encode(randomBytes(32)) };
     try {
       writeState(path, state);
-    } catch {
+    } catch (err) {
+      if (err instanceof SmokeFailure) throw err;
       fail('cannot write the smoke device state file');
     }
   }

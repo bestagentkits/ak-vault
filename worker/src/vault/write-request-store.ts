@@ -84,7 +84,7 @@ function load(sql: SqlStorage, requestId: string): Row | undefined {
 /**
  * Store a request built by the MCP handler (spec §3.10 "Who requests"): only for this
  * vault, only to the current key epoch, never while a rekey is pending, only when the
- * origin account is an `owner` or `editor` member, with a lifetime inside the allowed
+ * origin account is an `owner` member (only an owner can enroll the browser device that completes it), with a lifetime inside the allowed
  * range, never a `request_id` already held, and within the per-account, per-client and
  * retained caps. Caller holds the transaction.
  */
@@ -97,7 +97,7 @@ export function createWriteRequest(sql: SqlStorage, state: MembershipState, wire
   }
   if (intent.vault_id !== state.vault_id || intent.key_epoch !== state.key_epoch || state.rekey_required) return 'refused';
   const role = state.members.find((m) => m.account === intent.origin.account)?.role;
-  if (role !== 'owner' && role !== 'editor') return 'refused';
+  if (role !== 'owner') return 'refused';
   if (!Number.isSafeInteger(tokenIat) || tokenIat < 0) return 'refused';
   const lifetime = intent.expires_at - intent.ts;
   if (Math.abs(intent.ts - nowMs) > SEALED_MAX_FUTURE_MS || lifetime < L.write_request_min_ttl_s * 1000 || lifetime > L.write_request_ttl_s * 1000 || intent.expires_at <= nowMs) return 'refused';
