@@ -1174,13 +1174,12 @@ devices that honor it, not what a vault member can decrypt (§3).
 1. `Authorization: Bearer <ES256 JWT>` from the configured issuer. Required claims:
    `iss` (exact), `aud` = the deployment's own origin (exact; production
    `https://vault.agentkit.best`, staging `https://vault-staging.agentkit.best`), `sub`, `exp`, `nbf`,
-   `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`. Optional
-   `session_kind` ∈ {`email_otp`, `api_key_device`, `machine`, `browser`}: how the session behind the
-   token signed in. An absent claim means `email_otp` (the only kind issued before the claim
-   existed); any other value, or a non-string, is `401 unauthorized`. ak-web MUST set it for
-   every session that is not a human email-OTP sign-in; the Worker never infers it, so a
-   non-human session minted without it is read as `email_otp` (see the threat model's
-   recovery bundle limitation). The audiences `<origin>/mcp` and `<origin>/app` name
+   `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`, and
+   `session_kind` ∈ {`email_otp`, `api_key_device`, `machine`, `browser`}: how the
+   session behind the token signed in. ak-web MUST set it on every vault token. An
+   absent claim, any other value, or a non-string is `401 unauthorized`; the Worker
+   never infers a kind, so a token minted without the claim is refused rather than
+   read as a human session. The audiences `<origin>/mcp` and `<origin>/app` name
    other resources (the remote MCP endpoint and the dashboard sign-in) and are refused
    on every route of this section like any other wrong `aud`.
 
@@ -1239,8 +1238,7 @@ devices that honor it, not what a vault member can decrypt (§3).
    transaction that stores it. Such a device keeps every other right of its role,
    removal and rekey included, but cannot reseal: after a rekey it makes, the stored
    bundle cannot enroll a device (§3.5) until an owner device in an `email_otp`
-   session reseals it. A token without `session_kind` is read as `email_otp`
-   (item 1).
+   session reseals it. A token without `session_kind` is refused (item 1).
 5. Wrap routes. Wraps are uploaded only inside `PUT /v1/vaults/{vid}` (genesis) and
    `POST /v1/vaults/{vid}/membership` (`{"event","wraps"?,"bundle"?}`); there is no
    separate wrap upload. `GET /v1/vaults/{vid}/wraps?membership_seq=n` returns the

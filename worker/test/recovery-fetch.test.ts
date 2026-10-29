@@ -107,11 +107,15 @@ describe('recovery identity is for human email-OTP sessions only', () => {
     }
   });
 
-  it('accepts an explicit email_otp session and a token without the claim', async () => {
+  it('accepts an email_otp session and refuses a token without the claim', async () => {
     const explicit = createDevice(fx.owner.account, 'owner');
     expect((await fetchBundle(explicit, { headers: keyHeader(explicit), sessionKind: 'email_otp' })).status).toBe(200);
-    const legacy = createDevice(fx.owner.account, 'owner');
-    expect((await fetchBundle(legacy, { headers: keyHeader(legacy) })).status).toBe(200);
+    const unmarked = createDevice(fx.owner.account, 'owner');
+    for (const path of READS) {
+      const res = await fx.get(unmarked, path, { headers: keyHeader(unmarked), sessionKind: null });
+      expect(res.status).toBe(401);
+      expect(JSON.stringify(res.json)).not.toContain('bundle');
+    }
   });
 
   it('fails closed on an unknown session kind', async () => {
@@ -189,19 +193,29 @@ describe('recovery operations by members need an email_otp session, whatever the
     expect((await vault.get(device, `/items/${id}`, opts)).status).toBe(200);
   });
 
-  it.each([['email_otp', { sessionKind: 'email_otp' }], ['a token without session_kind', {}]] as const)(
-    'an owner-role device with %s performs all three recovery operations',
-    async (_label, opts) => {
-      const vault = await VaultFixture.create();
-      const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });
-      expect((await putTestBundle(vault, device, sealTestBundle(vault, 1), vault.state.seq, opts)).status).toBe(200);
-      expect((await vault.get(device, '/recovery', opts)).json.bundle.bundle_seq).toBe(1);
-      const rotate = rotateEvent(vault, device);
-      const ok = await vault.append(rotate.event, undefined, device, opts, { bundle: rotate.bundle });
-      expect(ok.status).toBe(201);
-      expect(ok.json.bundle_seq).toBe(2);
-    },
-  );
+  it('an owner-role device with email_otp performs all three recovery operations', async () => {
+    const opts = { sessionKind: 'email_otp' };
+    const vault = await VaultFixture.create();
+    const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });
+    expect((await putTestBundle(vault, device, sealTestBundle(vault, 1), vault.state.seq, opts)).status).toBe(200);
+    expect((await vault.get(device, '/recovery', opts)).json.bundle.bundle_seq).toBe(1);
+    const rotate = rotateEvent(vault, device);
+    const ok = await vault.append(rotate.event, undefined, device, opts, { bundle: rotate.bundle });
+    expect(ok.status).toBe(201);
+    expect(ok.json.bundle_seq).toBe(2);
+  });
+
+  it('an owner-role device with a token without session_kind is refused (401) on all three recovery operations', async () => {
+    const opts = { sessionKind: null };
+    const vault = await VaultFixture.create();
+    const device = await vault.addDevice({ account: vault.owner.account, role: 'owner' });
+    expect((await putTestBundle(vault, device, sealTestBundle(vault, 1), vault.state.seq, opts)).status).toBe(401);
+    expect((await putTestBundle(vault, device, sealTestBundle(vault, 1), vault.state.seq)).status).toBe(200);
+    expect((await vault.get(device, '/recovery', opts)).status).toBe(401);
+    const rotate = rotateEvent(vault, device);
+    expect((await vault.append(rotate.event, undefined, device, opts, { bundle: rotate.bundle })).status).toBe(401);
+    expect((await vault.get(device, '/recovery')).json.bundle.bundle_seq).toBe(1);
+  });
 
   it.each(['api_key_device', 'machine'])('refuses a %s recovery_rotate without a bundle as forbidden, not as a malformed rotation', async (kind) => {
     const vault = await VaultFixture.create();
@@ -307,11 +321,11 @@ describe('genesis seal: a non-human session may store the first bundle of a vaul
     expect((await vault.get(vault.owner, '/recovery')).json.bundle.bundle_seq).toBe(1);
   });
 
-  it('email_otp and a token without session_kind replace a stored bundle as before', async () => {
+  it('email_otp replaces a stored bundle; a token without session_kind cannot', async () => {
     const vault = await VaultFixture.create();
     expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 1), vault.state.seq, { sessionKind: 'email_otp' })).status).toBe(200);
-    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 2))).status).toBe(200);
-    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 3), vault.state.seq, { sessionKind: 'email_otp' })).status).toBe(200);
-    expect((await vault.get(vault.owner, '/recovery')).json.bundle.bundle_seq).toBe(3);
+    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 2), vault.state.seq, { sessionKind: null })).status).toBe(401);
+    expect((await putTestBundle(vault, vault.owner, sealTestBundle(vault, 2), vault.state.seq, { sessionKind: 'email_otp' })).status).toBe(200);
+    expect((await vault.get(vault.owner, '/recovery')).json.bundle.bundle_seq).toBe(2);
   });
 });

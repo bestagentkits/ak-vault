@@ -34,6 +34,7 @@ describe('relay upgrade', () => {
     expect(await errorOf(await upgrade(fx.owner, { deviceKey: other.keys.record.sign_pub }))).toEqual({ status: 401, code: 'unauthorized' });
     expect(await errorOf(await upgrade(fx.owner, { deviceKey: null }))).toEqual({ status: 401, code: 'unauthorized' });
     expect(await errorOf(await upgrade(fx.owner, { proof: null }))).toEqual({ status: 401, code: 'unauthorized' });
+    expect(await errorOf(await upgrade(fx.owner, { claims: { session_kind: undefined } }))).toEqual({ status: 401, code: 'unauthorized' });
   });
 
   it('refuses a proof signed by another key, for another URL, or replayed', async () => {

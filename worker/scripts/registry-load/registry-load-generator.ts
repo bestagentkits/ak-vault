@@ -43,7 +43,7 @@ async function oneRequest(task: GeneratorTask, issuer: LabIssuer, sub: string, s
   // A seeded (revoked through min_iat) sub with a random, unrevoked sid and did: all three lookups run.
   const token = await issuer.sign(
     { alg: 'ES256', typ: 'at+jwt', kid: issuer.kid },
-    { iss: issuer.issuer, aud: issuer.audience, sub, did: randomId(), sid: `sid-${randomId()}`, jti: randomId(), scope: 'vault:read', iat: now, nbf: now, exp: now + 300 },
+    { iss: issuer.issuer, aud: issuer.audience, sub, did: randomId(), sid: `sid-${randomId()}`, jti: randomId(), scope: 'vault:read', session_kind: 'email_otp', iat: now, nbf: now, exp: now + 300 },
   );
   const sentAt = performance.now();
   try {
