@@ -822,9 +822,13 @@ A **legacy** `role_set`, signed under an earlier revision with the body
 `{"account","role"}` and no fence, still verifies, so a stored chain that holds one
 keeps working; a body with only one of `log_fence` and `log_head` is `bad_request`.
 Its `role_changes` rows have `log_fence` and `log_head` `null`; such a row binds no
-log position or head and is skipped wherever fences are checked. The Worker refuses a
-new `role_set` without a fence (`bad_request`). An owner bounds a legacy change by
-appending a fenced `role_set`, which may keep the role unchanged (a re-affirm).
+log position or head and is skipped wherever fences are checked. A legacy `role_set`
+after a fenced `role_set` in the same chain is `bad_request` (no Worker ever accepted
+that order), so once a vault holds a fenced `role_set` no legacy span can open. The
+Worker also refuses a new `role_set` without a fence (`bad_request`). An owner bounds
+a legacy change by appending a fenced `role_set` for that account, which may keep the
+role unchanged (a re-affirm). A client of an earlier revision parses only the legacy
+body, so it refuses (`bad_request`) any chain that holds a fenced `role_set`.
 
 **Scope of the fence.** `log_fence` guarantees that no record by a removed author is
 accepted above the fence; `log_head` binds the contents of every position at or below
@@ -1752,8 +1756,10 @@ under an earlier revision does not verify and is reset rather than migrated.
   state's, and `verifyChangeLog` checks role fences like removal fences. A legacy
   `role_set` without a fence, written under an earlier revision, still verifies and is
   listed with `null` fences; around one a record is accepted if the author was a writer
-  under any role it held between the neighbouring fenced changes. The Worker refuses a
-  new `role_set` without a fence, so a client of an earlier revision gets `bad_request`.
+  under any role it held between the neighbouring fenced changes, and a legacy
+  `role_set` after a fenced one is `bad_request`. The Worker refuses a new `role_set`
+  without a fence. A client of an earlier revision gets `bad_request` when it signs a
+  `role_set`, and refuses any chain that holds a fenced one.
 - **2026-10 (issue #7):** policy binding (§8.1): a policy item's payload layout,
   `meta.item_ids` naming the governed items, the payload `sensitivity` as a minimum,
   and `resolveItemPolicy`. Earlier revisions defined no policy-item layout and no

@@ -381,8 +381,16 @@ stale vault shows up depends on the revision:
   legacy change, clients accept the affected account's records under any role it held
   there, trusting the Worker's check for that span (spec §5). An owner closes the
   span by setting the account's role again with a current client, even to the same
-  role. A client older than this revision gets `bad_request` for every new
-  `role_set`, so release the clients that sign the fence before deploying the Worker.
+  role. Roll out in this order, because each side refuses the other's body:
+  1. Deploy the Worker. Earlier Workers refuse a fenced `role_set`; this one refuses
+     a new legacy one, so until step 2 nobody can change roles (`bad_request`).
+     Reads and every other event keep working.
+  2. Release the CLI built against this revision's Go module, which signs the fence
+     and reads both bodies.
+  3. Once a vault holds a fenced `role_set`, a member device on a CLI built against
+     an earlier module refuses that vault's chain (`bad_request`) and stops syncing
+     until it is upgraded. Ask members to upgrade before owners change roles.
+  The CLI work is tracked in agentkit; see the issue linked from #22.
 
 Before deploying a revision that changes stored data, write the deploy time (UTC)
 and the version ID it replaces on the issue. That is the backup: point-in-time

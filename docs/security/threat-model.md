@@ -277,7 +277,9 @@ These are accepted and must be stated wherever the guarantees are described:
   that span clients rely on the Worker alone, as before this revision: after a legacy
   demotion, a demoted editor with a colluding server can still place records in the
   span, up to the next fenced change of that account. An owner bounds the span with a
-  fenced `role_set`, which may re-affirm the current role. Machine devices and roles
+  fenced `role_set`, which may re-affirm the current role. Clients refuse a legacy
+  `role_set` placed after a fenced one, so once a vault holds a fenced `role_set` no
+  new span can open, even through a colluding server. Machine devices and roles
   outside the closed set are refused in the span too.
 - **Recovery bundle contents are not server-checked.** The server cannot open the
   bundle. It refuses a `PUT /recovery` whose declared sealing position predates the
