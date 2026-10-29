@@ -84,7 +84,7 @@ function refuseBrowserSession(req: VaultRequest): void {
 
 /**
  * Fail closed: outside membership only an `email_otp` session is admitted (spec
- * §9.4). A token without `session_kind` was verified as `email_otp`.
+ * §9.4). A token without `session_kind` never reaches here: verification refuses it (401).
  */
 function requireHumanSession(req: VaultRequest): void {
   if (req.claims.kind !== 'email_otp') throw new ApiError('forbidden');
