@@ -187,6 +187,15 @@ the bundle ciphertext and attempt offline guessing, which the Argon2id parameter
 this path, but a thief who still holds a live owner-account session can mint a token
 for a new device ID and fetch the ciphertext; after a loss the owner MUST revoke their
 ak-web sessions, and the password or recovery key remains the barrier.
+Because the device ID on this path is the caller's choice, every request on it whose
+proof verifies also spends a per-account budget in the vault,
+`recovery_identity_requests_per_window` per `rate_window_seconds` (§10), on top of the
+per-device budgets; once it is spent the path answers `429 rate_limited` with
+`Retry-After`, before the key and proof checks, for every not-yet-enrolled device ID of
+the account until the window ends. A refused proof does not spend it, so a token without
+its key cannot exhaust it; current devices do not spend it. The budget slows repeated
+reads and membership scraping; it cannot stop a single fetch of the bundle, and requests
+whose proof fails still cost their verification work.
 
 SAS transcript = `cjson({"ctx":"akv1/sas","vault_id","initiator":device_id,"joiner":device,
 "nonce_i":b64 16B,"nonce_j":b64 16B})`; both devices display
@@ -1496,6 +1505,12 @@ Errors are `{"error":{"code","message"}}` with stable codes: `unauthorized`,
 server-only `internal` (HTTP 500, fail closed, generic message; a retry may succeed).
 Messages never echo request bodies, item IDs beyond the path, tokens or names.
 Limits are published by `GET /v1/meta` and owned by `worker/src/limits.ts`.
+Request budgets are fixed windows of `rate_window_seconds`: per device, per vault,
+`rate_requests_per_window` for requests that pass authorization and as many again for
+requests the vault refuses at authorization; and per account, per vault,
+`recovery_identity_requests_per_window` for the recovery identity (§3.5). A spent budget
+answers `429 rate_limited` with `Retry-After`; a failure to read or update a budget is
+`internal` and serves nothing.
 They include per-vault totals for stored records (`records_per_vault`) and record
 bytes (`record_bytes_per_vault`), conflict branches included; exceeding either
 returns `quota_exceeded`. A request for a vault that has no genesis returns
