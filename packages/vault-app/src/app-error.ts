@@ -30,6 +30,8 @@ export const APP_ERROR_CODES = [
   'not_found',
   'item_unreadable',
   'duplicate_name',
+  'name_not_writable',
+  'name_unverifiable',
   'history_unavailable',
   'restore_current',
   'already_exists',
