@@ -619,6 +619,42 @@ describe('vault', () => {
     const merged = tabA.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!;
     expect(merged.log_seq).toBe(2);
     expect(merged.membership_seq).toBeGreaterThan(stored.membership_seq);
+    expect(pageB.controller.current()).toMatchObject({ kind: 'vault', membership: { membershipSeq: merged.membership_seq } });
+  });
+
+  it('refuses another history served to a tab with no view once another tab stored a further position', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const tabA = new Browser(world);
+    await tabA.enroll();
+    // The honest history reaches position 3; the server then serves another one that ends at position 2.
+    world.ownerSet('two', 'b');
+    world.ownerSet('three', 'c');
+    const honestHead = world.logHeads[3]!;
+    world.log.length = 1;
+    world.logHeads.length = 2;
+    world.ownerSet('other', 'd');
+    const tabB = new Browser(world, { devices: tabA.devices });
+    const start = await tabB.load();
+    await start.controller.signIn();
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let holding = true;
+    tabB.afterFetch = async (url) => {
+      if (holding && url.includes('/changes')) {
+        holding = false;
+        await held;
+      }
+    };
+    const loading = tabB.load(world.authorize(start.navigated.at(-1)!));
+    await settle(() => expect(holding).toBe(false));
+    // Meanwhile another tab verified the honest history to position 3.
+    const stored = tabA.devices.entries.get(ACCOUNT)!;
+    tabA.devices.entries.set(ACCOUNT, { ...stored, enrollment: { ...stored.enrollment!, witnessed: { ...stored.enrollment!.witnessed!, log_seq: 3, log_head: honestHead } } });
+    release();
+    const pageB = await loading;
+    expect(pageB.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+    expect(pageB.root.textContent).not.toContain('other');
   });
 
   it('raises an integrity alarm when two pulls reach the same position with different heads', async () => {

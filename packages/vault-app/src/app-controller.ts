@@ -413,15 +413,14 @@ export class AppController {
       if (saved.outcome === 'stale') throw new AppError('signin_required');
       const position = saved.position ?? enrollment.witnessed;
       this.device = { ...latest, enrollment: { ...enrollment, witnessed: position } };
-      // Another tab is further along: keep the newer view already shown, if any.
-      const keepShown = saved.outcome === 'older' && this.snapshot !== null;
-      // This view is behind the stored position on some component: pull once more from that position
-      // rather than show it, so the kept head checks this server's history against the stored one.
-      if (!keepShown && !again && enrollment.witnessed && position && isWitnessedOlder(enrollment.witnessed, position)) {
+      // Another tab stored a position this view is behind on some component: pull once more from that
+      // position rather than show it, so the kept head checks this server's history against the stored
+      // one. Only once: a position stored during that second pull is left to the next one.
+      if (!again && enrollment.witnessed && position && isWitnessedOlder(enrollment.witnessed, position)) {
         await this.sync(notice, true);
         return;
       }
-      if (!keepShown) this.snapshot = snapshot;
+      this.snapshot = snapshot;
       const link = this.writeLink;
       if (link) {
         this.writeLink = null;
