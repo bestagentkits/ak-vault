@@ -404,9 +404,10 @@ stale vault shows up depends on the revision:
      (a separate change). Any value other than exactly `"false"` refuses. To undo,
      set it back to `"false"` and deploy.
   Status: the owner turned the setting on early, on 2026-10-29, for production and
-  staging (only the owner used sync then). Until step 3 ships, a released CLI's
-  `role_set` is refused with `bad_request`; set the value back to `"false"` and
-  deploy if a role must change before then.
+  staging (only the owner used sync then), and set production back to `"false"` at
+  the AgentKit v3.0.0 GO the same day, so the released CLI can change roles. Staging
+  stays `"true"` to exercise step 3 before it ships. Step 5 for production follows
+  the AgentKit release that contains agentkit#2822 (planned v3.0.1).
   Once any vault holds a fenced `role_set`, roll the Worker forward only: an earlier
   Worker re-verifies the stored chain on every append and refuses the fenced body, so
   a rollback blocks every membership change in that vault, removals included.

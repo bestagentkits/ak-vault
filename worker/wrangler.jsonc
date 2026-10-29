@@ -46,11 +46,11 @@
     // Remote access (device relay, /mcp, /app dashboard) stays off in production until
     // its release gate passes; every remote-access route answers 404 while off.
     "VAULT_REMOTE_ACCESS_ENABLED": "false",
-    // Role fence transition (issue #22): new role_set events without a signed fence are
-    // refused. The owner turned this on early (2026-10-29), so a released CLI that
-    // predates role fences cannot change roles until a CLI on the fenced Go module
-    // ships (runbook). Set it to exactly "false" to accept them again.
-    "VAULT_REFUSE_LEGACY_ROLE_SET": "true"
+    // Role fence transition (issue #22): production accepts both role_set bodies until
+    // an AgentKit CLI that signs role fences ships (v3.0.1, agentkit#2822). The owner
+    // set it back to "false" at the v3.0.0 GO (2026-10-29) so the released CLI can
+    // change roles; flip it to "true" after that CLI ships (runbook step 5).
+    "VAULT_REFUSE_LEGACY_ROLE_SET": "false"
   },
   "env": {
     "staging": {
