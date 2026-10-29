@@ -390,12 +390,15 @@ stale vault shows up depends on the revision:
   3. agentkit bumps the module and releases through its beta train
      ([agentkit#2822](https://github.com/bestagentkits/agentkit/issues/2822)): the
      new CLI signs the fence and reads both bodies.
-  4. Wait until older CLIs are gone. Once a vault holds a fenced `role_set`, a member
-     device on a CLI built against an earlier module refuses that vault's chain
-     (`bad_request`) and stops syncing until upgraded, so ask members to upgrade
-     before owners change roles with the new CLI. A legacy `role_set` after a fenced
-     one is always refused; it blocks no one extra, because a CLI that still sends the
-     legacy body already refuses such a chain, and upgrading fixes both.
+  4. Wait until older CLIs are gone; the owner decides when. Owners must not change
+     roles with the new CLI before every member of that vault has upgraded: once a
+     vault holds a fenced `role_set`, a member device on a CLI built against an
+     earlier module refuses its chain and stores a membership integrity alarm that
+     halts sync. Upgrading clears it only if the new release does so
+     ([agentkit#2822](https://github.com/bestagentkits/agentkit/issues/2822));
+     otherwise that device must purge its sync state and enroll again. A legacy
+     `role_set` after a fenced one is always refused; it strands no one extra, because
+     a CLI that still sends the legacy body already refuses such a chain.
   5. Flip `VAULT_REFUSE_LEGACY_ROLE_SET` to `"true"` in `wrangler.jsonc` and deploy
      (a separate change). Any value other than exactly `"false"` refuses. To undo,
      set it back to `"false"` and deploy.

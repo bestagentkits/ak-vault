@@ -827,7 +827,7 @@ head and keeps the head at it exactly as for a removal fence; one that learns of
 role change after its cursor passed the fence re-checks the records above it (replay
 again, or compare kept heads and re-verify those records).
 
-A **legacy** `role_set`, signed under an earlier revision with the body
+A **legacy** `role_set`, signed by a client of an earlier revision with the body
 `{"account","role"}` and no fence, still verifies, so a stored chain that holds one
 keeps working; a body with only one of `log_fence` and `log_head` is `bad_request`.
 Its `role_changes` rows have `log_fence` and `log_head` `null`; such a row binds no
@@ -839,7 +839,8 @@ without a fence; an operator setting later makes it refuse one (`bad_request`), 
 stored legacy events keep verifying either way. An owner bounds a legacy change by
 appending a fenced `role_set` for that account, which may keep the role unchanged (a
 re-affirm). A client of an earlier revision parses only the legacy body, so it
-refuses (`bad_request`) any chain that holds a fenced `role_set`.
+refuses (`bad_request`) any chain that holds a fenced `role_set`, and treats that as
+a membership integrity failure.
 
 **Scope of the fence.** `log_fence` guarantees that no record by a removed author is
 accepted above the fence; `log_head` binds the contents of every position at or below

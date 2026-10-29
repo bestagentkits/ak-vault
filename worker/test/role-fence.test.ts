@@ -107,7 +107,8 @@ describe('role fence', () => {
     const legacy = fx.buildEvent('role_set', { account: bob.account, role: 'reader' }, signerOf(fx.owner));
     const seq = fx.state.seq;
     await runInDurableObject(stubFor(fx.vaultId), (instance: unknown) => {
-      // The deployed setting is "false"; call the handler as the Durable Object does once it is flipped.
+      // The deployed setting is "false" and the pool's bindings are fixed per run, so this calls the
+      // handler as the Durable Object does once flipped; the parse and the deployed values are tested below.
       const { sql, membership } = instance as { sql: SqlStorage; membership: MembershipStore };
       const post = () => handleMembershipPost(sql, membership, fx.vaultId, { event: legacy as unknown as JsonObject }, membership.verifyAppend(legacy), { refuseLegacyRoleSet: true });
       expect(post).toThrow(expect.objectContaining({ code: 'bad_request' }));
