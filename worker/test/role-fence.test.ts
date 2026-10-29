@@ -88,6 +88,10 @@ describe('role fence', () => {
     // A same-role fenced role_set bounds the legacy span from here on.
     expect((await fx.setRole(bob.account, 'reader')).status).toBe(201);
     expect(fx.state.role_changes.at(-1)).toMatchObject({ device_id: bob.keys.record.device_id, prev_role: 'reader', role: 'reader', log_fence: 1 });
+    // After a fenced role_set the chain itself refuses a legacy one.
+    const late = fx.buildEvent('role_set', { account: carol.account, role: 'reader' }, signerOf(fx.owner));
+    expect(() => verifyMembershipChain([...fx.events, late])).toThrow(/after a fenced role_set/);
+    expect((await fx.append(late)).json.error.code).toBe('bad_request');
     expect((await fx.removeDevice(carol)).status).toBe(201);
     expect((await fx.write(bob, randomId(), 0, v)).status).toBe(403);
     expect(await fx.verifiedLogHeads()).toHaveLength(2);

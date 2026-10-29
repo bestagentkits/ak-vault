@@ -53,6 +53,7 @@ function verifyEventWraps(event: MembershipEvent, raw: unknown, next: Membership
  */
 function checkLogFence(sql: SqlStorage, event: MembershipEvent): void {
   if (event.type !== 'device_remove' && event.type !== 'member_remove' && event.type !== 'role_set') return;
+  // Only a role_set reaches this without a fence: chain verification requires one on removals.
   if (event.body['log_fence'] === undefined) throw new ApiError('bad_request', { message: 'a new role_set must carry log_fence and log_head' });
   const fence = event.body['log_fence'] as number; // integer >= 0, checked by chain verification
   const head = currentLogSeq(sql);
