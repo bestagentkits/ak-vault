@@ -59,8 +59,12 @@ const L = REMOTE_ACCESS_LIMITS;
 /** Transit allowance on top of the device's `deadline_ms` before a call times out. */
 const DEADLINE_GRACE_MS = 2_000;
 const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-/** Newest audit rows kept per account, so a client that keeps failing cannot grow the table without bound inside the retention window. */
+/** Audit rows kept per account; past it the oldest rows that are not successes go first, so a client spamming failing calls cannot push out the record of its successful ones. */
 export const AUDIT_MAX_ROWS = 20_000;
+/** Backstop for successful rows alone (they otherwise keep the full retention window). */
+export const AUDIT_MAX_SUCCESS_ROWS = 100_000;
+/** Outcomes of a tool that ran (ok) or whose write was sealed and queued (queued). */
+const AUDIT_SUCCESS_SQL = "outcome IN ('ok', 'queued')";
 const RATE_WINDOW_MS = 60_000;
 const WRITE_TOOLS: ReadonlySet<RelayTool> = new Set<RelayTool>(['set', 'delete']);
 
@@ -369,7 +373,11 @@ export class AccountRelay extends DurableObject<Env> {
     this.ctx.storage.transactionSync(() => {
       this.sql.exec('DELETE FROM client_audit WHERE ts < ?', nowMs - AUDIT_RETENTION_MS);
       this.sql.exec('INSERT INTO client_audit (ts, client_hash, tool, outcome, ms) VALUES (?, ?, ?, ?, ?)', nowMs, e.clientHash, e.tool, e.outcome, e.ms);
-      this.sql.exec('DELETE FROM client_audit WHERE rowid <= (SELECT MAX(rowid) FROM client_audit) - ?', AUDIT_MAX_ROWS);
+      const over = this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM client_audit').one().n - AUDIT_MAX_ROWS;
+      if (over > 0) {
+        this.sql.exec(`DELETE FROM client_audit WHERE rowid IN (SELECT rowid FROM client_audit WHERE NOT (${AUDIT_SUCCESS_SQL}) ORDER BY rowid LIMIT ?)`, over);
+      }
+      this.sql.exec(`DELETE FROM client_audit WHERE rowid IN (SELECT rowid FROM client_audit WHERE ${AUDIT_SUCCESS_SQL} ORDER BY rowid DESC LIMIT -1 OFFSET ?)`, AUDIT_MAX_SUCCESS_ROWS);
     });
     return true;
   }

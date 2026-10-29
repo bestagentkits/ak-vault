@@ -7,7 +7,7 @@ import { runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { randomId, signResult, type JsonObject, type McpScope } from '@ak-vault/protocol';
 import { REMOTE_ACCESS_LIMITS } from '../src/limits.js';
-import { AUDIT_MAX_ROWS } from '../src/relay/account-relay-durable-object.js';
+import { AUDIT_MAX_ROWS, AUDIT_MAX_SUCCESS_ROWS } from '../src/relay/account-relay-durable-object.js';
 import { relayStub, type RelayCall } from '../src/relay/relay-rpc.js';
 import { clientLogTag } from '../src/http/operational-logger.js';
 import { createDevice } from './helpers/api-client.js';
@@ -379,7 +379,7 @@ describe('relay rate budgets and audit', () => {
     expect(rows).toEqual([{ client_hash: clientHash, tool: 'set', outcome: 'no_device_online', ms: 3 }]);
   });
 
-  it('keeps only the newest audit rows once the per-account cap is reached', async () => {
+  it('evicts the oldest failure rows once the per-account cap is reached', async () => {
     const stub = relayStub(env, `cct-${randomId()}`);
     const clientHash = clientLogTag('client-1');
     await runInDurableObject(stub, async (_instance, state) => {
@@ -394,4 +394,37 @@ describe('relay rate budgets and audit', () => {
     expect(rows.slice(-2).map((r) => r.ms)).toEqual([999_999, 999_998]);
     expect(rows[0]!.ms).toBe(2);
   });
-});
+
+  it('a flood of failing calls cannot evict an earlier successful audit row', async () => {
+    const stub = relayStub(env, `acct-${randomId()}`);
+    const clientHash = clientLogTag('client-1');
+    expect(await stub.recordAudit({ clientHash, tool: 'set', outcome: 'ok', ms: 7 })).toBe(true);
+    expect(await stub.recordAudit({ clientHash, tool: 'set', outcome: 'queued', ms: 8 })).toBe(true);
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.transactionSync(() => {
+        for (let i = 0; i < AUDIT_MAX_ROWS; i++) state.storage.sql.exec('INSERT INTO client_audit (ts, client_hash, tool, outcome, ms) VALUES (?, ?, ?, ?, ?)', Date.now(), clientHash, 'list', 'invalid_args', i);
+      });
+    });
+    for (const outcome of ['no_device_online', 'not_found', 'invalid_args']) {
+      expect(await stub.recordAudit({ clientHash, tool: 'list', outcome, ms: 1 })).toBe(true);
+    }
+    const rows = await runInDurableObject(stub, async (_instance, state) => state.storage.sql.exec<{ outcome: string; ms: number }>('SELECT outcome, ms FROM client_audit ORDER BY rowid').toArray());
+    expect(rows).toHaveLength(AUDIT_MAX_ROWS);
+    expect(rows.slice(0, 2)).toEqual([{ outcome: 'ok', ms: 7 }, { outcome: 'queued', ms: 8 }]);
+    expect(rows.at(-1)).toEqual({ outcome: 'invalid_args', ms: 1 });
+  });
+
+  it('trims successful rows only past their own hard cap', async () => {
+    const stub = relayStub(env, `acct-${randomId()}`);
+    const clientHash = clientLogTag('client-1');
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.transactionSync(() => {
+        for (let i = 0; i < AUDIT_MAX_SUCCESS_ROWS; i++) state.storage.sql.exec('INSERT INTO client_audit (ts, client_hash, tool, outcome, ms) VALUES (?, ?, ?, ?, ?)', Date.now(), clientHash, 'list', 'ok', i);
+      });
+    });
+    expect(await stub.recordAudit({ clientHash, tool: 'list', outcome: 'ok', ms: 500_000 })).toBe(true);
+    const rows = await runInDurableObject(stub, async (_instance, state) => state.storage.sql.exec<{ ms: number }>('SELECT ms FROM client_audit ORDER BY rowid').toArray());
+    expect(rows).toHaveLength(AUDIT_MAX_SUCCESS_ROWS);
+    expect(rows[0]!.ms).toBe(1);
+    expect(rows.at(-1)!.ms).toBe(500_000);
+  });});
