@@ -22,10 +22,21 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   };
 }
 
-/** Prints counts only. A sentinel hit fails the run; an unavailable tail is reported, never passed. */
+/** Set to `1` to let a run pass although the log tail was unavailable (the leak scan did not run). */
+const ALLOW_UNSCANNED_ENV = 'VAULT_E2E_ALLOW_UNSCANNED';
+
+/**
+ * Prints counts only. A sentinel hit fails the run. An unavailable tail also fails it,
+ * because an unscanned run proves nothing about leaks; `VAULT_E2E_ALLOW_UNSCANNED=1`
+ * downgrades it to a printed BLOCKED line for local runs that cannot reach the tail.
+ */
 function report(result: LeakScanResult): void {
   if (result.status === 'unavailable') {
-    process.stdout.write(`[leak-scan] BLOCKED: ${result.reason ?? 'unavailable'}. Not a clean scan.\n`);
+    const reason = result.reason ?? 'unavailable';
+    process.stdout.write(`[leak-scan] BLOCKED: ${reason}. Not a clean scan.\n`);
+    if (process.env[ALLOW_UNSCANNED_ENV] !== '1') {
+      throw new Error(`[leak-scan] the log tail was unavailable (${reason}): the run fails. Set ${ALLOW_UNSCANNED_ENV}=1 to accept an unscanned run.`);
+    }
     return;
   }
   process.stdout.write(`[leak-scan] scanned ${result.chunks} tail chunks, ${result.hits} sentinel hits\n`);

@@ -620,7 +620,7 @@ ct       = XC20P(key, n, pt, aad)
 
 **Who requests.** Only the Worker's MCP handler creates write requests, through
 `secrets_prepare_write` (§9.8); there is no route that accepts one. As for sealing
-(§3.6), it needs `vault-mcp:write`, an `owner` or `editor` account, the stored seal-key
+(§3.6), it needs `vault-mcp:write`, an `owner` account (an `editor` is refused with `invalid_args`: only an owner can enroll the browser device that completes the request), the stored seal-key
 document of the current key epoch, and no pending `rekey_required`. The vault object
 stores the request only with a `ts` within 300 s of its own clock, a lifetime between
 `write_request_min_ttl_s` and `write_request_ttl_s`, a `request_id` it does not hold, and
@@ -1422,6 +1422,7 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   `MCP-Protocol-Version`; an unsupported value answers `400` `-32022` with the
   request's `id`. A request without the header is served as 2025-11-25, statelessly:
   a 2025-11-25 client's `initialize` is answered without a session ID.
+- **Origin and browsers.** A request without `Origin` is served. One with an `Origin` must be a well-formed `https:` origin; `null`, `http:` and `file:` origins answer `403` `forbidden`. This is a coarse filter, not an allowlist: any `https:` site passes it, because server-side connectors and desktop clients do not announce a fixed origin. The guard against a hostile web page is that the endpoint accepts only an `Authorization: Bearer` token (the scheme is case-insensitive; no cookie, no query token) and sends no CORS headers, so a page cannot attach a credential or read a reply.
 - **Rate limits.** Every JSON-RPC request that passes transport validation (method,
   `Origin`, kill switch, token and revocation, headers and protocol version, body and
   JSON-RPC parsing) spends one call from the `mcp_calls_per_minute_per_client` and

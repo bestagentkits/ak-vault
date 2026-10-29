@@ -57,7 +57,14 @@ function plainError(status: number, code: 'bad_request' | 'forbidden', message: 
   return jsonResponse({ error: { code, message } }, status, headers);
 }
 
-/** Absent → allowed (non-browser clients); present → must be an `https:` origin (DNS-rebinding guard). */
+/**
+ * Absent → allowed (non-browser clients); present → must be a well-formed `https:` origin.
+ * This is a coarse filter, not an allowlist: it refuses `null`, `http:` (including loopback)
+ * and `file:` origins but accepts any `https:` site. The actual cross-site guard is that
+ * `/mcp` takes only an `Authorization: Bearer` token (never a cookie or query token) and
+ * sends no CORS headers, so a web page can neither attach a credential nor read a reply
+ * (spec §9.8).
+ */
 function originAllowed(origin: string | null): boolean {
   if (origin === null) return true;
   try {

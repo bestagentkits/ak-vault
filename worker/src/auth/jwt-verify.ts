@@ -230,9 +230,15 @@ export async function verifyMcpToken(token: string, config: TokenConfig, nowMs =
   };
 }
 
+/** The credential of an `Authorization: Bearer <credential>` header; the scheme is case-insensitive (RFC 7235 section 2.1). Null for any other scheme or an empty credential. */
+export function bearerCredential(header: string | null): string | null {
+  const match = /^bearer[ \t]+(\S.*)$/i.exec(header ?? '');
+  return match ? match[1]!.trim() : null;
+}
+
 /** Extract the bearer token from the Authorization header. */
 export function bearerToken(request: Request): string {
-  const header = request.headers.get('Authorization');
-  if (!header || !header.startsWith('Bearer ')) deny();
-  return header.slice('Bearer '.length).trim();
+  const token = bearerCredential(request.headers.get('Authorization'));
+  if (!token) deny();
+  return token;
 }
