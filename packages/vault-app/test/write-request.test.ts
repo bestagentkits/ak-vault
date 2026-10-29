@@ -11,7 +11,7 @@ import { randomId, type SignedRecord } from '@ak-vault/protocol';
 import { parseWriteLink } from '../src/sync/write-request.js';
 import { remaining } from '../src/ui/views.js';
 import { FakeWorld, ORIGIN } from './helpers/fake-world.js';
-import { Browser, byTestId, type Page } from './helpers/dashboard-page.js';
+import { Browser, byTestId, settle, type Page } from './helpers/dashboard-page.js';
 
 const SENTINEL = 'sentinel-value-4d2b8e61f0';
 const NAME = 'deploy-api-key';
@@ -52,7 +52,7 @@ async function submit(page: Page, value: string): Promise<HTMLInputElement> {
   input.value = value;
   (input.form as HTMLFormElement).dispatchEvent(new Event('submit', { cancelable: true }));
   expect(input.value).toBe('');
-  await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ kind: 'write', busy: false }));
+  await settle(() => expect(page.controller.current()).toMatchObject({ kind: 'write', busy: false }));
   return input;
 }
 
@@ -155,7 +155,7 @@ describe('write-request link', () => {
     const held = new Promise<void>((resolve) => (release = resolve));
     world.requestGate = (method) => (method === 'PUT' ? held : Promise.resolve());
     const saving = page.controller.submitWrite(SENTINEL);
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ kind: 'write', busy: true }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ kind: 'write', busy: true }));
     await page.controller.openLink(new URL(world.formUrl(second)));
     expect(page.controller.current()).toMatchObject({ kind: 'write', busy: true, request: { name: NAME } });
     release();
@@ -258,7 +258,7 @@ describe('write-request link', () => {
     expect(page.controller.current()).toMatchObject({ kind: 'write', retry: true, notice: { code: 'network' } });
     offline = false;
     byTestId(page.root, 'write-retry').click();
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ kind: 'write', open: true }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ kind: 'write', open: true }));
   });
 });
 
@@ -337,7 +337,7 @@ describe('completing a write request', () => {
     input.value = SENTINEL;
     byTestId(page.root, 'write-cancel').click();
     expect(input.value).toBe('');
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ kind: 'write', busy: false, notice: { code: 'write_cancelled' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ kind: 'write', busy: false, notice: { code: 'write_cancelled' } }));
     expect(world.writeRequests.get(id)).toMatchObject({ state: 'cancelled', reason: 'user_cancelled' });
     const close = world.exchanges.find((e) => e.method === 'POST' && e.url.endsWith('/close'))!;
     expect(JSON.parse(close.requestBody)).toEqual({ outcome: 'cancelled', reason: 'user_cancelled' });

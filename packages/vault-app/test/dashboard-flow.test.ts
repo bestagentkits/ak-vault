@@ -440,7 +440,7 @@ describe('vault', () => {
       }
     };
     const pull = page.controller.refresh();
-    await vi.waitFor(() => expect(holding).toBe(false));
+    await settle(() => expect(holding).toBe(false));
     await page.controller.lock();
     release();
     await pull;
