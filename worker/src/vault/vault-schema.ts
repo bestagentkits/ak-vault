@@ -47,6 +47,8 @@ export const VAULT_SCHEMA = `
   CREATE TABLE IF NOT EXISTS rate_counters (did TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);
   -- Requests refused before or during authorization, counted apart so they never spend rate_counters.
   CREATE TABLE IF NOT EXISTS refused_rate_counters (did TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);
+  -- Recovery-identity requests per account (the vault's owner), whatever device ID the token names.
+  CREATE TABLE IF NOT EXISTS recovery_identity_rate_counters (account TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);
   -- Remote access (spec §3.6, §3.7). name_tags: the device-computed tag sent beside each item's current
   -- head (unsigned, untrusted; the server never computes one). seal_keys: one owner-signed seal-key
   -- document per key epoch. sealed_ops: opaque sealed writes queued for the account's own devices; an

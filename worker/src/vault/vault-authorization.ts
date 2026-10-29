@@ -16,7 +16,9 @@
  *    `AKV-Device-Key`; the token `did` must equal `kid(sign_pub)` and the proof
  *    must verify against that key. Only an `email_otp` session may take this path
  *    and recovery enrollment; `api_key_device` and `machine` sessions are refused
- *    (spec §9.4), so a leaked API key alone cannot collect bundles. Exposure: any
+ *    (spec §9.4), so a leaked API key alone cannot collect bundles. Requests on
+ *    this path also spend a per-account budget (`recovery_identity_requests_per_window`),
+ *    so minting fresh device IDs does not buy fresh budgets. Exposure: any
  *    holder of an owner-account token plus a key it generates can fetch the
  *    bundle and attempt offline guessing of the bundle password, and can read
  *    membership metadata (accounts, roles, device public keys).
@@ -33,7 +35,7 @@ import { MembershipStore } from './membership-store.js';
 import { hasIdempotentResult } from './idempotency.js';
 import { hasRecoveryBundle } from './recovery-store.js';
 import { parseBodyObject, requireKeys } from './request-body.js';
-import { enforceRole, memberDevice, requireScope, verifyRequestProof, type RoleRule } from './request-guard.js';
+import { enforceRateLimit, enforceRole, memberDevice, requireScope, verifyRequestProof, type RoleRule } from './request-guard.js';
 import { isMutation, type VaultOp, type VaultRequest } from './vault-request.js';
 
 const READ: readonly Scope[] = ['vault:read'];
@@ -195,6 +197,9 @@ function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: Membe
   requireHumanSession(req);
   const did = req.claims.did;
   if (req.claims.sub !== state.owner_account || state.removed_device_ids.includes(did)) throw new ApiError('forbidden');
+  // Charged per account before the key and proof checks, so neither fresh device IDs
+  // nor refused proofs escape the budget.
+  enforceRateLimit(sql, 'recovery_identity', req.claims.sub, req.nowMs);
   let signPub: string;
   try {
     signPub = req.deviceKey ?? '';
