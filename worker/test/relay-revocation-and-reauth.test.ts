@@ -7,7 +7,7 @@ import { runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { randomId, signResult, type JsonObject, type McpScope } from '@ak-vault/protocol';
 import { REMOTE_ACCESS_LIMITS } from '../src/limits.js';
-import { AUDIT_MAX_ROWS, AUDIT_MAX_SUCCESS_ROWS } from '../src/relay/account-relay-durable-object.js';
+import { AUDIT_MAX_ROWS, AUDIT_MAX_SUCCESS_ROWS, AUDIT_PRUNE_EVERY, ensureAuditSchema } from '../src/relay/account-relay-durable-object.js';
 import { relayStub, type RelayCall } from '../src/relay/relay-rpc.js';
 import { clientLogTag } from '../src/http/operational-logger.js';
 import { createDevice } from './helpers/api-client.js';
@@ -379,52 +379,82 @@ describe('relay rate budgets and audit', () => {
     expect(rows).toEqual([{ client_hash: clientHash, tool: 'set', outcome: 'no_device_online', ms: 3 }]);
   });
 
-  it('evicts the oldest failure rows once the per-account cap is reached', async () => {
-    const stub = relayStub(env, `cct-${randomId()}`);
-    const clientHash = clientLogTag('client-1');
+  /** Insert `n` audit rows straight into the table, `ms` counting up from `from`, one `ts` tick apart. */
+  async function seedAudit(stub: ReturnType<typeof relayStub>, n: number, outcome: string, success: 0 | 1, from = 0, ts0 = Date.now() - 60_000): Promise<void> {
     await runInDurableObject(stub, async (_instance, state) => {
       state.storage.transactionSync(() => {
-        for (let i = 0; i < AUDIT_MAX_ROWS; i++) state.storage.sql.exec('INSERT INTO client_audit (ts, client_hash, tool, outcome, ms) VALUES (?, ?, ?, ?, ?)', Date.now(), clientHash, 'list', 'no_device_online', i);
+        for (let i = 0; i < n; i++) {
+          state.storage.sql.exec('INSERT INTO client_audit (ts, client_hash, tool, outcome, ms, success) VALUES (?, ?, ?, ?, ?, ?)', ts0 + from + i, 'a'.repeat(16), 'list', outcome, from + i, success);
+        }
       });
     });
-    expect(await stub.recordAudit({ clientHash, tool: 'set', outcome: 'ok', ms: 999_999 })).toBe(true);
-    expect(await stub.recordAudit({ clientHash, tool: 'set', outcome: 'ok', ms: 999_998 })).toBe(true);
-    const rows = await runInDurableObject(stub, async (_instance, state) => state.storage.sql.exec<{ ms: number }>('SELECT ms FROM client_audit ORDER BY rowid').toArray());
-    expect(rows).toHaveLength(AUDIT_MAX_ROWS);
-    expect(rows.slice(-2).map((r) => r.ms)).toEqual([999_999, 999_998]);
-    expect(rows[0]!.ms).toBe(2);
-  });
+  }
 
-  it('a flood of failing calls cannot evict an earlier successful audit row', async () => {
+  const auditCounts = (stub: ReturnType<typeof relayStub>) =>
+    runInDurableObject(stub, async (_instance, state) => {
+      const rows = state.storage.sql.exec<{ success: number; n: number; lo: number; hi: number }>('SELECT success, COUNT(*) AS n, MIN(ms) AS lo, MAX(ms) AS hi FROM client_audit GROUP BY success').toArray();
+      return Object.fromEntries(rows.map((r) => [r.success, r]));
+    });
+
+  it('a flood of failing calls keeps the earlier success rows and only the newest failures', async () => {
     const stub = relayStub(env, `acct-${randomId()}`);
     const clientHash = clientLogTag('client-1');
     expect(await stub.recordAudit({ clientHash, tool: 'set', outcome: 'ok', ms: 7 })).toBe(true);
     expect(await stub.recordAudit({ clientHash, tool: 'set', outcome: 'queued', ms: 8 })).toBe(true);
-    await runInDurableObject(stub, async (_instance, state) => {
-      state.storage.transactionSync(() => {
-        for (let i = 0; i < AUDIT_MAX_ROWS; i++) state.storage.sql.exec('INSERT INTO client_audit (ts, client_hash, tool, outcome, ms) VALUES (?, ?, ?, ?, ?)', Date.now(), clientHash, 'list', 'invalid_args', i);
-      });
-    });
-    for (const outcome of ['no_device_online', 'not_found', 'invalid_args']) {
-      expect(await stub.recordAudit({ clientHash, tool: 'list', outcome, ms: 1 })).toBe(true);
-    }
-    const rows = await runInDurableObject(stub, async (_instance, state) => state.storage.sql.exec<{ outcome: string; ms: number }>('SELECT outcome, ms FROM client_audit ORDER BY rowid').toArray());
-    expect(rows).toHaveLength(AUDIT_MAX_ROWS);
-    expect(rows.slice(0, 2)).toEqual([{ outcome: 'ok', ms: 7 }, { outcome: 'queued', ms: 8 }]);
-    expect(rows.at(-1)).toEqual({ outcome: 'invalid_args', ms: 1 });
+    await seedAudit(stub, AUDIT_MAX_ROWS + 50, 'invalid_args', 0);
+    // The two successes above count toward the interval, so this insert is the 256th and prunes.
+    const flood = AUDIT_PRUNE_EVERY - 2;
+    for (let i = 0; i < flood; i++) expect(await stub.recordAudit({ clientHash, tool: 'list', outcome: 'no_device_online', ms: 1_000_000 + i })).toBe(true);
+    const counts = await auditCounts(stub);
+    expect(counts[1]).toMatchObject({ n: 2, lo: 7, hi: 8 });
+    expect(counts[0]!.n).toBe(AUDIT_MAX_ROWS);
+    expect(counts[0]!.hi).toBe(1_000_000 + flood - 1);
   });
 
-  it('trims successful rows only past their own hard cap', async () => {
+  it('a flood of successful calls keeps the newest failure rows', async () => {
     const stub = relayStub(env, `acct-${randomId()}`);
     const clientHash = clientLogTag('client-1');
+    await seedAudit(stub, 3, 'denied', 0);
+    await seedAudit(stub, AUDIT_MAX_SUCCESS_ROWS, 'ok', 1);
+    // Failures are untouched by the success count, however large it is.
+    for (let i = 0; i < AUDIT_PRUNE_EVERY; i++) expect(await stub.recordAudit({ clientHash, tool: 'list', outcome: 'ok', ms: 900_000 + i })).toBe(true);
+    const counts = await auditCounts(stub);
+    expect(counts[0]).toMatchObject({ n: 3, lo: 0, hi: 2 });
+    expect(counts[1]!.n).toBe(AUDIT_MAX_SUCCESS_ROWS);
+    expect(counts[1]!.hi).toBe(900_000 + AUDIT_PRUNE_EVERY - 1);
+    expect(counts[1]!.lo).toBe(AUDIT_PRUNE_EVERY);
+  });
+
+  it('prunes only at the insert interval, not on every insert', async () => {
+    const stub = relayStub(env, `acct-${randomId()}`);
+    const clientHash = clientLogTag('client-1');
+    await seedAudit(stub, AUDIT_MAX_ROWS + 10, 'not_found', 0);
+    for (let i = 0; i < AUDIT_PRUNE_EVERY - 1; i++) expect(await stub.recordAudit({ clientHash, tool: 'list', outcome: 'ok', ms: i })).toBe(true);
+    expect((await auditCounts(stub))[0]!.n).toBe(AUDIT_MAX_ROWS + 10);
+    expect(await stub.recordAudit({ clientHash, tool: 'list', outcome: 'ok', ms: 999 })).toBe(true);
+    expect((await auditCounts(stub))[0]!.n).toBe(AUDIT_MAX_ROWS);
+  });
+
+  it('adds and backfills the class column on an audit table written before it existed', async () => {
+    const stub = relayStub(env, `acct-${randomId()}`);
     await runInDurableObject(stub, async (_instance, state) => {
-      state.storage.transactionSync(() => {
-        for (let i = 0; i < AUDIT_MAX_SUCCESS_ROWS; i++) state.storage.sql.exec('INSERT INTO client_audit (ts, client_hash, tool, outcome, ms) VALUES (?, ?, ?, ?, ?)', Date.now(), clientHash, 'list', 'ok', i);
-      });
+      const sql = state.storage.sql;
+      sql.exec('DROP TABLE client_audit');
+      sql.exec('CREATE TABLE client_audit (ts INTEGER NOT NULL, client_hash TEXT NOT NULL, tool TEXT NOT NULL, outcome TEXT NOT NULL, ms INTEGER NOT NULL)');
+      for (const [i, outcome] of ['ok', 'queued', 'denied', 'no_device_online'].entries()) {
+        sql.exec('INSERT INTO client_audit (ts, client_hash, tool, outcome, ms) VALUES (?, ?, ?, ?, ?)', Date.now(), 'a'.repeat(16), 'list', outcome, i);
+      }
+      ensureAuditSchema(state.storage);
+      ensureAuditSchema(state.storage); // idempotent
+      const rows = sql.exec<{ outcome: string; success: number }>('SELECT outcome, success FROM client_audit ORDER BY ms').toArray();
+      expect(rows).toEqual([
+        { outcome: 'ok', success: 1 },
+        { outcome: 'queued', success: 1 },
+        { outcome: 'denied', success: 0 },
+        { outcome: 'no_device_online', success: 0 },
+      ]);
+      const indexes = sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'client_audit'").toArray().map((r) => r.name);
+      expect(indexes).toEqual(expect.arrayContaining(['client_audit_ts', 'client_audit_class_ts']));
     });
-    expect(await stub.recordAudit({ clientHash, tool: 'list', outcome: 'ok', ms: 500_000 })).toBe(true);
-    const rows = await runInDurableObject(stub, async (_instance, state) => state.storage.sql.exec<{ ms: number }>('SELECT ms FROM client_audit ORDER BY rowid').toArray());
-    expect(rows).toHaveLength(AUDIT_MAX_SUCCESS_ROWS);
-    expect(rows[0]!.ms).toBe(1);
-    expect(rows.at(-1)!.ms).toBe(500_000);
-  });});
+  });
+});
