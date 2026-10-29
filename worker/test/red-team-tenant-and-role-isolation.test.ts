@@ -31,11 +31,13 @@ describe('red team: machine identity outside its vault', () => {
 
     // #42: a machine session is marked `session_kind: machine` in its vault token, and the
     // recovery-identity path refuses it, so it fetches neither the other vault's encrypted
-    // bundle nor its membership log. A token without the claim is a legacy email-OTP session.
+    // bundle nor its membership log. A token without the claim is refused outright (401);
+    // an email-OTP token is a human session and still takes the path (threat model limitation).
     expect((await putTestBundle(other, other.owner, sealTestBundle(other, 1))).status).toBe(200);
     const presented = { headers: { 'AKV-Device-Key': machine.keys.record.sign_pub } };
     const marked = { ...presented, sessionKind: 'machine' };
     expect(statuses(await readEverything(other, machine, itemId, marked))).toEqual(every(reads, 403));
+    expect(statuses(await readEverything(other, machine, itemId, { ...presented, sessionKind: null }))).toEqual(every(reads, 401));
     expect(statuses(await readEverything(other, machine, itemId, presented))).toEqual({ ...every(reads, 403), '/recovery': 200, '/membership': 200 });
 
     // In its own vault it reads (recovery stays owner-human only).

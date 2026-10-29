@@ -5,8 +5,9 @@
  * `crit`, `jku`, `jwk`, `x5u`, `x5c` are refused. Claims: exact `iss` and `aud`,
  * `exp`/`nbf`/`iat` with 60 s skew, and `sub`, `jti`, `sid`, `did`, `scope`
  * required. `scope` must be a non-empty subset of {vault:read, vault:write}.
- * `session_kind` is optional: absent means `email_otp` (the only kind issued before
- * the claim existed); a present value outside SESSION_KINDS is refused.
+ * `session_kind` is required and must be one of SESSION_KINDS: an absent, unknown or
+ * non-string value is refused, so a token ak-web minted without it never passes as a
+ * human `email_otp` session.
  * MCP access tokens (`<origin>/mcp`, spec §9.8) have their own verifier and claim set.
  * Every failure is `unauthorized`; nothing from the token is echoed.
  */
@@ -93,7 +94,6 @@ function parseScope(value: unknown): Scope[] {
 }
 
 function parseSessionKind(value: unknown): SessionKind {
-  if (value === undefined) return 'email_otp';
   if (typeof value !== 'string' || !(SESSION_KINDS as readonly string[]).includes(value)) deny();
   return value as SessionKind;
 }
