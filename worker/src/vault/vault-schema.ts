@@ -45,8 +45,10 @@ export const VAULT_SCHEMA = `
   CREATE TABLE IF NOT EXISTS proof_jti (did TEXT NOT NULL, jti TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY (did, jti));
   CREATE INDEX IF NOT EXISTS proof_jti_expiry ON proof_jti (expires_at);
   CREATE TABLE IF NOT EXISTS rate_counters (did TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);
+  CREATE INDEX IF NOT EXISTS rate_counters_window ON rate_counters (window_start);
   -- Requests refused before or during authorization, counted apart so they never spend rate_counters.
   CREATE TABLE IF NOT EXISTS refused_rate_counters (did TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);
+  CREATE INDEX IF NOT EXISTS refused_rate_counters_window ON refused_rate_counters (window_start);
   -- Recovery-identity requests per account (the vault's owner), whatever device ID the token names.
   CREATE TABLE IF NOT EXISTS recovery_identity_rate_counters (account TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);
   -- Remote access (spec §3.6, §3.7). name_tags: the device-computed tag sent beside each item's current

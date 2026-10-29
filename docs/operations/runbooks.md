@@ -62,6 +62,12 @@ incident issue and notify the owner at once.
   request answers `503 sync_disabled` instead of `401`. Edge propagation is not
   atomic: in the rehearsal, requests still reached the previous version up to 12 s
   after the deploy. Keep probing until several consecutive probes agree.
+  After every deploy the Deploy workflow runs this check for each environment against
+  the `VAULT_SYNC_ENABLED` value in the deployed commit's Wrangler config
+  ([`deploy-smoke-check.sh`](../../.github/scripts/deploy-smoke-check.sh), read-only,
+  no credentials). It cannot verify an
+  [emergency kill switch](#emergency-kill-switch), whose value comes from `--var`
+  rather than the config, so probe that one by hand.
 - The switch is a var baked into each Worker version. Every later deploy from
   `main` applies the value in the Wrangler config, and a [rollback](#worker-rollback)
   applies the value of the version it targets. Either can silently re-enable sync,
@@ -119,7 +125,9 @@ echoing them, and only after `pnpm install` (as CI does).
    list them with
    `gh run list -R bestagentkits/ak-vault --workflow deploy.yml --status in_progress`
    (and again with `--status waiting`) and cancel each with `gh run cancel <run-id>`.
-   If a production deploy step is already running, let it finish before step 4.
+   If a production deploy step is already running, let it finish before step 4. Its
+   smoke step may then fail because the live flag no longer matches the config; that
+   is expected, so do not re-run it.
    Never approve a production deployment that is waiting for review.
 3. Find the commit production runs: the latest Deploy workflow run whose
    `production` job succeeded. Its Deploy step log shows the version it created

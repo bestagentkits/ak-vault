@@ -72,6 +72,11 @@ export function enforceRateLimit(sql: SqlStorage, bucket: RateBucket, subject: s
     w.windowStart,
     count,
   );
+  // A subject's first request of a window drops every row of earlier windows (each counts as zero), so the
+  // table holds at most the subjects seen in the current window, however many fresh device IDs are named.
+  // Request times are stamped in the Worker, so a request delayed across a boundary can see its own
+  // window's rows already gone; that grants it at most a fresh budget for that window, never a larger one.
+  if (w.used === 0) sql.exec(`DELETE FROM ${w.table} WHERE window_start < ?`, w.windowStart);
   if (count > w.limit) throw rateLimited(w.retryAfter);
 }
 
