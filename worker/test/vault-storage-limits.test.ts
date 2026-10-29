@@ -260,4 +260,25 @@ describe('vaults created before the current protocol revision', () => {
       expect(res.json.error.code).toBe('unsupported_version');
     }
   });
+
+  it('refuse a vault whose stored removals predate the removal log_head revision', async () => {
+    const fx = await VaultFixture.create();
+    const laptop = await fx.addDevice();
+    expect((await fx.removeDevice(laptop)).status).toBe(201);
+    await runInDurableObject(stubFor(fx.vaultId), (instance: VaultDurableObject, state: DurableObjectState) => {
+      const sql = state.storage.sql;
+      const current = JSON.parse(sql.exec<{ v: string }>("SELECT v FROM meta WHERE k = 'membership_state'").one().v) as { removals: Record<string, unknown>[] };
+      for (const r of current.removals) delete r['log_head'];
+      sql.exec("UPDATE meta SET v = ? WHERE k = 'membership_state'", JSON.stringify(current));
+      (instance as unknown as { membership: { invalidate(): void } }).membership.invalidate();
+    });
+    for (const path of ['/membership', '/changes', '/checkpoints', '/wraps?membership_seq=0']) {
+      const res = await fx.get(fx.owner, path);
+      expect(res.status, path).toBe(400);
+      expect(res.json.error.code, path).toBe('unsupported_version');
+    }
+    const write = await fx.write(fx.owner, randomId(), 0, { name: 'n', value: 'v' });
+    expect(write.status).toBe(400);
+    expect(write.json.error.code).toBe('unsupported_version');
+  });
 });

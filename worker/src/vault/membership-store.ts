@@ -23,7 +23,9 @@ export class MembershipStore {
     // A vault created before the signed-wrap-set / removal-fence revision has a
     // state without `removals` and a chain that no longer verifies. Refuse every
     // request to it instead of serving it half-working (see the runbook).
-    if (state !== null && !Array.isArray((state as { removals?: unknown }).removals)) {
+    // A vault from before the removal `log_head` revision stored removals without
+    // it, and its chain no longer verifies either: refuse it the same way.
+    if (state !== null && (!Array.isArray((state as { removals?: unknown }).removals) || state.removals.some((r) => typeof (r as { log_head?: unknown }).log_head !== 'string'))) {
       throw new ApiError('unsupported_version', { message: 'vault predates the current protocol revision' });
     }
     // A state stored before the role fence revision lacks `role_changes` and the

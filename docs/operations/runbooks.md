@@ -369,12 +369,12 @@ stale vault shows up depends on the revision:
 - Vaults from before the removal `log_head` revision (2026-10, #21): on its first
   start under the new code each vault backfills its change-log heads, and vaults
   without removals keep working. A vault whose membership log already holds a
-  `device_remove` or `member_remove` is still **served** by the Worker (reads `200`,
-  writes `409 rekey_required` until rekeyed), but clients refuse its chain with
-  `bad_request` ("log_head is required"). Reset it: create a fresh vault. A backup
-  taken after the removal is refused the same way, and restoring to before the
-  removal would re-admit the removed device, so never do that. The Worker
-  should refuse these too ([#52](https://github.com/bestagentkits/ak-vault/issues/52)).
+  `device_remove` or `member_remove` is refused on every request with
+  `unsupported_version` ("vault predates the current protocol revision"), and
+  clients refuse its chain with `bad_request` ("log_head is required"). Reset it:
+  create a fresh vault. A backup taken after the removal is refused the same way,
+  and restoring to before the removal would re-admit the removed device, so never
+  do that.
 - Vaults from before the role fence revision (2026-10, #22), including production
   vaults: a stored `role_set` without a fence still verifies and their change logs
   still replay, so no migration is needed. Between the fenced changes around such a
