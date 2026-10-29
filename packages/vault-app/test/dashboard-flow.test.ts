@@ -6,7 +6,7 @@
  * tenants apart.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { b64encode, openItem, randomBytes, randomId, type MembershipEvent } from '@ak-vault/protocol';
+import { b64encode, createDeviceKeys, openItem, randomBytes, randomId, type MembershipEvent } from '@ak-vault/protocol';
 import { ACCOUNT, FakeWorld, ISSUER, ORIGIN } from './helpers/fake-world.js';
 import { Browser, allByTestId, byTestId, settle } from './helpers/dashboard-page.js';
 import { deviceIdOf } from '../src/keys/webcrypto-device-keys.js';
@@ -386,6 +386,43 @@ describe('vault', () => {
     expect(world.exchanges.slice(before).filter((e) => e.url.includes('/changes')).map((e) => new URL(e.url).searchParams.get('cursor'))).toContain('0');
     expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'vault_verification_failed' });
     expect(cursor).toBeGreaterThan(1);
+  });
+
+  it('replays in full when a demotion learned later is fenced below the cursor, and refuses the demoted account\'s later records', async () => {
+    const world = new FakeWorld({ shared: true });
+    world.addMember(createDeviceKeys({ account: 'acct-bob', role: 'owner', kind: 'human' }), 'owner');
+    world.ownerSet('one', 'a');
+    const { page } = await new Browser(world).enroll();
+    expect(await page.controller.set('from-browser', SENTINEL)).toBe(true);
+    await page.controller.refresh();
+    expect(names(page.root)).toEqual(['from-browser', 'one']);
+    // The account is demoted with a fence below the browser's record, which it already holds.
+    world.setRole(ACCOUNT, 'reader', 1);
+    const before = world.exchanges.length;
+    await page.controller.refresh();
+    expect(world.exchanges.slice(before).filter((e) => e.url.includes('/changes')).map((e) => new URL(e.url).searchParams.get('cursor'))).toContain('0');
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'vault_verification_failed' });
+  });
+
+  it('keeps pulling incrementally past a role change it already verified', async () => {
+    const world = new FakeWorld({ shared: true });
+    world.addMember(createDeviceKeys({ account: 'acct-bob', role: 'reader', kind: 'human' }), 'reader');
+    world.ownerSet('one', 'a');
+    const { page } = await new Browser(world).enroll();
+    world.ownerSet('two', 'b');
+    world.setRole('acct-bob', 'editor');
+    const cursorsOf = async () => {
+      const before = world.exchanges.length;
+      await page.controller.refresh();
+      return world.exchanges.slice(before).filter((e) => e.url.includes('/changes')).map((e) => new URL(e.url).searchParams.get('cursor'));
+    };
+    expect(await cursorsOf()).toEqual(['1']);
+    world.ownerSet('three', 'c');
+    expect(await cursorsOf()).toEqual(['2']);
+    // The role fence (2) now lies below the cursor: the continuation checks it against the head kept there.
+    world.ownerSet('four', 'd');
+    expect(await cursorsOf()).toEqual(['3']);
+    expect(names(page.root)).toEqual(['four', 'one', 'three', 'two']);
   });
 
   it('does not let a second removal at an already seen fence hide records past it', async () => {

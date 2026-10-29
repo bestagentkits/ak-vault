@@ -247,9 +247,10 @@ export class FakeWorld {
     this.wraps.set(ev.seq, ws);
   }
 
-  /** The owner signs a role change for an account. */
-  setRole(account: string, role: 'owner' | 'editor' | 'reader'): void {
-    const ev = nextMembershipEvent(this.state(), { type: 'role_set', ts: Date.now(), author: this.owner.record.device_id, body: { account, role } }, this.owner.signSecret);
+  /** The owner signs a role change for an account; `fence` defaults to the current log position, like a removal. */
+  setRole(account: string, role: 'owner' | 'editor' | 'reader', fence = this.log.length): void {
+    const body = { account, role, log_fence: fence, log_head: this.logHeads[fence]! };
+    const ev = nextMembershipEvent(this.state(), { type: 'role_set', ts: Date.now(), author: this.owner.record.device_id, body }, this.owner.signSecret);
     this.events.push(ev);
   }
 
