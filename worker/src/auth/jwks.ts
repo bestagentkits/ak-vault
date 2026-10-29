@@ -6,6 +6,8 @@
  * A failed load is remembered for 30 s (negative cache) so an issuer outage does
  * not cost every request another outbound fetch; during that window requests are
  * refused immediately. Stale keys are never served after their TTL.
+ * Redirects are never followed: the configured URL alone pins the key source, so a
+ * 3xx (or an opaque redirect) is a load failure like any other, whatever its target.
  */
 import { ApiError } from '../http/errors.js';
 
@@ -65,8 +67,13 @@ async function load(env: { VAULT_JWKS_JSON?: string; VAULT_JWKS_URL?: string }):
   const url = env.VAULT_JWKS_URL;
   if (!url || !url.startsWith('https://')) throw unavailable();
   try {
-    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!res.ok) throw unavailable();
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, redirect: 'manual', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    // With `manual`, workerd returns a 3xx as is and a WHATWG fetch returns an opaque
+    // redirect (status 0): only a direct 200 is accepted, so both are refused.
+    if (res.status !== 200 || res.redirected) {
+      await res.body?.cancel(); // release the refused response instead of leaving it stalled
+      throw unavailable();
+    }
     const text = await res.text();
     if (text.length > MAX_JWKS_BYTES) throw unavailable();
     return { source: `url:${url}`, keys: await importKeys(JSON.parse(text)) };
