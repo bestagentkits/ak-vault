@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openItem, verifyAuditChain } from '@ak-vault/protocol';
 import { DAY_MS, parseRotationWorkflow, rotationInfo, stillNeedsRotate, type RotationInput } from '../src/sync/rotation.js';
-import { dueText } from '../src/ui/views.js';
+import { calendarDaysUntil, dueText, expiryText } from '../src/ui/views.js';
 import { updateRotation } from '../src/sync/write-ops.js';
 import { appendRotationAudit } from '../src/sync/audit.js';
 import type { AkvClient } from '../src/sync/akv-client.js';
@@ -35,7 +35,7 @@ const base: RotationInput = { createdMs: NOW - 10 * DAY_MS, rotatedMs: null, rot
 describe('rotation due text', () => {
   const text = (offsetMs: number) => {
     const info = rotationInfo({ ...base, rotatedMs: NOW + offsetMs - 30 * DAY_MS, rotateTtlDays: 30 }, NOW);
-    return dueText(info).replace(/^due \S+ /, '');
+    return dueText(info, NOW).replace(/^due \S+ /, '');
   };
   it('keeps the health state independent of the day rounding', () => {
     const health = (offsetMs: number) => rotationInfo({ ...base, rotatedMs: NOW + offsetMs - 30 * DAY_MS, rotateTtlDays: 30 }, NOW).health;
@@ -43,28 +43,44 @@ describe('rotation due text', () => {
     expect(health(0)).toBe('overdue');
     expect(health(23 * 3_600_000)).toBe('due_soon');
   });
-  it('rounds whole days toward zero and says today within a day either side', () => {
-    expect(text(-1000)).toBe('(today)');
-    expect(text(0)).toBe('(today)');
-    expect(text(23 * 3_600_000)).toBe('(today)');
-    expect(text(-DAY_MS)).toBe('(1 day ago)');
-    expect(text(-2 * DAY_MS - 5)).toBe('(2 days ago)');
-    expect(text(DAY_MS)).toBe('(in 1 day)');
-    expect(text(2 * DAY_MS + 5)).toBe('(in 2 days)');
+  it('counts calendar days in the viewer time zone', () => {
+    const local = (y: number, m: number, d: number, hh = 0, mm = 0) => new Date(y, m, d, hh, mm).getTime();
+    const noon = local(2027, 0, 15, 12);
+    expect(calendarDaysUntil(noon, noon)).toBe(0);
+    expect(calendarDaysUntil(local(2027, 0, 15, 23, 59), local(2027, 0, 15, 0, 0))).toBe(0);
+    expect(calendarDaysUntil(local(2027, 0, 16, 0, 1), local(2027, 0, 15, 23, 59))).toBe(1);
+    expect(calendarDaysUntil(local(2027, 0, 14, 23, 59), local(2027, 0, 15, 0, 1))).toBe(-1);
+    // Across a month boundary and the leap day.
+    expect(calendarDaysUntil(local(2028, 2, 1), local(2028, 1, 28))).toBe(2);
+  });
+  it('says today for the same calendar day and N days across midnight', () => {
+    const now = new Date(2027, 0, 15, 10).getTime();
+    const due = (ms: number) => dueText(rotationInfo({ ...base, rotatedMs: ms - 30 * DAY_MS, rotateTtlDays: 30 }, now), now);
+    expect(due(new Date(2027, 0, 15, 23, 30).getTime())).toBe('due 2027-01-15 (today)');
+    expect(due(new Date(2027, 0, 15, 1).getTime())).toBe('due 2027-01-15 (today)');
+    expect(due(new Date(2027, 0, 16, 1).getTime())).toBe('due 2027-01-16 (in 1 day)');
+    expect(due(new Date(2027, 0, 14, 23).getTime())).toBe('due 2027-01-14 (1 day ago)');
+    expect(due(new Date(2027, 0, 12, 20).getTime())).toBe('due 2027-01-12 (3 days ago)');
+  });
+  it('gives the due and expiry badges the same phrase for the same instant', () => {
+    const now = new Date(2027, 0, 15, 10).getTime();
+    const at = new Date(2027, 0, 15, 23).getTime();
+    const dueInfo = rotationInfo({ ...base, rotatedMs: at - 30 * DAY_MS, rotateTtlDays: 30, expiresMs: at }, now);
+    expect(dueText(dueInfo, now).replace(/^due /, '')).toBe(expiryText(dueInfo, now).replace(/^expires /, ''));
   });
 });
 
 describe('rotation health', () => {
   it('is unknown without an interval or without any date, and never invents a due date', () => {
-    expect(rotationInfo(base, NOW)).toMatchObject({ health: 'unknown', dueMs: null, daysUntilDue: null });
+    expect(rotationInfo(base, NOW)).toMatchObject({ health: 'unknown', dueMs: null });
     expect(rotationInfo({ ...base, rotateTtlDays: 30, createdMs: null }, NOW)).toMatchObject({ health: 'unknown', dueMs: null });
   });
 
   it('counts from the rotated date when there is one, else the created date', () => {
-    expect(rotationInfo({ ...base, rotateTtlDays: 30 }, NOW)).toMatchObject({ health: 'ok', daysUntilDue: 20 });
-    expect(rotationInfo({ ...base, rotateTtlDays: 30, rotatedMs: NOW - 2 * DAY_MS }, NOW)).toMatchObject({ health: 'ok', daysUntilDue: 28 });
-    expect(rotationInfo({ ...base, rotateTtlDays: 12 }, NOW)).toMatchObject({ health: 'due_soon', daysUntilDue: 2 });
-    expect(rotationInfo({ ...base, rotateTtlDays: 5 }, NOW)).toMatchObject({ health: 'overdue', daysUntilDue: -5 });
+    expect(rotationInfo({ ...base, rotateTtlDays: 30 }, NOW)).toMatchObject({ health: 'ok' });
+    expect(rotationInfo({ ...base, rotateTtlDays: 30, rotatedMs: NOW - 2 * DAY_MS }, NOW)).toMatchObject({ health: 'ok' });
+    expect(rotationInfo({ ...base, rotateTtlDays: 12 }, NOW)).toMatchObject({ health: 'due_soon' });
+    expect(rotationInfo({ ...base, rotateTtlDays: 5 }, NOW)).toMatchObject({ health: 'overdue' });
     expect(rotationInfo({ ...base, rotateTtlDays: 10 }, NOW).health).toBe('overdue');
   });
 
