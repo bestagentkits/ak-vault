@@ -128,7 +128,7 @@ directories themselves are the authority for exact file names.
 | I3 | Removed member reads new material | Malicious member | `device_remove`/`member_remove` → `rekey_required` → rekey; `needs_rotate`; new devices receive keys only through signed wrap sets | `worker/test/` writes refused while rekey required; vectors: removed recipient |
 | D1 | Server outage blocks local use | Server, network | `resolve` reads local backend only | agentkit#2298 regression (owned there) |
 | D2 | Abuse / quota exhaustion, including a stolen token used to exhaust its device's rate budget | Any client, stolen token | Rate limits and quotas published by `/v1/meta`; requests the vault's Durable Object refuses at authorization of an existing vault (for example no valid proof, not a member, wrong scope, role or session kind, malformed body or Idempotency-Key) count against a separate per-device refused budget (refusals in the stateless Worker, such as a bad token or a missing Idempotency-Key, and requests for a vault that does not exist write no counter), so only the holder of the device key spends the budget for authorized requests. Limits: the refused budget is shared with whoever presents the device's token, so during a flood the device's own refusals also answer `rate_limited`; each request the Durable Object refuses costs its authorization work (proof check, and event verification for membership appends); volumetric flooding is left to the platform; membership quotas never block the rekey a removal requires, nor recovery enrollment | `worker/test/` rate-limit and quota responses (`rate-limit.test.ts`: stolen-token flood leaves the device's budget whole); `vault-storage-limits.test.ts` boundary cases |
-| E1 | Reader or machine identity writes | Member, CI | Role and device kind enforced read-only | `worker/test/` reader write denied, machine write denied |
+| E1 | Reader or machine identity writes, or an editor keeps writing after its demotion, alone or with a colluding server | Member, CI, server + demoted or read-only device | The Worker refuses writes by `reader` roles and `machine` devices. Every `role_set` signs `log_fence` and `log_head` like a removal, and the Worker stores it only at the current change-log head with the stored head there. Clients check every logged record against the role and device kind its author had at that position (`verifyLoggedRecord`: a `reader`, a `machine` device or an editor demoted at or below the position is refused; unknown roles and kinds fail closed), refuse a record `key_epoch` above the verified state's, and replay role fences like removal fences (`verifyChangeLog`). A legacy `role_set` without a fence still verifies; around it every role the author held must be a writer, and the Worker refuses a new one ([spec §5](../protocol/v1/spec.md#5-records-revisions-conflicts-and-tombstones)) | Vectors: `role-history.json` (reader before promotion, machine device, demoted editor after and before its demotion, re-promoted editor, record epoch above the state, substitution below a role fence, legacy demotion and promotion spans); `worker/test/` reader write denied, machine write denied; `worker/test/role-fence.test.ts` stale, future, wrong-head and missing role fences, demoted editor refused by the Worker and the verifier, stored legacy chain still accepts events |
 | E2 | Synced policy or profile elevates a grant | Hostile profile, injected agent | Policy is a maximum; profile text is untrusted data; project IDs only narrow the device-local grant; a policy item does not open in another vault ([spec §8](../protocol/v1/spec.md#8-portable-policy-restrictive-only)). A policy names the items it governs by item ID inside its ciphertext; several policies combine by intersection and can only raise sensitivity; an unopenable record or malformed binding anywhere in the vault, a malformed governing policy, or a governing policy in an unresolved conflict refuses release rather than falling back to the local grant alone ([spec §8.1](../protocol/v1/spec.md#81-policy-binding)). Limits: a device that never received a policy is subject to the withholding limitation (T5); any vault member can edit or delete a policy, as it can read every item; a policy covers only the item IDs it lists (no vault-wide default, a re-created secret under a new ID is ungoverned); an unopenable record or malformed binding refuses every item of the vault (availability, not confidentiality) | Vectors: `policy.json` (including `foreign_project_ids_grant_nothing`), `policy-binding.json`, `item.json` `moved_to_other_vault`; red-team hostile policy tests; `vectors-policy-binding.test.ts` / `vectors_policy_binding_test.go` (binding only narrows); agentkit#2299 / #7 negative tests (owned client-side) |
 | E3 | Unsupported version accepted | Server, attacker | Closed identifier sets; fail closed | Vectors: unsupported version, unknown algorithm |
 | C1 | Forked PR reaches secrets or deploys | Forked PR | No secrets to fork workflows; production Environment reviewer | Workflow config in `.github/`; red-team scenario in [release gates](./release-gates.md) |
@@ -262,10 +262,23 @@ These are accepted and must be stated wherever the guarantees are described:
 - **A live device can stall its own removal.** The fence must equal the current
   log head, so a device that keeps writing keeps the fence stale. Revoke it first;
   live revocation stops its requests.
-- **Records are not checked against role history.** `verifyLoggedRecord` accepts
-  records by any current device; read-only roles and machine devices are enforced
-  by the Worker only
-  ([#22](https://github.com/bestagentkits/ak-vault/issues/22)).
+- **Role history binds only clients that check it.** A client that verifies logged
+  records with `verifyLoggedRecord` refuses records by a `reader`, a `machine` device
+  or an editor demoted at or below the record's position
+  ([#22](https://github.com/bestagentkits/ak-vault/issues/22)); a client that predates
+  it relies on the Worker alone. Records an editor got accepted before its demotion
+  stay valid, a writing editor can keep its own demotion's fence stale (revoke it
+  first, as for a removal), and a client whose membership is behind a demotion it has
+  not received accepts the demoted editor's records until it does (the
+  withheld-updates limitation of spec §6).
+- **A legacy role change has no position.** A `role_set` signed before role fences
+  existed carries none and still verifies. Around one, a record verifies only if its
+  author was a writer under every role it held between the neighbouring fenced
+  changes: a legacy demotion makes that editor's records in the span unverifiable,
+  even ones written before it, and a legacy promotion keeps the promoted account's
+  records unverifiable until the next fenced change of that account. An owner bounds
+  the span going forward with a fenced `role_set`, which may re-affirm the current
+  role; it cannot restore records already in the span.
 - **Recovery bundle contents are not server-checked.** The server cannot open the
   bundle. It refuses a `PUT /recovery` whose declared sealing position predates the
   latest `recovery_rotate`, which stops an honest but stale owner device from
