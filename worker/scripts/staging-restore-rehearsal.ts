@@ -54,7 +54,7 @@ import {
   type MembershipState,
 } from '@ak-vault/protocol';
 import { readOperatorSecret, signOperatorRequest } from './operator-restore.js';
-import { DEFAULT_AK_WEB_ORIGIN, fail, parseSecureOrigin, readCliSession, reportSmokeFailure, vaultTokenSource } from './staging-smoke-ak-web-token.js';
+import { DEFAULT_AK_WEB_ORIGIN, fail, parseSecureOrigin, readCliSession, reportSmokeFailure, SmokeFailure, vaultTokenSource } from './staging-smoke-ak-web-token.js';
 import { DEFAULT_STATE_PATH, loadDeviceSecrets, type DeviceSecrets } from './staging-smoke-device-state.js';
 
 async function main(): Promise<void> {
@@ -255,6 +255,7 @@ async function main(): Promise<void> {
         say(`ok   ${step}: accepted, log_seq ${view.logSeq}, chain and change log verified`);
         return view;
       } catch (err) {
+        if (err instanceof SmokeFailure) throw err;
         const code = isAkvError(err) ? err.code : (err as { code?: string }).code;
         if (outcome.accept || code !== outcome.code) throw err;
         say(`ok   ${step}: refused with ${code}`);
@@ -377,6 +378,7 @@ async function main(): Promise<void> {
     checkRollback(laptop.witness!.checkpoint, { vault_id: vaultId, membership_seq: forked.state.seq, membership_head: forked.state.head, log_seq: forked.logSeq, state_digest: forked.digests[forked.logSeq]!, key_epoch: forked.state.key_epoch });
     say('info checkRollback alone (sequence comparison only) passes on the fork; the witnessed-position digest and head check is what refuses it');
   } catch (err) {
+    if (err instanceof SmokeFailure) throw err;
     say(`info checkRollback alone also refuses the fork (${isAkvError(err) ? err.code : 'error'})`);
   }
 

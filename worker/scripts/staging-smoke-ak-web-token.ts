@@ -10,9 +10,9 @@
  *         cjson({aud, scope (sorted), sid, sign_pub, ts})
  *
  * The signing input is built with the protocol library (`signDetached`); there is no
- * custom cryptography here. Every failure goes through `fail`, which throws a `SmokeFailure` whose message is a step
- * a step name, an HTTP status and at most ak-web's stable error code: never a token,
- * key, signature or response body.
+ * custom cryptography here. Every failure goes through `fail`, which throws a
+ * `SmokeFailure` whose message is a step name, an HTTP status and at most ak-web's
+ * stable error code: never a token, key, signature or response body.
  */
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
