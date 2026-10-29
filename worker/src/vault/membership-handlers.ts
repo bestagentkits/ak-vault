@@ -40,15 +40,20 @@ function verifyEventWraps(event: MembershipEvent, raw: unknown, next: Membership
 }
 
 /**
- * A removal's signed `log_fence` must be the change-log head at the moment the
- * removal lands: then every record the removed device got accepted is at or below
- * the fence, and nothing it writes later can be. A stale fence is `conflict` (pull
- * the change log and re-sign); a fence ahead of the log is `bad_request`. Its
- * signed `log_head` must equal the stored head at the fence (`bad_request`), so
- * the signed head describes the log every later reader is served.
+ * A removal's or `role_set`'s signed `log_fence` must be the change-log head at
+ * the moment the event lands: then every record the removed device got accepted,
+ * or the account wrote under its old role, is at or below the fence, and every
+ * later one is above it. A stale fence is `conflict` (pull the change log and
+ * re-sign); a fence ahead of the log is `bad_request`. Its signed `log_head` must
+ * equal the stored head at the fence (`bad_request`), so the signed head
+ * describes the log every later reader is served.
+ *
+ * Chain verification still accepts a legacy `role_set` without a fence, so
+ * stored chains that hold one keep verifying; a new one is `bad_request`.
  */
 function checkLogFence(sql: SqlStorage, event: MembershipEvent): void {
-  if (event.type !== 'device_remove' && event.type !== 'member_remove') return;
+  if (event.type !== 'device_remove' && event.type !== 'member_remove' && event.type !== 'role_set') return;
+  if (event.body['log_fence'] === undefined) throw new ApiError('bad_request', { message: 'a new role_set must carry log_fence and log_head' });
   const fence = event.body['log_fence'] as number; // integer >= 0, checked by chain verification
   const head = currentLogSeq(sql);
   if (fence > head) throw new ApiError('bad_request', { message: 'log_fence is ahead of the change log' });

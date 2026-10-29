@@ -206,6 +206,18 @@ export class VaultFixture {
     return { log_fence: heads.length - 1, log_head: heads[heads.length - 1]! };
   }
 
+  /**
+   * `by` sets `account`'s role, signing the change-log fence like a removal: the head
+   * at `logFence` (default: the current head), or a random head when that position
+   * does not exist yet.
+   */
+  async setRole(account: string, role: 'owner' | 'editor' | 'reader', logFence?: number, by: TestDevice = this.owner): Promise<CallResult> {
+    const heads = await this.verifiedLogHeads(by);
+    const fence = logFence ?? heads.length - 1;
+    const head = heads[fence] ?? b64encode(randomBytes(32));
+    return this.append(this.buildEvent('role_set', { account, role, log_fence: fence, log_head: head }, signerOf(by)), undefined, by);
+  }
+
   async removeDevice(device: TestDevice, logFence?: number, by: TestDevice = this.owner): Promise<CallResult> {
     const heads = await this.verifiedLogHeads(by);
     const fence = logFence ?? heads.length - 1;

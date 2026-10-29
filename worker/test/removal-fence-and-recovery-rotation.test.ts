@@ -81,7 +81,7 @@ describe('recovery identity', () => {
       await fx.post(fresh, '/audit', { start_seq: 0, prev: '', entries: [] }, keyHeader(fresh)),
       await call(fresh, 'PUT', `/v1/vaults/${fx.vaultId}/items/${randomId()}`, fx.record(fresh, randomId(), 0, v), keyHeader(fresh)),
       await putTestBundle(fx, fresh, sealTestBundle(fx, 2), fx.state.seq, keyHeader(fresh)),
-      await fx.append(fx.buildEvent('role_set', { account: fx.owner.account, role: 'owner' }, signerOf(fresh)), undefined, fresh, keyHeader(fresh)),
+      await fx.append(fx.buildEvent('role_set', { account: fx.owner.account, role: 'owner', ...(await fx.fence()) }, signerOf(fresh)), undefined, fresh, keyHeader(fresh)),
     ];
     expect(refused.map((r) => r.status)).toEqual(refused.map(() => 403));
   });
@@ -151,7 +151,7 @@ describe('recovery_rotate', () => {
     expect(ok.json.bundle_seq).toBe(2);
     expect(fx.state.recovery_author).toBe(deviceIdFromSignPub(rotated.publicKey));
     expect((await fx.get(fx.owner, '/recovery')).json.bundle.bundle_seq).toBe(2);
-    const roleSet = fx.buildEvent('role_set', { account: fx.owner.account, role: 'owner' });
+    const roleSet = fx.buildEvent('role_set', { account: fx.owner.account, role: 'owner', ...(await fx.fence()) });
     expect((await fx.append(roleSet, undefined, fx.owner, {}, { bundle: sealTestBundle(fx, 3) as never })).status).toBe(400);
 
     const fresh = createDevice(fx.owner.account, 'owner');
