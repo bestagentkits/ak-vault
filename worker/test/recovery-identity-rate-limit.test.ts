@@ -69,6 +69,10 @@ describe('recovery-identity rate limit per account', () => {
       expect(res.status).toBe(401);
       expect(res.json.error.code).toBe('invalid_signature');
     }
+    // A missing key header, or a key whose kid is not the token did, spends nothing either.
+    const fresh = createDevice(fx.owner.account, 'owner');
+    expect((await fx.get(fresh, '/recovery')).status).toBe(401);
+    expect((await fx.get(fresh, '/recovery', keyHeader(createDevice(fx.owner.account, 'owner')))).status).toBe(401);
     expect(await accountRows(fx)).toEqual([]);
     for (let i = 0; i < BUDGET; i++) expect((await freshRead(fx, i)).status).toBe(200);
     // Once spent, even a bad proof is answered 429 without verification.

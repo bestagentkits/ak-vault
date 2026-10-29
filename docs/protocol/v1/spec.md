@@ -191,10 +191,11 @@ Because the device ID on this path is the caller's choice, every request on it w
 proof verifies also spends a per-account budget in the vault,
 `recovery_identity_requests_per_window` per `rate_window_seconds` (§10), on top of the
 per-device budgets; once it is spent the path answers `429 rate_limited` with
-`Retry-After`, before the key and proof checks, for every device ID of the account until
-the window ends. A refused proof does not spend it, so a token without its key cannot
-exhaust it; current devices do not spend it. The budget slows bulk scraping and proof-verification work; it cannot
-stop a single fetch of the bundle.
+`Retry-After`, before the key and proof checks, for every not-yet-enrolled device ID of
+the account until the window ends. A refused proof does not spend it, so a token without
+its key cannot exhaust it; current devices do not spend it. The budget slows repeated
+reads and membership scraping; it cannot stop a single fetch of the bundle, and requests
+whose proof fails still cost their verification work.
 
 SAS transcript = `cjson({"ctx":"akv1/sas","vault_id","initiator":device_id,"joiner":device,
 "nonce_i":b64 16B,"nonce_j":b64 16B})`; both devices display
