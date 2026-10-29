@@ -186,7 +186,7 @@ export interface McpClaims {
 
 /** Exactly the claims an MCP access token carries (spec §9.8). */
 const MCP_CLAIMS = ['iss', 'aud', 'sub', 'client_id', 'grant_id', 'sid', 'scope', 'jti', 'iat', 'nbf', 'exp'];
-const MCP_MAX_LIFETIME_SECONDS = 600;
+export const MCP_MAX_LIFETIME_SECONDS = 600;
 
 function parseMcpScope(value: unknown): McpScope[] {
   if (typeof value !== 'string' || value.length === 0 || value.length > MAX_CLAIM_LENGTH) deny();

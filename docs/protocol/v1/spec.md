@@ -347,9 +347,11 @@ replay is still refused), and the operation is not served or acknowledgeable
 revocation does not recall an operation already served to a device, which applies it as
 any other (audited `sealed_applied`); and the check and the listing are separate steps, so
 an operation queued by a request that passed its own revocation check just before the grant
-was revoked can be served by a drain in progress at that moment. Rows queued before the
-vault object stored the grant are backfilled from their wire, with the token `iat`
-bounded below by queue time minus 600 s.
+was revoked can be served by a drain in progress at that moment. Rows stored without the
+grant (queued before the vault object kept it, or by an earlier Worker revision) are
+backfilled from their wire, with the token `iat` set below the oldest a token accepted at
+queue time could carry (its lifetime, clock skew and a processing margin), erring toward
+over-cancelling them under a minimum-`iat` revocation.
 
 Vectors (`seal-key.json`, `sealed-op.json`): `seal_pub` derived for two epochs;
 document sign and verify; a `seal_pub` that does not match `VK` → `forbidden`; a

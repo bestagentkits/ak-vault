@@ -3,6 +3,9 @@
  * ciphertext/signed protocol objects or the visible metadata listed in
  * docs/security/data-classification.md. Nothing here is plaintext secret data.
  */
+import { MCP_MAX_LIFETIME_SECONDS } from '../auth/jwt-verify.js';
+import { LIMITS } from '../limits.js';
+
 export const VAULT_SCHEMA = `
   CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS membership_events (seq INTEGER PRIMARY KEY, hash TEXT NOT NULL, event_json TEXT NOT NULL);
@@ -72,17 +75,29 @@ export const VAULT_SCHEMA = `
 `;
 
 /**
+ * Lower bound, in seconds before queue time, for the `iat` of the MCP token that queued a sealed
+ * row stored without one: the token lives at most MCP_MAX_LIFETIME_SECONDS, is accepted up to
+ * clock_skew_seconds past `exp`, and the request then takes some time to reach the queue (allowed
+ * another clock_skew_seconds). Too low only over-cancels under a minimum-iat revocation, the
+ * fail-closed direction; too high would let a revoked token's operation be served.
+ */
+const LEGACY_SEALED_IAT_MARGIN_S = MCP_MAX_LIFETIME_SECONDS + 2 * LIMITS.clock_skew_seconds;
+
+/**
  * Apply the idempotent schema, then add the sealed_ops grant columns to a table created before
- * they existed (CREATE TABLE IF NOT EXISTS leaves such a table unchanged).
+ * they existed (CREATE TABLE IF NOT EXISTS leaves such a table unchanged), and backfill every
+ * pending row stored without them. The backfill runs on every start, not only when a column is
+ * added: a row written by an earlier revision after the columns existed (a rollback, then a roll
+ * forward) must not stay uncancellable.
  */
 export function applyVaultSchema(sql: SqlStorage): void {
   sql.exec(VAULT_SCHEMA);
   const columns = sql.exec<{ name: string }>("SELECT name FROM pragma_table_info('sealed_ops')").toArray().map((c) => c.name);
-  if (columns.includes('grant_id') && columns.includes('token_iat')) return;
   if (!columns.includes('grant_id')) sql.exec('ALTER TABLE sealed_ops ADD COLUMN grant_id TEXT');
   if (!columns.includes('token_iat')) sql.exec('ALTER TABLE sealed_ops ADD COLUMN token_iat INTEGER');
-  // Pending rows queued before the columns existed: the grant is inside the stored wire, and an MCP
-  // token lives at most 600 s, so queue time minus 600 s bounds its iat from below (it can only
-  // over-cancel under a minimum-iat revocation, the fail-closed direction).
-  sql.exec("UPDATE sealed_ops SET grant_id = json_extract(wire, '$.origin.grant_id'), token_iat = created_at / 1000 - 600 WHERE wire IS NOT NULL AND grant_id IS NULL");
+  // The grant is inside the stored wire; the token iat is bounded from below by queue time.
+  sql.exec(
+    "UPDATE sealed_ops SET grant_id = COALESCE(grant_id, json_extract(wire, '$.origin.grant_id')), token_iat = COALESCE(token_iat, created_at / 1000 - ?) WHERE wire IS NOT NULL AND (grant_id IS NULL OR token_iat IS NULL)",
+    LEGACY_SEALED_IAT_MARGIN_S,
+  );
 }

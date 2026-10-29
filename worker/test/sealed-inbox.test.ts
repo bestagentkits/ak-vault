@@ -264,5 +264,23 @@ describe('sealed inbox', () => {
       expect(await ids(fx)).toEqual([]);
       expect((await ack(fx, fx.owner, old.sealed_id)).status).toBe(404);
     });
+
+    it('backfills a row stored without its grant after the columns existed, below the oldest possible token iat', async () => {
+      const fx = await VaultFixture.create();
+      const op = sealFor(fx, { grantId: 'grant-rolled-back' });
+      expect(await enqueue(fx, op)).toBe('queued');
+      const row = await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(fx.vaultId)), (_i: unknown, state: DurableObjectState) => {
+        const sql = state.storage.sql;
+        // As written by a revision that did not know the columns (a rollback, then a roll forward).
+        sql.exec('UPDATE sealed_ops SET grant_id = NULL, token_iat = NULL WHERE sealed_id = ?', op.sealed_id);
+        applyVaultSchema(sql);
+        return sql.exec<{ grant_id: string; token_iat: number; created_at: number }>('SELECT grant_id, token_iat, created_at FROM sealed_ops WHERE sealed_id = ?', op.sealed_id).one();
+      });
+      expect(row.grant_id).toBe('grant-rolled-back');
+      // A token lives at most 600 s and is accepted 60 s past exp; the bound must sit below that.
+      expect(row.token_iat).toBeLessThanOrEqual(Math.floor(row.created_at / 1000) - 660);
+      expect((await sendRevocation({ min_iat: [{ sub: fx.owner.account, iat: Math.floor(row.created_at / 1000) - 650 }] })).status).toBe(200);
+      expect(await ids(fx)).toEqual([]);
+    });
   });
 });
