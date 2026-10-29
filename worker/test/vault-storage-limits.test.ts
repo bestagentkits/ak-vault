@@ -92,6 +92,7 @@ describe('non-existent vaults', () => {
     expect(dump.tables).toContain('membership_events');
     expect(dump.tables).toContain('rate_counters');
     expect(dump.tables).toContain('refused_rate_counters');
+    expect(dump.tables).toContain('recovery_identity_rate_counters');
   });
 });
 

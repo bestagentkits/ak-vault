@@ -187,6 +187,15 @@ the bundle ciphertext and attempt offline guessing, which the Argon2id parameter
 this path, but a thief who still holds a live owner-account session can mint a token
 for a new device ID and fetch the ciphertext; after a loss the owner MUST revoke their
 ak-web sessions, and the password or recovery key remains the barrier.
+Because the device ID on this path is the caller's choice, every request on it whose
+proof verifies also spends a per-account budget in the vault,
+`recovery_identity_requests_per_window` per `rate_window_seconds` (§10), on top of the
+per-device budgets; once it is spent the path answers `429 rate_limited` with
+`Retry-After`, before the key and proof checks, for every not-yet-enrolled device ID of
+the account until the window ends. A refused proof does not spend it, so a token without
+its key cannot exhaust it; current devices do not spend it. The budget slows repeated
+reads and membership scraping; it cannot stop a single fetch of the bundle, and requests
+whose proof fails still cost their verification work.
 
 SAS transcript = `cjson({"ctx":"akv1/sas","vault_id","initiator":device_id,"joiner":device,
 "nonce_i":b64 16B,"nonce_j":b64 16B})`; both devices display
@@ -1224,13 +1233,12 @@ devices that honor it, not what a vault member can decrypt (§3).
 1. `Authorization: Bearer <ES256 JWT>` from the configured issuer. Required claims:
    `iss` (exact), `aud` = the deployment's own origin (exact; production
    `https://vault.agentkit.best`, staging `https://vault-staging.agentkit.best`), `sub`, `exp`, `nbf`,
-   `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`. Optional
-   `session_kind` ∈ {`email_otp`, `api_key_device`, `machine`, `browser`}: how the session behind the
-   token signed in. An absent claim means `email_otp` (the only kind issued before the claim
-   existed); any other value, or a non-string, is `401 unauthorized`. ak-web MUST set it for
-   every session that is not a human email-OTP sign-in; the Worker never infers it, so a
-   non-human session minted without it is read as `email_otp` (see the threat model's
-   recovery bundle limitation). The audiences `<origin>/mcp` and `<origin>/app` name
+   `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`, and
+   `session_kind` ∈ {`email_otp`, `api_key_device`, `machine`, `browser`}: how the
+   session behind the token signed in. ak-web MUST set it on every vault token. An
+   absent claim, any other value, or a non-string is `401 unauthorized`; the Worker
+   never infers a kind, so a token minted without the claim is refused rather than
+   read as a human session. The audiences `<origin>/mcp` and `<origin>/app` name
    other resources (the remote MCP endpoint and the dashboard sign-in) and are refused
    on every route of this section like any other wrong `aud`.
 
@@ -1247,7 +1255,9 @@ devices that honor it, not what a vault member can decrypt (§3).
    `browser` session may read or close a write request or complete one with an item
    PUT (§3.10, §9.6); every other kind is `403 forbidden` there. Every other route
    treats it as the member device it is. Header `alg`
-   MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. If the JWKS
+   MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. The JWKS is
+   fetched only from the configured `https://` URL and a redirect is never followed:
+   any `3xx` answer is a load failure, whatever its target. If the JWKS
    cannot be loaded the server fails closed (`503`) and backs off for 30 s before
    fetching again; it never serves expired keys.
 2. `AKV-Proof: <b64(cjson(proof))>.<b64(sig)>`, proof =
@@ -1287,8 +1297,7 @@ devices that honor it, not what a vault member can decrypt (§3).
    transaction that stores it. Such a device keeps every other right of its role,
    removal and rekey included, but cannot reseal: after a rekey it makes, the stored
    bundle cannot enroll a device (§3.5) until an owner device in an `email_otp`
-   session reseals it. A token without `session_kind` is read as `email_otp`
-   (item 1).
+   session reseals it. A token without `session_kind` is refused (item 1).
 5. Wrap routes. Wraps are uploaded only inside `PUT /v1/vaults/{vid}` (genesis) and
    `POST /v1/vaults/{vid}/membership` (`{"event","wraps"?,"bundle"?}`); there is no
    separate wrap upload. `GET /v1/vaults/{vid}/wraps?membership_seq=n` returns the
@@ -1546,6 +1555,12 @@ Errors are `{"error":{"code","message"}}` with stable codes: `unauthorized`,
 server-only `internal` (HTTP 500, fail closed, generic message; a retry may succeed).
 Messages never echo request bodies, item IDs beyond the path, tokens or names.
 Limits are published by `GET /v1/meta` and owned by `worker/src/limits.ts`.
+Request budgets are fixed windows of `rate_window_seconds`: per device, per vault,
+`rate_requests_per_window` for requests that pass authorization and as many again for
+requests the vault refuses at authorization; and per account, per vault,
+`recovery_identity_requests_per_window` for the recovery identity (§3.5). A spent budget
+answers `429 rate_limited` with `Retry-After`; a failure to read or update a budget is
+`internal` and serves nothing.
 They include per-vault totals for stored records (`records_per_vault`) and record
 bytes (`record_bytes_per_vault`), conflict branches included; exceeding either
 returns `quota_exceeded`. A request for a vault that has no genesis returns
