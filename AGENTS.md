@@ -147,7 +147,9 @@ an independent review.
   `production` environment. Agent approval of production ended on 2026-10-16.
   Production CI has its own Cloudflare token. Staging's token can still reach the
   production Worker; the owner closed that exception under code-owner review of
-  `.github/` and `worker/wrangler.jsonc`, in effect since 2026-10-16
+  `.github/` and `worker/wrangler.jsonc` (in effect since 2026-10-16). By owner
+  decision on 2026-10-29 that review also covers the deploy-time dependency
+  manifests and config listed in `.github/CODEOWNERS`
   ([release gates](./docs/security/release-gates.md#production-deploy-control)).
   Agents act as the owner's GitHub account, so that review does not check agent
   PRs: an agent never bypasses CI, never approves production, and never changes
