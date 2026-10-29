@@ -118,11 +118,11 @@ describe('role fence', () => {
     expect((await fx.setRole(bob.account, 'reader')).status).toBe(201);
   });
 
-  it('reads the setting fail closed, and every deployed environment refuses a legacy role_set', () => {
+  it('reads the setting fail closed; staging refuses a legacy role_set and production accepts it until the fenced CLI ships', () => {
     expect(refuseLegacyRoleSet({ VAULT_REFUSE_LEGACY_ROLE_SET: 'false' })).toBe(false);
     for (const value of ['true', 'TRUE', 'False', '', ' false', '0', undefined]) {
       expect(refuseLegacyRoleSet({ VAULT_REFUSE_LEGACY_ROLE_SET: value })).toBe(true);
     }
-    expect(JSON.parse(env.TEST_DEPLOYED_REFUSE_LEGACY_ROLE_SET)).toEqual({ production: 'true', staging: 'true' });
+    expect(JSON.parse(env.TEST_DEPLOYED_REFUSE_LEGACY_ROLE_SET)).toEqual({ production: 'false', staging: 'true' });
   });
 });
