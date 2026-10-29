@@ -140,6 +140,8 @@ export class FakeWorld {
   private readonly grantDevice = new Map<string, string>();
   private readonly jtis = new Set<string>();
   private grants = 0;
+  /** Runs once, just before the next change-log read is served (membership changing between two reads). */
+  beforeNextChanges: (() => void) | null = null;
   /** Knobs for hostile-server tests. */
   readonly hostile = {
     /** Account the next app token is issued for. */
@@ -572,6 +574,9 @@ export class FakeWorld {
       return ws ? json(200, { membership_seq: seq, wraps: ws }) : apiError(404, 'not_found');
     }
     if (method === 'GET' && coll === 'changes') {
+      const before = this.beforeNextChanges;
+      this.beforeNextChanges = null;
+      before?.();
       const base = this.hostile.truncateLog === null ? this.log : this.log.slice(0, this.hostile.truncateLog);
       const served = base.filter((e) => e.log_seq !== this.hostile.dropLogSeq).map((e) => (this.hostile.mutateEntry ? this.hostile.mutateEntry(e) : e));
       const cursor = Number(url.searchParams.get('cursor') ?? 0);

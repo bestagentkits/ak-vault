@@ -425,6 +425,19 @@ describe('vault', () => {
     expect(names(page.root)).toEqual(['four', 'one', 'three', 'two']);
   });
 
+  it('reads membership again when the log holds a record from a rekey that landed between the two reads', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const { page } = await new Browser(world).enroll();
+    world.beforeNextChanges = () => {
+      world.rekey();
+      world.ownerSet('rotated', 'b');
+    };
+    await page.controller.refresh();
+    expect(page.controller.current()).not.toMatchObject({ kind: 'fatal' });
+    expect(names(page.root)).toEqual(['one', 'rotated']);
+  });
+
   it('does not let a second removal at an already seen fence hide records past it', async () => {
     const world = new FakeWorld();
     world.ownerSet('one', 'a');

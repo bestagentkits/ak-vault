@@ -499,9 +499,24 @@ export interface PullResult {
  * Pull and verify everything for an enrolled (or awaiting approval) device. With
  * `prior`, the snapshot this session already verified, only the log entries after
  * it are fetched; anything that cannot be proved equivalent, or any verification
- * failure on that path, repeats as the full replay, whose verdict is final.
+ * failure on that path, repeats as the full replay.
+ *
+ * Membership is read before the change log, so the log can hold records accepted
+ * after that read: by a device enrolled, promoted or rekeyed in between, which the
+ * older membership refuses. A verification failure therefore reads membership
+ * again, now newer than the log just verified, and pulls once more; that verdict is
+ * final.
  */
 export async function pullVault(client: AkvClient, device: StoredDevice, kx: DeviceKx, prior?: VaultSnapshot | null): Promise<PullResult> {
+  try {
+    return await pullOnce(client, device, kx, prior);
+  } catch (err) {
+    if (!(err instanceof AppError && err.code === 'vault_verification_failed')) throw err;
+    return pullOnce(client, device, kx, prior);
+  }
+}
+
+async function pullOnce(client: AkvClient, device: StoredDevice, kx: DeviceKx, prior?: VaultSnapshot | null): Promise<PullResult> {
   const enrollment = device.enrollment;
   if (!enrollment) throw new AppError('enroll_not_approved');
   const events = await fetchMembership(client, enrollment.vaultId);
