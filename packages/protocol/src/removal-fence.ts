@@ -28,11 +28,13 @@
  *
  * A legacy `role_set`, signed before role fences existed, carries no fence and
  * is recorded with `log_fence: null`. Its position in the log is unknown, so
- * between the fenced changes around it the author must have been a writer under
- * every role it held there.
+ * between the fenced changes around it a record is accepted when its author was
+ * a writer under any role it held there: the Worker's check at write time is the
+ * only evidence for that span. Refusing instead would make a vault holding such a
+ * change fail every full replay, for good.
  */
 import { fail } from './errors.js';
-import type { DeviceKind, MembershipState, Role, RoleChange } from './membership-types.js';
+import { ROLES, type DeviceKind, type MembershipState, type Role, type RoleChange } from './membership-types.js';
 import { mayWrite, parseRecord, type SignedRecord } from './records.js';
 import { SIGN_CONTEXT, verifyObject } from './signing.js';
 import { asInt } from './validate.js';
@@ -92,10 +94,10 @@ function rolesAt(term: AuthorTerm, logSeq: number): Role[] {
  * last removal, else forbidden; signature under the author's key
  * (invalid_signature); for every removal of the author whose epoch is >= the
  * record's `key_epoch`, a `logSeq` above that removal's `log_fence` is
- * forbidden; the author's kind is `human` and every role it may have held at
- * `logSeq` is `owner` or `editor` (forbidden). A legacy `role_set` signed no
- * fence, so around one the author must have been a writer under each role it
- * held between the neighbouring fenced changes.
+ * forbidden; the author's kind is `human` and its role at `logSeq` is `owner`
+ * or `editor` (forbidden). A legacy `role_set` signed no fence, so around one
+ * any role the author held between the neighbouring fenced changes counts; a
+ * role outside the closed set is still refused.
  */
 export function verifyLoggedRecord(value: unknown, state: MembershipState, logSeq: number): SignedRecord {
   const record = parseRecord(value);
@@ -113,6 +115,9 @@ export function verifyLoggedRecord(value: unknown, state: MembershipState, logSe
       fail('forbidden', 'record by a removed author is ordered after its removal fence');
     }
   }
-  if (!rolesAt(term, logSeq).every((role) => mayWrite(role, term.kind))) fail('forbidden', 'record author could not write at this log position');
+  const roles = rolesAt(term, logSeq);
+  // Any role outside the closed set fails closed, also inside a legacy span.
+  const known = roles.every((role) => (ROLES as readonly string[]).includes(role));
+  if (!known || !roles.some((role) => mayWrite(role, term.kind))) fail('forbidden', 'record author could not write at this log position');
   return record;
 }

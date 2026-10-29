@@ -63,4 +63,64 @@ func TestVerifyLoggedRecordFailsClosedOnUnknownRoleOrKind(t *testing.T) {
 		}
 	}
 	expectForbidden("unknown role in a role change", changed, 2)
+
+	emptyRole := state
+	emptyRole.Devices = append([]DeviceRecord(nil), state.Devices...)
+	for i, d := range emptyRole.Devices {
+		if d.DeviceID == author {
+			emptyRole.Devices[i].Role = ""
+		}
+	}
+	expectForbidden("empty role", emptyRole, logSeq)
+
+	states := map[string]MembershipState{}
+	for name, raw := range v["chains"].(map[string]any) {
+		st, err := VerifyMembershipChain(raw.([]any), VerifyChainOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		states[name] = st
+	}
+	caseNamed := func(name string) (any, MembershipState, int64) {
+		t.Helper()
+		for _, c := range v["cases"].([]any) {
+			if cm := c.(map[string]any); cm["name"] == name {
+				st := states[cm["chain"].(string)]
+				if _, err := VerifyLoggedRecord(cm["record"], st, cm["log_seq"].(int64)); err != nil {
+					t.Fatalf("%s unaltered: %v", name, err)
+				}
+				return cm["record"], st, cm["log_seq"].(int64)
+			}
+		}
+		t.Fatalf("role-history.json: case %s not found", name)
+		return nil, MembershipState{}, 0
+	}
+
+	// A role outside the closed set among the candidates of a legacy span.
+	rec2, st2, at2 := caseNamed("legacy_reader_in_legacy_promotion_span")
+	author2 := rec2.(map[string]any)["author"].(string)
+	legacy := st2
+	legacy.RoleChanges = append([]RoleChange(nil), st2.RoleChanges...)
+	for i, c := range legacy.RoleChanges {
+		if c.DeviceID == author2 && !c.Fenced() {
+			legacy.RoleChanges[i].PrevRole = "admin"
+		}
+	}
+	if _, err := VerifyLoggedRecord(rec2, legacy, at2); CodeOf(err) != CodeForbidden {
+		t.Errorf("unknown role in a legacy span: got %v, want forbidden", err)
+	}
+
+	// An unknown kind on the removal that ends the author's term.
+	rec3, st3, at3 := caseNamed("promoted_reader_after_promotion_fence")
+	author3 := rec3.(map[string]any)["author"].(string)
+	removed := st3
+	removed.Removals = append([]DeviceRemoval(nil), st3.Removals...)
+	for i, rm := range removed.Removals {
+		if rm.DeviceID == author3 {
+			removed.Removals[i].Kind = "robot"
+		}
+	}
+	if _, err := VerifyLoggedRecord(rec3, removed, at3); CodeOf(err) != CodeForbidden {
+		t.Errorf("unknown kind on a removal: got %v, want forbidden", err)
+	}
 }

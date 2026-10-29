@@ -112,10 +112,11 @@ func mayWrite(role, kind string) bool {
 // its last removal, else forbidden; signature under the author's key
 // (invalid_signature); for every removal of the author whose epoch is >= the
 // record's key_epoch, a logSeq above that removal's log_fence is forbidden; the
-// author's kind is human and every role it may have held at logSeq is owner
-// or editor (forbidden). A legacy role_set signed no fence, so around one the
-// author must have been a writer under each role it held between the
-// neighbouring fenced changes.
+// author's kind is human and its role at logSeq is owner or editor
+// (forbidden). A legacy role_set signed no fence, so around one any role the
+// author held between the neighbouring fenced changes counts (the Worker's check
+// at write time is the only evidence for that span); a role outside the closed
+// set is still refused.
 func VerifyLoggedRecord(v any, state MembershipState, logSeq int64) (SignedRecord, error) {
 	r, err := ParseRecord(v)
 	if err != nil {
@@ -147,10 +148,18 @@ func VerifyLoggedRecord(v any, state MembershipState, logSeq int64) (SignedRecor
 			return SignedRecord{}, newErr(CodeForbidden, "record by a removed author is ordered after its removal fence")
 		}
 	}
+	// Any role outside the closed set fails closed, also inside a legacy span;
+	// otherwise one writer role among the candidates suffices.
+	writer := false
 	for _, role := range term.rolesAt(logSeq) {
-		if !mayWrite(role, term.kind) {
-			return SignedRecord{}, newErr(CodeForbidden, "record author could not write at this log position")
+		if !contains(roles, role) {
+			writer = false
+			break
 		}
+		writer = writer || mayWrite(role, term.kind)
+	}
+	if !writer {
+		return SignedRecord{}, newErr(CodeForbidden, "record author could not write at this log position")
 	}
 	return r, nil
 }

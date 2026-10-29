@@ -431,7 +431,12 @@ func (r *replayState) applyRoleSet(body map[string]any, seq int64) error {
 	}
 	sort.Slice(changed, func(i, j int) bool { return utf16Less(changed[i].DeviceID, changed[j].DeviceID) })
 	for _, d := range changed {
-		r.roleChanges = append(r.roleChanges, RoleChange{DeviceID: d.DeviceID, ChangedSeq: seq, PrevRole: d.Role, Role: role, LogFence: fence, LogHead: head})
+		change := RoleChange{DeviceID: d.DeviceID, ChangedSeq: seq, PrevRole: d.Role, Role: role}
+		if fence != nil {
+			f, h := *fence, *head // each row owns its fence, so editing one row never changes another
+			change.LogFence, change.LogHead = &f, &h
+		}
+		r.roleChanges = append(r.roleChanges, change)
 		d.Role = role
 		r.devices[d.DeviceID] = d
 	}

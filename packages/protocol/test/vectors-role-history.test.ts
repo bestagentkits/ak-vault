@@ -13,8 +13,8 @@ describe('role-history.json', () => {
     keptHeads: new Map(Object.entries(c.kept_heads as Record<string, string>).map(([k, h]) => [Number(k), h])),
   });
 
-  it('covers a fenced chain and a chain with legacy role changes', () => {
-    expect(Object.keys(states).sort()).toEqual(['legacy', 'roles']);
+  it('covers a fenced chain, a chain with legacy role changes and a re-added device', () => {
+    expect(Object.keys(states).sort()).toEqual(['legacy', 'readded', 'roles']);
     expect(states['legacy']!.role_changes.some((c) => c.log_fence === null && c.log_head === null)).toBe(true);
   });
   it.each(Object.keys(states))('%s: removals and role changes carry the signed fences, roles and kinds', (name) => {
@@ -67,6 +67,23 @@ describe('role-history.json', () => {
         role_changes: state.role_changes.map((c) => (c.device_id === author ? ({ ...c, role: 'admin', prev_role: 'admin' } as unknown as typeof c) : c)),
       };
       expectCode(() => verifyLoggedRecord(accepted.record, altered, 2), 'forbidden');
+    });
+    it('unknown role among the candidates of a legacy span', () => {
+      const c = (v.cases as Vec[]).find((x) => x.name === 'legacy_reader_in_legacy_promotion_span')!;
+      const st = stateOf(c);
+      expect(verifyLoggedRecord(c.record, st, c.log_seq)).toEqual(c.record);
+      const altered: MembershipState = {
+        ...st,
+        role_changes: st.role_changes.map((r) => (r.device_id === c.record.author && r.log_fence === null ? ({ ...r, prev_role: 'admin' } as unknown as typeof r) : r)),
+      };
+      expectCode(() => verifyLoggedRecord(c.record, altered, c.log_seq), 'forbidden');
+    });
+    it('unknown kind on the removal that ends the term', () => {
+      // carolPhone's key-epoch-1 term ends at her removal, which supplies the term's kind.
+      const c = (v.cases as Vec[]).find((x) => x.name === 'promoted_reader_after_promotion_fence')!;
+      const st = stateOf(c);
+      const altered: MembershipState = { ...st, removals: st.removals.map((r) => (r.device_id === c.record.author ? ({ ...r, kind: 'robot' } as unknown as typeof r) : r)) };
+      expectCode(() => verifyLoggedRecord(c.record, altered, c.log_seq), 'forbidden');
     });
   });
 });
