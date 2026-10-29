@@ -261,6 +261,16 @@ describe('vaults created before the current protocol revision', () => {
     }
   });
 
+  it('still serve a current vault with a removal after its state is reloaded from storage', async () => {
+    const fx = await VaultFixture.create();
+    const laptop = await fx.addDevice();
+    expect((await fx.removeDevice(laptop)).status).toBe(201);
+    await runInDurableObject(stubFor(fx.vaultId), (instance: VaultDurableObject) => {
+      (instance as unknown as { membership: { invalidate(): void } }).membership.invalidate();
+    });
+    expect((await fx.get(fx.owner, '/membership')).status).toBe(200);
+  });
+
   it('refuse a vault whose stored removals predate the removal log_head revision', async () => {
     const fx = await VaultFixture.create();
     const laptop = await fx.addDevice();
