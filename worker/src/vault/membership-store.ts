@@ -10,6 +10,12 @@ import { LIMITS } from '../limits.js';
 
 const STATE_KEY = 'membership_state';
 
+function predatesCurrentRevision(state: MembershipState): boolean {
+  const removals = (state as { removals?: unknown }).removals;
+  if (!Array.isArray(removals)) return true;
+  return removals.some((r) => typeof (r as { log_head?: unknown } | null)?.log_head !== 'string');
+}
+
 export class MembershipStore {
   private cached: MembershipState | null | undefined;
 
@@ -23,7 +29,9 @@ export class MembershipStore {
     // A vault created before the signed-wrap-set / removal-fence revision has a
     // state without `removals` and a chain that no longer verifies. Refuse every
     // request to it instead of serving it half-working (see the runbook).
-    if (state !== null && !Array.isArray((state as { removals?: unknown }).removals)) {
+    // A vault from before the removal `log_head` revision stored removals without
+    // it, and its chain no longer verifies either: refuse it the same way.
+    if (state !== null && predatesCurrentRevision(state)) {
       throw new ApiError('unsupported_version', { message: 'vault predates the current protocol revision' });
     }
     // A state stored before the role fence revision lacks `role_changes` and the
