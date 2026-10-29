@@ -32,6 +32,8 @@ export default defineConfig({
         bindings: {
           VAULT_SYNC_ENABLED: 'true',
           VAULT_REMOTE_ACCESS_ENABLED: 'true',
+          // Deployed environments refuse legacy role_set; the pool accepts them so the transition path stays tested.
+          VAULT_REFUSE_LEGACY_ROLE_SET: 'false',
           VAULT_ISSUER: 'https://test-issuer.ak-vault.invalid',
           VAULT_AUDIENCE: 'https://vault.agentkit.best',
           VAULT_JWKS_JSON: JSON.stringify({ keys: [{ ...publicJwk, kid: TEST_KID, alg: 'ES256', use: 'sig' }] }),

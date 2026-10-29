@@ -402,6 +402,10 @@ stale vault shows up depends on the revision:
   5. Flip `VAULT_REFUSE_LEGACY_ROLE_SET` to `"true"` in `wrangler.jsonc` and deploy
      (a separate change). Any value other than exactly `"false"` refuses. To undo,
      set it back to `"false"` and deploy.
+  Status: the owner turned the setting on early, on 2026-10-29, for production and
+  staging (only the owner used sync then). Until step 3 ships, a released CLI's
+  `role_set` is refused with `bad_request`; set the value back to `"false"` and
+  deploy if a role must change before then.
   Once any vault holds a fenced `role_set`, roll the Worker forward only: an earlier
   Worker re-verifies the stored chain on every append and refuses the fenced body, so
   a rollback blocks every membership change in that vault, removals included.

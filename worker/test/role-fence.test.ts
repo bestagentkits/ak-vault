@@ -107,8 +107,8 @@ describe('role fence', () => {
     const legacy = fx.buildEvent('role_set', { account: bob.account, role: 'reader' }, signerOf(fx.owner));
     const seq = fx.state.seq;
     await runInDurableObject(stubFor(fx.vaultId), (instance: unknown) => {
-      // The deployed setting is "false" and the pool's bindings are fixed per run, so this calls the
-      // handler as the Durable Object does once flipped; the parse and the deployed values are tested below.
+      // The pool binds "false" to keep the transition path tested and its bindings are fixed per run, so
+      // this calls the handler as the deployed Durable Object does; the parse and deployed values are tested below.
       const { sql, membership } = instance as { sql: SqlStorage; membership: MembershipStore };
       const post = () => handleMembershipPost(sql, membership, fx.vaultId, { event: legacy as unknown as JsonObject }, membership.verifyAppend(legacy), { refuseLegacyRoleSet: true });
       expect(post).toThrow(expect.objectContaining({ code: 'bad_request' }));
@@ -118,11 +118,11 @@ describe('role fence', () => {
     expect((await fx.setRole(bob.account, 'reader')).status).toBe(201);
   });
 
-  it('reads the setting fail closed, and every deployed environment accepts legacy role_set for now', () => {
+  it('reads the setting fail closed, and every deployed environment refuses a legacy role_set', () => {
     expect(refuseLegacyRoleSet({ VAULT_REFUSE_LEGACY_ROLE_SET: 'false' })).toBe(false);
     for (const value of ['true', 'TRUE', 'False', '', ' false', '0', undefined]) {
       expect(refuseLegacyRoleSet({ VAULT_REFUSE_LEGACY_ROLE_SET: value })).toBe(true);
     }
-    expect(JSON.parse(env.TEST_DEPLOYED_REFUSE_LEGACY_ROLE_SET)).toEqual({ production: 'false', staging: 'false' });
+    expect(JSON.parse(env.TEST_DEPLOYED_REFUSE_LEGACY_ROLE_SET)).toEqual({ production: 'true', staging: 'true' });
   });
 });

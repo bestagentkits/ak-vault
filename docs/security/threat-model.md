@@ -289,7 +289,8 @@ These are accepted and must be stated wherever the guarantees are described:
   older ones), the Worker still accepts a new `role_set` without a fence, so an owner
   on an older CLI keeps opening legacy spans in vaults that hold no fenced
   `role_set` yet. Each one has the Worker-only trust above. The setting is read fail
-  closed: any value other than exactly `"false"` refuses.
+  closed: any value other than exactly `"false"` refuses. The owner turned it on for
+  production and staging on 2026-10-29, which closes the window while it stays on.
 - **Recovery bundle contents are not server-checked.** The server cannot open the
   bundle. It refuses a `PUT /recovery` whose declared sealing position predates the
   latest `recovery_rotate`, which stops an honest but stale owner device from
