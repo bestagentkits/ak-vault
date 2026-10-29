@@ -108,6 +108,18 @@ export const REMOTE_ACCESS_LIMITS = {
   mcp_calls_per_minute_per_client: 60,
   mcp_run_calls_per_minute_per_client: 10,
   mcp_calls_per_minute_per_account: 300,
+  /** `secrets_prepare_write` calls per minute per (account, client), on top of the general budgets. */
+  mcp_prepare_write_per_minute_per_client: 6,
+  /** Human write requests (spec §3.10): default and maximum lifetime, and the shortest a client may ask for. */
+  write_request_ttl_s: 10 * 60,
+  write_request_min_ttl_s: 60,
+  /** A closed or expired request keeps its status row (never its ciphertext) this long, then is purged. */
+  write_request_retention_s: 24 * 60 * 60,
+  /** Open requests, and rows (open plus retained), per account in one vault. */
+  write_requests_pending_per_account: 8,
+  /** Open requests one MCP client of an account may hold in one vault, so a single client cannot take every slot. */
+  write_requests_pending_per_client: 4,
+  write_requests_retained_per_account: 64,
 } as const;
 
 export const PROTOCOL_VERSIONS = ['akv1'] as const;

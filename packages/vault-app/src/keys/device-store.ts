@@ -6,7 +6,7 @@
  * ever stored. The store lives in IndexedDB; tests use the in-memory one.
  */
 import { parseCheckpoint, type Checkpoint } from '@ak-vault/protocol';
-import { isDeviceKeyMaterial, type DeviceKeyMaterial } from './webcrypto-device-keys.js';
+import { deviceIdOf, isDeviceKeyMaterial, type DeviceKeyMaterial } from './webcrypto-device-keys.js';
 
 /** A position this device verified itself, from position 1 (never a server value). */
 export interface WitnessedState {
@@ -23,6 +23,61 @@ export interface WitnessedState {
  */
 export function isWitnessedOlder(a: WitnessedState, b: WitnessedState): boolean {
   return a.membership_seq < b.membership_seq || a.log_seq < b.log_seq || a.key_epoch < b.key_epoch;
+}
+
+/**
+ * True when two positions reached the same sequence with different heads: one
+ * history cannot produce both, so the server showed two verified histories.
+ */
+export function isWitnessedFork(a: WitnessedState, b: WitnessedState): boolean {
+  return (a.membership_seq === b.membership_seq && a.membership_head !== b.membership_head) || (a.log_seq === b.log_seq && a.log_head !== b.log_head);
+}
+
+/**
+ * Component-wise furthest position: membership, log and key epoch each keep the
+ * higher counter with its head. Two verified pulls can be ahead on different
+ * components (membership is read before the log), and each chain was verified on
+ * its own, so neither component may be forgotten. Null when a component reached
+ * the same counter with a different head (a fork).
+ */
+export function mergeWitnessed(a: WitnessedState, b: WitnessedState): WitnessedState | null {
+  if (isWitnessedFork(a, b)) return null;
+  const m = a.membership_seq >= b.membership_seq ? a : b;
+  const l = a.log_seq >= b.log_seq ? a : b;
+  return { membership_seq: m.membership_seq, membership_head: m.membership_head, log_seq: l.log_seq, log_head: l.log_head, key_epoch: Math.max(a.key_epoch, b.key_epoch) };
+}
+
+function sameWitnessed(a: WitnessedState, b: WitnessedState): boolean {
+  return a.membership_seq === b.membership_seq && a.membership_head === b.membership_head && a.log_seq === b.log_seq && a.log_head === b.log_head && a.key_epoch === b.key_epoch;
+}
+
+/** Result of {@link DeviceStore.advance}; `stored` is what the store held when it decided. */
+export interface AdvanceResult {
+  /** `saved`: written (the merged position). `older`: nothing newer than the stored position, nothing written. `fork`: a counter reached again with another head, nothing written. `stale`: the entry is gone or re-enrolled, nothing written. */
+  outcome: 'saved' | 'older' | 'fork' | 'stale';
+  stored: StoredDevice | null;
+  /** The position the store holds after the call (null for `stale`). */
+  position: WitnessedState | null;
+}
+
+/**
+ * Decide, from the stored entry alone, how `next` changes its position. Pure so
+ * the memory and IndexedDB stores share one rule. Only the enrollment of the same
+ * device and enrollment may advance; the rest of the entry is kept.
+ */
+export function decideAdvance(stored: StoredDevice | null, next: StoredDevice): { outcome: AdvanceResult['outcome']; write: StoredDevice | null; position: WitnessedState | null } {
+  const enrollment = next.enrollment;
+  const current = stored?.enrollment;
+  if (!stored || !enrollment || !current || deviceIdOf(stored.keys) !== deviceIdOf(next.keys) || current.vaultId !== enrollment.vaultId || current.nonceI !== enrollment.nonceI || stored.nonceJ !== next.nonceJ) {
+    return { outcome: 'stale', write: null, position: null };
+  }
+  const have = current.witnessed;
+  const want = enrollment.witnessed;
+  if (!want) return { outcome: 'older', write: null, position: have };
+  const merged = have ? mergeWitnessed(have, want) : want;
+  if (!merged) return { outcome: 'fork', write: null, position: have };
+  if (have && sameWitnessed(merged, have) && !sameWitnessed(want, have)) return { outcome: 'older', write: null, position: have };
+  return { outcome: 'saved', write: { ...stored, enrollment: { ...enrollment, witnessed: merged } }, position: merged };
 }
 
 export interface Enrollment {
@@ -53,6 +108,11 @@ export interface StoredDevice {
 export interface DeviceStore {
   get(account: string): Promise<StoredDevice | null>;
   put(device: StoredDevice): Promise<void>;
+  /**
+   * Compare-and-save of the verified position, atomic against every other tab:
+   * the read, the {@link decideAdvance} rule and the write happen in one step.
+   */
+  advance(next: StoredDevice): Promise<AdvanceResult>;
   delete(account: string): Promise<void>;
 }
 
@@ -114,6 +174,12 @@ export function memoryDeviceStore(): DeviceStore & { entries: Map<string, Stored
     async put(device) {
       entries.set(device.account, structuredClone(device));
     },
+    async advance(next) {
+      const stored = parseStoredDevice(entries.get(next.account) ?? null, next.account);
+      const { outcome, write, position } = decideAdvance(stored, next);
+      if (write) entries.set(next.account, structuredClone(write));
+      return { outcome, stored, position };
+    },
     async delete(account) {
       entries.delete(account);
     },
@@ -159,6 +225,32 @@ async function withStore<T>(factory: IDBFactory, mode: IDBTransactionMode, run: 
   }
 }
 
+/** Read, decide and write in one `readwrite` transaction, so no other tab interleaves. */
+async function advanceInTransaction(factory: IDBFactory, next: StoredDevice): Promise<AdvanceResult> {
+  const db = await openDb(factory);
+  try {
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    return await new Promise<AdvanceResult>((resolve, reject) => {
+      let result: AdvanceResult | null = null;
+      tx.oncomplete = () => (result ? resolve(result) : reject(new Error('indexeddb transaction ended without a decision')));
+      tx.onabort = () => reject(tx.error ?? new Error('indexeddb transaction aborted'));
+      tx.onerror = () => reject(tx.error ?? new Error('indexeddb transaction failed'));
+      const read = store.get(next.account) as IDBRequest<unknown>;
+      read.onerror = () => reject(read.error ?? new Error('indexeddb request failed'));
+      // The write is issued inside the read's own callback, where the transaction is certainly active.
+      read.onsuccess = () => {
+        const stored = parseStoredDevice(read.result, next.account);
+        const { outcome, write, position } = decideAdvance(stored, next);
+        result = { outcome, stored, position };
+        if (write) store.put(write);
+      };
+    });
+  } finally {
+    db.close();
+  }
+}
+
 export function indexedDbDeviceStore(factory: IDBFactory = indexedDB): DeviceStore {
   return {
     async get(account) {
@@ -167,6 +259,7 @@ export function indexedDbDeviceStore(factory: IDBFactory = indexedDB): DeviceSto
     async put(device) {
       await withStore(factory, 'readwrite', (s) => s.put(device));
     },
+    advance: (next) => advanceInTransaction(factory, next),
     async delete(account) {
       await withStore(factory, 'readwrite', (s) => s.delete(account));
     },

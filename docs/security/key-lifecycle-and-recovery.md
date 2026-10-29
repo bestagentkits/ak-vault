@@ -35,8 +35,10 @@ recovery key, with no surviving device, makes the vault unrecoverable by design.
 
 Web login alone never enrolls a device. The SAS transcript is defined in
 [spec §3.5](../protocol/v1/spec.md#35-owner-recovery-signing-key-and-sas-enrollment).
-The enrollment codes must travel between the user's own devices; a flow that relays
-them needs commit-reveal first ([spec §3.8](../protocol/v1/spec.md#38-enrollment-codes)).
+The `akj1-`/`ako1-` enrollment codes must travel between the user's own devices
+([spec §3.8](../protocol/v1/spec.md#38-enrollment-codes)); a flow that relays codes needs
+the committed codes of [spec §3.9](../protocol/v1/spec.md#39-committed-enrollment-codes)
+on both sides.
 
 ## Device loss or theft
 
@@ -111,6 +113,14 @@ sees none of it, and nothing here decides access.
   unchanged; the dashboard is stricter because it cannot see the provider.) The check
   uses writer-supplied dates, so a member with write access can misstate them; it is a
   display aid, not an authorization input.
+- **Expiry.** Shown beside the health, not folded into it, so neither hides the
+  other: *expired* once the profile's `expires_at` has passed, *expires soon* within
+  `EXPIRING_SOON_DAYS` (14 days) of it, nothing otherwise
+  ([`rotation.ts`](../../packages/vault-app/src/sync/rotation.ts)). The date is read
+  only from the profile this device verified at the item's head; a field the
+  provenance check dropped, an invalid profile, or a head whose base this device
+  never held raises no warning. Like the health, it is a writer-supplied date and a
+  display aid only: it changes no grant and blocks no action.
 - **Workflow.** `meta.rotation` is `{state: active|paused|failed|cancelled, started_ms,
   revoked_ms?}`. A value not in that exact shape reads as no workflow. Older writers
   carry the key forward unchanged.
@@ -129,7 +139,15 @@ sees none of it, and nothing here decides access.
   least-privilege credentials and the operator's consent. Anyone who held the old
   value (a removed member included) still knows it until the provider revokes it. The
   signed revisions, with their author device and time, are the record of each state
-  change; the dashboard does not append entries to the encrypted audit stream.
+  change. After each one lands, the dashboard also appends an entry to the encrypted
+  audit stream (`rotation_started`, `rotation_vault_written`, `rotation_revoked`,
+  `rotation_paused`, `rotation_resumed`, `rotation_failed`, `rotation_cancelled`,
+  `rotation_cleared`) holding only the type, the opaque item ID, the author device
+  and the time, never a name or value. Before appending, the dashboard checks that the
+  stored entry at the head the server reports hashes to that head, but it cannot detect a
+  server that truncated or forked the chain; only a witnessed audit checkpoint bounds
+  that, and the dashboard neither reads nor signs one. The append is best effort: if it fails the
+  write stays and the dashboard says the audit entry was not recorded.
 
 ## Password and parameter upgrade
 

@@ -60,7 +60,7 @@ export function isCanonicalOrigin(origin: string): boolean {
   return true;
 }
 
-function decodeCode(code: unknown, prefix: string, ctx: string, keys: readonly string[], what: string): Obj {
+export function decodeCode(code: unknown, prefix: string, ctx: string, keys: readonly string[], what: string): Obj {
   if (typeof code !== 'string') fail('bad_request', `${what} must be a string`);
   const compact = code.replace(/\p{White_Space}/gu, '');
   if (utf8Encode(compact).length > MAX_ENROLL_CODE_BYTES) fail('bad_request', `${what} is too long`);
@@ -72,20 +72,19 @@ function decodeCode(code: unknown, prefix: string, ctx: string, keys: readonly s
   return obj;
 }
 
-function checkJoin(obj: Obj, what: string): JoinCode {
+export function checkJoinDevice(obj: Obj, what: string): { account: string; device: DeviceRecord; label: string } {
   const account = asString(obj['account'], `${what}.account`, MAX_ACCOUNT_LENGTH, 1);
   const device = parseDevice(obj['device'], `${what}.device`);
   if (device.account !== account || device.role !== 'owner' || device.kind !== 'human') fail('bad_request', `${what}.device must be a human owner device of the account`);
-  return {
-    account,
-    device,
-    nonce_j: asB64(obj['nonce_j'], `${what}.nonce_j`, 16),
-    label: asPrintableAscii(obj['label'], `${what}.label`, MAX_DEVICE_LABEL_BYTES),
-  };
+  return { account, device, label: asPrintableAscii(obj['label'], `${what}.label`, MAX_DEVICE_LABEL_BYTES) };
+}
+
+function checkJoin(obj: Obj, what: string): JoinCode {
+  return { ...checkJoinDevice(obj, what), nonce_j: asB64(obj['nonce_j'], `${what}.nonce_j`, 16) };
 }
 
 /** Only the code's own `v` yields unsupported_version; an embedded checkpoint that fails to parse is bad_request. */
-function parseEmbeddedCheckpoint(value: unknown, what: string): Checkpoint {
+export function parseEmbeddedCheckpoint(value: unknown, what: string): Checkpoint {
   try {
     return parseCheckpoint(value, what);
   } catch (err) {
@@ -112,7 +111,7 @@ function checkOffer(obj: Obj, what: string): OfferCode {
   return offer;
 }
 
-function encode(prefix: string, obj: object): string {
+export function encodeCode(prefix: string, obj: object): string {
   const text = prefix + b64encode(utf8Encode(cjson(obj)));
   if (text.length > MAX_ENROLL_CODE_BYTES) fail('bad_request', 'enrollment code is too long');
   return text;
@@ -121,7 +120,7 @@ function encode(prefix: string, obj: object): string {
 export function encodeJoinCode(join: JoinCode): string {
   const obj = { v: 1, ctx: JOIN_CODE_CONTEXT, account: join.account, device: join.device, nonce_j: join.nonce_j, label: join.label };
   checkJoin(obj, 'join code');
-  return encode(JOIN_CODE_PREFIX, obj);
+  return encodeCode(JOIN_CODE_PREFIX, obj);
 }
 
 export function parseJoinCode(code: unknown): JoinCode {
@@ -134,7 +133,7 @@ export function encodeOfferCode(offer: OfferCode): string {
     nonce_i: offer.nonce_i, nonce_j: offer.nonce_j, trust_anchor: offer.trust_anchor, checkpoint: offer.checkpoint,
   };
   checkOffer(obj, 'offer code');
-  return encode(OFFER_CODE_PREFIX, obj);
+  return encodeCode(OFFER_CODE_PREFIX, obj);
 }
 
 export function parseOfferCode(code: unknown): OfferCode {

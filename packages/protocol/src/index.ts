@@ -25,7 +25,8 @@
  *   `encodeRecoveryKey`/`decodeRecoveryKey` (Crockford base32).
  * - Recovery bundle (§3.4, §11): `sealRecoveryBundle(args): RecoveryBundleWire`,
  *   `openRecoveryBundle({bundle, vaultId, password? | rk?, knownBundleSeq?}): OpenedRecoveryBundle`.
- * - SAS (§3.5): `sasTranscript`, `sasCode`, `sasDigest`.
+ * - SAS (§3.5): `sasTranscript`, `sasCode`, `sasDigest`; committed enrollment (§3.9): `nonceJCommit`,
+ *   `verifyNonceJReveal`, `sas2Transcript`, `sas2Code`, `sas2Digest`, `encode/parse{Join2,Offer2,Reveal2}Code`.
  *
  * Membership (§4)
  * - `verifyMembershipChain(events, {trustedAnchor?, witnessedCheckpoint?, vaultId?}): MembershipState`.
@@ -66,6 +67,7 @@
  * Remote access
  * - Seal key (§3.6): `deriveSealKeyPair(vk, vaultId, keyEpoch)`, `buildSealKeyDoc`, `signSealKeyDoc`,
  *   `parseSealKeyDoc`, `verifySealKeyDoc(doc, chain, {vaultId, vk?, trustedAnchor?, witnessedCheckpoint?})`, `checkSealKeyDocReplace(stored, incoming)`.
+ * - Write intents (§3.10): `sealWriteIntent(sealPub, args)`, `openWriteIntent(sealSecret, wire, {vaultId})`, `parseWriteIntent`.
  * - Sealed operations (§3.6): `sealOp(sealPub, args)`, `openSealedOp(sealSecret, wire, {vaultId})`,
  *   `checkSealedDrain(opened, {account, now, sealedTtlS, seen})` (on the `openSealedOp` result), `parseSealedOp`,
  *   `parseSealedOperation`, `parseSealedOrigin`.
@@ -275,6 +277,20 @@ export {
   type SealedOperation,
   type SealedOrigin,
 } from './sealed-op.js';
+export {
+  MAX_WRITE_PURPOSE,
+  WRITE_INTENT_ALG,
+  WRITE_INTENT_OPERATIONS,
+  openWriteIntent,
+  parseWriteIntent,
+  parseWriteIntentTarget,
+  sealWriteIntent,
+  type OpenedWriteIntent,
+  type SealWriteIntentArgs,
+  type WriteIntentOperation,
+  type WriteIntentTarget,
+  type WriteIntentWire,
+} from './write-intent.js';
 export { NAME_TAG_BYTES, nameIndexKey, nameTag } from './name-tag.js';
 export {
   JOIN_CODE_CONTEXT,
@@ -291,6 +307,31 @@ export {
   type JoinCode,
   type OfferCode,
 } from './enroll-codes.js';
+export {
+  JOIN2_CODE_CONTEXT,
+  JOIN2_CODE_PREFIX,
+  NONCE_J_COMMIT_CONTEXT,
+  OFFER2_CODE_CONTEXT,
+  OFFER2_CODE_PREFIX,
+  REVEAL2_CODE_CONTEXT,
+  REVEAL2_CODE_PREFIX,
+  SAS2_CONTEXT,
+  encodeJoin2Code,
+  encodeOffer2Code,
+  encodeReveal2Code,
+  nonceJCommit,
+  parseJoin2Code,
+  parseOffer2Code,
+  parseReveal2Code,
+  sas2Code,
+  sas2Digest,
+  sas2Transcript,
+  verifyNonceJReveal,
+  type Join2Code,
+  type Offer2Code,
+  type Reveal2Code,
+  type Sas2Input,
+} from './enroll-commit.js';
 export {
   PROFILE_KEYS,
   PROFILE_KINDS,

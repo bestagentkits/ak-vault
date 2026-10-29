@@ -42,10 +42,11 @@ time; older ones stay in the signed log.
 - Both ask for confirmation. Restoring a provider credential does not make it
   valid again; rotate or revoke it at the provider if it may be exposed.
 
-It also shows each item's rotation health and guides a provider credential
+It also shows each item's rotation health, warns when the profile's `expires_at`
+has passed (*expired*) or is near (*expires soon*), and guides a provider credential
 rotation: start, save the replacement value (write-only), then confirm the old
 credential was revoked at the provider as a separate step, with pause, fail and
-cancel. This is not a vault rekey. See
+cancel, and appends an encrypted audit entry for each state change (no name or value). This is not a vault rekey. See
 [Secret rotation](../../docs/security/key-lifecycle-and-recovery.md#secret-rotation).
 
 ## Members and access
@@ -63,6 +64,27 @@ Protocol v1 has no pending-invitation state, so the screen says nothing is waiti
 on the server. Write controls follow the verified role and a pending rekey; a write
 the Worker refuses re-pulls the chain first, so a demoted role shows an explanation
 and a removed device still shows the removed view.
+
+It also completes human write requests: an MCP client's `form_url`
+(`/app#write=<request_id>&vault=<vault_id>`) opens, after sign-in and the usual
+device checks, a form that shows the sealed request (name, purpose, operation,
+requesting client, expiry) and takes the value in a password field. The browser
+opens the intent with its own seal key, checks the name against its synced items,
+and writes a normal signed record with `?write_request=`. See spec §3.10.
+
+## Sync
+
+A visit's first pull verifies the whole membership chain and change log. Later
+pulls in the same visit (after a write or a refresh) fetch only the log entries
+after the cursor this browser computed itself, and repeat the full replay when
+anything does not line up (a removal it had not seen, a mismatch with the server's
+claimed tip, a verification failure). The verified position is merged and saved by
+one IndexedDB transaction, so no counter moves backward; a counter reached again
+with a different head is refused and shown as an integrity alarm. The atomicity of
+that IndexedDB transaction itself is not covered by an automated test (the test
+environment has no real IndexedDB); the memory store and the merge rule are. A device clock more than 60 seconds
+from the vault's `Date` header is reported as such. What the browser keeps locally
+is listed in [data classification](../../docs/security/data-classification.md).
 
 ## Build
 

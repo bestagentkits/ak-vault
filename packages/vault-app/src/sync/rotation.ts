@@ -6,13 +6,16 @@
  *
  * Nothing here decides access. Dates and workflow fields are written by vault
  * members and displayed as such; an absent or malformed field is "unknown" or
- * "no workflow", never a guess.
+ * "no workflow", never a guess. Expiry comes only from the profile this device
+ * verified (`VaultSnapshot.profiles`), never from a field the provenance check dropped.
  */
-import type { JsonObject, JsonValue } from '@ak-vault/protocol';
+import { parseProfileValue, type JsonObject, type JsonValue } from '@ak-vault/protocol';
 
 export const DAY_MS = 86_400_000;
 /** Show "due soon" this many days before the due date. */
 export const DUE_SOON_DAYS = 7;
+/** Show "expires soon" this many days before a verified profile's `expires_at`. */
+export const EXPIRING_SOON_DAYS = 14;
 /** Longest rotation interval the dashboard writes (one hundred years). */
 export const MAX_ROTATE_TTL_DAYS = 36500;
 
@@ -33,6 +36,9 @@ export interface RotationWorkflow {
 
 export type RotationHealth = 'needs_rotate' | 'awaiting_revoke' | 'overdue' | 'due_soon' | 'ok' | 'unknown';
 
+/** Where a credential stands against its profile's `expires_at`. Separate from {@link RotationHealth} so neither hides the other. */
+export type ExpiryHealth = 'expired' | 'expiring_soon' | 'ok';
+
 export interface RotationInfo {
   health: RotationHealth;
   /** Base date plus the configured interval; null when either is missing. */
@@ -43,6 +49,15 @@ export interface RotationInfo {
   vaultUpdated: boolean;
   /** The operator confirmed the old provider credential is revoked after that vault write. */
   providerRevoked: boolean;
+  /** Null when the verified profile carries no valid `expires_at`. */
+  expiry: ExpiryHealth | null;
+  expiresMs: number | null;
+  /**
+   * Whole days to expiry, counted toward zero: a future expiry rounds up (23 h ahead is 1),
+   * a past one rounds toward zero (1 s past is 0), so 0 means "today". Negative once
+   * expired by a full day or more; null when no expiry.
+   */
+  daysUntilExpiry: number | null;
 }
 
 export interface RotationInput {
@@ -55,10 +70,29 @@ export interface RotationInput {
   flaggedEpoch: number | null;
   keyEpoch: number;
   workflow: RotationWorkflow | null;
+  /** The verified profile's `expires_at` as unix ms ({@link parseExpiresMs}); null when absent or not verified. */
+  expiresMs: number | null;
 }
 
 export function isMs(v: unknown): v is number {
   return typeof v === 'number' && Number.isSafeInteger(v) && v >= 1;
+}
+
+/**
+ * A profile `expires_at` (strict `YYYY-MM-DDTHH:MM:SSZ`, checked by the protocol's
+ * profile rule) as unix ms. Anything else is null: no expiry is shown rather than a guess.
+ */
+export function parseExpiresMs(value: unknown): number | null {
+  let text: string | string[];
+  try {
+    text = parseProfileValue('expires_at', value, 'expires_at');
+  } catch {
+    return null;
+  }
+  if (typeof text !== 'string') return null;
+  // The protocol rule already fixed the form and calendar; a date before 1970 is still a real (past) expiry.
+  const ms = Date.parse(text);
+  return Number.isSafeInteger(ms) ? ms : null;
 }
 
 /** Parse the workflow from `meta`; anything not exactly the expected shape is no workflow. */
@@ -109,5 +143,12 @@ export function rotationInfo(i: RotationInput, nowMs: number): RotationInfo {
   else if (dueMs <= nowMs) health = 'overdue';
   else if (dueMs - nowMs <= DUE_SOON_DAYS * DAY_MS) health = 'due_soon';
   else health = 'ok';
-  return { health, dueMs, daysUntilDue, vaultUpdated, providerRevoked };
+  const expiresMs = i.expiresMs;
+  const daysUntilExpiry = expiresMs === null
+    ? null
+    : expiresMs > nowMs ? Math.ceil((expiresMs - nowMs) / DAY_MS) : Math.trunc((expiresMs - nowMs) / DAY_MS) || 0;
+  const expiry: ExpiryHealth | null = expiresMs === null
+    ? null
+    : expiresMs <= nowMs ? 'expired' : expiresMs - nowMs <= EXPIRING_SOON_DAYS * DAY_MS ? 'expiring_soon' : 'ok';
+  return { health, dueMs, daysUntilDue, vaultUpdated, providerRevoked, expiry, expiresMs, daysUntilExpiry };
 }

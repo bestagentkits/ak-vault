@@ -1,6 +1,6 @@
 /**
- * Dashboard controller: sign-in, device, enrollment, sync and writes, behind
- * one observable screen state. It holds every token, vault key and the verified
+ * Dashboard controller: sign-in, device, enrollment, sync, writes and human
+ * write requests, behind one observable screen state. It holds every token, vault key and the verified
  * snapshot in memory only; locking, signing out or leaving the page drops them
  * and revokes the sign-in grant. Errors become fixed codes; nothing a server or
  * another device wrote reaches an error message.
@@ -8,7 +8,7 @@
 import { b64encode, type DeviceKx, type DeviceSigner } from '@ak-vault/protocol';
 import { AppError, appErrorCode, type AppErrorCode } from './app-error.js';
 import { loadAppConfig, type AppConfig } from './config.js';
-import { isWitnessedOlder, type DeviceStore, type StoredDevice } from './keys/device-store.js';
+import { isWitnessedOlder, mergeWitnessed, type DeviceStore, type StoredDevice, type WitnessedState } from './keys/device-store.js';
 import { deviceIdOf, deviceKx, deviceSigner, generateDeviceKeys } from './keys/webcrypto-device-keys.js';
 import {
   beginSignIn,
@@ -26,11 +26,58 @@ import { acceptOffer, DEFAULT_DEVICE_LABEL, joinCodeFor, newJoinNonce, sanitizeL
 import { buildItemHistory, type ItemHistory } from './sync/history.js';
 import { buildMembershipView, roleCanWrite, type MembershipView } from './sync/membership-view.js';
 import { openRecord, pullVault, type ItemView, type VaultSnapshot } from './sync/vault-sync.js';
-import { deleteItem, findByName, restoreRevision, resolveConflicts, rotateValue, setItem, updateRotation, type RotationPatch } from './sync/write-ops.js';
+import { appendRotationAudit, type RotationAuditAction } from './sync/audit.js';
+import { deleteItem, findByName, requestTarget, restoreRevision, resolveConflicts, rotateValue, setItem, updateRotation, type RotationPatch } from './sync/write-ops.js';
 import type { RotationWorkflow } from './sync/rotation.js';
+import {
+  closeWriteRequest,
+  fetchWriteRequest,
+  isWriteFragment,
+  openWriteRequest,
+  parseWriteLink,
+  type OpenedWriteRequest,
+  type WriteCloseOutcome,
+  type WriteLink,
+} from './sync/write-request.js';
 import { exchangeSyncToken, type SyncToken } from './vault/token-exchange.js';
 
-export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | 'locked' | 'saved' | 'deleted' | 'restored' | 'resolved' | 'signed_out' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved' };
+const STATE_AUDIT_ACTION: Record<RotationWorkflow['state'] | 'cleared', RotationAuditAction> = {
+  active: 'rotation_resumed',
+  paused: 'rotation_paused',
+  failed: 'rotation_failed',
+  cancelled: 'rotation_cancelled',
+  cleared: 'rotation_cleared',
+};
+
+export type WriteNoticeCode =
+  | 'write_signin'
+  | 'write_enroll'
+  | 'write_wrong_vault'
+  | 'write_unavailable'
+  | 'write_saved'
+  | 'write_conflict'
+  | 'write_cancelled'
+  | 'write_exists'
+  | 'write_missing'
+  | 'write_device_error';
+
+export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | WriteNoticeCode | 'locked' | 'saved' | 'deleted' | 'restored' | 'resolved' | 'signed_out' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved' };
+
+/** The write request on screen: its link and, once fetched and opened, its target. */
+interface WriteInFlight {
+  link: WriteLink;
+  opened: OpenedWriteRequest | null;
+}
+
+/** What the write-request screen shows about the request. Never a value. */
+export interface WriteRequestView {
+  name: string;
+  purpose: string | null;
+  clientId: string;
+  operation: 'create' | 'replace';
+  /** Unix ms. */
+  expiresAt: number;
+}
 
 export type Screen =
   | { kind: 'loading' }
@@ -40,7 +87,16 @@ export type Screen =
   | { kind: 'approve'; sas: string; deviceId: string; notice: Notice | null }
   | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; canWrite: boolean; membership: MembershipView; nowMs: number; deviceId: string; notice: Notice | null; busy: boolean }
   | { kind: 'history'; history: ItemHistory; canWrite: boolean; deviceId: string; notice: Notice | null; busy: boolean }
+  | { kind: 'write'; deviceId: string; request: WriteRequestView | null; open: boolean; busy: boolean; retry: boolean; receipt: string | null; notice: Notice | null }
   | { kind: 'removed' };
+
+interface WriteScreenState {
+  open?: boolean;
+  busy?: boolean;
+  retry?: boolean;
+  receipt?: string | null;
+  notice?: Notice | null;
+}
 
 export interface ControllerDeps {
   origin: string;
@@ -64,6 +120,9 @@ export interface ControllerDeps {
 /** Web Lock name for creating an account's device. */
 export const DEVICE_LOCK_PREFIX = 'akv-device:';
 
+/** The server's `Date` header and this device's clock may differ by this much (ms) before tokens and proofs fail. */
+export const MAX_CLOCK_SKEW_MS = 60_000;
+
 /** Refresh a token this long before it expires (seconds). */
 const EXPIRY_MARGIN_S = 30;
 
@@ -81,10 +140,31 @@ export class AppController {
   private snapshot: VaultSnapshot | null = null;
   /** The item whose history is open; the screen follows it across pulls. */
   private historyItemId: string | null = null;
+  /** A write-request link waiting for sign-in, enrollment and sync. */
+  private writeLink: WriteLink | null = null;
+  /** The write request on screen. */
+  private writeReq: WriteInFlight | null = null;
   private readonly now: () => number;
+  /** `deps.fetchFn` plus a note of the vault origin's clock, read from its `Date` header. */
+  private readonly fetchFn: typeof fetch;
+  private skewMs = 0;
 
   constructor(private readonly deps: ControllerDeps) {
     this.now = deps.now ?? Date.now;
+    this.fetchFn = async (input, init) => {
+      const res = await deps.fetchFn(input, init);
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.startsWith(`${deps.origin}/`)) {
+        const server = Date.parse(res.headers.get('Date') ?? '');
+        if (Number.isFinite(server)) this.skewMs = server - this.now();
+      }
+      return res;
+    };
+  }
+
+  /** True when the vault origin's clock, as last seen, is far enough from ours to fail time checks. */
+  private clockSkewed(): boolean {
+    return Math.abs(this.skewMs) > MAX_CLOCK_SKEW_MS;
   }
 
   subscribe(fn: (s: Screen) => void): () => void {
@@ -105,33 +185,68 @@ export class AppController {
   /** Start: load config and AS metadata, then finish a sign-in if this is the callback. */
   async boot(url: URL): Promise<void> {
     try {
-      this.config = await loadAppConfig(this.deps.fetchFn, this.deps.origin);
-      this.as = await discoverAuthServer(this.deps.fetchFn, this.config.issuer);
+      this.config = await loadAppConfig(this.fetchFn, this.deps.origin);
+      this.as = await discoverAuthServer(this.fetchFn, this.config.issuer);
     } catch (err) {
       this.show({ kind: 'fatal', code: appErrorCode(err, 'config_invalid') });
       return;
     }
     if (!isAuthorizationResponse(url)) {
       this.deps.pending.take();
-      this.show({ kind: 'signed_out', notice: null });
+      this.writeLink = this.takeWriteLink(url);
+      this.show({ kind: 'signed_out', notice: this.clockSkewed() ? { kind: 'error', code: 'clock_skew' } : this.writeLink ? { kind: 'info', code: 'write_signin' } : null });
       return;
     }
     // The code and state leave the address bar and history before anything else runs.
     this.deps.replaceUrl(this.config.redirectUri);
     try {
-      this.session = await completeSignIn(url, { config: this.config, as: this.as, store: this.deps.pending, fetchFn: this.deps.fetchFn, now: this.now() });
+      const done = await completeSignIn(url, { config: this.config, as: this.as, store: this.deps.pending, fetchFn: this.fetchFn, now: this.now() });
+      this.session = done.session;
+      this.writeLink = done.writeLink;
     } catch (err) {
-      this.show({ kind: 'signed_out', notice: { kind: 'error', code: appErrorCode(err, 'signin_refused') } });
+      const code = appErrorCode(err, 'signin_refused');
+      this.show({ kind: 'signed_out', notice: { kind: 'error', code: this.clockSkewed() && (code === 'signin_refused' || code === 'token_exchange_failed') ? 'clock_skew' : code } });
       return;
     }
     await this.openDevice();
   }
 
-  /** Begin a sign-in. A grant still held in memory is revoked first. */
+  /**
+   * Read a write-request link from the URL fragment. Any `#write=` fragment
+   * leaves the address bar and history at once; only an exact one is kept.
+   */
+  private takeWriteLink(url: URL): WriteLink | null {
+    if (!this.config || !isWriteFragment(url.hash)) return null;
+    this.deps.replaceUrl(this.config.redirectUri);
+    return parseWriteLink(url.hash);
+  }
+
+  /** A write-request link opened in a page that is already running (the fragment changed). */
+  async openLink(url: URL): Promise<void> {
+    const link = this.takeWriteLink(url);
+    if (!link) return;
+    const kind = this.screen.kind;
+    // A save or close in flight keeps its request; the new link opens once the person leaves that screen.
+    if (kind === 'write' && this.screen.busy) {
+      this.writeLink = link;
+      return;
+    }
+    if (this.snapshot && (kind === 'vault' || kind === 'write')) {
+      await this.openWrite(link);
+      return;
+    }
+    this.writeLink = link;
+    // A skewed clock would refuse the sign-in the link asks for, so its error stays on screen.
+    if (kind === 'signed_out') this.show({ kind: 'signed_out', notice: this.clockSkewed() ? { kind: 'error', code: 'clock_skew' } : { kind: 'info', code: 'write_signin' } });
+    else if (kind === 'join' || kind === 'approve') await this.route();
+  }
+
+  /** Begin a sign-in. A grant still held in memory is revoked first; a pending write-request link carries over. */
   async signIn(): Promise<void> {
     if (!this.config || !this.as) return;
+    const link = this.writeLink ?? this.writeReq?.link ?? null;
     await this.dropSession(false);
-    this.deps.navigate(beginSignIn(this.config, this.as, this.deps.pending, this.now()));
+    this.deps.navigate(beginSignIn(this.config, this.as, this.deps.pending, this.now(), link));
   }
 
   /** Lock: forget tokens, keys and the snapshot and revoke the grant. The device stays enrolled. */
@@ -155,7 +270,9 @@ export class AppController {
     this.signer = null;
     this.kx = null;
     this.device = null;
-    if (session && this.config && this.as) await revokeSession(session, { config: this.config, as: this.as, fetchFn: this.deps.fetchFn, keepalive });
+    this.writeLink = null;
+    this.writeReq = null;
+    if (session && this.config && this.as) await revokeSession(session, { config: this.config, as: this.as, fetchFn: this.fetchFn, keepalive });
   }
 
   /** Load or create this account's device and route to enrollment or the vault. */
@@ -166,7 +283,7 @@ export class AppController {
       this.device = device;
       this.signer = deviceSigner(device.keys, this.deps.subtle);
       this.kx = deviceKx(device.keys, this.deps.subtle);
-      this.client = createAkvClient({ origin: this.deps.origin, getToken: (fresh) => this.getSyncToken(fresh), signer: this.signer, fetchFn: this.deps.fetchFn, now: this.now });
+      this.client = createAkvClient({ origin: this.deps.origin, getToken: (fresh) => this.getSyncToken(fresh), signer: this.signer, fetchFn: this.fetchFn, now: this.now });
       // Bind the device key to this sign-in now, so a mismatch shows before enrollment.
       await this.getSyncToken(true);
     } catch (err) {
@@ -197,6 +314,7 @@ export class AppController {
   private async route(notice: Notice | null = null): Promise<void> {
     const device = this.device!;
     const deviceId = deviceIdOf(device.keys);
+    if (!device.enrollment?.confirmed && this.writeLink) notice ??= { kind: 'info', code: 'write_enroll' };
     if (!device.enrollment) {
       this.show({ kind: 'join', joinCode: joinCodeFor(device), deviceId, notice });
       return;
@@ -213,7 +331,7 @@ export class AppController {
     if (!fresh && this.syncToken && this.syncToken.expiresAt - EXPIRY_MARGIN_S > nowS) return this.syncToken;
     if (!this.session || !this.device || !this.signer || !this.config || !this.as) throw new AppError('signin_required');
     if (this.session.expiresAt - EXPIRY_MARGIN_S <= nowS) {
-      this.session = await refreshSession(this.session, { config: this.config, as: this.as, fetchFn: this.deps.fetchFn, now: this.now() });
+      this.session = await refreshSession(this.session, { config: this.config, as: this.as, fetchFn: this.fetchFn, now: this.now() });
     }
     this.syncToken = await exchangeSyncToken({
       config: this.config,
@@ -221,7 +339,7 @@ export class AppController {
       deviceId: deviceIdOf(this.device.keys),
       signPub: b64encode(this.device.keys.signPub),
       signer: this.signer,
-      fetchFn: this.deps.fetchFn,
+      fetchFn: this.fetchFn,
       now: this.now(),
     });
     return this.syncToken;
@@ -262,39 +380,86 @@ export class AppController {
   }
 
   private async sync(notice: Notice | null): Promise<void> {
-    const device = this.device;
-    if (!device || !this.client || !this.kx) return;
-    const pendingApproval = !device.enrollment?.confirmed;
+    // Everything the pull needs is captured now: a lock or sign-out during an await drops the fields.
+    const start = this.device;
+    const client = this.client;
+    const kx = this.kx;
+    if (!start || !client || !kx) return;
+    const pendingApproval = !start.enrollment?.confirmed;
     try {
-      const { snapshot, enrollment } = await pullVault(this.client, device, this.kx);
-      // Pulls can overlap (a refresh during a write's sync). The device may have
-      // been dropped meanwhile, or a later pull may already have finished.
+      // Another tab may have stored a newer position since this one last pulled.
+      const device = await this.withStoredPosition(start);
+      if (!this.sameDevice(device)) return;
+      const { snapshot, enrollment } = await pullVault(client, device, kx, this.snapshot);
+      // Pulls can overlap (a refresh during a write's sync): the device may have been dropped, or a
+      // later pull may already have finished and advanced the position this one must not undo.
       const latest = this.device;
-      if (!latest || latest.account !== device.account || deviceIdOf(latest.keys) !== deviceIdOf(device.keys)) return;
-      const floor = latest.enrollment?.witnessed;
-      if (this.snapshot && floor && enrollment.witnessed && isWitnessedOlder(enrollment.witnessed, floor)) {
-        // Older than what is shown and stored: keep the newer snapshot and position.
-        this.showVault(notice, null);
+      if (!latest || !this.sameDevice(device)) return;
+      const floor = this.floorOf(latest, device);
+      if (floor === 'fork') throw new AppError('fork');
+      if (floor && enrollment.witnessed) {
+        if (mergeWitnessed(floor, enrollment.witnessed) === null) throw new AppError('fork');
+        if (this.snapshot && isWitnessedOlder(enrollment.witnessed, floor)) {
+          // Older than what is shown and stored: keep the newer snapshot and position.
+          this.showVault(notice, null);
+          return;
+        }
+      }
+      // One transaction merges with the stored position and writes, so an older pull never lands.
+      const saved = await this.deps.devices.advance({ ...latest, enrollment });
+      if (!this.sameDevice(device)) return;
+      if (saved.outcome === 'fork') throw new AppError('fork');
+      // The entry is gone or re-enrolled elsewhere: this view no longer matches what is stored.
+      if (saved.outcome === 'stale') throw new AppError('signin_required');
+      const position = saved.position ?? enrollment.witnessed;
+      this.device = { ...latest, enrollment: { ...enrollment, witnessed: position } };
+      // Another tab is further along: keep the newer view already shown, if any.
+      if (!(saved.outcome === 'older' && this.snapshot)) this.snapshot = snapshot;
+      const link = this.writeLink;
+      if (link) {
+        this.writeLink = null;
+        await this.openWrite(link);
         return;
       }
-      const next: StoredDevice = { ...latest, enrollment };
-      // Never persist a position older than the stored one (another tab may have advanced it).
-      const stored = await this.deps.devices.get(device.account);
-      const storedFloor = stored && deviceIdOf(stored.keys) === deviceIdOf(next.keys) ? stored.enrollment?.witnessed : null;
-      if (!storedFloor || !enrollment.witnessed || !isWitnessedOlder(enrollment.witnessed, storedFloor)) await this.deps.devices.put(next);
-      this.device = next;
-      this.snapshot = snapshot;
       this.showVault(notice, null);
     } catch (err) {
-      if (pendingApproval) {
+      // Locked, signed out or replaced while the pull was in flight: that state stands, not this pull's error.
+      if (!this.sameDevice(start)) return;
+      if (pendingApproval && this.device) {
         const code = isVaultApiError(err, 'forbidden') ? 'enroll_not_approved' : appErrorCode(err, 'server');
         if (code === 'enroll_not_approved' || code === 'enroll_sas_mismatch' || code === 'network' || code === 'server') {
-          this.show({ kind: 'approve', sas: device.enrollment!.sas, deviceId: deviceIdOf(device.keys), notice: { kind: 'error', code } });
+          this.show({ kind: 'approve', sas: start.enrollment!.sas, deviceId: deviceIdOf(start.keys), notice: { kind: 'error', code } });
           return;
         }
       }
       await this.fail(err);
     }
+  }
+
+  /** True while the device this pull started with is still the one held (not dropped, not another account's). */
+  private sameDevice(device: StoredDevice): boolean {
+    const held = this.device;
+    return held !== null && held.account === device.account && deviceIdOf(held.keys) === deviceIdOf(device.keys);
+  }
+
+  /** The furthest position this tab holds: the pull's starting device and whatever a finished pull stored since. */
+  private floorOf(latest: StoredDevice, started: StoredDevice): WitnessedState | 'fork' | null {
+    const a = latest.enrollment?.witnessed;
+    const b = started.enrollment?.witnessed;
+    if (!a || !b) return a ?? b ?? null;
+    return mergeWitnessed(a, b) ?? 'fork';
+  }
+
+  /** The device with the furthest verified position of this tab's and the store's (same device and enrollment only). */
+  private async withStoredPosition(device: StoredDevice): Promise<StoredDevice> {
+    const stored = await this.deps.devices.get(device.account);
+    const have = device.enrollment;
+    const there = stored?.enrollment;
+    if (!stored || !have || !there?.witnessed) return device;
+    if (deviceIdOf(stored.keys) !== deviceIdOf(device.keys) || there.vaultId !== have.vaultId || there.nonceI !== have.nonceI || stored.nonceJ !== device.nonceJ) return device;
+    // A counter at the same value with another head is left for the compare-and-save to report as a fork.
+    const merged = have.witnessed ? mergeWitnessed(have.witnessed, there.witnessed) : there.witnessed;
+    return merged ? { ...device, enrollment: { ...have, witnessed: merged } } : device;
   }
 
   private showVault(notice: Notice | null, matches: string[] | null, busy = false): void {
@@ -356,27 +521,26 @@ export class AppController {
   }
 
   async set(name: string, value: string): Promise<boolean> {
-    return this.write('saved', () => setItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, name, value, nowMs: this.now() }));
+    return this.write('saved', (nowMs) => setItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, name, value, nowMs }));
   }
 
   async remove(itemId: string): Promise<boolean> {
-    return this.write('deleted', () => deleteItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, nowMs: this.now() }));
+    return this.write('deleted', (nowMs) => deleteItem({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, nowMs }));
   }
 
   /** Write a verified earlier revision's value as a new revision of the item. */
   async restore(itemId: string, logSeq: number): Promise<boolean> {
-    return this.write('restored', () => restoreRevision({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, logSeq, nowMs: this.now() }));
+    return this.write('restored', (nowMs) => restoreRevision({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, logSeq, nowMs }));
   }
 
   /** Mark every open conflict branch of the item resolved, keeping the current value or adopting one branch's. */
   async resolve(itemId: string, adopt: string | null): Promise<boolean> {
-    return this.write('resolved', () => resolveConflicts({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, adopt, nowMs: this.now() }));
+    return this.write('resolved', (nowMs) => resolveConflicts({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, adopt, nowMs }));
   }
 
   /** Start a rotation: record it in signed metadata. The new credential is created at the provider, not here. */
   async startRotation(itemId: string): Promise<boolean> {
-    const workflow: RotationWorkflow = { state: 'active', startedMs: this.now(), revokedMs: null };
-    return this.write('rotation_started', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation: workflow }, nowMs: this.now() }));
+    return this.write('rotation_started', (nowMs) => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation: { state: 'active', startedMs: nowMs, revokedMs: null } }, nowMs }), { action: 'rotation_started', itemId });
   }
 
   /** Pause, resume, fail or cancel the workflow, or clear it with `null`. */
@@ -389,35 +553,46 @@ export class AppController {
     };
     if (state !== null && !allowed[current.state].includes(state)) return false;
     const rotation = state === null ? null : { ...current, state };
-    return this.write('rotation_updated', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation }, nowMs: this.now() }));
+    const action = state === null ? STATE_AUDIT_ACTION.cleared : STATE_AUDIT_ACTION[state];
+    return this.write('rotation_updated', (nowMs) => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { rotation }, nowMs }), { action, itemId });
   }
 
   /** The operator says the old provider credential is revoked. Allowed only after the vault holds a new value. */
   async confirmRevoked(itemId: string): Promise<boolean> {
-    return this.write('rotation_revoked', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { confirmRevoked: true }, nowMs: this.now() }));
+    return this.write('rotation_revoked', (nowMs) => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch: { confirmRevoked: true }, nowMs }), { action: 'rotation_revoked', itemId });
   }
 
   /** Set or clear (`null`) the rotation interval in days. */
   async setRotateTtl(itemId: string, days: number | null): Promise<boolean> {
     const patch: RotationPatch = { rotateTtlDays: days };
-    return this.write('settings_saved', () => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch, nowMs: this.now() }));
+    return this.write('settings_saved', (nowMs) => updateRotation({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, patch, nowMs }));
   }
 
   /** Save the replacement value; the Vault step counts as done only once the new revision is pulled and verified. */
   async rotate(itemId: string, value: string): Promise<boolean> {
-    return this.write('rotation_saved', () => rotateValue({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, value, nowMs: this.now() }));
+    return this.write('rotation_saved', (nowMs) => rotateValue({ client: this.client!, snapshot: this.snapshot!, signer: this.signer!, itemId, value, nowMs }), { action: 'rotation_vault_written', itemId });
   }
 
-  private async write(done: Extract<Notice['code'], 'saved' | 'deleted' | 'restored' | 'resolved' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved'>, op: () => Promise<unknown>): Promise<boolean> {
+  private async write(done: Extract<Notice['code'], 'saved' | 'deleted' | 'restored' | 'resolved' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved'>, op: (nowMs: number) => Promise<unknown>, audit?: { action: RotationAuditAction; itemId: string }): Promise<boolean> {
     if (!this.snapshot || !this.client || !this.signer) return false;
     this.showVault(null, null, true);
+    const nowMs = this.now();
     try {
-      await op();
+      await op(nowMs);
     } catch (err) {
       await this.writeFailed(err);
       return false;
     }
-    await this.sync({ kind: 'info', code: done });
+    // The write has landed and its signed revision is the record; a failed audit append is reported, never undone.
+    let auditFailed = false;
+    if (audit) {
+      try {
+        await appendRotationAudit({ client: this.client, snapshot: this.snapshot, action: audit.action, itemId: audit.itemId, nowMs });
+      } catch {
+        auditFailed = true;
+      }
+    }
+    await this.sync(auditFailed ? { kind: 'error', code: 'audit_failed' } : { kind: 'info', code: done });
     return true;
   }
 
@@ -434,7 +609,7 @@ export class AppController {
       return;
     }
     const code = appErrorCode(err, 'server');
-    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'history_unavailable', 'restore_current', 'quota_exceeded', 'invalid_rotation', 'rotation_value_unchanged', 'rotation_not_ready', 'network', 'server'];
+    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'name_not_writable', 'name_unverifiable', 'not_found', 'item_unreadable', 'history_unavailable', 'restore_current', 'quota_exceeded', 'invalid_rotation', 'rotation_value_unchanged', 'rotation_not_ready', 'network', 'server'];
     if (!isVaultApiError(err) && recoverable.includes(code)) {
       // A conflict means the verified head is stale: pull again, then say why the write did not land.
       // A lost response may hide a write that landed: pull again so the screen shows the real head.
@@ -445,10 +620,195 @@ export class AppController {
     await this.fail(err);
   }
 
+  /**
+   * Open a write request for this enrolled, synced device. A link for another
+   * vault, or a vault that needs a rekey, is refused without calling the
+   * write-request routes.
+   */
+  private async openWrite(link: WriteLink): Promise<void> {
+    const snapshot = this.snapshot;
+    if (!snapshot) return;
+    this.writeReq = null;
+    if (link.vaultId !== snapshot.vaultId) {
+      this.showVault({ kind: 'error', code: 'write_wrong_vault' }, null);
+      return;
+    }
+    this.writeReq = { link, opened: null };
+    if (snapshot.state.rekey_required) {
+      this.showWrite({ notice: { kind: 'error', code: 'rekey_required' } });
+      return;
+    }
+    await this.loadWrite();
+  }
+
+  /** Fetch and open the request, then check its target against the verified snapshot. */
+  private async loadWrite(): Promise<void> {
+    const w = this.writeReq;
+    const { snapshot, client } = this;
+    if (!w || !snapshot || !client) return;
+    this.showWrite({ busy: true });
+    let raw: unknown;
+    try {
+      raw = await fetchWriteRequest(client, w.link);
+    } catch (err) {
+      if (await this.writeRouteFailed(err)) return;
+      this.showWrite({ retry: true, notice: { kind: 'error', code: appErrorCode(err, 'server') === 'network' ? 'network' : 'server' } });
+      return;
+    }
+    if (this.writeReq !== w) return;
+    try {
+      w.opened = openWriteRequest(snapshot, w.link, raw);
+      requestTarget(snapshot, w.opened.name, w.opened.operation);
+    } catch (err) {
+      await this.refuseWrite(err);
+      return;
+    }
+    this.showWrite({ open: true });
+  }
+
+  /** Try loading the request again after a network or server failure. */
+  async retryWrite(): Promise<void> {
+    const s = this.screen;
+    if (s.kind !== 'write' || !s.retry || s.busy) return;
+    await this.loadWrite();
+  }
+
+  /**
+   * Seal, sign and send the value the person typed, completing the request.
+   * The value is passed straight to the write and never kept.
+   */
+  async submitWrite(value: string): Promise<boolean> {
+    const s = this.screen;
+    const w = this.writeReq;
+    const { snapshot, client, signer } = this;
+    if (s.kind !== 'write' || !s.open || s.busy || !w?.opened || !snapshot || !client || !signer) return false;
+    const o = w.opened;
+    this.showWrite({ open: true, busy: true });
+    let receipt: string | undefined;
+    try {
+      receipt = (await setItem({
+        client, snapshot, signer, name: o.name, value, nowMs: this.now(),
+        request: { requestId: o.requestId, operation: o.operation, sensitivity: o.sensitivity },
+      })).receipt;
+    } catch (err) {
+      if (this.writeReq === w) await this.submitFailed(err, w);
+      return false;
+    }
+    if (this.writeReq !== w) return true;
+    this.showWrite({ receipt: receipt ?? null, notice: { kind: 'info', code: 'write_saved' } });
+    return true;
+  }
+
+  /** Cancel the request: nothing is written and the requesting client sees `cancelled`. */
+  async cancelWrite(): Promise<void> {
+    const s = this.screen;
+    if (s.kind !== 'write' || !s.open || s.busy) return;
+    await this.closeWrite({ outcome: 'cancelled', reason: 'user_cancelled' }, { kind: 'info', code: 'write_cancelled' }, true);
+  }
+
+  /** Leave the write-request screen for the vault list, refreshed. */
+  async leaveWrite(): Promise<void> {
+    if (this.screen.kind !== 'write' || this.screen.busy) return;
+    this.writeReq = null;
+    await this.sync(null);
+  }
+
+  private showWrite(st: WriteScreenState): void {
+    const o = this.writeReq?.opened ?? null;
+    this.show({
+      kind: 'write',
+      deviceId: this.snapshot!.self.device_id,
+      request: o ? { name: o.name, purpose: o.purpose, clientId: o.clientId, operation: o.operation, expiresAt: o.expiresAt } : null,
+      open: st.open ?? false,
+      busy: st.busy ?? false,
+      retry: st.retry ?? false,
+      receipt: st.receipt ?? null,
+      notice: st.notice ?? null,
+    });
+  }
+
+  /**
+   * Route failures shared by every write-request call. A removed device or a
+   * lost sign-in is terminal; a request that is no longer open (closed, expired,
+   * revoked or unknown) gets the stale-link message. Returns false when the
+   * caller should offer a retry instead.
+   */
+  private async writeRouteFailed(err: unknown): Promise<boolean> {
+    if (isVaultApiError(err, 'forbidden') || isVaultApiError(err, 'unauthorized')) {
+      await this.fail(err);
+      return true;
+    }
+    if (isVaultApiError(err) && (err.status === 400 || err.status === 404)) {
+      this.showWrite({ notice: { kind: 'error', code: 'write_unavailable' } });
+      return true;
+    }
+    return false;
+  }
+
+  /** The device cannot complete the request: close it with the matching closed reason. */
+  private async refuseWrite(err: unknown, w = this.writeReq): Promise<void> {
+    const code = appErrorCode(err, 'server');
+    if (code === 'already_exists') await this.closeWrite({ outcome: 'failed', reason: 'already_exists' }, { kind: 'error', code: 'write_exists' }, false, w);
+    else if (code === 'not_found') await this.closeWrite({ outcome: 'failed', reason: 'not_found' }, { kind: 'error', code: 'write_missing' }, false, w);
+    else await this.closeWrite({ outcome: 'failed', reason: 'device_error' }, { kind: 'error', code: 'write_device_error' }, false, w);
+  }
+
+  /**
+   * Report the outcome. A cancel that does not reach the server keeps the form
+   * open to try again; a refusal is shown either way, since the request also
+   * lapses on its own at expiry.
+   */
+  private async closeWrite(close: WriteCloseOutcome, done: Notice, retryable: boolean, w = this.writeReq): Promise<void> {
+    if (!w || !this.client) return;
+    this.showWrite({ open: retryable, busy: true });
+    try {
+      await closeWriteRequest(this.client, w.link, close);
+    } catch (err) {
+      if (await this.writeRouteFailed(err)) return;
+      if (retryable) {
+        this.showWrite({ open: true, notice: { kind: 'error', code: appErrorCode(err, 'server') === 'network' ? 'network' : 'server' } });
+        return;
+      }
+    }
+    this.showWrite({ notice: done });
+  }
+
+  /** Handle a refused completion of `w`, the request the save started with. */
+  private async submitFailed(err: unknown, w: WriteInFlight): Promise<void> {
+    const code = appErrorCode(err, 'server');
+    if (isVaultApiError(err)) {
+      if (err.status === 400 || err.status === 404) {
+        // The request may have closed or expired meanwhile: ask before offering a retry.
+        try {
+          await fetchWriteRequest(this.client!, w.link);
+        } catch (again) {
+          if (await this.writeRouteFailed(again)) return;
+        }
+        // Still open yet refused (the target changed after the last sync): retrying the same record cannot succeed.
+        // The screen moved on (signed out or locked) while asking: nothing left to report.
+        if (this.writeReq !== w) return;
+        if (err.status === 400) {
+          await this.refuseWrite(err, w);
+          return;
+        }
+      } else if (await this.writeRouteFailed(err)) {
+        return;
+      }
+      this.showWrite({ open: true, notice: { kind: 'error', code: 'server' } });
+      return;
+    }
+    if (code === 'conflict') this.showWrite({ notice: { kind: 'error', code: 'write_conflict' } });
+    else if (code === 'rekey_required') this.showWrite({ notice: { kind: 'error', code: 'rekey_required' } });
+    else if (code === 'value_too_large' || code === 'quota_exceeded' || code === 'network' || code === 'server') this.showWrite({ open: true, notice: { kind: 'error', code } });
+    else await this.refuseWrite(err, w);
+  }
+
   /** Terminal handling: a removed device wipes its local state; a lost sign-in returns to the start. */
   private async fail(err: unknown): Promise<void> {
     let code = appErrorCode(err, 'server');
     if (isVaultApiError(err)) code = err.code === 'forbidden' ? 'device_removed' : err.code === 'unauthorized' ? 'signin_required' : err.code === 'rekey_required' ? 'rekey_required' : 'server';
+    // Time-bound checks fail on a skewed clock and look like a lost sign-in: say so instead of looping.
+    if (this.clockSkewed() && (code === 'signin_required' || code === 'signin_refused' || code === 'token_exchange_failed')) code = 'clock_skew';
     if (code === 'device_removed') {
       const account = this.device?.account ?? this.session?.claims.sub;
       if (account) await this.deps.devices.delete(account).catch(() => undefined);
@@ -456,7 +816,7 @@ export class AppController {
       this.show({ kind: 'removed' });
       return;
     }
-    if (code === 'signin_required' || code === 'signin_refused') {
+    if (code === 'signin_required' || code === 'signin_refused' || code === 'clock_skew') {
       await this.dropSession(false);
       this.show({ kind: 'signed_out', notice: { kind: 'error', code } });
       return;

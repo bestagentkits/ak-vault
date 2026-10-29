@@ -22,7 +22,7 @@ On the server: wrapped copies of the vault key and the item ciphertext. Never a 
 
 ## 2. Enrollment: a new device joins only after you compare six digits
 
-You carry the enrollment codes between your own devices, so the server never relays them. A short authentication string (SAS) confirms that both devices saw the same exchange. Both devices derive the same six digits from one transcript: the vault, both device IDs and a random nonce from each side. The codes must be copied between your own screens: a service that relayed them could make the digits match. (Spec §3.5, §3.8.)
+You carry the enrollment codes between your own devices, so the server never relays them. A short authentication string (SAS) confirms that both devices saw the same exchange. Both devices derive the same six digits from one transcript: the vault, both device IDs and a random nonce from each side. The codes shipped today do not commit to the nonces, so they must be copied between your own screens: a service that relayed or altered them could search for matching digits in about a million hashes. With committed codes (spec §3.9), a swapped key would make the digits differ except with probability one in a million per enrollment attempt, counted on both devices; they are defined but not yet used by the `ak` CLI or the dashboard. (Spec §3.5, §3.8, §3.9.)
 
 1. **The new device creates its keys.** It generates its own signing and key-exchange keys. The private halves never leave it.
 2. **Both screens show a code.** Each device hashes the same transcript and shows six digits.

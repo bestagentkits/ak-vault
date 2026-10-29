@@ -9,6 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { b64encode, openItem, randomBytes, randomId, type MembershipEvent } from '@ak-vault/protocol';
 import { ACCOUNT, FakeWorld, ISSUER, ORIGIN } from './helpers/fake-world.js';
 import { Browser, allByTestId, byTestId, settle } from './helpers/dashboard-page.js';
+import { deviceIdOf } from '../src/keys/webcrypto-device-keys.js';
+import type { StoredDevice, WitnessedState } from '../src/keys/device-store.js';
+import type { DeviceKx } from '@ak-vault/protocol';
+import type { AkvClient } from '../src/sync/akv-client.js';
+import { pullVault, type VaultSnapshot } from '../src/sync/vault-sync.js';
 
 const SENTINEL = 'sentinel-value-7f3a9c1e5b';
 
@@ -86,6 +91,35 @@ describe('sign-in', () => {
     await again.controller.lock();
     expect(world.revoked.length).toBe(2);
     expect(again.controller.current()).toMatchObject({ kind: 'signed_out', notice: { code: 'locked' } });
+  });
+});
+
+describe('clock skew', () => {
+  it('says the clock is off instead of sending the user around the sign-in', async () => {
+    const world = new FakeWorld();
+    world.hostile.dateOffsetMs = 5 * 60_000;
+    const page = await new Browser(world).load();
+    expect(page.controller.current()).toMatchObject({ kind: 'signed_out', notice: { kind: 'error', code: 'clock_skew' } });
+    expect(page.root.textContent).toContain('clock');
+  });
+
+  it('turns a session the vault refuses into the clock message only while skewed', async () => {
+    for (const [offset, code] of [[5 * 60_000, 'clock_skew'], [0, 'signin_required']] as const) {
+      const world = new FakeWorld();
+      const b = new Browser(world);
+      await b.enroll();
+      world.hostile.dateOffsetMs = offset;
+      world.hostile.rejectProofs = true;
+      const page = await b.signIn();
+      expect(page.controller.current()).toMatchObject({ kind: 'signed_out', notice: { kind: 'error', code } });
+    }
+  });
+
+  it('tolerates a skew within a minute', async () => {
+    const world = new FakeWorld();
+    world.hostile.dateOffsetMs = 30_000;
+    const page = await new Browser(world).load();
+    expect(page.controller.current()).toMatchObject({ kind: 'signed_out', notice: null });
   });
 });
 
@@ -291,6 +325,185 @@ describe('vault', () => {
     await older;
     expect(b.devices.entries.get(ACCOUNT)!.enrollment!.witnessed).toEqual(newer);
     expect(names(page.root)).toEqual(['one', 'two']);
+  });
+
+  it('pulls only the new log entries after the first pull, and still sees every change', async () => {
+    const world = new FakeWorld();
+    for (let i = 0; i < 5; i++) world.ownerSet(`item-${i}`, 'a');
+    const b = new Browser(world);
+    const { page } = await b.enroll();
+    const cursors = () => world.exchanges.filter((e) => e.url.includes('/changes')).map((e) => Number(new URL(e.url).searchParams.get('cursor')));
+    expect(cursors()).toEqual([0]);
+    world.ownerSet('item-5', 'b');
+    await page.controller.refresh();
+    expect(cursors()).toEqual([0, 5]);
+    expect(names(page.root)).toEqual(['item-0', 'item-1', 'item-2', 'item-3', 'item-4', 'item-5']);
+    // A write of this browser's own, then the refresh after it, also continues from the cursor.
+    expect(await page.controller.set('item-6', SENTINEL)).toBe(true);
+    expect(cursors().at(-1)).toBe(6);
+    expect(names(page.root)).toContain('item-6');
+    // A delete of this browser's own (a tombstone) is applied on top of the cached replay.
+    const cur = page.controller.current();
+    const doomed = cur.kind === 'vault' ? cur.items.find((i) => i.name === 'item-0')!.itemId : '';
+    expect(await page.controller.remove(doomed)).toBe(true);
+    expect(names(page.root)).not.toContain('item-0');
+    expect(b.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!.log_seq).toBe(world.log.length);
+  });
+
+  it('continues only from a snapshot of this same device, and replays in full for any other', async () => {
+    const world = new FakeWorld();
+    for (let i = 0; i < 3; i++) world.ownerSet(`item-${i}`, 'a');
+    const { page } = await new Browser(world).enroll();
+    // The controller's pull inputs are private; this reaches them to call the pull with a prior
+    // snapshot the controller itself never passes (one recorded as another device's).
+    const inner = page.controller as unknown as { client: AkvClient; kx: DeviceKx; device: StoredDevice; snapshot: VaultSnapshot };
+    const cursors = () => world.exchanges.filter((e) => e.url.includes('/changes')).map((e) => Number(new URL(e.url).searchParams.get('cursor')));
+    const own = inner.snapshot;
+    await pullVault(inner.client, inner.device, inner.kx, own);
+    expect(cursors().at(-1)).toBe(3);
+    const foreign: VaultSnapshot = { ...own, self: { ...own.self, device_id: 'another-device-id' } };
+    const { snapshot } = await pullVault(inner.client, inner.device, inner.kx, foreign);
+    expect(cursors().at(-1)).toBe(0);
+    expect(snapshot.items.map((i) => i.name)).toEqual(['item-0', 'item-1', 'item-2']);
+  });
+
+  it('replays in full when a removal learned later is fenced below the cursor, and refuses the removed device\'s later records', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const a = new Browser(world);
+    const { page } = await a.enroll();
+    // A second device of the account joins and writes after position 1.
+    const other = new Browser(world);
+    const second = await other.enroll();
+    expect(await second.page.controller.set('from-second', SENTINEL)).toBe(true);
+    await page.controller.refresh();
+    expect(names(page.root)).toEqual(['from-second', 'one']);
+    const cursor = world.log.length;
+    // The owner removes the second device with a fence below what the first browser already holds.
+    world.removeDevice(deviceIdOf(other.devices.entries.get(ACCOUNT)!.keys), 1);
+    const before = world.exchanges.length;
+    await page.controller.refresh();
+    expect(world.exchanges.slice(before).filter((e) => e.url.includes('/changes')).map((e) => new URL(e.url).searchParams.get('cursor'))).toContain('0');
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'vault_verification_failed' });
+    expect(cursor).toBeGreaterThan(1);
+  });
+
+  it('does not let a second removal at an already seen fence hide records past it', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const a = new Browser(world);
+    const { page } = await a.enroll();
+    const second = new Browser(world);
+    const writer = await second.enroll();
+    const third = new Browser(world);
+    await third.enroll();
+    expect(await writer.page.controller.set('from-second', SENTINEL)).toBe(true);
+    const idOf = (b: Browser) => deviceIdOf(b.devices.entries.get(ACCOUNT)!.keys);
+    // The first removal fences at 1; the first browser verifies in full and learns it.
+    world.removeDevice(idOf(third), 1);
+    await page.controller.refresh();
+    expect(names(page.root)).toEqual(['from-second', 'one']);
+    // A second removal at the same fence makes the writer's record (position 2) invalid.
+    world.removeDevice(idOf(second), 1);
+    await page.controller.refresh();
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'vault_verification_failed' });
+  });
+
+  it('keeps pulling incrementally across a removal fenced at the current position', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const a = new Browser(world);
+    const { page } = await a.enroll();
+    const other = new Browser(world);
+    await other.enroll();
+    world.ownerSet('two', 'b');
+    world.removeDevice(deviceIdOf(other.devices.entries.get(ACCOUNT)!.keys));
+    const before = world.exchanges.length;
+    await page.controller.refresh();
+    const cursors = world.exchanges.slice(before).filter((e) => e.url.includes('/changes')).map((e) => new URL(e.url).searchParams.get('cursor'));
+    expect(cursors).toEqual(['1']);
+    expect(names(page.root)).toEqual(['one', 'two']);
+  });
+
+  it.each(['/membership', '/changes'])('keeps the locked screen when a pull held at %s finishes after the lock', async (held) => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const b = new Browser(world);
+    const { page } = await b.enroll();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let holding = true;
+    b.afterFetch = async (url) => {
+      if (holding && url.includes(held)) {
+        holding = false;
+        await gate;
+      }
+    };
+    const pull = page.controller.refresh();
+    await vi.waitFor(() => expect(holding).toBe(false));
+    await page.controller.lock();
+    release();
+    await pull;
+    expect(page.controller.current()).toMatchObject({ kind: 'signed_out', notice: { kind: 'info', code: 'locked' } });
+  });
+
+  it('refuses a server that switched to another history after another tab saved a further position on it', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    world.ownerSet('two', 'b');
+    const b = new Browser(world);
+    const { page } = await b.enroll();
+    // The server now shows a different history from position 2 on, and a second tab verified it to position 3.
+    world.log.length = 1;
+    world.logHeads.length = 2;
+    world.ownerSet('other-1', 'c');
+    world.ownerSet('other-2', 'd');
+    const stored = b.devices.entries.get(ACCOUNT)!;
+    const w = stored.enrollment!.witnessed!;
+    b.devices.entries.set(ACCOUNT, { ...stored, enrollment: { ...stored.enrollment!, witnessed: { ...w, log_seq: 3, log_head: world.logHeads[3]! } } });
+    await page.controller.refresh();
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+  });
+
+  it('refuses a server whose log shrank below the cursor of an incremental pull', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    world.ownerSet('two', 'b');
+    const { page } = await new Browser(world).enroll();
+    world.hostile.truncateLog = 1;
+    await page.controller.refresh();
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+  });
+
+  it('adopts a newer position another tab stored before it pulls again', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const tabA = new Browser(world);
+    const { page: pageA } = await tabA.enroll();
+    world.ownerSet('two', 'b');
+    // A second tab of the same profile signs in and verifies the newer position.
+    const tabB = new Browser(world, { devices: tabA.devices });
+    await tabB.signIn();
+    expect(tabA.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!.log_seq).toBe(2);
+    // The first tab still holds position 1. A server that now serves only position 1 must be refused.
+    world.hostile.truncateLog = 1;
+    await pageA.controller.refresh();
+    expect(pageA.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+  });
+
+  it('raises an integrity alarm when two pulls reach the same position with different heads', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const b = new Browser(world);
+    const { page } = await b.enroll();
+    const stored = b.devices.entries.get(ACCOUNT)!;
+    const w = stored.enrollment!.witnessed!;
+    // Another tab stored a different head at the position this pull reaches again.
+    const forked: StoredDevice = { ...stored, enrollment: { ...stored.enrollment!, witnessed: { ...w, log_head: `${w.log_head.slice(0, -2)}AA` } satisfies WitnessedState } };
+    b.devices.entries.set(ACCOUNT, forked);
+    await page.controller.refresh();
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'fork' });
+    expect(b.devices.entries.get(ACCOUNT)).toEqual(forked);
   });
 
   it('deletes an item with a signed tombstone after an explicit confirm', async () => {

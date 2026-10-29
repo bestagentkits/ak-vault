@@ -39,11 +39,12 @@ import {
   type ProtocolVersion,
 } from './protocol-version.js';
 import { callTool } from './tool-dispatch.js';
-import { TOOL_DEFINITIONS, relayToolOf, scopeOf } from './tools.js';
+import { TOOL_DEFINITIONS, localScopeOf, localToolOf, relayToolOf, scopeOf } from './tools.js';
+import { callLocalTool } from './write-request-tools.js';
 
 const SERVER_INFO = { name: 'ak-vault', title: 'AgentKit Vault', version: WORKER_VERSION };
 const INSTRUCTIONS =
-  'Search, describe and use the secrets in your AgentKit Vault. Secret values are never returned. Reads, requests and run need one of your devices online with `ak secrets sync now --watch --relay`; a set or delete with no device online is sealed and queued until a device applies it.';
+  'Search, describe and use the secrets in your AgentKit Vault. Secret values are never returned. To store a secret you do not have, call secrets_prepare_write (name only) and give the user the form_url so they type the value in their browser; never ask for or pass a secret value in chat. Reads, requests and run need one of your devices online with `ak secrets sync now --watch --relay`; a set or delete with no device online is sealed and queued until a device applies it.';
 const CAPABILITIES = { tools: { listChanged: false } };
 
 export async function handleMcp(request: Request, env: Env): Promise<Response> {
@@ -56,7 +57,14 @@ function plainError(status: number, code: 'bad_request' | 'forbidden', message: 
   return jsonResponse({ error: { code, message } }, status, headers);
 }
 
-/** Absent → allowed (non-browser clients); present → must be an `https:` origin (DNS-rebinding guard). */
+/**
+ * Absent → allowed (non-browser clients); present → must be a well-formed `https:` origin.
+ * This is a coarse filter, not an allowlist: it refuses `null`, `http:` (including loopback)
+ * and `file:` origins but accepts any `https:` site. The actual cross-site guard is that
+ * `/mcp` takes only an `Authorization: Bearer` token (never a cookie or query token) and
+ * sends no CORS headers, so a web page can neither attach a credential nor read a reply
+ * (spec §9.8).
+ */
 function originAllowed(origin: string | null): boolean {
   if (origin === null) return true;
   try {
@@ -181,6 +189,9 @@ function modernHeaderRefusal(request: Request, message: JsonRpcRequest, version:
   return null;
 }
 
+/** Cache hints for `tools/list`: `private` because the list is served behind the caller's token. */
+const TOOLS_LIST_CACHE = { ttlMs: 5 * 60_000, cacheScope: 'private' } as const;
+
 function complete(version: ProtocolVersion, result: Record<string, unknown>): Record<string, unknown> {
   return isModern(version) ? { resultType: 'complete', ...result, _meta: { [META_SERVER_INFO]: SERVER_INFO } } : result;
 }
@@ -198,7 +209,8 @@ async function dispatchMethod(env: Env, claims: McpClaims, version: ProtocolVers
     case 'ping':
       return rpcResult(id, complete(version, {}));
     case 'tools/list':
-      return rpcResult(id, complete(version, { tools: TOOL_DEFINITIONS }));
+      // 2026-07-28 list results must carry cache hints; the tool set only changes on deploy.
+      return rpcResult(id, complete(version, isModern(version) ? { tools: TOOL_DEFINITIONS, ...TOOLS_LIST_CACHE } : { tools: TOOL_DEFINITIONS }));
     case 'tools/call':
       return toolsCall(env, claims, version, message);
   }
@@ -210,9 +222,16 @@ async function toolsCall(env: Env, claims: McpClaims, version: ProtocolVersion, 
   const { id, params } = message;
   const name = params['name'];
   const tool = typeof name === 'string' ? relayToolOf(name) : null;
+  const local = typeof name === 'string' ? localToolOf(name) : null;
   const args = params['arguments'] ?? {};
   // A call refused before its tool runs is still charged, as a non-tool request.
   const refuse = async (refusal: Response) => (await rateRefusal(env, claims)) ?? refusal;
+  if (local !== null) {
+    if (!isObject(args)) return refuse(rpcError(id, RPC.invalidParams, 'Invalid params: arguments must be an object', 200));
+    const localScope = localScopeOf(local);
+    if (!hasScope(claims, localScope)) return refuse(insufficientScope(env, claims, localScope));
+    return rpcResult(id, complete(version, { ...(await callLocalTool(env, claims, local, args)) }));
+  }
   if (tool === null) return refuse(rpcError(id, RPC.invalidParams, 'Unknown tool', 200));
   if (!isObject(args)) return refuse(rpcError(id, RPC.invalidParams, 'Invalid params: arguments must be an object', 200));
   const needed = scopeOf(tool);

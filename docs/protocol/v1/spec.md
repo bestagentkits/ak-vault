@@ -28,8 +28,9 @@ Algorithm identifiers are closed sets. A verifier MUST reject an unknown `v`, `a
 event `type` or `suite` value (fail closed). Crypto agility = a new identifier plus a
 new protocol version; never silent negotiation down.
 
-Remote access (§3.6–§3.8, §9.6, §9.7) adds no primitive. The seal construction
-(§3.6) is the §3.3 shape (X25519, HKDF-SHA256, XChaCha20-Poly1305) aimed at a
+Remote access (§3.6–§3.8, §3.10, §9.6, §9.7) adds no primitive. The seal construction
+(§3.6), and the write intent (§3.10) that reuses it under its own HKDF `info` and AAD
+context, is the §3.3 shape (X25519, HKDF-SHA256, XChaCha20-Poly1305) aimed at a
 recipient key derived from `VK[e]`, and a name tag (§3.7) is HKDF-SHA256 output used
 as a keyed pseudorandom function. Its new identifiers (`x25519-xc20p-seal`, the
 `browser` session kind, the relay frame types) belong to new message types with their
@@ -192,6 +193,13 @@ SAS transcript = `cjson({"ctx":"akv1/sas","vault_id","initiator":device_id,"join
 `uint32be(sha256(transcript)[0:4]) mod 10^6` as six digits; `device_add.body.sas` is
 `b64(sha256(transcript))`. A mismatch aborts enrollment. The joiner and the
 initiator exchange the transcript inputs as enrollment codes (§3.8).
+
+**Limit of this SAS.** Both nonces travel in the clear and nothing commits to either
+before the other is known, so a party that can alter the codes learns one nonce and
+searches for the other (about 10^6 hashes) until the six digits match the honest
+side's display. This SAS therefore does not authenticate an enrollment against an
+attacker on the code channel. §3.9 adds the commitment that closes the search and
+supersedes this transcript for new enrollments.
 
 ### 3.6 Seal key and sealed operations
 
@@ -420,25 +428,259 @@ author's `sign_pub`, §4), the checkpoint signature and its non-rollback against
 chain (§6), and that the `device_add` adding it carries `sas` = `b64(sha256(transcript))`
 for its own device record before it trusts any wrap.
 
-**Authenticity of the code channel.** v1 does not commit to the nonces before they are
-revealed: the join code carries `nonce_j` and the offer code carries `nonce_i`, and
-neither is bound to the other. The six-digit SAS (about 20 bits) therefore authenticates
+**Authenticity of the code channel.** The `akj1-`/`ako1-` codes do not commit to the
+nonces before they are revealed: the join code carries `nonce_j` and the offer code
+carries `nonce_i`, and neither is bound to the other. The six-digit SAS (about 20 bits) therefore authenticates
 the exchange only while the two codes travel between the two devices without an active
 attacker on that path. An attacker who carries both codes can read `nonce_j`, put its own
 device towards the owner, learn the owner's digits, then choose the nonce it hands the
-joiner and grind about 10^6 SHA-256 values until both sides show the same six digits. v1
-therefore requires an authentic code channel: the user copies the codes between two
+joiner and grind about 10^6 SHA-256 values until both sides show the same six digits. These
+codes therefore require an authentic code channel: the user copies the codes between two
 terminals or screens they control. A service that relays the codes for the user (the
-Worker, ak-web or another service) is outside what v1 protects, and an implementation
-MUST NOT offer such a flow on v1 codes. A relayed flow needs a commit-reveal exchange in which the
-joiner commits to `nonce_j` before it sees `nonce_i` and reveals it only afterwards, which
-is a wire change under the spec-change procedure.
+Worker, ak-web or another service) is outside what these codes protect, and an
+implementation MUST NOT offer such a flow on `akj1-`/`ako1-` codes. A relayed flow MUST use
+the committed codes of §3.9 on both sides, in which the joiner commits to `nonce_j` before
+it sees `nonce_i` and reveals it only afterwards, and MUST NOT fall back to these codes.
 
 Vectors (`enroll-codes.json`): byte-exact round trips of a join and an offer code in
 the format shipped CLIs produce; a code split by whitespace parses; oversize, wrong
 prefix, wrong `ctx`, an extra or missing key, non-canonical JSON, a non-owner or
 machine device, a non-ASCII label and a non-canonical origin → `bad_request`; `v` 2 →
 `unsupported_version`.
+
+These `akj1-`/`ako1-` codes carry the uncommitted SAS and its limit (§3.5). They stay
+accepted because shipped CLIs and the dashboard produce them; a new implementation
+MUST also implement the committed codes of §3.9 and SHOULD offer them first.
+
+### 3.9 Committed enrollment codes
+
+Committed enrollment replaces the uncommitted exchange of §3.8 with three codes and a
+commitment, so the six-digit SAS cannot be ground. The joiner chooses `nonce_j`
+(16 random bytes) and commits to it before it sees `nonce_i`; it reveals `nonce_j`
+only after it holds the offer. Same envelope as §3.8: a prefix followed by
+`b64(cjson(obj))`, `v` 1, no signature checked while parsing, and the same
+`White_Space`, size, key-set and context rules. Contexts use the `akv1/` prefix.
+
+```
+commit = b64(sha256(cjson({"ctx":"akv1/enroll-nonce-j","nonce_j":"<b64 16B>"})))
+join   = "akj2-" || b64(cjson({"v":1,"ctx":"akv1/enroll-join","account":…,"device":<device record>,"nonce_j_commit":commit,"label":…}))
+offer  = "ako2-" || b64(cjson({"v":1,"ctx":"akv1/enroll-offer","vault_origin":…,"vault_id":…,"initiator":device_id,
+                                "joiner":device_id,"nonce_i":"<b64 16B>","nonce_j_commit":commit,
+                                "trust_anchor":"<b64 32B Ed25519 sign_pub>","checkpoint":<signed checkpoint>}))
+reveal = "akr2-" || b64(cjson({"v":1,"ctx":"akv1/enroll-reveal","vault_id":…,"joiner":device_id,"nonce_j":"<b64 16B>"}))
+```
+
+`join` and `offer` follow the §3.8 field rules with `nonce_j_commit` a 32-byte value in
+place of `nonce_j`; `reveal` has `vault_id` and `joiner` as IDs and a 16-byte `nonce_j`.
+Order:
+
+1. The joiner prints `join` and keeps `nonce_j`. The joiner MUST create each join only
+   on an explicit human action; it MUST NOT retry a join automatically.
+2. The owner device parses it, draws `nonce_i` (16 fresh random bytes, drawn after the
+   join is received), and answers with `offer`, echoing `nonce_j_commit`. It does not
+   yet have `nonce_j` and shows no SAS. The owner device MUST issue each offer only on an
+   explicit human action for that join; it MUST NOT answer joins automatically, including
+   joins relayed by a service. The pending enrollment is bound to (`joiner`,
+   `nonce_j_commit`, `nonce_i`). An owner device holds **at most one pending enrollment
+   in total**, not one per joiner: answering a further join, for any joiner, discards the
+   pending one and draws a new `nonce_i`, so a `nonce_i` is never paired with a second
+   commitment. A pending enrollment MUST expire 600 seconds (10 minutes) after its offer
+   is issued; a reveal that arrives later is refused (`forbidden`) because nothing is
+   pending. A pending enrollment that was discarded, expired, or lost because the owner
+   device restarted, without having received a reveal, is **abandoned**; it counts as a
+   failed attempt (see below), and the owner device SHOULD tell the human plainly that it
+   was abandoned. Because a join is public, anyone who replays a joiner's join can, once
+   the owner answers it, cancel that joiner's pending enrollment, and the abandoned offers
+   count toward the owner's stop limit and can trip it. Both affect availability only,
+   since the replayer cannot reveal the committed `nonce_j`.
+3. The joiner accepts the offer only if `joiner` is its own device ID and
+   `nonce_j_commit` is its own commitment, then prints `reveal` and shows its SAS.
+   **A joiner accepts at most one offer per join.** Once it has printed a reveal it
+   discards `nonce_j` and refuses every further offer for that commitment; a retry
+   starts with a new join and a fresh `nonce_j`. Otherwise a second offer could be
+   ground against the revealed `nonce_j`. Each reveal the joiner prints is one of its
+   attempts (see below).
+4. The owner device accepts `reveal` only if `vault_id` and `joiner` are those of the
+   pending enrollment (otherwise `forbidden`) and `verifyNonceJReveal` passes
+   (`nonce_j` hashes to the stored commitment; otherwise `forbidden`, and no SAS is
+   computed). It then shows its SAS. The owner device discards the pending enrollment
+   on the first failed reveal.
+
+```
+transcript = cjson({"ctx":"akv1/sas2","vault_id","vault_origin","trust_anchor",
+                    "initiator":device_id,"joiner":device,"nonce_i","nonce_j"})
+code       = uint32be(sha256(transcript)[0:4]) mod 10^6, shown as 6 digits
+device_add.body.sas = b64(sha256(transcript))
+```
+
+The owner device MUST NOT sign `device_add` until the human confirms that both
+displays show the same digits over a channel other than the one that carried the codes.
+The joiner's final check of §3.8 uses this transcript: the `device_add` that adds it
+carries `sas` = `b64(sha256(transcript))` for its own device record, with the
+`vault_origin` and `trust_anchor` of the offer it accepted. The origin and anchor are in
+the transcript, so a substituted anchor or origin changes the digits.
+
+Why the search fails. A forger that replaces the join fixes its own key and a
+commitment before the owner device reveals `nonce_i`, so the owner's digits are not
+known to the forger when it fixes `nonce_j`. A forger that replaces the offer must pick
+`nonce_i` without knowing the honest `nonce_j`, which only the commitment hides. Given the
+single-use and fresh-nonce rules of steps 2 and 3, each attempt therefore matches with
+probability 10^-6 and costs a fresh offer from the owner device or a fresh join and
+reveal from the joiner.
+
+**Attempts are counted on both devices.** A forger on the code channel can grind
+against either side without the other noticing. Against the owner: it sends its own
+join, computes the owner's digits once it holds the offer, never reveals when they do
+not match, and sends another join. Against the joiner: it obtains one offer from the
+owner with its own join and so learns the owner's digits, withholds its reveal, then
+answers each new join from the real joiner with a forged offer and compares the
+joiner's digits with the owner's until they match. Therefore:
+
+- On the owner device an **attempt** is an offer it issues. It MUST count every issued
+  offer that does not end in a confirmed match toward its stop limit: a failed reveal, a
+  mismatch the human reports, a reveal after which the SAS was shown but the human
+  neither confirmed nor rejected it, and an abandoned pending enrollment (superseded by
+  a later join, expired, or lost to a restart, without a reveal).
+- On the joiner an **attempt** is a reveal it prints. It MUST count every reveal that
+  is not followed by a `device_add` for its own device record that passes the final
+  check of §3.8, including a reveal whose SAS the human neither confirmed nor rejected.
+- Each device SHOULD stop after three counted attempts, show a visible notice, and
+  refuse to issue offers (owner) or create joins (joiner) until the human deliberately
+  resumes. The count MUST persist across restarts of the client until that deliberate
+  resume, and a pending enrollment lost to a restart counts as abandoned.
+- The limit is per device. Owner devices share no authenticated attempt state in v1,
+  so each owner device of an account counts separately, and an account with k owner
+  devices tolerates up to 3k counted owner-side attempts before every owner device
+  stops; the joiner's own limit still applies to each joining device.
+
+A SAS shorter than the key material still cannot stop an attacker who is given
+unlimited attempts; this construction bounds each attempt, not the number the humans
+tolerate.
+
+Compatibility. §3.8 codes remain accepted (§3.8), so the construction protects a
+joiner only when both sides use committed codes. An `akj2-` joiner accepts only
+`ako2-`, and swapping its join for an `akj1-` join does not weaken it: the joiner still
+reveals last, and the owner's digits are fixed by a `nonce_j` that was already public
+before `nonce_i` was drawn. The weak case is a joiner that prints or accepts `akj1-`/
+`ako1-` (shipped CLIs and the dashboard), because its nonce is public before the offer
+arrives and the digits can be ground (§3.5). An owner device that accepts `akj1-`
+therefore enrolls those joiners without that protection, and only over the authentic
+code channel that §3.8 requires; it MAY refuse `akj1-` (a policy switch, not a wire
+rule) and SHOULD display which form was used.
+
+Vectors (`enroll-commit.json`): byte-exact round trips of all three codes; the
+commitment, matching and mismatching reveals (`forbidden`); the SAS transcript, code and
+digest as known answers, with each field (origin, anchor, initiator, joiner, both
+nonces) changing the digest; a ground nonce that reproduces the six digits but is refused
+against the forger's commitment (`forbidden`); and wrong prefix, legacy context, extra or
+missing key, a plain `nonce_j` in the join, a short commitment or nonce, a reader-role or
+machine device, a non-canonical origin, another vault's checkpoint → `bad_request`;
+`v` 2 → `unsupported_version`.
+
+### 3.10 Write intents (human write requests)
+
+A **write request** lets an MCP client ask for a secret it must never see: the client
+names the secret, the person types the value into the dashboard, and an enrolled
+browser device (§9 item 1) writes a normal signed record. The value never reaches the
+MCP client or the Worker in plaintext. The secret name and purpose transit Worker
+memory once, when the client asks (ADR 0002 D7), and are stored only inside a **write
+intent** sealed to the epoch's seal key (§3.6).
+
+**Write intent (wire).** Exactly these keys:
+
+```json
+{"v":1,"alg":"x25519-xc20p-seal","request_id":"<b64 16B>","vault_id":…,"key_epoch":e,
+ "epk":"<b64 32B>","n":"<b64 24B>","ct":"<b64 ct||tag>",
+ "origin":{"kind":"mcp","account":…,"client_id":…,"grant_id":…},
+ "operation":"create"|"replace","ts":unix_ms,"expires_at":unix_ms}
+```
+
+```
+esk, epk = fresh X25519 keypair
+shared   = X25519(esk, seal_pub[e])                      ; reject all-zero output
+key      = HKDF(ikm=shared, salt=epk || seal_pub[e], info=utf8("akv1/write-intent"), L=32)
+aad      = {"ctx":"akv1/write-intent","vault_id","request_id","key_epoch","origin","operation","ts","expires_at"}
+pt       = cjson({"name":…,"purpose"?:…,"sensitivity"?:"normal"|"high"})
+ct       = XC20P(key, n, pt, aad)
+```
+
+- The `alg` identifier is the sealed-operation one, but the HKDF `info` and the AAD
+  `ctx` differ, so a write intent never opens as a sealed operation (§3.6) or the
+  reverse. `request_id` is 16 random bytes (§2); `origin` is as in §3.6;
+  `operation` is the closed set {`create`, `replace`}; `expires_at` > `ts`.
+- `pt` is canonical and carries no value: `name` 1–4096 UTF-16 code units (§3.6),
+  `purpose` 1–200, `sensitivity` from the item set; any other key → `bad_request`.
+  `pt` ≤ 16 384 bytes.
+- `openWriteIntent(SealSK[e], wire, {vaultId})`, in order: parse the wire (`v`/`alg`
+  unknown → `unsupported_version`; keys, lengths, `origin`, `operation`, `expires_at`
+  not after `ts` → `bad_request`); `vault_id` ≠ expected → `bad_request`; an all-zero
+  shared secret → `bad_request`; AEAD failure → `decrypt_failed`; `pt` not canonical,
+  no `name`, unknown keys, or a field outside its limits → `bad_request`.
+  `sealWriteIntent` applies the same checks before encrypting.
+
+**Who requests.** Only the Worker's MCP handler creates write requests, through
+`secrets_prepare_write` (§9.8); there is no route that accepts one. As for sealing
+(§3.6), it needs `vault-mcp:write`, an `owner` account (an `editor` is refused with `invalid_args`: only an owner can enroll the browser device that completes the request), the stored seal-key
+document of the current key epoch, and no pending `rekey_required`. The vault object
+stores the request only with a `ts` within 300 s of its own clock, a lifetime between
+`write_request_min_ttl_s` and `write_request_ttl_s`, a `request_id` it does not hold, and
+room under `write_requests_pending_per_account`, `write_requests_pending_per_client` and
+`write_requests_retained_per_account` (§10).
+It keeps the intent ciphertext and, in the clear, the requesting account, `client_id`,
+`grant_id`, the MCP token's `iat`, the operation, the state and the times.
+
+**States.** A request starts `pending_user` and ends exactly once:
+
+| State | `reason` | When |
+|---|---|---|
+| `completed` | — | the person's item PUT was applied; carries an opaque `receipt` |
+| `conflict` | `revision_conflict` | that PUT lost compare-and-swap; its record is a preserved branch (§5) |
+| `cancelled` | `user_cancelled`, `grant_revoked` | the person cancelled, or the requesting grant was revoked |
+| `failed` | `already_exists`, `not_found`, `device_error` | the browser device could not complete it |
+| `expired` | — | `expires_at` passed while it was open |
+
+The reason set is closed and never carries text from the request. The states
+`processing` and `queued` are reserved and not emitted: completion is a single step.
+Closing a request clears its intent ciphertext. An expired request is never served;
+it is marked `expired` and its ciphertext cleared, and rows closed more than
+`write_request_retention_s` ago are purged, whenever the vault next handles a write
+request.
+
+**Completing.** The person opens `<origin>/app#write=<request_id>&vault=<vault_id>`
+(the fragment never reaches the server). Every route in §9.6 that touches a request
+needs a `browser` session of the requesting account; the `request_id` alone
+authorizes nothing. The browser device:
+
+1. fetches the request and opens its intent with `SealSK[key_epoch]` (any failure:
+   refuse), and refuses a `request_id` or `vault_id` other than the link's;
+2. shows the person the name, purpose, operation and requesting `client_id`. They are
+   chosen by the MCP client, not by the person;
+3. resolves `name` against its own decrypted live items as in §3.6 step 3: `create`
+   with a match closes the request `failed`/`already_exists`, `replace` with no single
+   match `failed`/`not_found`;
+4. writes a normal signed record (§5) carrying the typed value as §3.6 step 4 writes
+   a sealed `set` with the intent's `sensitivity` (author itself, `base_revision` the
+   revision it holds), and PUTs it with `?write_request=<request_id>`, or closes the
+   request `cancelled`/`user_cancelled` when the person declines.
+
+The server cannot read the name, so the name binding and the compare-and-swap base
+are the browser device's obligations. The server enforces the account, vault,
+operation against the target item (`create`: no live item; `replace`: a live item),
+expiry, single use and the requesting grant's liveness. Completion and the item PUT
+are one transaction: a request is never consumed without its record, nor completed
+twice. Before serving or completing an open request the Worker checks the revocation
+registry for the requesting grant (`sid` = `grant_id`, and the account's minimum
+`iat`), closes a revoked one `cancelled`/`grant_revoked`, and fails closed (`503`)
+when the registry cannot answer.
+
+Vectors (`write-intent.json`): `create`, name-only and `replace` round trips at two
+epochs; wrong epoch key and tampered `origin` (account, grant), `operation`, `ts`,
+`expires_at`, `request_id`, `key_epoch` or `ct` → `decrypt_failed`; another vault, an
+all-zero `epk`, `expires_at` not after `ts`, an unknown `operation` or `origin.kind`,
+an extra wire or plaintext key (a `value` included), a missing `name`, an empty
+`purpose`, an unknown `sensitivity` and a non-canonical `pt` → `bad_request`; unknown
+`alg` and `v` 2 → `unsupported_version`; sealing refuses an empty name, a `value` key
+and an oversize `purpose`.
 
 ## 4. Membership log (owner-signed, hash-chained)
 
@@ -803,6 +1045,9 @@ never stops an older device from verifying or appending. A new type needs no
 protocol change; a writer MUST choose a name no existing type uses, and MUST NOT
 reuse a defined name with another field set. For example, a `rotation_started`
 event from another writer is an unknown type to the CLI, which keeps its envelope only.
+The browser dashboard writes `rotation_started`, `rotation_vault_written`,
+`rotation_revoked`, `rotation_paused`, `rotation_resumed`, `rotation_failed`,
+`rotation_cancelled` and `rotation_cleared`, each carrying `item_id` only.
 
 A writer that does not use this envelope (for example `action` in place of `type`,
 or no `v`) makes a CLI device refuse the chain and stop appending audit entries
@@ -930,7 +1175,9 @@ devices that honor it, not what a vault member can decrypt (§3).
    (`PUT /v1/vaults/{vid}`), on every `POST /v1/vaults/{vid}/membership` (recovery
    enrollment included), on `GET` and `PUT /v1/vaults/{vid}/recovery`, on the
    recovery-identity reads (§3.5), on `PUT /v1/vaults/{vid}/seal-key` and on draining
-   sealed operations (`GET …/sealed`, `POST …/sealed/{id}/ack`). Every other route
+   sealed operations (`GET …/sealed`, `POST …/sealed/{id}/ack`). Conversely, only a
+   `browser` session may read or close a write request or complete one with an item
+   PUT (§3.10, §9.6); every other kind is `403 forbidden` there. Every other route
    treats it as the member device it is. Header `alg`
    MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. If the JWKS
    cannot be loaded the server fails closed (`503`) and backs off for 30 s before
@@ -1002,6 +1249,9 @@ Served only where the deployment enables remote access (every route below answer
 | `PUT /v1/vaults/{vid}/seal-key` | `sealkey.put` | `vault:write` | human `owner` device, not `browser` |
 | `GET /v1/vaults/{vid}/sealed?after=<seq>&limit=<n>` | `sealed.get` | `vault:read` | human `owner`/`editor` device, not `browser` |
 | `POST /v1/vaults/{vid}/sealed/{sealed_id}/ack` | `sealed.ack` | `vault:write` | human `owner`/`editor` device, not `browser` |
+| `GET /v1/vaults/{vid}/write-requests/{request_id}` | `writereq.get` | `vault:read` | `owner`/`editor` device of a `browser` session only |
+| `POST /v1/vaults/{vid}/write-requests/{request_id}/close` | `writereq.close` | `vault:write` | `owner`/`editor` device of a `browser` session only |
+| `PUT /v1/vaults/{vid}/items/{iid}?write_request=<request_id>` | `item.put` | `vault:write` | `owner`/`editor` device of a `browser` session only |
 | `GET /v1/relay` (WebSocket upgrade, §9.7) | `relay.open` | `vault:read` and `vault:write` | human device, not `browser` or `machine` |
 
 - **Lookup.** The *i*-th `tag` pairs with the *i*-th `key_epoch`; unequal counts, more
@@ -1026,6 +1276,19 @@ Served only where the deployment enables remote access (every route below answer
   unknown or already acknowledged `sealed_id`, or one of another account, is
   `not_found`, which the device treats as done. There is no route that creates a sealed operation.
 - **Item PUT.** Also accepts the `{record, name_tag}` wrapper (§3.7).
+- **Write requests** (§3.10). A request is served only to its requesting account: an
+  unknown `request_id` or another account's is `not_found`, a closed or expired one
+  `bad_request`. `GET` returns
+  `{"request_id","operation","client_id","expires_at","intent":<write intent>}`.
+  `close` takes `{"outcome":"cancelled","reason":"user_cancelled"}` or
+  `{"outcome":"failed","reason":"already_exists"|"not_found"|"device_error"}` and
+  returns `{"state"}`; any other body is `bad_request`. An item PUT with exactly one
+  well-formed `write_request` query completes the request in the same transaction: a
+  live target item for `create`, or none for `replace`, is `bad_request` and leaves
+  the request open; an applied record answers the usual body plus
+  `"write_request":{"state":"completed","receipt"}`; a `409` closes it `conflict`; any
+  other failure writes nothing and leaves it open. A malformed or repeated
+  `write_request`, or one where remote access is disabled, is `bad_request`.
 
 ### 9.7 Relay
 
@@ -1159,6 +1422,7 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   `MCP-Protocol-Version`; an unsupported value answers `400` `-32022` with the
   request's `id`. A request without the header is served as 2025-11-25, statelessly:
   a 2025-11-25 client's `initialize` is answered without a session ID.
+- **Origin and browsers.** A request without `Origin` is served. One with an `Origin` must be a well-formed `https:` origin; `null`, `http:` and `file:` origins answer `403` `forbidden`. This is a coarse filter, not an allowlist: any `https:` site passes it, because server-side connectors and desktop clients do not announce a fixed origin. The guard against a hostile web page is that the endpoint accepts only an `Authorization: Bearer` token (the scheme is case-insensitive; no cookie, no query token) and sends no CORS headers, so a page cannot attach a credential or read a reply.
 - **Rate limits.** Every JSON-RPC request that passes transport validation (method,
   `Origin`, kill switch, token and revocation, headers and protocol version, body and
   JSON-RPC parsing) spends one call from the `mcp_calls_per_minute_per_client` and
@@ -1169,7 +1433,8 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   is the tool error `rate_limited` with `retry_after_s`; any other refused request, including such a call whose `arguments`
   is any other value, is HTTP `429 rate_limited` with `Retry-After` and the §10 error
   body. A call refused as `rate_limited` writes no audit row.
-- **Tools** map one to one onto the relay tools (§9.7) with the same scopes. Each
+- **Tools** are the relay tools (§9.7), named `secrets_<tool>`, plus two the Worker
+  answers itself (below). A relay tool maps one to one onto §9.7 with the same scope. Each
   takes the relay `args` plus an optional `vault_id`. Without it the Worker uses the
   one vault the account's online relay connections list. When they list more than
   one, the call needs `vault_id` (`invalid_args`). When none is online, a read or
@@ -1179,9 +1444,26 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   one online opted-in device of `sub` that listed that vault and tool in `hello`.
 - **Sealed fallback.** With no such device, `set` and `delete` are sealed (§3.6) and
   answer `{"status":"queued","sealed_id"}`; every other tool answers
-  `no_device_online`.
+  `no_device_online`. A `set` puts the value in the MCP client's own tool call, and so
+  in the AI's context; a secret the AI must not see goes through a write request.
+- **Write requests** (§3.10), scope `vault-mcp:write`, answered by the Worker with no
+  device online:
+  - `secrets_prepare_write` takes exactly `{"name","operation"?:"create"|"replace","purpose"?,"sensitivity"?,"ttl_s"?,"vault_id"?}`
+    (`operation` default `create`; `ttl_s` from `write_request_min_ttl_s` to
+    `write_request_ttl_s`, default the maximum). It takes no value: any other key, a
+    `value` included, is `invalid_args` and is not echoed. It seals the intent and
+    answers `{"status":"pending_user","request_id","vault_id","form_url","expires_at","next"}`,
+    `form_url` being the §3.10 link. Besides the general budgets it spends one call
+    from `mcp_prepare_write_per_minute_per_client`.
+  - `secrets_write_status` takes `{"request_id","vault_id"?}` and answers
+    `{"state","reason"?,"receipt"?,"expires_at"}` (§3.10 states), only to the account,
+    `client_id` and `grant_id` that asked; any other caller gets `not_found`, as for
+    an unknown ID.
+  - Vault selection follows the relay tools: without `vault_id` the Worker uses the
+    one vault the account's online devices list, else `invalid_args`. A vault the
+    account cannot write is `invalid_args`.
 - **Errors.** A device `error.code`, `no_device_online`, `device_timeout`,
-  `sealed_queue_full` and `rate_limited` are MCP tool errors (`isError` true) carrying
+  `sealed_queue_full`, `no_seal_key`, `too_many_requests` and `rate_limited` are MCP tool errors (`isError` true) carrying
   `{"code"}`; a token or scope failure is an HTTP `401` or `403`, a rate-limited
   request that is not such a tool call (see rate limits) an HTTP `429 rate_limited`, and the
   kill switch an HTTP `503 sync_disabled`, with the §10 error body. Messages never
@@ -1217,7 +1499,12 @@ device of the account holds the vault, or none is online for a read or `use` cal
 without `vault_id`, and the call cannot be sealed),
 `device_timeout` (the device missed `deadline_ms`) and `sealed_queue_full` (the vault
 already holds `sealed_queue_max` operations, acknowledged ones kept for replay refusal
-included). `worker/src/limits.ts` owns the relay and MCP limits and `GET /v1/meta`
+included). Write requests (§3.10) add two more MCP tool errors: `no_seal_key` (the vault
+has no seal-key document for its current epoch) and `too_many_requests` (the account
+already has `write_requests_pending_per_account` open requests in the vault, the requesting
+client already has `write_requests_pending_per_client` of them, or the account
+holds `write_requests_retained_per_account` rows in the vault, closed ones kept until their retention
+ends included). `worker/src/limits.ts` owns the relay and MCP limits and `GET /v1/meta`
 publishes them where remote access is enabled; the table lists them for orientation,
 and `limits.ts` wins on any difference:
 
@@ -1237,6 +1524,13 @@ and `limits.ts` wins on any difference:
 | `mcp_calls_per_minute_per_client` | 60 |
 | `mcp_run_calls_per_minute_per_client` | 10 |
 | `mcp_calls_per_minute_per_account` | 300 |
+| `mcp_prepare_write_per_minute_per_client` | 6 |
+| `write_request_ttl_s` (default and maximum) | 600 |
+| `write_request_min_ttl_s` | 60 |
+| `write_request_retention_s` | 86400 |
+| `write_requests_pending_per_account` (per vault) | 8 |
+| `write_requests_pending_per_client` (per account and vault) | 4 |
+| `write_requests_retained_per_account` (open and retained, per vault) | 64 |
 
 ## 11. Clarifications fixed by the reference implementation (normative)
 
@@ -1392,10 +1686,14 @@ under an earlier revision does not verify and is reset rather than migrated.
   client applied policy items, so no existing data changes meaning.
 - **2026-10 (issue #101, bestagentkits/ak-web#628):** remote access, all additive: the
   seal key and sealed operations (§3.6), name tags and the `{record, name_tag}` item
-  PUT wrapper (§3.7), enrollment code formats (§3.8), the profile layout and its
+  PUT wrapper (§3.7), enrollment code formats (§3.8, §3.9), the profile layout and its
   provenance check (§5.1), the `browser` session kind (§9 item 1), the remote-access
   routes (§9.6), the relay (§9.7) and their errors and limits (§10). A bare record
   PUT, every existing route and every existing body keep their meaning, so clients
   that ignore these additions keep verifying and syncing and no data is reset. One
   limitation: a writer that predates §5.1 does not carry `meta.profile` forward, so
   its edit of an item drops that item's synced profile.
+- **2026-10 (issue #119):** human write requests, additive: the write intent (§3.10),
+  the write-request routes and the `write_request` item-PUT query (§9.6), the
+  `secrets_prepare_write` and `secrets_write_status` MCP tools (§9.8) and their errors
+  and limits (§10). Nothing existing changes meaning.

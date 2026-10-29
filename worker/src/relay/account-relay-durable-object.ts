@@ -8,8 +8,8 @@
  * (4409), verifies `hello` against every listed vault's membership, takes
  * `reauth` before the token expires, and relays MCP calls to the newest eligible
  * device, re-checking revocation and membership before each call. It also keeps
- * the per-client MCP rate budgets and a 30-day operational audit of hashed
- * client IDs, tools, outcomes and latency.
+ * the per-client MCP rate budgets and a 30-day operational audit (failure and success
+ * rows capped separately) of hashed client IDs, tools, outcomes and latency.
  *
  * Frames, arguments and results are never logged or stored: arguments may carry a
  * `set` value and results carry names and metadata in transit (ADR 0002 D7).
@@ -59,6 +59,31 @@ const L = REMOTE_ACCESS_LIMITS;
 /** Transit allowance on top of the device's `deadline_ms` before a call times out. */
 const DEADLINE_GRACE_MS = 2_000;
 const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+/** Failure rows (every outcome but a success) kept per account; successes never count against it, so recent failure evidence survives any number of successful calls. */
+export const AUDIT_MAX_ROWS = 20_000;
+/** Successful rows kept per account; they otherwise keep the full retention window. */
+export const AUDIT_MAX_SUCCESS_ROWS = 100_000;
+/** Inserts between audit prunes (and one prune when the object starts), so a full table is not counted on every call. */
+export const AUDIT_PRUNE_EVERY = 256;
+/** Outcomes of a tool that ran (`ok`) or whose write was sealed and queued (`queued`). */
+const AUDIT_SUCCESS_OUTCOMES: readonly string[] = ['ok', 'queued'];
+
+/**
+ * Create the audit table and bring an older one up to date: rows written before the
+ * `success` class column existed get it added and backfilled, then the indexes exist.
+ */
+export function ensureAuditSchema(storage: DurableObjectStorage): void {
+  const sql = storage.sql;
+  sql.exec('CREATE TABLE IF NOT EXISTS client_audit (ts INTEGER NOT NULL, client_hash TEXT NOT NULL, tool TEXT NOT NULL, outcome TEXT NOT NULL, ms INTEGER NOT NULL, success INTEGER NOT NULL DEFAULT 0)');
+  if (!sql.exec<{ name: string }>('PRAGMA table_info(client_audit)').toArray().some((c) => c.name === 'success')) {
+    storage.transactionSync(() => {
+      sql.exec('ALTER TABLE client_audit ADD COLUMN success INTEGER NOT NULL DEFAULT 0');
+      sql.exec(`UPDATE client_audit SET success = 1 WHERE outcome IN (${AUDIT_SUCCESS_OUTCOMES.map((o) => `'${o}'`).join(', ')})`);
+    });
+  }
+  sql.exec('CREATE INDEX IF NOT EXISTS client_audit_ts ON client_audit (ts)');
+  sql.exec('CREATE INDEX IF NOT EXISTS client_audit_class_ts ON client_audit (success, ts)');
+}
 const RATE_WINDOW_MS = 60_000;
 const WRITE_TOOLS: ReadonlySet<RelayTool> = new Set<RelayTool>(['set', 'delete']);
 
@@ -75,6 +100,8 @@ export class AccountRelay extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   /** Outstanding calls by `call_id`; in memory only, as a call keeps the object awake until it settles. */
   private readonly pending = new Map<string, PendingCall>();
+  /** Audit inserts since the object started; drives the periodic prune. */
+  private auditInserts = 0;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -83,9 +110,9 @@ export class AccountRelay extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS proof_jti (did TEXT NOT NULL, jti TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY (did, jti));
       CREATE INDEX IF NOT EXISTS proof_jti_expiry ON proof_jti (expires_at);
       CREATE TABLE IF NOT EXISTS client_rate (bucket TEXT PRIMARY KEY, window INTEGER NOT NULL, count INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS client_audit (ts INTEGER NOT NULL, client_hash TEXT NOT NULL, tool TEXT NOT NULL, outcome TEXT NOT NULL, ms INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS client_audit_ts ON client_audit (ts);
     `);
+    ensureAuditSchema(ctx.storage);
+    this.pruneAudit();
   }
 
   // ---------------------------------------------------------------- upgrade
@@ -319,8 +346,8 @@ export class AccountRelay extends DurableObject<Env> {
    * refused request spends nothing. An invalid client ID or tool is refused without
    * `retryAfterS`.
    */
-  async takeRate(clientId: string, tool: RelayTool | null, nowMs: number = Date.now()): Promise<RateDecision> {
-    if (typeof clientId !== 'string' || !/^[\x20-\x7e]{1,256}$/.test(clientId) || (tool !== null && !(RELAY_TOOLS as readonly string[]).includes(tool))) {
+  async takeRate(clientId: string, tool: RelayTool | 'prepare_write' | null, nowMs: number = Date.now()): Promise<RateDecision> {
+    if (typeof clientId !== 'string' || !/^[\x20-\x7e]{1,256}$/.test(clientId) || (tool !== null && tool !== 'prepare_write' && !(RELAY_TOOLS as readonly string[]).includes(tool))) {
       return { ok: false };
     }
     const window = Math.floor(nowMs / RATE_WINDOW_MS);
@@ -329,6 +356,7 @@ export class AccountRelay extends DurableObject<Env> {
       ['account', L.mcp_calls_per_minute_per_account],
     ];
     if (tool === 'run') buckets.push([`run:${clientId}`, L.mcp_run_calls_per_minute_per_client]);
+    if (tool === 'prepare_write') buckets.push([`prepare:${clientId}`, L.mcp_prepare_write_per_minute_per_client]);
     return this.ctx.storage.transactionSync(() => {
       this.sql.exec('DELETE FROM client_rate WHERE window < ?', window);
       const counts = buckets.map(([bucket]) => this.sql.exec<{ count: number }>('SELECT count FROM client_rate WHERE bucket = ? AND window = ?', bucket, window).toArray()[0]?.count ?? 0);
@@ -349,7 +377,9 @@ export class AccountRelay extends DurableObject<Env> {
 
   /**
    * Append one operational audit row (hashed client, tool, outcome, latency); rows
-   * older than 30 days are dropped. False, storing nothing, for an invalid entry.
+   * older than 30 days are dropped. Failure and success rows are capped separately
+   * (see `pruneAudit`), checked every `AUDIT_PRUNE_EVERY` inserts. False, storing
+   * nothing, for an invalid entry.
    */
   async recordAudit(e: RelayAuditEntry, nowMs: number = Date.now()): Promise<boolean> {
     if (
@@ -365,9 +395,23 @@ export class AccountRelay extends DurableObject<Env> {
     }
     this.ctx.storage.transactionSync(() => {
       this.sql.exec('DELETE FROM client_audit WHERE ts < ?', nowMs - AUDIT_RETENTION_MS);
-      this.sql.exec('INSERT INTO client_audit (ts, client_hash, tool, outcome, ms) VALUES (?, ?, ?, ?, ?)', nowMs, e.clientHash, e.tool, e.outcome, e.ms);
+      this.sql.exec('INSERT INTO client_audit (ts, client_hash, tool, outcome, ms, success) VALUES (?, ?, ?, ?, ?, ?)', nowMs, e.clientHash, e.tool, e.outcome, e.ms, AUDIT_SUCCESS_OUTCOMES.includes(e.outcome) ? 1 : 0);
+      if (++this.auditInserts % AUDIT_PRUNE_EVERY === 0) this.pruneAudit();
     });
     return true;
+  }
+
+  /**
+   * Trim each audit class to its own cap, newest rows kept: the cutoff is the first row
+   * past the cap in (ts, rowid) order, found and deleted through `client_audit_class_ts`.
+   * A token holder who spams `AUDIT_MAX_SUCCESS_ROWS` successful calls can still roll the
+   * success history; that is accepted, because every one of those calls is itself recorded.
+   */
+  private pruneAudit(): void {
+    for (const [success, cap] of [[0, AUDIT_MAX_ROWS], [1, AUDIT_MAX_SUCCESS_ROWS]] as const) {
+      const edge = this.sql.exec<{ ts: number; id: number }>('SELECT ts, rowid AS id FROM client_audit WHERE success = ? ORDER BY ts DESC, rowid DESC LIMIT 1 OFFSET ?', success, cap).toArray()[0];
+      if (edge) this.sql.exec('DELETE FROM client_audit WHERE success = ? AND ts <= ? AND (ts < ? OR rowid <= ?)', success, edge.ts, edge.ts, edge.id);
+    }
   }
 
   // ---------------------------------------------------------------- alarm

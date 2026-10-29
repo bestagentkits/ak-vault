@@ -206,8 +206,28 @@ in production needs every box below, at the exact commit, plus an owner decision
 - [ ] ADR 0002 accepted by the owner, and REVIEW.md and AGENTS.md carry its
       exception scopes.
 - [ ] Go and TypeScript reproduce `seal-key.json`, `sealed-op.json`, `name-tag.json`,
-      `enroll-codes.json`, `profile.json` and `relay-frames.json`, including every
-      negative case ([spec §3.6–§3.8, §5.1, §9.7](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)).
+      `enroll-codes.json`, `write-intent.json`, `profile.json` and `relay-frames.json`,
+      including every negative case ([spec §3.6–§3.8, §3.10, §5.1, §9.7](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)).
+- [ ] Committed enrollment: Go and TypeScript reproduce `enroll-commit.json` including the
+      ground nonce refusal ([spec §3.9](../protocol/v1/spec.md#39-committed-enrollment-codes));
+      the `ak` CLI and the dashboard enroll with `akj2-`/`ako2-`/`akr2-` and the owner
+      device refuses `akj1-`, so [threat model X9](./threat-model.md) can drop its
+      uncommitted-SAS limitation. Client tests cover single-use `nonce_j` (a second offer for
+      the same join is refused) and a fresh `nonce_i` per join. On the joiner: refusing an
+      offer for another joiner or another commitment, a join only on explicit human action
+      (no automatic retry), every reveal not followed by a `device_add` for its own device
+      record counted as an attempt (including a SAS the human neither confirmed nor
+      rejected), and a stop with a visible notice after three until a deliberate resume.
+      On the owner device: at most one pending enrollment in total, an offer only on
+      explicit human action (no automatic answer to a relayed join), a pending enrollment
+      expiring 600 seconds after its offer (a later reveal is `forbidden`), every issued
+      offer without a confirmed match (failed reveal, reported mismatch, a SAS shown but
+      neither confirmed nor rejected, or a pending enrollment superseded, expired after
+      the 600-second time-to-live, or lost to a restart without a reveal) counted toward
+      the stop limit, a visible notice when a pending enrollment is abandoned, and
+      `forbidden` for a reveal whose `vault_id` or `joiner` differs from the pending
+      enrollment. On both: the attempt count survives a client restart until a deliberate
+      human resume.
 - [ ] Relay: Worker tests for the closed frame set and close codes, signed `hello` and
       `result`, `reauth` before expiry, revocation and membership checked before each
       call (a device removed mid-connection gets no further call), a replaced
@@ -222,8 +242,13 @@ in production needs every box below, at the exact commit, plus an owner decision
       SRI and no third-party code; `browser` session refused on genesis, membership,
       recovery, seal-key PUT and the sealed queue; enrollment needs SAS approval from
       an existing owner device.
+- [ ] Write requests ([ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md)
+      D8): Worker tests for the no-value tool input, browser-session and account
+      binding, single use with the item PUT, grant revocation, caps and rate; the
+      dashboard form opens the intent, shows the requesting client, enforces the name
+      binding and closes with the right reason.
 - [ ] Disclosure scan rerun with remote access on: planted values and names sent
-      through MCP set, relayed results and `run` output are absent from the Durable
+      through MCP set, `secrets_prepare_write`, relayed results and `run` output are absent from the Durable
       Object dump, Worker logs, live tail and errors (scenario 15 and
       [data classification](./data-classification.md#transits-worker-memory-never-stored-or-logged-remote-access-only)).
 - [ ] Red-team scenarios 16–21 executed and scenario 13 rerun with synced profiles

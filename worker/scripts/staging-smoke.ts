@@ -57,7 +57,7 @@ import {
   type TombstonePayload,
   type JsonObject,
 } from '@ak-vault/protocol';
-import { DEFAULT_AK_WEB_ORIGIN, fail, parseSecureOrigin, readCliSession, vaultTokenSource } from './staging-smoke-ak-web-token.js';
+import { DEFAULT_AK_WEB_ORIGIN, fail, parseSecureOrigin, readCliSession, reportSmokeFailure, vaultTokenSource } from './staging-smoke-ak-web-token.js';
 import { DEFAULT_STATE_PATH, loadDeviceSecrets, type DeviceSecrets } from './staging-smoke-device-state.js';
 import {
   BlockedError,
@@ -225,7 +225,7 @@ try {
   if (err instanceof BlockedError) {
     process.stderr.write(`BLOCKED ${err.message}\n`);
     process.exitCode = err.exitCode;
-  } else {
+  } else if (!reportSmokeFailure(err)) {
     throw err;
   }
 }

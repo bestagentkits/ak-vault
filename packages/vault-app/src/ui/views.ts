@@ -1,9 +1,10 @@
 /**
- * Screens. Every string from an item, a profile or a code is inserted as text.
- * Values are write-only: the value field is a CSS-masked text input (never a
- * password input, so no password manager offers to save it) with autofill,
- * spellcheck and manager capture off, cleared on submit, and no screen has a
- * reveal or copy action.
+ * Screens. Every string from an item, a profile, a write request or a code is
+ * inserted as text. Values are write-only: the vault screen's value field is a
+ * CSS-masked text input (never a password input, so a name field beside it does
+ * not read as a login form), the write-request field, which has no name field
+ * beside it, is a password input; both have autofill, spellcheck and manager
+ * capture off and are cleared on submit, and no screen has a reveal or copy action.
  */
 import type { AppController, Notice, Screen } from '../app-controller.js';
 import type { HistoryEntry } from '../sync/history.js';
@@ -11,7 +12,7 @@ import type { ItemView } from '../sync/vault-sync.js';
 import { h, replaceChildren, type Child } from './dom.js';
 import { membersScreen } from './members-view.js';
 import { messageFor } from './messages.js';
-import { MAX_ROTATE_TTL_DAYS, rotationInfo, type RotationHealth, type RotationInfo } from '../sync/rotation.js';
+import { MAX_ROTATE_TTL_DAYS, rotationInfo, type ExpiryHealth, type RotationHealth, type RotationInfo } from '../sync/rotation.js';
 
 /** Keep the browser and password managers from storing, suggesting or correcting a field. */
 export const NO_CAPTURE = {
@@ -110,6 +111,78 @@ function approveScreen(c: AppController, s: Extract<Screen, { kind: 'approve' }>
   ];
 }
 
+/** Remaining time as text, e.g. `9m 05s`; `expired` once past. */
+export function remaining(expiresAt: number, nowMs: number): string {
+  const s = Math.floor((expiresAt - nowMs) / 1000);
+  if (s <= 0) return 'expired';
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+}
+
+/** A countdown that ticks while it is in the document and stops once a re-render removes it. */
+function countdown(expiresAt: number): HTMLElement {
+  const el = h('span', { 'data-testid': 'write-expiry' }, [remaining(expiresAt, Date.now())]);
+  const timer = setInterval(() => {
+    if (!el.isConnected) {
+      clearInterval(timer);
+      return;
+    }
+    el.textContent = remaining(expiresAt, Date.now());
+  }, 1000);
+  return el;
+}
+
+function writeScreen(c: AppController, s: Extract<Screen, { kind: 'write' }>): HTMLElement[] {
+  const r = s.request;
+  const details = r
+    ? h('dl', { class: 'profile', 'data-testid': 'write-request' }, [
+      h('dt', {}, ['Secret']), h('dd', { class: 'name', 'data-testid': 'write-name' }, [r.name]),
+      r.purpose !== null ? h('dt', {}, ['Purpose']) : null, r.purpose !== null ? h('dd', { 'data-testid': 'write-purpose' }, [r.purpose]) : null,
+      h('dt', {}, ['Requested by']), h('dd', { 'data-testid': 'write-client' }, [r.clientId]),
+      h('dt', {}, ['Action']), h('dd', { 'data-testid': 'write-operation' }, [r.operation === 'create' ? 'Create a new secret' : 'Replace the value of an existing secret']),
+      s.open ? h('dt', {}, ['Expires in']) : null, s.open ? h('dd', {}, [countdown(r.expiresAt)]) : null,
+    ])
+    : null;
+  let form: HTMLElement | null = null;
+  if (s.open && r) {
+    const valueInput = h('input', { id: 'write-value', type: 'password', required: true, 'data-testid': 'write-value', ...NO_CAPTURE }) as HTMLInputElement;
+    form = h('form', { class: 'set', 'aria-busy': s.busy ? 'true' : 'false' }, [
+      h('label', { for: 'write-value' }, ['Value (typed here, encrypted in this browser, never shown again or sent to the assistant)']),
+      valueInput,
+      h('div', { class: 'row' }, [
+        h('button', { type: 'submit', disabled: s.busy, 'data-testid': 'write-save' }, ['Save']),
+        h('button', { type: 'button', class: 'secondary', disabled: s.busy, 'data-testid': 'write-cancel' }, ['Cancel request'], {
+          click: () => {
+            valueInput.value = '';
+            void c.cancelWrite();
+          },
+        }),
+      ]),
+    ], {
+      submit: (ev) => {
+        ev.preventDefault();
+        const value = valueInput.value;
+        // Clear the field before anything else so the value does not linger in the DOM.
+        valueInput.value = '';
+        void c.submitWrite(value);
+      },
+    });
+  }
+  return [
+    header(c, s.deviceId),
+    h('main', {}, [
+      noticeEl(s.notice),
+      h('h2', {}, ['Write request']),
+      s.busy && !r ? h('p', { 'aria-busy': 'true' }, ['Opening the request…']) : null,
+      details,
+      form,
+      s.receipt ? h('p', { class: 'muted', 'data-testid': 'write-receipt' }, [`Receipt ${s.receipt.slice(0, 8)}`]) : null,
+      s.retry ? h('button', { type: 'button', 'data-testid': 'write-retry' }, ['Try again'], { click: () => void c.retryWrite() }) : null,
+      !s.open && !s.busy ? h('button', { type: 'button', class: 'secondary', 'data-testid': 'write-done' }, ['Back to the vault'], { click: () => void c.leaveWrite() }) : null,
+    ]),
+  ];
+}
+
 function fmtDate(ms: number | null): string {
   if (ms === null) return '';
   const d = new Date(ms);
@@ -132,18 +205,47 @@ const HEALTH_LABEL: Record<RotationHealth, string> = {
   unknown: 'rotation unknown',
 };
 
+/** Expiry warnings only; a far-off expiry needs no badge. */
+const EXPIRY_LABEL: Record<Exclude<ExpiryHealth, 'ok'>, string> = {
+  expired: 'expired',
+  expiring_soon: 'expires soon',
+};
+
 function infoOf(item: ItemView, nowMs: number): RotationInfo {
   return rotationInfo({
     createdMs: item.createdMs, rotatedMs: item.rotatedMs, rotateTtlDays: item.rotateTtlDays,
     flaggedMs: item.flaggedMs, flaggedEpoch: item.flaggedEpoch, keyEpoch: item.keyEpoch, workflow: item.rotation,
+    expiresMs: item.expiresMs,
   }, nowMs);
+}
+
+function relativeDays(days: number): string {
+  const d = Math.abs(days);
+  const day = `${d} day${d === 1 ? '' : 's'}`;
+  return days < 0 ? `${day} ago` : `in ${day}`;
 }
 
 function dueText(info: RotationInfo): string {
   if (info.dueMs === null || info.daysUntilDue === null) return '';
-  const d = Math.abs(info.daysUntilDue);
-  const day = `${d} day${d === 1 ? '' : 's'}`;
-  return info.daysUntilDue < 0 ? `due ${fmtDate(info.dueMs)} (${day} ago)` : `due ${fmtDate(info.dueMs)} (in ${day})`;
+  return `due ${fmtDate(info.dueMs)} (${relativeDays(info.daysUntilDue)})`;
+}
+
+/** The date is the UTC calendar day of `expires_at`; 0 whole days either side reads "today". */
+function expiryText(info: RotationInfo): string {
+  if (info.expiresMs === null || info.daysUntilExpiry === null) return '';
+  const verb = info.expiry === 'expired' ? 'expired' : 'expires';
+  const date = `${fmtDate(info.expiresMs)} UTC`;
+  return info.daysUntilExpiry === 0 ? `${verb} today (${date})` : `${verb} ${date} (${relativeDays(info.daysUntilExpiry)})`;
+}
+
+/** Informational: the warning changes no grant and blocks no action. */
+function expiryBadge(info: RotationInfo): HTMLElement | null {
+  if (info.expiry === null || info.expiry === 'ok') return null;
+  return h('span', {
+    class: `badge badge-exp-${info.expiry}`,
+    title: 'From the expires_at date in this secret’s verified profile. Replace it at the provider; this warning does not change access.',
+    'data-testid': 'expiry-health',
+  }, [EXPIRY_LABEL[info.expiry]]);
 }
 
 function healthBadge(item: ItemView, info: RotationInfo): HTMLElement {
@@ -246,6 +348,7 @@ function itemRow(c: AppController, item: ItemView, s: Extract<Screen, { kind: 'v
     item.creator ? h('span', {}, [`by ${item.creator}`]) : null,
     item.rotateTtlDays !== null ? h('span', {}, [`rotate every ${item.rotateTtlDays} days`]) : null,
     info.dueMs !== null ? h('span', { 'data-testid': 'rotation-due' }, [dueText(info)]) : null,
+    info.expiresMs !== null ? h('span', { 'data-testid': 'expiry-due' }, [expiryText(info)]) : null,
     item.rotation ? h('span', { 'data-testid': 'rotation-flow' }, [`rotation ${item.rotation.state}${info.vaultUpdated ? ', vault updated' : ''}${info.providerRevoked ? ', old key revoked (member-confirmed)' : info.vaultUpdated ? ', old key not confirmed revoked' : ''}`]) : null,
     item.openConflicts > 0 ? h('span', { class: 'badge badge-conflict' }, [`${item.openConflicts} unresolved conflict${item.openConflicts > 1 ? 's' : ''}`]) : null,
   ];
@@ -279,6 +382,7 @@ function itemRow(c: AppController, item: ItemView, s: Extract<Screen, { kind: 'v
       h('span', { class: 'name', 'data-testid': 'item-name' }, [item.name]),
       h('div', { class: 'row' }, [
         healthBadge(item, info),
+        expiryBadge(info),
         history,
         h('button', { type: 'button', class: 'secondary', 'aria-expanded': rotating ? 'true' : 'false', 'data-testid': 'rotate' }, [rotating ? 'Hide rotation' : 'Rotation'], { click: () => { vs.rotating = rotating ? null : item.itemId; rerender(); } }),
         actions,
@@ -293,11 +397,19 @@ function itemRow(c: AppController, item: ItemView, s: Extract<Screen, { kind: 'v
 /** Counts per health state, and the rekey versus provider-rotation distinction. */
 function rotationSummary(s: Extract<Screen, { kind: 'vault' }>): HTMLElement {
   const counts: Record<RotationHealth, number> = { needs_rotate: 0, awaiting_revoke: 0, overdue: 0, due_soon: 0, ok: 0, unknown: 0 };
-  for (const i of s.items) counts[infoOf(i, s.nowMs).health]++;
+  const expiryCounts: Record<Exclude<ExpiryHealth, 'ok'>, number> = { expired: 0, expiring_soon: 0 };
+  for (const i of s.items) {
+    const info = infoOf(i, s.nowMs);
+    counts[info.health]++;
+    if (info.expiry === 'expired' || info.expiry === 'expiring_soon') expiryCounts[info.expiry]++;
+  }
   const order: RotationHealth[] = ['needs_rotate', 'awaiting_revoke', 'overdue', 'due_soon', 'unknown', 'ok'];
+  const expiryOrder: Exclude<ExpiryHealth, 'ok'>[] = ['expired', 'expiring_soon'];
   return h('section', { class: 'rotation-summary', 'aria-label': 'Rotation health', 'data-testid': 'rotation-summary' }, [
     h('h2', {}, ['Rotation health']),
     h('ul', { class: 'row health-list' }, order.map((k) => h('li', { class: `badge badge-rot-${k}`, 'data-testid': `health-${k}` }, [`${counts[k]} ${HEALTH_LABEL[k]}`]))),
+    // Expiry is its own dimension: listed apart so it never reads as a rotation state.
+    h('ul', { class: 'row health-list', 'aria-label': 'Credential expiry', 'data-testid': 'expiry-summary' }, expiryOrder.map((k) => h('li', { class: `badge badge-exp-${k}`, 'data-testid': `expiry-${k}` }, [`${expiryCounts[k]} ${EXPIRY_LABEL[k]}`]))),
     h('p', { class: 'muted' }, [
       'Two different things are called rotation. A vault rekey (key epoch) re-wraps the vault key for the devices that remain after a removal and replaces no credential. Provider credential rotation replaces the secret at its provider. Items marked needs rotation were readable by a removed member or device; the mark stays until a member confirms the old provider credential is revoked after a new value was saved.',
     ]),
@@ -502,6 +614,9 @@ export function render(root: Element, c: AppController, screen: Screen, vs: View
       break;
     case 'history':
       nodes = historyScreen(c, screen, vs, rerender);
+      break;
+    case 'write':
+      nodes = writeScreen(c, screen);
       break;
     case 'removed':
       nodes = [header(c, null), h('main', {}, [

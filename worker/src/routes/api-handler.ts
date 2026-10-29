@@ -7,7 +7,8 @@
  * checks plus the relay session rules, then hands the upgrade to the account's relay
  * object, which verifies the proof and owns the connection.
  */
-import { assertDeviceNotRevoked } from '../auth/revocation-check.js';
+import { assertDeviceNotRevoked, isGrantRevoked } from '../auth/revocation-check.js';
+import { b64decodeLength } from '@ak-vault/protocol';
 import { bearerToken, verifyToken } from '../auth/jwt-verify.js';
 import { remoteAccessEnabled, type Env } from '../env.js';
 import { ApiError, type ApiResult } from '../http/errors.js';
@@ -48,11 +49,19 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
   if (isMutation(route.op) && !idempotencyKey) throw new ApiError('bad_request', { message: 'a valid Idempotency-Key header is required' });
 
   const stub = env.VAULT.get(env.VAULT.idFromName(route.vaultId));
+  const writeRequestId = route.writeRequestId ?? writeRequestParam(url, route.op, remoteAccess);
+  // A human write request lives only while the MCP grant that asked for it does (spec §3.10).
+  // Only the caller's own request is looked up; the vault object then runs membership and proof.
+  if (writeRequestId !== undefined && route.op !== 'writereq.close') {
+    const grant = await stub.writeRequestGrant(writeRequestId, claims.sub);
+    if (grant && (await isGrantRevoked(env, grant))) await stub.cancelRevokedWriteRequest(writeRequestId);
+  }
   return stub.handle({
     op: route.op,
     vaultId: route.vaultId,
     ...(route.itemId ? { itemId: route.itemId } : {}),
     ...(route.sealedId ? { sealedId: route.sealedId } : {}),
+    ...(writeRequestId !== undefined ? { writeRequestId } : {}),
     method: request.method,
     htu: request.url,
     path: url.pathname,
@@ -67,6 +76,19 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
     nowMs: Date.now(),
     remoteAccess,
   });
+}
+
+/** The `write_request` query of an item PUT (the person's completion of a write request), validated; undefined when absent. */
+function writeRequestParam(url: URL, op: string, remoteAccess: boolean): string | undefined {
+  const values = url.searchParams.getAll('write_request');
+  if (values.length === 0 || op !== 'item.put') return undefined;
+  if (!remoteAccess || values.length > 1) throw new ApiError('bad_request');
+  try {
+    b64decodeLength(values[0]!, 16);
+  } catch {
+    throw new ApiError('bad_request', { message: 'malformed write_request' });
+  }
+  return values[0];
 }
 
 /**
