@@ -240,7 +240,7 @@ describe('sealed inbox', () => {
       const fx = await VaultFixture.create();
       expect(await enqueue(fx, sealFor(fx))).toBe('queued');
       const registry = env.REVOCATIONS;
-      (env as { REVOCATIONS: unknown }).REVOCATIONS = { idFromName: () => ({}), get: () => ({ isRevoked: () => Promise.resolve(false), isGrantRevoked: () => Promise.reject(new Error('down')) }) };
+      (env as { REVOCATIONS: unknown }).REVOCATIONS = { idFromName: () => ({}), get: () => ({ isRevoked: () => Promise.resolve(false), areGrantsRevoked: () => Promise.reject(new Error('down')) }) };
       try {
         expect((await fx.get(fx.owner, '/sealed')).status).toBe(503);
       } finally {

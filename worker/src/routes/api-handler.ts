@@ -7,7 +7,7 @@
  * checks plus the relay session rules, then hands the upgrade to the account's relay
  * object, which verifies the proof and owns the connection.
  */
-import { assertDeviceNotRevoked, isGrantRevoked } from '../auth/revocation-check.js';
+import { areGrantsRevoked, assertDeviceNotRevoked, isGrantRevoked } from '../auth/revocation-check.js';
 import { b64decodeLength } from '@ak-vault/protocol';
 import { bearerToken, verifyToken } from '../auth/jwt-verify.js';
 import { remoteAccessEnabled, type Env } from '../env.js';
@@ -60,7 +60,10 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
   // caller's pending operations of any revoked grant before the queue is served.
   if (route.op === 'sealed.get') {
     const grants = await stub.pendingSealedGrants(claims.sub);
-    const revoked = await Promise.all(grants.map((grant) => isGrantRevoked(env, { sub: claims.sub, ...grant })));
+    const revoked = await areGrantsRevoked(
+      env,
+      grants.map((grant) => ({ sub: claims.sub, ...grant })),
+    );
     for (const [i, grant] of grants.entries()) if (revoked[i]) await stub.cancelRevokedSealed(claims.sub, grant);
   }
   return stub.handle({
