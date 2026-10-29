@@ -135,6 +135,17 @@ describe('recovery-identity rate limit per account', () => {
     expect(await accountRows(fx)).toEqual([{ account: fx.owner.account, count: 3 }]);
   });
 
+  it('prunes account rows of earlier windows like the per-device counters', async () => {
+    freezeIntoWindow();
+    const fx = await vaultWithBundle();
+    const stale = Math.floor(Date.now() / 60_000) * 60_000 - 120_000;
+    await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) => {
+      state.storage.sql.exec('INSERT INTO recovery_identity_rate_counters (account, window_start, count) VALUES (?, ?, ?)', 'acct-stale', stale, 7);
+    });
+    expect((await freshRead(fx, 0)).status).toBe(200);
+    expect(await accountRows(fx)).toEqual([{ account: fx.owner.account, count: 1 }]);
+  });
+
   it('fails closed when the limiter storage errors', async () => {
     const fx = await vaultWithBundle();
     await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) => {
