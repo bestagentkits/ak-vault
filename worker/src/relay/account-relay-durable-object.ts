@@ -418,12 +418,13 @@ export class AccountRelay extends DurableObject<Env> {
   /**
    * The prune for an object waking from hibernation, where the insert counter restarts
    * from zero. Rowids are distinct integers, so the table holds at most `MAX(rowid) -
-   * MIN(rowid) + 1` rows, read from the two ends of the table b-tree without a scan. A
+   * MIN(rowid) + 1` rows. Each end is its own subquery: SQLite reads a lone `MIN` or `MAX`
+   * from the end of the table b-tree, but scans every row when both share one query. A
    * class whose cap that bound cannot exceed is skipped; only a class that might be over
    * pays for the `OFFSET` walk. A table that is mostly successes thus skips the 100k walk.
    */
   private pruneAuditIfOverCap(): void {
-    const span = this.sql.exec<{ span: number | null }>('SELECT MAX(rowid) - MIN(rowid) + 1 AS span FROM client_audit').one().span;
+    const span = this.sql.exec<{ span: number | null }>('SELECT (SELECT MAX(rowid) FROM client_audit) - (SELECT MIN(rowid) FROM client_audit) + 1 AS span').one().span;
     if (span === null) return;
     this.pruneAudit(AUDIT_CAPS.filter(([, cap]) => span > cap));
   }

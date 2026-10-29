@@ -449,6 +449,21 @@ describe('relay rate budgets and audit', () => {
     expect(counts[1]!.n).toBe(100);
   });
 
+  it('the startup prune of a table under every cap reads only the two ends of the table', async () => {
+    const stub = relayStub(env, `acct-${randomId()}`);
+    await seedAudit(stub, 2_000, 'ok', 1);
+    const rowsRead = await runInDurableObject(stub, async (instance) => {
+      const relay = instance as unknown as { sql: SqlStorage; pruneAuditIfOverCap(): void };
+      const real = relay.sql;
+      const cursors: SqlStorageCursor<Record<string, SqlStorageValue>>[] = [];
+      relay.sql = { exec: (query: string, ...bindings: unknown[]) => { const cursor = real.exec(query, ...bindings); cursors.push(cursor); return cursor; } } as SqlStorage;
+      try { relay.pruneAuditIfOverCap(); } finally { relay.sql = real; }
+      return cursors.reduce((sum, cursor) => sum + cursor.rowsRead, 0);
+    });
+    expect(rowsRead).toBeLessThanOrEqual(2);
+    expect((await auditCounts(stub))[1]!.n).toBe(2_000);
+  });
+
   it('the startup prune of an empty table is a no-op', async () => {
     const stub = relayStub(env, `acct-${randomId()}`);
     await runInDurableObject(stub, async (instance) => (instance as unknown as { pruneAuditIfOverCap(): void }).pruneAuditIfOverCap());
