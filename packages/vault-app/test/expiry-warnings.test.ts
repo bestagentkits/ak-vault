@@ -6,6 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { randomId, type JsonObject } from '@ak-vault/protocol';
+import { calendarDaysUntil } from '../src/ui/views.js';
 import { DAY_MS, EXPIRING_SOON_DAYS, parseExpiresMs, rotationInfo, type RotationInput } from '../src/sync/rotation.js';
 import type { ItemView } from '../src/sync/vault-sync.js';
 import { FakeWorld } from './helpers/fake-world.js';
@@ -43,38 +44,24 @@ describe('parseExpiresMs', () => {
 
 describe('expiry in rotationInfo', () => {
   it('is expired at or after expires_at', () => {
-    expect(rotationInfo({ ...base, expiresMs: NOW - 3 * DAY_MS }, NOW)).toMatchObject({ expiry: 'expired', expiresMs: NOW - 3 * DAY_MS, daysUntilExpiry: -3 });
-    expect(rotationInfo({ ...base, expiresMs: NOW }, NOW)).toMatchObject({ expiry: 'expired', daysUntilExpiry: 0 });
+    expect(rotationInfo({ ...base, expiresMs: NOW - 3 * DAY_MS }, NOW)).toMatchObject({ expiry: 'expired', expiresMs: NOW - 3 * DAY_MS });
+    expect(rotationInfo({ ...base, expiresMs: NOW }, NOW)).toMatchObject({ expiry: 'expired' });
     expect(rotationInfo({ ...base, expiresMs: -DAY_MS }, NOW)).toMatchObject({ expiry: 'expired', expiresMs: -DAY_MS });
-  });
-
-  it('counts whole days toward zero, so under a day either side is 0 (today)', () => {
-    const days = (offset: number) => rotationInfo({ ...base, expiresMs: NOW + offset }, NOW).daysUntilExpiry;
-    expect(days(-1000)).toBe(0);
-    expect(Object.is(days(-1000), -0)).toBe(false);
-    expect(days(0)).toBe(0);
-    expect(days(-DAY_MS + 1000)).toBe(0);
-    expect(days(-DAY_MS)).toBe(-1);
-    expect(days(-2 * DAY_MS - 1)).toBe(-2);
-    expect(days(23 * 3_600_000)).toBe(1);
-    expect(days(1)).toBe(1);
-    expect(days(DAY_MS)).toBe(1);
-    expect(days(DAY_MS + 1)).toBe(2);
   });
 
   it(`is expiring soon within ${EXPIRING_SOON_DAYS} days`, () => {
     expect(rotationInfo({ ...base, expiresMs: NOW + 1 }, NOW).expiry).toBe('expiring_soon');
-    expect(rotationInfo({ ...base, expiresMs: NOW + 3 * DAY_MS }, NOW)).toMatchObject({ expiry: 'expiring_soon', daysUntilExpiry: 3 });
+    expect(rotationInfo({ ...base, expiresMs: NOW + 3 * DAY_MS }, NOW)).toMatchObject({ expiry: 'expiring_soon' });
     expect(rotationInfo({ ...base, expiresMs: NOW + EXPIRING_SOON_DAYS * DAY_MS }, NOW).expiry).toBe('expiring_soon');
   });
 
   it('is ok when far in the future', () => {
     expect(rotationInfo({ ...base, expiresMs: NOW + EXPIRING_SOON_DAYS * DAY_MS + 1 }, NOW).expiry).toBe('ok');
-    expect(rotationInfo({ ...base, expiresMs: NOW + 365 * DAY_MS }, NOW)).toMatchObject({ expiry: 'ok', daysUntilExpiry: 365 });
+    expect(rotationInfo({ ...base, expiresMs: NOW + 365 * DAY_MS }, NOW)).toMatchObject({ expiry: 'ok' });
   });
 
   it('is absent without expires_at', () => {
-    expect(rotationInfo(base, NOW)).toMatchObject({ expiry: null, expiresMs: null, daysUntilExpiry: null });
+    expect(rotationInfo(base, NOW)).toMatchObject({ expiry: null, expiresMs: null });
   });
 
   it('leaves rotation health untouched, so neither hides the other', () => {
@@ -85,9 +72,11 @@ describe('expiry in rotationInfo', () => {
   });
 });
 
-/** The UTC calendar day of an `expires_at`, as the row prints it. */
+/** The viewer-time-zone calendar day of an `expires_at`, as the row prints it. */
 function day(ms: number): string {
-  return iso(ms).slice(0, 10);
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${String(d.getFullYear()).padStart(4, '0')}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function vaultScreen(page: Page) {
@@ -112,7 +101,10 @@ describe('dashboard expiry warnings', () => {
   it('warns on expired and expiring-soon items from the verified profile and stays silent otherwise', async () => {
     const world = new FakeWorld();
     const owner = world.owner.record.device_id;
-    const at = Date.now();
+    // Local noon keeps every whole-day offset on the same side of midnight, DST included.
+    const t = new Date();
+    const at = new Date(t.getFullYear(), t.getMonth(), t.getDate(), 12).getTime();
+    vi.spyOn(Date, 'now').mockReturnValue(at);
     const meta = (profile?: JsonObject): JsonObject => ({ schema: 'agentkit.secret/v1', created_ms: at - DAY_MS, ...(profile ? { profile } : {}) });
     const field = (value: string, by = owner): JsonObject => ({ value, by, at, src: 'local' });
     world.ownerSet('expired', 'a', meta({ expires_at: field(iso(at - 2 * DAY_MS)) }), at);
@@ -129,9 +121,9 @@ describe('dashboard expiry warnings', () => {
     expect(Object.fromEntries(['expired', 'soon', 'far', 'none', 'malformed', 'forged'].map((n) => [n, badge(n)]))).toEqual({
       expired: 'expired', soon: 'expires soon', far: null, none: null, malformed: null, forged: null,
     });
-    expect(byTestId(row(page, 'expired'), 'expiry-due').textContent).toBe(`expired ${day(at - 2 * DAY_MS)} UTC (2 days ago)`);
-    expect(byTestId(row(page, 'soon'), 'expiry-due').textContent).toBe(`expires ${day(at + 3 * DAY_MS)} UTC (in 3 days)`);
-    expect(byTestId(row(page, 'far'), 'expiry-due').textContent).toBe(`expires ${day(at + 365 * DAY_MS)} UTC (in 365 days)`);
+    expect(byTestId(row(page, 'expired'), 'expiry-due').textContent).toBe(`expired ${day(at - 2 * DAY_MS)} (2 days ago)`);
+    expect(byTestId(row(page, 'soon'), 'expiry-due').textContent).toBe(`expires ${day(at + 3 * DAY_MS)} (in 3 days)`);
+    expect(byTestId(row(page, 'far'), 'expiry-due').textContent).toBe(`expires ${day(at + 365 * DAY_MS)} (in 365 days)`);
     for (const n of ['none', 'malformed', 'forged']) {
       expect(row(page, n).querySelector('[data-testid="expiry-due"]'), n).toBeNull();
       expect(itemNamed(page, n).expiresMs, n).toBeNull();
@@ -148,8 +140,9 @@ describe('dashboard expiry warnings', () => {
   });
 
   it('reads under a day either side as today, and shows a pre-1970 expiry as expired', async () => {
-    // Freeze the clock (before the controller captures Date.now) so the boundaries are exact.
-    const frozen = Math.floor(Date.now() / 1000) * 1000;
+    // Freeze the clock (before the controller captures Date.now) at local noon, so "today" holds a day either side of it.
+    const t = new Date();
+    const frozen = new Date(t.getFullYear(), t.getMonth(), t.getDate(), 12).getTime();
     vi.spyOn(Date, 'now').mockReturnValue(frozen);
     const world = new FakeWorld();
     const owner = world.owner.record.device_id;
@@ -162,15 +155,22 @@ describe('dashboard expiry warnings', () => {
     const { page } = await new Browser(world).enroll();
     const text = (name: string) => byTestId(row(page, name), 'expiry-due').textContent;
     const badge = (name: string) => byTestId(row(page, name), 'expiry-health').textContent;
-    expect(text('one-second-past')).toBe(`expired today (${day(frozen - 1000)} UTC)`);
+    expect(text('one-second-past')).toBe(`expired ${day(frozen - 1000)} (today)`);
     expect(badge('one-second-past')).toBe('expired');
-    expect(text('exactly-now')).toBe(`expired today (${day(frozen)} UTC)`);
+    expect(text('exactly-now')).toBe(`expired ${day(frozen)} (today)`);
     expect(badge('exactly-now')).toBe('expired');
-    expect(text('in-23-hours')).toBe(`expires ${day(frozen + 23 * 3_600_000)} UTC (in 1 day)`);
+    expect(text('in-23-hours')).toBe(`expires ${day(frozen + 23 * 3_600_000)} (in 1 day)`);
     expect(badge('in-23-hours')).toBe('expires soon');
     expect(badge('pre-1970')).toBe('expired');
-    expect(text('pre-1970')).toMatch(/^expired 1969-12-31 UTC \(\d+ days ago\)$/);
+    expect(text('pre-1970')).toMatch(new RegExp(`^expired ${day(-DAY_MS)} \\(\\d+ days ago\\)$`));
     expect(byTestId(page.root, 'expiry-expired').textContent).toBe('3 expired');
+  });
+
+  it('prints a year before 100 in full and counts its days from that year', () => {
+    const ms = parseExpiresMs('0050-06-01T00:00:00Z')!;
+    const now = new Date(2026, 9, 29, 12).getTime();
+    expect(day(ms)).toMatch(/^0050-/);
+    expect(calendarDaysUntil(ms, now)).toBeLessThan(-700_000);
   });
 
   it('ignores expires_at from a profile this device could not verify', async () => {

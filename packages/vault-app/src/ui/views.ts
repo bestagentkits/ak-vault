@@ -12,7 +12,7 @@ import type { ItemView } from '../sync/vault-sync.js';
 import { h, replaceChildren, type Child } from './dom.js';
 import { membersScreen } from './members-view.js';
 import { messageFor } from './messages.js';
-import { MAX_ROTATE_TTL_DAYS, rotationInfo, type ExpiryHealth, type RotationHealth, type RotationInfo } from '../sync/rotation.js';
+import { DAY_MS, MAX_ROTATE_TTL_DAYS, rotationInfo, type ExpiryHealth, type RotationHealth, type RotationInfo } from '../sync/rotation.js';
 
 /** Keep the browser and password managers from storing, suggesting or correcting a field. */
 export const NO_CAPTURE = {
@@ -183,10 +183,13 @@ function writeScreen(c: AppController, s: Extract<Screen, { kind: 'write' }>): H
   ];
 }
 
+/** The calendar date (`YYYY-MM-DD`) of `ms` in the viewer's time zone. */
 function fmtDate(ms: number | null): string {
   if (ms === null) return '';
   const d = new Date(ms);
-  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${String(d.getFullYear()).padStart(4, '0')}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function matchesFilter(item: ItemView, filter: string): boolean {
@@ -219,24 +222,39 @@ function infoOf(item: ItemView, nowMs: number): RotationInfo {
   }, nowMs);
 }
 
+/**
+ * Calendar days from `nowMs` to `targetMs` in the viewer's time zone (negative when
+ * past, 0 for the same date). Display-only: health is computed from timestamps.
+ */
+export function calendarDaysUntil(targetMs: number, nowMs: number): number {
+  // setUTCFullYear, unlike Date.UTC, keeps years 0 to 99 as written.
+  const dayNumber = (ms: number): number => {
+    const d = new Date(ms);
+    const t = new Date(0);
+    t.setUTCFullYear(d.getFullYear(), d.getMonth(), d.getDate());
+    return t.getTime();
+  };
+  return Math.round((dayNumber(targetMs) - dayNumber(nowMs)) / DAY_MS);
+}
+
 function relativeDays(days: number): string {
+  if (days === 0) return 'today';
   const d = Math.abs(days);
   const day = `${d} day${d === 1 ? '' : 's'}`;
   return days < 0 ? `${day} ago` : `in ${day}`;
 }
 
-export function dueText(info: RotationInfo): string {
-  if (info.dueMs === null || info.daysUntilDue === null) return '';
-  if (info.daysUntilDue === 0) return `due ${fmtDate(info.dueMs)} (today)`;
-  return `due ${fmtDate(info.dueMs)} (${relativeDays(info.daysUntilDue)})`;
+/** One date phrase for every due or expiry badge, e.g. `due 2027-01-31 (in 3 days)`. */
+function datedText(verb: string, ms: number, nowMs: number): string {
+  return `${verb} ${fmtDate(ms)} (${relativeDays(calendarDaysUntil(ms, nowMs))})`;
 }
 
-/** The date is the UTC calendar day of `expires_at`; 0 whole days either side reads "today". */
-function expiryText(info: RotationInfo): string {
-  if (info.expiresMs === null || info.daysUntilExpiry === null) return '';
-  const verb = info.expiry === 'expired' ? 'expired' : 'expires';
-  const date = `${fmtDate(info.expiresMs)} UTC`;
-  return info.daysUntilExpiry === 0 ? `${verb} today (${date})` : `${verb} ${date} (${relativeDays(info.daysUntilExpiry)})`;
+export function dueText(info: RotationInfo, nowMs: number): string {
+  return info.dueMs === null ? '' : datedText('due', info.dueMs, nowMs);
+}
+
+export function expiryText(info: RotationInfo, nowMs: number): string {
+  return info.expiresMs === null ? '' : datedText(info.expiry === 'expired' ? 'expired' : 'expires', info.expiresMs, nowMs);
 }
 
 /** Informational: the warning changes no grant and blocks no action. */
@@ -348,8 +366,8 @@ function itemRow(c: AppController, item: ItemView, s: Extract<Screen, { kind: 'v
     item.rotatedMs !== null ? h('span', {}, [`value written ${fmtDate(item.rotatedMs)}`]) : null,
     item.creator ? h('span', {}, [`by ${item.creator}`]) : null,
     item.rotateTtlDays !== null ? h('span', {}, [`rotate every ${item.rotateTtlDays} days`]) : null,
-    info.dueMs !== null ? h('span', { 'data-testid': 'rotation-due' }, [dueText(info)]) : null,
-    info.expiresMs !== null ? h('span', { 'data-testid': 'expiry-due' }, [expiryText(info)]) : null,
+    info.dueMs !== null ? h('span', { 'data-testid': 'rotation-due' }, [dueText(info, s.nowMs)]) : null,
+    info.expiresMs !== null ? h('span', { 'data-testid': 'expiry-due' }, [expiryText(info, s.nowMs)]) : null,
     item.rotation ? h('span', { 'data-testid': 'rotation-flow' }, [`rotation ${item.rotation.state}${info.vaultUpdated ? ', vault updated' : ''}${info.providerRevoked ? ', old key revoked (member-confirmed)' : info.vaultUpdated ? ', old key not confirmed revoked' : ''}`]) : null,
     item.openConflicts > 0 ? h('span', { class: 'badge badge-conflict' }, [`${item.openConflicts} unresolved conflict${item.openConflicts > 1 ? 's' : ''}`]) : null,
   ];

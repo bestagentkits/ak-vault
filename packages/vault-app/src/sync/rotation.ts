@@ -43,8 +43,6 @@ export interface RotationInfo {
   health: RotationHealth;
   /** Base date plus the configured interval; null when either is missing. */
   dueMs: number | null;
-  /** Whole days until due, truncated toward zero (negative when overdue, 0 within a day either side); null when no due date. */
-  daysUntilDue: number | null;
   /** The vault holds a new value written after the workflow started. */
   vaultUpdated: boolean;
   /** The operator confirmed the old provider credential is revoked after that vault write. */
@@ -52,12 +50,6 @@ export interface RotationInfo {
   /** Null when the verified profile carries no valid `expires_at`. */
   expiry: ExpiryHealth | null;
   expiresMs: number | null;
-  /**
-   * Whole days to expiry, counted toward zero: a future expiry rounds up (23 h ahead is 1),
-   * a past one rounds toward zero (1 s past is 0), so 0 means "today". Negative once
-   * expired by a full day or more; null when no expiry.
-   */
-  daysUntilExpiry: number | null;
 }
 
 export interface RotationInput {
@@ -133,7 +125,6 @@ export function stillNeedsRotate(i: RotationInput): boolean {
 export function rotationInfo(i: RotationInput, nowMs: number): RotationInfo {
   const base = i.rotatedMs ?? i.createdMs;
   const dueMs = base !== null && i.rotateTtlDays !== null ? base + i.rotateTtlDays * DAY_MS : null;
-  const daysUntilDue = dueMs === null ? null : Math.trunc((dueMs - nowMs) / DAY_MS) || 0;
   const vaultUpdated = i.workflow !== null && i.rotatedMs !== null && i.rotatedMs >= i.workflow.startedMs;
   const providerRevoked = vaultUpdated && i.workflow!.revokedMs !== null && i.workflow!.revokedMs >= i.rotatedMs!;
   let health: RotationHealth;
@@ -144,11 +135,8 @@ export function rotationInfo(i: RotationInput, nowMs: number): RotationInfo {
   else if (dueMs - nowMs <= DUE_SOON_DAYS * DAY_MS) health = 'due_soon';
   else health = 'ok';
   const expiresMs = i.expiresMs;
-  const daysUntilExpiry = expiresMs === null
-    ? null
-    : expiresMs > nowMs ? Math.ceil((expiresMs - nowMs) / DAY_MS) : Math.trunc((expiresMs - nowMs) / DAY_MS) || 0;
   const expiry: ExpiryHealth | null = expiresMs === null
     ? null
     : expiresMs <= nowMs ? 'expired' : expiresMs - nowMs <= EXPIRING_SOON_DAYS * DAY_MS ? 'expiring_soon' : 'ok';
-  return { health, dueMs, daysUntilDue, vaultUpdated, providerRevoked, expiry, expiresMs, daysUntilExpiry };
+  return { health, dueMs, vaultUpdated, providerRevoked, expiry, expiresMs };
 }
