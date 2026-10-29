@@ -1197,7 +1197,9 @@ devices that honor it, not what a vault member can decrypt (§3).
    `browser` session may read or close a write request or complete one with an item
    PUT (§3.10, §9.6); every other kind is `403 forbidden` there. Every other route
    treats it as the member device it is. Header `alg`
-   MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. If the JWKS
+   MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. The JWKS is
+   fetched only from the configured `https://` URL and a redirect is never followed:
+   any `3xx` answer is a load failure, whatever its target. If the JWKS
    cannot be loaded the server fails closed (`503`) and backs off for 30 s before
    fetching again; it never serves expired keys.
 2. `AKV-Proof: <b64(cjson(proof))>.<b64(sig)>`, proof =
