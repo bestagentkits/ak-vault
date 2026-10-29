@@ -10,9 +10,9 @@
  *         cjson({aud, scope (sorted), sid, sign_pub, ts})
  *
  * The signing input is built with the protocol library (`signDetached`); there is no
- * custom cryptography here. Every failure exits through `fail`, which prints a step
- * name, an HTTP status and at most ak-web's stable error code: never a token, key,
- * signature or response body.
+ * custom cryptography here. Every failure goes through `fail`, which throws a
+ * `SmokeFailure` whose message is a step name, an HTTP status and at most ak-web's
+ * stable error code: never a token, key, signature or response body.
  */
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -28,9 +28,33 @@ const ERROR_CODE = /^[a-z_]{1,64}$/;
 /** Re-mint when a cached token has less than this left, so no request races its expiry. */
 const REFRESH_MARGIN_SECONDS = 60;
 
+/**
+ * A smoke check that did not hold. Thrown rather than `process.exit`ed, because exiting
+ * while undici sockets are open can abort before stderr flushes and skips the callers'
+ * `finally` cleanup; the script entry point reports it with `reportSmokeFailure`.
+ */
+export class SmokeFailure extends Error {
+  readonly exitCode = 1;
+  constructor(message: string) {
+    super(message);
+    this.name = 'SmokeFailure';
+  }
+}
+
 export function fail(message: string): never {
-  process.stderr.write(`FAIL ${message}\n`);
-  process.exit(1);
+  throw new SmokeFailure(message);
+}
+
+/**
+ * Entry-point handler for `catch`: prints the `FAIL` line and sets the exit code for a
+ * `SmokeFailure` (returning true), so the process ends once its sockets close. Any other
+ * error returns false and is for the caller to rethrow.
+ */
+export function reportSmokeFailure(err: unknown): boolean {
+  if (!(err instanceof SmokeFailure)) return false;
+  process.stderr.write(`FAIL ${err.message}\n`);
+  process.exitCode = err.exitCode;
+  return true;
 }
 
 const REPO_ROOT = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '../..'));
@@ -107,7 +131,8 @@ export function readCliSession(path: string | undefined, nowSeconds = Math.floor
   try {
     assertPrivatePath(path, 'the session token file');
     token = readFileSync(path, 'utf8').trim();
-  } catch {
+  } catch (err) {
+    if (err instanceof SmokeFailure) throw err;
     return fail('cannot read the session token file');
   }
   const claims = token.startsWith(CLI_SESSION_PREFIX) ? decodeJwtPayload(token.slice(CLI_SESSION_PREFIX.length)) : null;
