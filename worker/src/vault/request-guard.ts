@@ -57,9 +57,11 @@ export function enforceRateLimit(sql: SqlStorage, bucket: RateBucket, did: strin
   const w = rateWindow(sql, bucket, did, nowMs);
   const count = w.used + 1;
   sql.exec(`INSERT INTO ${w.table} (did, window_start, count) VALUES (?, ?, ?) ON CONFLICT (did) DO UPDATE SET window_start = excluded.window_start, count = excluded.count`, did, w.windowStart, count);
-  // A row from an earlier window counts as zero, so deleting it changes no decision; this keeps the
-  // table to the current window's devices however many fresh device IDs a token holder names.
-  sql.exec(`DELETE FROM ${w.table} WHERE window_start < ?`, w.windowStart);
+  // A device's first request of a window drops every row of earlier windows (each counts as zero), so the
+  // table holds at most the devices seen in the current window, however many fresh device IDs are named.
+  // Request times are stamped in the Worker, so a request delayed across a boundary can see its own
+  // window's rows already gone; that grants it at most a fresh budget for that window, never a larger one.
+  if (w.used === 0) sql.exec(`DELETE FROM ${w.table} WHERE window_start < ?`, w.windowStart);
   if (count > LIMITS.rate_requests_per_window) throw rateLimited(w.retryAfter);
 }
 
