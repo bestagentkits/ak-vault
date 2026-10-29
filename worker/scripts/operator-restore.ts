@@ -17,7 +17,7 @@ import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { b64encode, concatBytes, utf8Encode } from '@ak-vault/protocol';
-import { assertOutsideRepo, assertPrivatePath, fail, parseSecureOrigin } from './staging-smoke-ak-web-token.js';
+import { assertOutsideRepo, assertPrivatePath, fail, parseSecureOrigin, reportSmokeFailure, SmokeFailure } from './staging-smoke-ak-web-token.js';
 
 const SIGN_CONTEXT = 'akv1/operator-request';
 const MIN_SECRET_LENGTH = 32;
@@ -33,7 +33,8 @@ export function readOperatorSecret(path: string | undefined): string {
   try {
     assertPrivatePath(path, 'the operator secret file');
     secret = readFileSync(path, 'utf8').trim();
-  } catch {
+  } catch (err) {
+    if (err instanceof SmokeFailure) throw err;
     return fail('cannot read the operator secret file');
   }
   if (secret.length < MIN_SECRET_LENGTH) fail('the operator secret is too short');
@@ -88,7 +89,13 @@ async function main(): Promise<void> {
     return fail('the request did not complete');
   }
   process.stdout.write(`${JSON.stringify(result)}\n`);
-  if (result.status !== 200) process.exit(1);
+  if (result.status !== 200) process.exitCode = 1;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) await main();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  try {
+    await main();
+  } catch (err) {
+    if (!reportSmokeFailure(err)) throw err;
+  }
+}
