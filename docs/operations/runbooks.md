@@ -125,7 +125,9 @@ echoing them, and only after `pnpm install` (as CI does).
    list them with
    `gh run list -R bestagentkits/ak-vault --workflow deploy.yml --status in_progress`
    (and again with `--status waiting`) and cancel each with `gh run cancel <run-id>`.
-   If a production deploy step is already running, let it finish before step 4.
+   If a production deploy step is already running, let it finish before step 4. Its
+   smoke step may then fail because the live flag no longer matches the config; that
+   is expected, so do not re-run it.
    Never approve a production deployment that is waiting for review.
 3. Find the commit production runs: the latest Deploy workflow run whose
    `production` job succeeded. Its Deploy step log shows the version it created

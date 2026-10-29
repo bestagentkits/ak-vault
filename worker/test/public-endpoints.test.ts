@@ -51,7 +51,7 @@ describe('kill switch', () => {
   // The probe .github/scripts/deploy-smoke-check.sh sends after each deploy; it relies on both answers.
   it('an unauthenticated synthetic vault request answers 401 with sync on and 503 sync_disabled with it off', async () => {
     const probe = '/v1/vaults/AAAAAAAAAAAAAAAAAAAAAA/membership';
-    const on = await fetchRaw(probe, {}, { VAULT_SYNC_ENABLED: 'true' });
+    const on = await fetchRaw(probe, {}, { VAULT_SYNC_ENABLED: 'true', VAULT_REMOTE_ACCESS_ENABLED: 'false' });
     expect(on.status).toBe(401);
     expect(((await on.json()) as { error: { code: string } }).error.code).toBe('unauthorized');
     const off = await fetchRaw(probe, {}, OFF);

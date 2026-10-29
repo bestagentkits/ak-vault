@@ -18,12 +18,12 @@ name: Deploy
 # when they start, because a run can wait in a queue or at the reviewer's
 # approval for hours. Any other value
 # refuses (fail closed). Procedure: docs/operations/runbooks.md#deploy-freeze.
-# After each deploy, .github/scripts/deploy-smoke-check.sh checks that the live
-# Worker reports the VAULT_SYNC_ENABLED value of that environment's Wrangler config
-# (healthz flag and an unauthenticated vault request: 401 on, 503 sync_disabled off).
 # Staging (right before it deploys) and production (after that check) also refuse
 # when their commit is no longer the head of main, so a late CI run or a stale
 # approved run cannot overwrite a newer deploy.
+# After each deploy, .github/scripts/deploy-smoke-check.sh checks that the live
+# Worker reports the VAULT_SYNC_ENABLED value of that environment's Wrangler config
+# (healthz flag and an unauthenticated vault request: 401 on, 503 sync_disabled off).
 on:
   workflow_run:
     workflows: [CI]
@@ -140,6 +140,7 @@ jobs:
           npx wrangler deploy --env staging
       # No credentials here: read-only GETs that print status codes and booleans only.
       - name: Smoke (health, landing page, sync flag matches the config)
+        timeout-minutes: 20
         run: .github/scripts/deploy-smoke-check.sh https://vault-staging.agentkit.best staging
 
   production:
@@ -203,4 +204,5 @@ jobs:
           npx wrangler deploy --env=""
       # No credentials here: read-only GETs that print status codes and booleans only.
       - name: Smoke (health, landing page, sync flag matches the config)
+        timeout-minutes: 20
         run: .github/scripts/deploy-smoke-check.sh https://vault.agentkit.best ""

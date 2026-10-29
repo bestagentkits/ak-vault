@@ -34,20 +34,26 @@ esac
 max_attempts="${SMOKE_MAX_ATTEMPTS:-24}"
 interval_s="${SMOKE_INTERVAL_SECONDS:-5}"
 required_passes="${SMOKE_REQUIRED_PASSES:-3}"
+if [ "$max_attempts" -lt "$required_passes" ]; then
+  echo "SMOKE_MAX_ATTEMPTS must be at least SMOKE_REQUIRED_PASSES" >&2
+  exit 2
+fi
 # A well-formed vault ID (16 zero bytes, base64url) that no client creates; the request
 # is refused by the kill switch or the missing token before any vault is touched.
+# worker/test/public-endpoints.test.ts pins both answers for this exact path.
 synthetic_vault_path="/v1/vaults/AAAAAAAAAAAAAAAAAAAAAA/membership"
 
 worker_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../worker" && pwd)"
+# The env is passed through as given, so "" selects the top-level config exactly as
+# `wrangler deploy --env=""` does instead of falling back to CLOUDFLARE_ENV.
 expected="$(
   cd "$worker_dir" &&
     WRANGLER_LOG=error SMOKE_WRANGLER_ENV="$wrangler_env" node --input-type=module -e '
       import { unstable_readConfig } from "wrangler";
-      const env = process.env.SMOKE_WRANGLER_ENV || undefined;
-      const config = unstable_readConfig({ env });
+      const config = unstable_readConfig({ env: process.env.SMOKE_WRANGLER_ENV });
       process.stdout.write(config.vars?.VAULT_SYNC_ENABLED === "true" ? "true" : "false");
     '
-)"
+)" || expected=""
 if [ "$expected" != "true" ] && [ "$expected" != "false" ]; then
   echo "::error::could not read VAULT_SYNC_ENABLED from the Wrangler config" >&2
   exit 1
@@ -67,10 +73,12 @@ probe() {
   local health_status health_sync vault_status vault_sync_disabled landing_status ok=true
 
   health_status="$(get_status /healthz)"
-  health_sync="$(jq -r 'if (.sync_enabled | type) == "boolean" then .sync_enabled else "missing" end' "$body" 2>/dev/null || echo missing)"
+  health_sync="$(jq -r 'if (.sync_enabled | type) == "boolean" then .sync_enabled else "missing" end' "$body" 2>/dev/null || true)"
+  health_sync="${health_sync:-missing}"
 
   vault_status="$(get_status "$synthetic_vault_path")"
-  vault_sync_disabled="$(jq -r '.error.code == "sync_disabled"' "$body" 2>/dev/null || echo false)"
+  vault_sync_disabled="$(jq -r '.error.code == "sync_disabled"' "$body" 2>/dev/null || true)"
+  [ "$vault_sync_disabled" = "true" ] || vault_sync_disabled=false
 
   landing_status="$(get_status /)"
 
