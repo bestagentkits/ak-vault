@@ -338,8 +338,8 @@ are applied only by that account's own devices. For each operation, in order:
 **Revoked grants.** A queued sealed operation lives only while the MCP grant that queued
 it does, as for a write request (§3.10). The vault object keeps, beside the wire, the
 operation's `grant_id` and the `iat` of the MCP token that queued it. Before serving the
-queue (`GET …/sealed`) the Worker asks the revocation registry, in a single batched call, about each distinct
-grant-and-`iat` pair among the account's pending operations (`sid` = `grant_id`, and the
+queue (`GET …/sealed`) the Worker asks the revocation registry, in a single batched call, about each
+distinct grant-and-`iat` pair among the account's pending operations (`sid` = `grant_id`, and the
 account's minimum `iat`, §9.3) and cancels the pending operations of a revoked one: their
 ciphertext is cleared, the `sealed_id` is kept until expiry as for an acknowledged one (a
 replay is still refused), and the operation is not served or acknowledgeable
