@@ -29,6 +29,8 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   not_found: 'That item no longer exists.',
   item_unreadable: 'This browser does not hold the key for that item.',
   duplicate_name: 'More than one item has that name. Resolve it from the CLI first.',
+  name_not_writable: 'That name belongs to a vault policy or an item the dashboard does not manage. Nothing was written. Change it from the CLI.',
+  name_unverifiable: 'This browser cannot open every item in the vault, so it cannot rule out that the name is already taken. Nothing was written. Create it from a device that holds every key.',
   history_unavailable: 'That revision or branch cannot be used from this browser: it is not readable here, is a deletion, or is no longer current. Nothing was written. Use `ak secrets sync settle` or a device that holds the key.',
   restore_current: 'That revision already has the current value. Nothing was written.',
   already_exists: 'An item with that name already exists.',

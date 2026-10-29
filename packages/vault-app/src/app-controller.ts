@@ -609,7 +609,7 @@ export class AppController {
       return;
     }
     const code = appErrorCode(err, 'server');
-    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'not_found', 'item_unreadable', 'history_unavailable', 'restore_current', 'quota_exceeded', 'invalid_rotation', 'rotation_value_unchanged', 'rotation_not_ready', 'network', 'server'];
+    const recoverable: AppErrorCode[] = ['conflict', 'rekey_required', 'invalid_name', 'value_too_large', 'duplicate_name', 'name_not_writable', 'name_unverifiable', 'not_found', 'item_unreadable', 'history_unavailable', 'restore_current', 'quota_exceeded', 'invalid_rotation', 'rotation_value_unchanged', 'rotation_not_ready', 'network', 'server'];
     if (!isVaultApiError(err) && recoverable.includes(code)) {
       // A conflict means the verified head is stale: pull again, then say why the write did not land.
       // A lost response may hide a write that landed: pull again so the screen shows the real head.
