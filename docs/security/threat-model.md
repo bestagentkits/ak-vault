@@ -285,11 +285,12 @@ These are accepted and must be stated wherever the guarantees are described:
   new span can open, even through a colluding server. Machine devices and roles
   outside the closed set are refused in the span too.
 - **Transition window for legacy role changes.** Until the operator turns on
-  `VAULT_REFUSE_LEGACY_ROLE_SET` (after a CLI that signs role fences has replaced
-  older ones), the Worker still accepts a new `role_set` without a fence, so an owner
+  `VAULT_REFUSE_LEGACY_ROLE_SET` (normally after a CLI that signs role fences has
+  replaced older ones), the Worker still accepts a new `role_set` without a fence, so an owner
   on an older CLI keeps opening legacy spans in vaults that hold no fenced
   `role_set` yet. Each one has the Worker-only trust above. The setting is read fail
-  closed: any value other than exactly `"false"` refuses.
+  closed: any value other than exactly `"false"` refuses. The owner turned it on for
+  production and staging on 2026-10-29, which closes the window while it stays on.
 - **Recovery bundle contents are not server-checked.** The server cannot open the
   bundle. It refuses a `PUT /recovery` whose declared sealing position predates the
   latest `recovery_rotate`, which stops an honest but stale owner device from

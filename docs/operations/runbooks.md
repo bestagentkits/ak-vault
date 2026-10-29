@@ -381,10 +381,11 @@ stale vault shows up depends on the revision:
   legacy change, clients accept the affected account's records under any role it held
   there, trusting the Worker's check for that span (spec §5). An owner closes the
   span by setting the account's role again with a current client, even to the same
-  role. Roll out in this order; no step blocks a released CLI:
-  1. Deploy the Worker with `VAULT_REFUSE_LEGACY_ROLE_SET` `"false"` (the value in
-     `wrangler.jsonc` for every environment). It accepts both `role_set` bodies, so
-     the released CLI keeps working unchanged, role changes included.
+  role. The planned order, in which no step blocks a released CLI (see the status
+  note below for where it stands):
+  1. Deploy the Worker with `VAULT_REFUSE_LEGACY_ROLE_SET` `"false"`. It accepts both
+     `role_set` bodies, so the released CLI keeps working unchanged, role changes
+     included.
   2. The owner tags the Go module release that contains this revision. Agents never
      create ak-vault tags.
   3. agentkit bumps the module and releases through its beta train
@@ -402,6 +403,10 @@ stale vault shows up depends on the revision:
   5. Flip `VAULT_REFUSE_LEGACY_ROLE_SET` to `"true"` in `wrangler.jsonc` and deploy
      (a separate change). Any value other than exactly `"false"` refuses. To undo,
      set it back to `"false"` and deploy.
+  Status: the owner turned the setting on early, on 2026-10-29, for production and
+  staging (only the owner used sync then). Until step 3 ships, a released CLI's
+  `role_set` is refused with `bad_request`; set the value back to `"false"` and
+  deploy if a role must change before then.
   Once any vault holds a fenced `role_set`, roll the Worker forward only: an earlier
   Worker re-verifies the stored chain on every append and refuses the fenced body, so
   a rollback blocks every membership change in that vault, removals included.

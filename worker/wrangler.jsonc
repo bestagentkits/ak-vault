@@ -47,10 +47,10 @@
     // its release gate passes; every remote-access route answers 404 while off.
     "VAULT_REMOTE_ACCESS_ENABLED": "false",
     // Role fence transition (issue #22): new role_set events without a signed fence are
-    // accepted while released CLIs still send them. Flip to "true" only after a CLI on
-    // the fenced Go module has shipped and older ones are gone (runbook). Any value
-    // other than exactly "false" refuses them.
-    "VAULT_REFUSE_LEGACY_ROLE_SET": "false"
+    // refused. The owner turned this on early (2026-10-29), so a released CLI that
+    // predates role fences cannot change roles until a CLI on the fenced Go module
+    // ships (runbook). Set it to exactly "false" to accept them again.
+    "VAULT_REFUSE_LEGACY_ROLE_SET": "true"
   },
   "env": {
     "staging": {
@@ -74,7 +74,7 @@
         // ak-web staging's JWKS; its keys are separate from production's.
         "VAULT_JWKS_URL": "https://staging.agentkit.best/.well-known/jwks.json",
         "VAULT_REMOTE_ACCESS_ENABLED": "true",
-        "VAULT_REFUSE_LEGACY_ROLE_SET": "false"
+        "VAULT_REFUSE_LEGACY_ROLE_SET": "true"
       }
     }
   }
