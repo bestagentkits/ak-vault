@@ -63,7 +63,7 @@ const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const AUDIT_MAX_ROWS = 20_000;
 /** Successful rows kept per account; they otherwise keep the full retention window. */
 export const AUDIT_MAX_SUCCESS_ROWS = 100_000;
-/** Inserts between audit prunes (and one prune when the object starts), so a full table is not counted on every call. */
+/** Inserts between audit prunes (and one gated prune when the object starts), so a full table is not counted on every call. */
 export const AUDIT_PRUNE_EVERY = 256;
 /** Outcomes of a tool that ran (`ok`) or whose write was sealed and queued (`queued`). */
 const AUDIT_SUCCESS_OUTCOMES: readonly string[] = ['ok', 'queued'];
@@ -84,6 +84,7 @@ export function ensureAuditSchema(storage: DurableObjectStorage): void {
   sql.exec('CREATE INDEX IF NOT EXISTS client_audit_ts ON client_audit (ts)');
   sql.exec('CREATE INDEX IF NOT EXISTS client_audit_class_ts ON client_audit (success, ts)');
 }
+const AUDIT_CAPS = [[0, AUDIT_MAX_ROWS], [1, AUDIT_MAX_SUCCESS_ROWS]] as const;
 const RATE_WINDOW_MS = 60_000;
 const WRITE_TOOLS: ReadonlySet<RelayTool> = new Set<RelayTool>(['set', 'delete']);
 
@@ -112,7 +113,7 @@ export class AccountRelay extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS client_rate (bucket TEXT PRIMARY KEY, window INTEGER NOT NULL, count INTEGER NOT NULL);
     `);
     ensureAuditSchema(ctx.storage);
-    this.pruneAudit();
+    this.pruneAuditIfOverCap();
   }
 
   // ---------------------------------------------------------------- upgrade
@@ -407,11 +408,24 @@ export class AccountRelay extends DurableObject<Env> {
    * A token holder who spams `AUDIT_MAX_SUCCESS_ROWS` successful calls can still roll the
    * success history; that is accepted, because every one of those calls is itself recorded.
    */
-  private pruneAudit(): void {
-    for (const [success, cap] of [[0, AUDIT_MAX_ROWS], [1, AUDIT_MAX_SUCCESS_ROWS]] as const) {
+  private pruneAudit(caps: readonly (readonly [0 | 1, number])[] = AUDIT_CAPS): void {
+    for (const [success, cap] of caps) {
       const edge = this.sql.exec<{ ts: number; id: number }>('SELECT ts, rowid AS id FROM client_audit WHERE success = ? ORDER BY ts DESC, rowid DESC LIMIT 1 OFFSET ?', success, cap).toArray()[0];
       if (edge) this.sql.exec('DELETE FROM client_audit WHERE success = ? AND ts <= ? AND (ts < ? OR rowid <= ?)', success, edge.ts, edge.ts, edge.id);
     }
+  }
+
+  /**
+   * The prune for an object waking from hibernation, where the insert counter restarts
+   * from zero. Rowids are distinct integers, so the table holds at most `MAX(rowid) -
+   * MIN(rowid) + 1` rows, read from the two ends of the table b-tree without a scan. A
+   * class whose cap that bound cannot exceed is skipped; only a class that might be over
+   * pays for the `OFFSET` walk. A table that is mostly successes thus skips the 100k walk.
+   */
+  private pruneAuditIfOverCap(): void {
+    const span = this.sql.exec<{ span: number | null }>('SELECT MAX(rowid) - MIN(rowid) + 1 AS span FROM client_audit').one().span;
+    if (span === null) return;
+    this.pruneAudit(AUDIT_CAPS.filter(([, cap]) => span > cap));
   }
 
   // ---------------------------------------------------------------- alarm

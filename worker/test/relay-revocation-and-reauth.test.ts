@@ -435,6 +435,26 @@ describe('relay rate budgets and audit', () => {
     expect((await auditCounts(stub))[0]!.n).toBe(AUDIT_MAX_ROWS);
   });
 
+  it('the startup prune trims a class that is over its cap and leaves a small table alone', async () => {
+    const stub = relayStub(env, `acct-${randomId()}`);
+    const startupPrune = () => runInDurableObject(stub, async (instance) => (instance as unknown as { pruneAuditIfOverCap(): void }).pruneAuditIfOverCap());
+    await seedAudit(stub, 100, 'ok', 1);
+    await startupPrune();
+    expect((await auditCounts(stub))[1]!.n).toBe(100);
+    await seedAudit(stub, AUDIT_MAX_ROWS + 50, 'not_found', 0, 1_000);
+    await startupPrune();
+    const counts = await auditCounts(stub);
+    expect(counts[0]!.n).toBe(AUDIT_MAX_ROWS);
+    expect(counts[0]!.hi).toBe(1_000 + AUDIT_MAX_ROWS + 49);
+    expect(counts[1]!.n).toBe(100);
+  });
+
+  it('the startup prune of an empty table is a no-op', async () => {
+    const stub = relayStub(env, `acct-${randomId()}`);
+    await runInDurableObject(stub, async (instance) => (instance as unknown as { pruneAuditIfOverCap(): void }).pruneAuditIfOverCap());
+    expect(await auditCounts(stub)).toEqual({});
+  });
+
   it('adds and backfills the class column on an audit table written before it existed', async () => {
     const stub = relayStub(env, `acct-${randomId()}`);
     await runInDurableObject(stub, async (_instance, state) => {
