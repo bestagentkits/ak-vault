@@ -30,7 +30,7 @@ import { bookmarkForTime, currentBookmark, scheduleRestore } from './point-in-ti
 import { getRecovery, putRecovery } from './recovery-store.js';
 import { lookupNameTags } from './lookup-store.js';
 import { currentSealKey, getSealKey, putSealKey } from './seal-key-store.js';
-import { ackSealedOp, enqueueSealedOp, listSealedOps, type EnqueueSealedResult } from './sealed-store.js';
+import { ackSealedOp, cancelRevokedSealedOps, enqueueSealedOp, listSealedOps, pendingSealedGrants, type EnqueueSealedResult, type SealedGrant } from './sealed-store.js';
 import {
   cancelRevokedWriteRequest,
   closeWriteRequest,
@@ -46,7 +46,7 @@ import {
 import { enforceRateLimit, requireRateBudget } from './request-guard.js';
 import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
 import { isMutation, type VaultRequest } from './vault-request.js';
-import { VAULT_SCHEMA } from './vault-schema.js';
+import { applyVaultSchema } from './vault-schema.js';
 
 export class VaultDurableObject extends DurableObject<Env> {
   private readonly sql: SqlStorage;
@@ -70,7 +70,7 @@ export class VaultDurableObject extends DurableObject<Env> {
     // existing vault applies any newly added tables or indexes.
     this.schemaReady = this.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").toArray().length > 0;
     if (this.schemaReady) {
-      this.sql.exec(VAULT_SCHEMA);
+      applyVaultSchema(this.sql);
       // Vaults that stored records before change-log heads existed get them once, in log order.
       ctx.storage.transactionSync(() => backfillLogHeads(this.sql));
     }
@@ -83,7 +83,7 @@ export class VaultDurableObject extends DurableObject<Env> {
 
   private ensureSchema(): void {
     if (this.schemaReady) return;
-    this.sql.exec(VAULT_SCHEMA);
+    applyVaultSchema(this.sql);
     this.schemaReady = true;
   }
 
@@ -233,10 +233,22 @@ export class VaultDurableObject extends DurableObject<Env> {
   }
 
   /** Queue a sealed operation built by the MCP handler (the only way one enters the queue). */
-  async enqueueSealed(wire: unknown, nowMs: number = Date.now()): Promise<EnqueueSealedResult> {
+  async enqueueSealed(wire: unknown, tokenIat: number, nowMs: number = Date.now()): Promise<EnqueueSealedResult> {
     const state = this.remoteState();
     if (!state) return 'refused';
-    return this.ctx.storage.transactionSync(() => enqueueSealedOp(this.sql, state, wire, nowMs));
+    return this.ctx.storage.transactionSync(() => enqueueSealedOp(this.sql, state, wire, tokenIat, nowMs));
+  }
+
+  /** The grants behind account `sub`'s pending sealed operations, for the Worker's live revocation check. */
+  async pendingSealedGrants(sub: string, nowMs: number = Date.now()): Promise<SealedGrant[]> {
+    if (!this.remoteState()) return [];
+    return pendingSealedGrants(this.sql, sub, nowMs);
+  }
+
+  /** Cancel the pending sealed operations of one revoked grant and token age (their ciphertext is cleared). */
+  async cancelRevokedSealed(sub: string, grant: SealedGrant, nowMs: number = Date.now()): Promise<void> {
+    if (!this.remoteState()) return;
+    this.ctx.storage.transactionSync(() => cancelRevokedSealedOps(this.sql, sub, grant, nowMs));
   }
 
   /** Store a write request built by the MCP handler (the only way one is created). */

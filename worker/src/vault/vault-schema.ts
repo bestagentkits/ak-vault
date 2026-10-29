@@ -3,6 +3,9 @@
  * ciphertext/signed protocol objects or the visible metadata listed in
  * docs/security/data-classification.md. Nothing here is plaintext secret data.
  */
+import { MCP_MAX_LIFETIME_SECONDS } from '../auth/jwt-verify.js';
+import { LIMITS } from '../limits.js';
+
 export const VAULT_SCHEMA = `
   CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS membership_events (seq INTEGER PRIMARY KEY, hash TEXT NOT NULL, event_json TEXT NOT NULL);
@@ -48,13 +51,15 @@ export const VAULT_SCHEMA = `
   -- head (unsigned, untrusted; the server never computes one). seal_keys: one owner-signed seal-key
   -- document per key epoch. sealed_ops: opaque sealed writes queued for the account's own devices; an
   -- acknowledged row keeps only its ID and outcome (ciphertext cleared) until it expires, so a replayed
-  -- sealed_id is refused for its whole lifetime.
+  -- sealed_id is refused for its whole lifetime. grant_id and token_iat (the MCP grant and the token's iat
+  -- that queued the op) let the Worker cancel a pending op whose grant was revoked; rows queued before
+  -- they existed are backfilled from their wire when the columns are added.
   CREATE TABLE IF NOT EXISTS name_tags (item_id TEXT PRIMARY KEY, key_epoch INTEGER NOT NULL, tag TEXT NOT NULL, revision INTEGER NOT NULL);
   CREATE INDEX IF NOT EXISTS name_tags_lookup ON name_tags (tag, key_epoch);
   CREATE TABLE IF NOT EXISTS seal_keys (key_epoch INTEGER PRIMARY KEY, doc TEXT NOT NULL, membership_seq INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS sealed_ops (
     seq INTEGER PRIMARY KEY AUTOINCREMENT, sealed_id TEXT NOT NULL UNIQUE, account TEXT NOT NULL,
-    wire TEXT, outcome TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+    wire TEXT, outcome TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, grant_id TEXT, token_iat INTEGER
   );
   CREATE INDEX IF NOT EXISTS sealed_ops_pending ON sealed_ops (account, seq) WHERE outcome IS NULL;
   CREATE INDEX IF NOT EXISTS sealed_ops_expiry ON sealed_ops (expires_at);
@@ -68,3 +73,31 @@ export const VAULT_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS write_requests_account ON write_requests (account, state);
 `;
+
+/**
+ * Lower bound, in seconds before queue time, for the `iat` of the MCP token that queued a sealed
+ * row stored without one: the token lives at most MCP_MAX_LIFETIME_SECONDS, is accepted up to
+ * clock_skew_seconds past `exp`, and the request then takes some time to reach the queue (allowed
+ * another clock_skew_seconds). Too low only over-cancels under a minimum-iat revocation, the
+ * fail-closed direction; too high would let a revoked token's operation be served.
+ */
+const LEGACY_SEALED_IAT_MARGIN_S = MCP_MAX_LIFETIME_SECONDS + 2 * LIMITS.clock_skew_seconds;
+
+/**
+ * Apply the idempotent schema, then add the sealed_ops grant columns to a table created before
+ * they existed (CREATE TABLE IF NOT EXISTS leaves such a table unchanged), and backfill every
+ * pending row stored without them. The backfill runs on every start, not only when a column is
+ * added: a row written by an earlier revision after the columns existed (a rollback, then a roll
+ * forward) must not stay uncancellable.
+ */
+export function applyVaultSchema(sql: SqlStorage): void {
+  sql.exec(VAULT_SCHEMA);
+  const columns = sql.exec<{ name: string }>("SELECT name FROM pragma_table_info('sealed_ops')").toArray().map((c) => c.name);
+  if (!columns.includes('grant_id')) sql.exec('ALTER TABLE sealed_ops ADD COLUMN grant_id TEXT');
+  if (!columns.includes('token_iat')) sql.exec('ALTER TABLE sealed_ops ADD COLUMN token_iat INTEGER');
+  // The grant is inside the stored wire; the token iat is bounded from below by queue time.
+  sql.exec(
+    "UPDATE sealed_ops SET grant_id = COALESCE(grant_id, json_extract(wire, '$.origin.grant_id')), token_iat = COALESCE(token_iat, created_at / 1000 - ?) WHERE wire IS NOT NULL AND (grant_id IS NULL OR token_iat IS NULL)",
+    LEGACY_SEALED_IAT_MARGIN_S,
+  );
+}
