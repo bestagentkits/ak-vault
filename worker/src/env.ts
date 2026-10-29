@@ -16,6 +16,12 @@ export interface Env {
    * and the lookup, seal-key and sealed-queue routes serve only when exactly "true".
    */
   VAULT_REMOTE_ACCESS_ENABLED?: string;
+  /**
+   * Refuse a new `role_set` without a signed log fence (spec §5). "false" in every
+   * environment until the CLIs that sign the fence have replaced older ones; any
+   * other value, or none, refuses (fail closed).
+   */
+  VAULT_REFUSE_LEGACY_ROLE_SET?: string;
   VAULT_ISSUER: string;
   VAULT_AUDIENCE: string;
   /** JWKS endpoint; used when `VAULT_JWKS_JSON` is unset. */
@@ -36,6 +42,11 @@ export interface Env {
 /** Whether the remote-access routes serve (fail closed: anything but "true" is off). */
 export function remoteAccessEnabled(env: Pick<Env, 'VAULT_REMOTE_ACCESS_ENABLED'>): boolean {
   return env.VAULT_REMOTE_ACCESS_ENABLED === 'true';
+}
+
+/** Whether a new unfenced `role_set` is refused (fail closed: anything but exactly "false" refuses). */
+export function refuseLegacyRoleSet(env: Pick<Env, 'VAULT_REFUSE_LEGACY_ROLE_SET'>): boolean {
+  return env.VAULT_REFUSE_LEGACY_ROLE_SET !== 'false';
 }
 
 /** The remote MCP resource, `<origin>/mcp` (spec §9.8). */

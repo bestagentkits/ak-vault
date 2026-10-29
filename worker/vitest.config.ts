@@ -38,6 +38,7 @@ export default defineConfig({
           TEST_ISSUER_PRIVATE_JWK: JSON.stringify({ ...privateJwk, kid: TEST_KID }),
           TEST_DEPLOYED_AUDIENCES: JSON.stringify(pick('VAULT_AUDIENCE')),
           TEST_DEPLOYED_REMOTE_ACCESS: JSON.stringify(pick('VAULT_REMOTE_ACCESS_ENABLED')),
+          TEST_DEPLOYED_REFUSE_LEGACY_ROLE_SET: JSON.stringify(pick('VAULT_REFUSE_LEGACY_ROLE_SET')),
           TEST_DEPLOYED_ISSUERS: JSON.stringify({ issuer: pick('VAULT_ISSUER'), jwksUrl: pick('VAULT_JWKS_URL'), inlineJwks: pick('VAULT_JWKS_JSON') }),
           REVOCATION_WEBHOOK_SECRET: 'test-only-webhook-secret-0123456789abcdef',
         },

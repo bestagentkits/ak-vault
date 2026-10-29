@@ -1,18 +1,29 @@
 /**
  * Role fence: a `role_set` signs the change-log head it verified, like a removal,
- * and the Worker stores it only at the current head. Clients then refuse a record
+ * and the Worker stores it only at the current head. During the transition a legacy
+ * `role_set` without a fence is still accepted (VAULT_REFUSE_LEGACY_ROLE_SET). Clients then refuse a record
  * whose author was not a writer at its log position, even if a colluding server
  * served it.
  */
 import { env } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
-import { b64encode, randomBytes, randomId, verifyLoggedRecord, verifyMembershipChain } from '@ak-vault/protocol';
+import { b64encode, randomBytes, randomId, verifyLoggedRecord, verifyMembershipChain, type JsonObject } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';
+import { refuseLegacyRoleSet } from '../src/env.js';
+import { handleMembershipPost } from '../src/vault/membership-handlers.js';
 import type { MembershipStore } from '../src/vault/membership-store.js';
 import { signerOf, VaultFixture } from './helpers/vault-fixture.js';
 
 const v = { name: 'API_KEY', value: 'synthetic-value' };
 const stubFor = (vaultId: string) => env.VAULT.get(env.VAULT.idFromName(vaultId));
+
+declare global {
+  namespace Cloudflare {
+    interface Env {
+      TEST_DEPLOYED_REFUSE_LEGACY_ROLE_SET: string;
+    }
+  }
+}
 
 /** The AkvError code `fn` throws, or null when it returns. */
 function codeOf(fn: () => unknown): string | null {
@@ -36,8 +47,6 @@ describe('role fence', () => {
     expect((await fx.setRole(bob.account, 'reader', 3)).json.error.code).toBe('bad_request');
     const forged = fx.buildEvent('role_set', { account: bob.account, role: 'reader', log_fence: 2, log_head: b64encode(randomBytes(32)) }, signerOf(fx.owner));
     expect((await fx.append(forged)).json.error.code).toBe('bad_request');
-    const unfenced = fx.buildEvent('role_set', { account: bob.account, role: 'reader' }, signerOf(fx.owner));
-    expect((await fx.append(unfenced)).json.error.code).toBe('bad_request');
     expect((await fx.setRole(bob.account, 'reader')).status).toBe(201);
     expect(fx.state.role_changes).toEqual([
       expect.objectContaining({ device_id: bob.keys.record.device_id, prev_role: 'editor', role: 'reader', log_fence: 2 }),
@@ -66,34 +75,53 @@ describe('role fence', () => {
     expect(codeOf(() => verifyLoggedRecord(late, fx.state, 2))).toBe('forbidden');
   });
 
-  it('a stored chain holding a legacy role_set without a fence keeps accepting events', async () => {
+  it('accepts a legacy role_set during the transition, and refuses one after a fenced role_set', async () => {
     const fx = await VaultFixture.create('shared');
     const bob = await fx.addDevice({ account: `acct-${randomId()}`, role: 'editor' });
     const carol = await fx.addDevice({ account: `acct-${randomId()}`, role: 'editor' });
     expect((await fx.write(fx.owner, randomId(), 0, v)).status).toBe(200);
-    // A role_set signed before role fences existed, stored as an earlier revision did.
-    const legacy = fx.buildEvent('role_set', { account: bob.account, role: 'reader' }, signerOf(fx.owner));
-    const next = verifyMembershipChain([...fx.events, legacy]);
-    await runInDurableObject(stubFor(fx.vaultId), (instance: unknown) => {
-      (instance as { membership: MembershipStore }).membership.persist(legacy, next);
-    });
-    fx.events.push(legacy);
-    fx.state = next;
-    expect(fx.state.role_changes).toEqual([expect.objectContaining({ device_id: bob.keys.record.device_id, prev_role: 'editor', role: 'reader', log_fence: null, log_head: null })]);
+    // What a CLI that predates role fences sends: accepted while VAULT_REFUSE_LEGACY_ROLE_SET is "false".
+    expect((await fx.append(fx.buildEvent('role_set', { account: bob.account, role: 'reader' }, signerOf(fx.owner)))).status).toBe(201);
+    expect((await fx.append(fx.buildEvent('role_set', { account: carol.account, role: 'reader' }, signerOf(fx.owner)))).status).toBe(201);
+    expect(fx.state.role_changes.map((c) => [c.device_id, c.prev_role, c.role, c.log_fence, c.log_head])).toEqual([
+      [bob.keys.record.device_id, 'editor', 'reader', null, null],
+      [carol.keys.record.device_id, 'editor', 'reader', null, null],
+    ]);
+    // The Worker still refuses the demoted account's writes, and the honest log verifies.
+    expect((await fx.write(bob, randomId(), 0, v)).status).toBe(403);
+    expect(await fx.verifiedLogHeads()).toHaveLength(2);
 
-    const unfenced = fx.buildEvent('role_set', { account: carol.account, role: 'reader' }, signerOf(fx.owner));
-    const refused = await fx.append(unfenced);
-    expect(refused.status).toBe(400);
-    expect(refused.json.error.code).toBe('bad_request');
-    // A same-role fenced role_set bounds the legacy span from here on.
+    // A same-role fenced role_set bounds bob's legacy span from here on.
     expect((await fx.setRole(bob.account, 'reader')).status).toBe(201);
     expect(fx.state.role_changes.at(-1)).toMatchObject({ device_id: bob.keys.record.device_id, prev_role: 'reader', role: 'reader', log_fence: 1 });
-    // After a fenced role_set the chain itself refuses a legacy one.
-    const late = fx.buildEvent('role_set', { account: carol.account, role: 'reader' }, signerOf(fx.owner));
+    // After a fenced role_set the chain itself refuses a legacy one, whatever the setting.
+    const late = fx.buildEvent('role_set', { account: carol.account, role: 'editor' }, signerOf(fx.owner));
     expect(() => verifyMembershipChain([...fx.events, late])).toThrow(/after a fenced role_set/);
     expect((await fx.append(late)).json.error.code).toBe('bad_request');
     expect((await fx.removeDevice(carol)).status).toBe(201);
-    expect((await fx.write(bob, randomId(), 0, v)).status).toBe(403);
-    expect(await fx.verifiedLogHeads()).toHaveLength(2);
+  });
+
+  it('refuses a new legacy role_set once VAULT_REFUSE_LEGACY_ROLE_SET is on', async () => {
+    const fx = await VaultFixture.create('shared');
+    const bob = await fx.addDevice({ account: `acct-${randomId()}`, role: 'editor' });
+    const legacy = fx.buildEvent('role_set', { account: bob.account, role: 'reader' }, signerOf(fx.owner));
+    const seq = fx.state.seq;
+    await runInDurableObject(stubFor(fx.vaultId), (instance: unknown) => {
+      // The deployed setting is "false"; call the handler as the Durable Object does once it is flipped.
+      const { sql, membership } = instance as { sql: SqlStorage; membership: MembershipStore };
+      const post = () => handleMembershipPost(sql, membership, fx.vaultId, { event: legacy as unknown as JsonObject }, membership.verifyAppend(legacy), { refuseLegacyRoleSet: true });
+      expect(post).toThrow(expect.objectContaining({ code: 'bad_request' }));
+      expect(membership.requireState().seq).toBe(seq);
+    });
+    // A fenced role_set is unaffected by the setting.
+    expect((await fx.setRole(bob.account, 'reader')).status).toBe(201);
+  });
+
+  it('reads the setting fail closed, and every deployed environment accepts legacy role_set for now', () => {
+    expect(refuseLegacyRoleSet({ VAULT_REFUSE_LEGACY_ROLE_SET: 'false' })).toBe(false);
+    for (const value of ['true', 'TRUE', 'False', '', ' false', '0', undefined]) {
+      expect(refuseLegacyRoleSet({ VAULT_REFUSE_LEGACY_ROLE_SET: value })).toBe(true);
+    }
+    expect(JSON.parse(env.TEST_DEPLOYED_REFUSE_LEGACY_ROLE_SET)).toEqual({ production: 'false', staging: 'false' });
   });
 });

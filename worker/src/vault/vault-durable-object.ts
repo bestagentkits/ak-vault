@@ -16,7 +16,7 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import { randomId, type MembershipState, type Role, type SealKeyDoc } from '@ak-vault/protocol';
-import type { Env } from '../env.js';
+import { refuseLegacyRoleSet, type Env } from '../env.js';
 import { ApiError, errorResult, okResult, toApiError, type ApiResult } from '../http/errors.js';
 import { appendAudit, readAudit } from './audit-store.js';
 import { backfillLogHeads } from './change-log-heads.js';
@@ -314,7 +314,9 @@ export class VaultDurableObject extends DurableObject<Env> {
       case 'genesis':
         return handleGenesis(this.sql, this.membership, body, auth.state);
       case 'membership.post':
-        return handleMembershipPost(this.sql, this.membership, req.vaultId, body, auth.next ?? this.membership.verifyAppend(body['event']));
+        return handleMembershipPost(this.sql, this.membership, req.vaultId, body, auth.next ?? this.membership.verifyAppend(body['event']), {
+          refuseLegacyRoleSet: refuseLegacyRoleSet(this.env),
+        });
       case 'item.put': {
         const put = () => putRecord(this.sql, auth.state, req.claims.did, req.itemId!, body, { remoteAccess: req.remoteAccess });
         return req.writeRequestId === undefined ? put() : completeWithItemPut(this.sql, req, req.itemId!, body, put);
