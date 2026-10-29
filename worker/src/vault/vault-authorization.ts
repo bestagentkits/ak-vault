@@ -35,7 +35,7 @@ import { MembershipStore } from './membership-store.js';
 import { hasIdempotentResult } from './idempotency.js';
 import { hasRecoveryBundle } from './recovery-store.js';
 import { parseBodyObject, requireKeys } from './request-body.js';
-import { enforceRateLimit, enforceRole, memberDevice, requireScope, verifyRequestProof, type RoleRule } from './request-guard.js';
+import { enforceRateLimit, enforceRole, memberDevice, requireRateBudget, requireScope, verifyRequestProof, type RoleRule } from './request-guard.js';
 import { isMutation, type VaultOp, type VaultRequest } from './vault-request.js';
 
 const READ: readonly Scope[] = ['vault:read'];
@@ -197,9 +197,10 @@ function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: Membe
   requireHumanSession(req);
   const did = req.claims.did;
   if (req.claims.sub !== state.owner_account || state.removed_device_ids.includes(did)) throw new ApiError('forbidden');
-  // Charged per account before the key and proof checks, so neither fresh device IDs
-  // nor refused proofs escape the budget.
-  enforceRateLimit(sql, 'recovery_identity', req.claims.sub, req.nowMs);
+  // Per-account budget, whatever device ID the token names: a spent budget refuses
+  // before any verification work; only a request whose proof verifies spends it, so a
+  // leaked token without its key cannot lock the owner out of recovery.
+  requireRateBudget(sql, 'recovery_identity', req.claims.sub, req.nowMs);
   let signPub: string;
   try {
     signPub = req.deviceKey ?? '';
@@ -209,6 +210,7 @@ function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: Membe
     throw new ApiError('unauthorized');
   }
   verifyRequestProof(sql, req, signPub);
+  enforceRateLimit(sql, 'recovery_identity', req.claims.sub, req.nowMs);
   requireScope(req.claims.scope, READ);
   return { state, device: null, body: null };
 }

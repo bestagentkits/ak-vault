@@ -66,8 +66,8 @@ export const LIMITS = {
   /**
    * Per account, per vault, per rate window: requests by a not-yet-enrolled device
    * on the recovery-identity path (`GET /recovery`, `GET /membership` with
-   * `AKV-Device-Key`) that reach proof verification, refused or not, whatever device
-   * ID the token names. Counted on top of the per-device budgets above.
+   * `AKV-Device-Key`) whose proof verifies, whatever device ID the token names.
+   * Counted on top of the per-device budgets above.
    */
   recovery_identity_requests_per_window: 30,
   rate_window_seconds: 60,

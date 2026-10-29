@@ -35,6 +35,11 @@ function freshRead(fx: VaultFixture, i: number, opts: CallOptions = {}) {
   return fx.get(fresh, i % 2 === 0 ? '/recovery' : '/membership', { ...keyHeader(fresh), ...opts });
 }
 
+const accountRows = (fx: VaultFixture) =>
+  runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) =>
+    state.storage.sql.exec('SELECT account, count FROM recovery_identity_rate_counters').toArray(),
+  );
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -56,18 +61,22 @@ describe('recovery-identity rate limit per account', () => {
     expect((await freshRead(fx, 0)).status).toBe(200);
   });
 
-  it('refused proofs on the path spend the account budget too', async () => {
+  it('refused proofs do not spend the account budget, and a spent budget refuses before the proof check', async () => {
     freezeIntoWindow();
     const fx = await vaultWithBundle();
-    for (let i = 0; i < BUDGET; i++) {
+    for (let i = 0; i < BUDGET + 10; i++) {
       const res = await freshRead(fx, i, { proofSecret: randomBytes(32) });
       expect(res.status).toBe(401);
       expect(res.json.error.code).toBe('invalid_signature');
     }
-    expect((await freshRead(fx, 0)).status).toBe(429);
+    expect(await accountRows(fx)).toEqual([]);
+    for (let i = 0; i < BUDGET; i++) expect((await freshRead(fx, i)).status).toBe(200);
+    // Once spent, even a bad proof is answered 429 without verification.
+    expect((await freshRead(fx, 0, { proofSecret: randomBytes(32) })).status).toBe(429);
+    expect(await accountRows(fx)).toEqual([{ account: fx.owner.account, count: BUDGET }]);
   });
 
-  it('leaves enrolled devices, other accounts and other vaults unaffected', async () => {
+  it('leaves enrolled devices and other accounts in the vault unaffected', async () => {
     freezeIntoWindow();
     const fx = await vaultWithBundle();
     const laptop = await fx.addDevice();
@@ -85,20 +94,33 @@ describe('recovery-identity rate limit per account', () => {
     const refused = await fx.get(stranger, '/recovery', keyHeader(stranger));
     expect(refused.status).toBe(403);
     expect(refused.json.error.code).toBe('forbidden');
+  });
 
-    // Another account's vault has its own budget.
+  it("another account's vault keeps its own budget", async () => {
+    freezeIntoWindow();
+    const fx = await vaultWithBundle();
+    for (let i = 0; i < BUDGET; i++) expect((await freshRead(fx, i)).status).toBe(200);
+    expect((await freshRead(fx, 0)).status).toBe(429);
     const other = await vaultWithBundle();
     for (let i = 0; i < BUDGET; i++) expect((await freshRead(other, i)).status).toBe(200);
+  });
+
+  it('another account or a removed device ID spends nothing', async () => {
+    freezeIntoWindow();
+    const fx = await vaultWithBundle();
+    const stranger = createDevice(`acct-${randomId()}`, 'owner');
+    expect((await fx.get(stranger, '/recovery', keyHeader(stranger))).status).toBe(403);
+    const laptop = await fx.addDevice();
+    expect((await fx.removeDevice(laptop)).status).toBe(201);
+    expect((await fx.get(laptop, '/recovery', keyHeader(laptop))).status).toBe(403);
+    expect(await accountRows(fx)).toEqual([]);
   });
 
   it('a non-email_otp session is refused before it can spend the account budget', async () => {
     freezeIntoWindow();
     const fx = await vaultWithBundle();
     for (let i = 0; i < BUDGET + 5; i++) expect((await freshRead(fx, i, { sessionKind: 'api_key_device' })).status).toBe(403);
-    const rows = await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) =>
-      state.storage.sql.exec('SELECT 1 FROM recovery_identity_rate_counters').toArray().length,
-    );
-    expect(rows).toBe(0);
+    expect(await accountRows(fx)).toEqual([]);
     expect((await freshRead(fx, 0)).status).toBe(200);
   });
 
@@ -106,10 +128,7 @@ describe('recovery-identity rate limit per account', () => {
     freezeIntoWindow();
     const fx = await vaultWithBundle();
     for (let i = 0; i < 3; i++) expect((await freshRead(fx, i)).status).toBe(200);
-    const rows = await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) =>
-      state.storage.sql.exec('SELECT account, count FROM recovery_identity_rate_counters').toArray(),
-    );
-    expect(rows).toEqual([{ account: fx.owner.account, count: 3 }]);
+    expect(await accountRows(fx)).toEqual([{ account: fx.owner.account, count: 3 }]);
   });
 
   it('fails closed when the limiter storage errors', async () => {

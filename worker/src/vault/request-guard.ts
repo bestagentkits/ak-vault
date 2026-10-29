@@ -23,8 +23,8 @@ export type RoleRule = 'any_device' | 'writer' | 'human_owner';
  * each): `authorized` for requests that passed authorization (only the holder of the
  * device key can spend it), `refused` for requests refused before or during it. Per
  * account (`recovery_identity_requests_per_window`): `recovery_identity` for every
- * request that reaches proof verification on the recovery-identity path, so device IDs
- * the caller chooses cannot multiply that path's budget.
+ * request on the recovery-identity path whose proof verifies, so device IDs the
+ * caller chooses cannot multiply that path's budget.
  */
 export type RateBucket = 'authorized' | 'refused' | 'recovery_identity';
 
@@ -77,11 +77,12 @@ export function enforceRateLimit(sql: SqlStorage, bucket: RateBucket, subject: s
 
 /**
  * Read-only: `rate_limited` if `bucket` is already spent this window. Used on the
- * `authorized` budget before authorization, so a device over its own budget is
- * refused without verification work; only the key holder can have spent it.
+ * `authorized` budget before authorization, and on the `recovery_identity` budget
+ * before that path's key and proof checks, so a spent budget is refused without
+ * verification work; only requests with a verified proof can have spent either.
  */
-export function requireRateBudget(sql: SqlStorage, bucket: RateBucket, did: string, nowMs: number): void {
-  const w = rateWindow(sql, bucket, did, nowMs);
+export function requireRateBudget(sql: SqlStorage, bucket: RateBucket, subject: string, nowMs: number): void {
+  const w = rateWindow(sql, bucket, subject, nowMs);
   if (w.used >= w.limit) throw rateLimited(w.retryAfter);
 }
 
