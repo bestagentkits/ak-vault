@@ -541,6 +541,122 @@ describe('vault', () => {
     expect(pageA.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
   });
 
+  it('pulls again instead of showing a first view older than the position another tab stored', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const tabA = new Browser(world);
+    const { page: pageA } = await tabA.enroll();
+    // A second tab's first pull reads the log, then waits while the first tab stores a newer position.
+    const tabB = new Browser(world, { devices: tabA.devices });
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let holding = false;
+    tabB.afterFetch = async (url) => {
+      if (holding && url.includes('/changes')) {
+        holding = false;
+        await held;
+      }
+    };
+    const start = await tabB.load();
+    await start.controller.signIn();
+    holding = true;
+    const loading = tabB.load(world.authorize(start.navigated.at(-1)!));
+    await settle(() => expect(holding).toBe(false));
+    world.ownerSet('two', 'b');
+    await pageA.controller.refresh();
+    const stored = tabA.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!;
+    expect(stored.log_seq).toBe(2);
+    release();
+    const pageB = await loading;
+    expect(pageB.controller.current().kind).toBe('vault');
+    expect(names(pageB.root)).toEqual(['one', 'two']);
+    expect(tabA.devices.entries.get(ACCOUNT)!.enrollment!.witnessed).toEqual(stored);
+  });
+
+  it('pulls again when a saved position is ahead of the view on another component', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const tabA = new Browser(world);
+    const { page: pageA } = await tabA.enroll();
+    const tabB = new Browser(world, { devices: tabA.devices });
+    const start = await tabB.load();
+    await start.controller.signIn();
+    const callback = world.authorize(start.navigated.at(-1)!);
+    // Tab A reads membership, then waits; the owner adds a device; tab B reads the newer membership
+    // and the log, then waits; a new item lands and tab A finishes with the newer log.
+    let releaseA!: () => void;
+    const heldA = new Promise<void>((r) => { releaseA = r; });
+    let holdA = true;
+    tabA.afterFetch = async (url) => {
+      if (holdA && url.includes('/membership')) {
+        holdA = false;
+        await heldA;
+      }
+    };
+    let releaseB!: () => void;
+    const heldB = new Promise<void>((r) => { releaseB = r; });
+    let holdB = true;
+    tabB.afterFetch = async (url) => {
+      if (holdB && url.includes('/changes')) {
+        holdB = false;
+        await heldB;
+      }
+    };
+    const refreshA = pageA.controller.refresh();
+    await settle(() => expect(holdA).toBe(false));
+    world.addDevice(createDeviceKeys({ account: ACCOUNT, role: 'owner', kind: 'human' }));
+    const loading = tabB.load(callback);
+    await settle(() => expect(holdB).toBe(false));
+    world.ownerSet('two', 'b');
+    releaseA();
+    await refreshA;
+    const stored = tabA.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!;
+    expect(stored.log_seq).toBe(2);
+    releaseB();
+    const pageB = await loading;
+    expect(pageB.controller.current().kind).toBe('vault');
+    expect(names(pageB.root)).toEqual(['one', 'two']);
+    const merged = tabA.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!;
+    expect(merged.log_seq).toBe(2);
+    expect(merged.membership_seq).toBeGreaterThan(stored.membership_seq);
+    expect(pageB.controller.current()).toMatchObject({ kind: 'vault', membership: { membershipSeq: merged.membership_seq } });
+  });
+
+  it('refuses another history served to a tab with no view once another tab stored a further position', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const tabA = new Browser(world);
+    await tabA.enroll();
+    // The honest history reaches position 3; the server then serves another one that ends at position 2.
+    world.ownerSet('two', 'b');
+    world.ownerSet('three', 'c');
+    const honestHead = world.logHeads[3]!;
+    world.log.length = 1;
+    world.logHeads.length = 2;
+    world.ownerSet('other', 'd');
+    const tabB = new Browser(world, { devices: tabA.devices });
+    const start = await tabB.load();
+    await start.controller.signIn();
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let holding = true;
+    tabB.afterFetch = async (url) => {
+      if (holding && url.includes('/changes')) {
+        holding = false;
+        await held;
+      }
+    };
+    const loading = tabB.load(world.authorize(start.navigated.at(-1)!));
+    await settle(() => expect(holding).toBe(false));
+    // Meanwhile another tab verified the honest history to position 3.
+    const stored = tabA.devices.entries.get(ACCOUNT)!;
+    tabA.devices.entries.set(ACCOUNT, { ...stored, enrollment: { ...stored.enrollment!, witnessed: { ...stored.enrollment!.witnessed!, log_seq: 3, log_head: honestHead } } });
+    release();
+    const pageB = await loading;
+    expect(pageB.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+    expect(pageB.root.textContent).not.toContain('other');
+  });
+
   it('raises an integrity alarm when two pulls reach the same position with different heads', async () => {
     const world = new FakeWorld();
     world.ownerSet('one', 'a');
