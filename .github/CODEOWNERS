@@ -1,12 +1,14 @@
-# Changes to the deploy pipeline, the Worker deploy config and everything the
-# Deploy job resolves or runs around the Cloudflare token need the owner's review.
+# Changes to the deploy pipeline, and to every file that decides which code runs
+# with the Cloudflare token or where Wrangler sends it, need the owner's review.
 # Staging deploys automatically from main with a Cloudflare token that can also
-# reach production, so these paths are the path to production.
+# reach production, so these paths are the path to production. If an owned file
+# starts pointing at another file (a pnpmfile path, a patch file, a script run by
+# a lifecycle hook), own that file too.
 /.github/ @mrgoonie
 
-# Wrangler config. Wrangler walks up from worker/ and prefers wrangler.json over
-# wrangler.jsonc, and it follows a .wrangler/deploy/config.json redirect, so any
-# of these files anywhere in the tree can replace the reviewed config.
+# Wrangler config. Wrangler searches worker/ and every parent directory, prefers
+# wrangler.json over wrangler.jsonc, and follows a .wrangler/deploy/config.json
+# redirect. The patterns are unanchored to stay simple.
 wrangler.json @mrgoonie
 wrangler.jsonc @mrgoonie
 wrangler.toml @mrgoonie
@@ -19,6 +21,8 @@ wrangler.toml @mrgoonie
 # package from these files and runs their lifecycle scripts and the pnpmfile, and
 # the deploy step then runs the wrangler they installed with the token.
 package.json @mrgoonie
+package.yaml @mrgoonie
+package.json5 @mrgoonie
 /pnpm-lock.yaml @mrgoonie
 /pnpm-workspace.yaml @mrgoonie
 /.pnpmfile.* @mrgoonie
