@@ -12,7 +12,7 @@ import { appendRotationAudit } from '../src/sync/audit.js';
 import type { AkvClient } from '../src/sync/akv-client.js';
 import type { ItemView, VaultSnapshot } from '../src/sync/vault-sync.js';
 import { FakeWorld } from './helpers/fake-world.js';
-import { Browser, allByTestId, byTestId, type Page } from './helpers/dashboard-page.js';
+import { Browser, allByTestId, byTestId, settle, type Page } from './helpers/dashboard-page.js';
 
 const SENTINEL = 'rotation-sentinel-3c91e07a';
 const NEW_SENTINEL = 'rotation-sentinel-new-58d2b4f6';
@@ -187,7 +187,7 @@ describe('guided rotation', () => {
     expect((byTestId(page.root, 'rotate-save') as HTMLButtonElement).disabled).toBe(true);
 
     byTestId(page.root, 'rotation-start').click();
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'rotation_started' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'rotation_started' } }));
     expect(item(page, itemId).rotation).toMatchObject({ state: 'active', revokedMs: null });
     // the value and its rotated date are untouched by starting
     expect(headPayload(world)).toMatchObject({ value: SENTINEL });
@@ -207,7 +207,7 @@ describe('guided rotation', () => {
     input.value = NEW_SENTINEL;
     (input.form as HTMLFormElement).dispatchEvent(new Event('submit', { cancelable: true }));
     expect(input.value).toBe('');
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'rotation_saved' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'rotation_saved' } }));
     expect(headPayload(world).value).toBe(NEW_SENTINEL);
     expect(typeof headPayload(world).meta['rotated_ms']).toBe('number');
     expect(byTestId(page.root, 'step-vault').className).toContain('step-done');
@@ -217,7 +217,7 @@ describe('guided rotation', () => {
     expect(page.root.textContent).not.toMatch(/\brotated \d{4}-/);
 
     byTestId(page.root, 'rotation-revoked').click();
-    await vi.waitFor(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'rotation_revoked' } }));
+    await settle(() => expect(page.controller.current()).toMatchObject({ notice: { code: 'rotation_revoked' } }));
     expect(byTestId(page.root, 'step-revoked').className).toContain('step-done');
     expect(byTestId(page.root, 'step-revoked').textContent).toContain('cannot verify this with the provider');
     expect(byTestId(page.root, 'rotation-flow').textContent).toContain('old key revoked (member-confirmed)');
