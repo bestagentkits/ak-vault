@@ -10,6 +10,7 @@ import { deriveSealKeyPair, openWriteIntent, randomId, type WriteIntentWire } fr
 import { LIMITS, REMOTE_ACCESS_LIMITS as L } from '../src/limits.js';
 import { call, type CallOptions, type TestDevice } from './helpers/api-client.js';
 import { callTool, mintMcpToken, publishSealKey, structured } from './helpers/mcp-client.js';
+import { awaitRateWindowHeadroom } from './helpers/rate-window.js';
 import { sendRevocation } from './helpers/webhook.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
@@ -147,6 +148,7 @@ describe('secrets_prepare_write', () => {
   });
 
   it('rate-limits per client and caps open requests per account', async () => {
+    await awaitRateWindowHeadroom();
     const s = await setup();
     for (let i = 0; i < L.mcp_prepare_write_per_minute_per_client; i++) {
       const { body } = await prepare(s, { name: `N${i}` });
@@ -451,6 +453,7 @@ describe('write request device and route checks', () => {
   });
 
   it('spends the per-device request budget of the browser device', async () => {
+    await awaitRateWindowHeadroom(LIMITS.rate_window_seconds * 1000);
     const s = await setup();
     const { body } = await prepare(s);
     const did = s.fx.owner.keys.record.device_id;
