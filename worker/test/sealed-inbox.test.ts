@@ -240,13 +240,29 @@ describe('sealed inbox', () => {
       const fx = await VaultFixture.create();
       expect(await enqueue(fx, sealFor(fx))).toBe('queued');
       const registry = env.REVOCATIONS;
-      (env as { REVOCATIONS: unknown }).REVOCATIONS = { idFromName: () => ({}), get: () => ({ isGrantRevoked: () => Promise.reject(new Error('down')) }) };
+      (env as { REVOCATIONS: unknown }).REVOCATIONS = { idFromName: () => ({}), get: () => ({ isRevoked: () => Promise.resolve(false), isGrantRevoked: () => Promise.reject(new Error('down')) }) };
       try {
         expect((await fx.get(fx.owner, '/sealed')).status).toBe(503);
       } finally {
         (env as { REVOCATIONS: unknown }).REVOCATIONS = registry;
       }
       expect(await ids(fx)).toHaveLength(1);
+    });
+
+    it('backfills the grant of a pending row queued before the columns existed', async () => {
+      const fx = await VaultFixture.create();
+      const old = sealFor(fx, { grantId: 'grant-old' });
+      expect(await enqueue(fx, old)).toBe('queued');
+      await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(fx.vaultId)), (_i: unknown, state: DurableObjectState) => {
+        const sql = state.storage.sql;
+        sql.exec('ALTER TABLE sealed_ops DROP COLUMN grant_id');
+        sql.exec('ALTER TABLE sealed_ops DROP COLUMN token_iat');
+        applyVaultSchema(sql);
+      });
+      expect(await ids(fx)).toEqual([old.sealed_id]);
+      expect((await sendRevocation({ revoke_sids: ['grant-old'] })).status).toBe(200);
+      expect(await ids(fx)).toEqual([]);
+      expect((await ack(fx, fx.owner, old.sealed_id)).status).toBe(404);
     });
   });
 });

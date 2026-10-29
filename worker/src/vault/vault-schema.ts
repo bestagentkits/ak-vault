@@ -50,7 +50,7 @@ export const VAULT_SCHEMA = `
   -- acknowledged row keeps only its ID and outcome (ciphertext cleared) until it expires, so a replayed
   -- sealed_id is refused for its whole lifetime. grant_id and token_iat (the MCP grant and the token's iat
   -- that queued the op) let the Worker cancel a pending op whose grant was revoked; rows queued before
-  -- they existed hold NULL.
+  -- they existed are backfilled from their wire when the columns are added.
   CREATE TABLE IF NOT EXISTS name_tags (item_id TEXT PRIMARY KEY, key_epoch INTEGER NOT NULL, tag TEXT NOT NULL, revision INTEGER NOT NULL);
   CREATE INDEX IF NOT EXISTS name_tags_lookup ON name_tags (tag, key_epoch);
   CREATE TABLE IF NOT EXISTS seal_keys (key_epoch INTEGER PRIMARY KEY, doc TEXT NOT NULL, membership_seq INTEGER NOT NULL);
@@ -77,7 +77,12 @@ export const VAULT_SCHEMA = `
  */
 export function applyVaultSchema(sql: SqlStorage): void {
   sql.exec(VAULT_SCHEMA);
-  const columns = sql.exec<{ name: string }>('SELECT name FROM pragma_table_info(\'sealed_ops\')').toArray().map((c) => c.name);
+  const columns = sql.exec<{ name: string }>("SELECT name FROM pragma_table_info('sealed_ops')").toArray().map((c) => c.name);
+  if (columns.includes('grant_id') && columns.includes('token_iat')) return;
   if (!columns.includes('grant_id')) sql.exec('ALTER TABLE sealed_ops ADD COLUMN grant_id TEXT');
   if (!columns.includes('token_iat')) sql.exec('ALTER TABLE sealed_ops ADD COLUMN token_iat INTEGER');
+  // Pending rows queued before the columns existed: the grant is inside the stored wire, and an MCP
+  // token lives at most 600 s, so queue time minus 600 s bounds its iat from below (it can only
+  // over-cancel under a minimum-iat revocation, the fail-closed direction).
+  sql.exec("UPDATE sealed_ops SET grant_id = json_extract(wire, '$.origin.grant_id'), token_iat = created_at / 1000 - 600 WHERE wire IS NOT NULL AND grant_id IS NULL");
 }

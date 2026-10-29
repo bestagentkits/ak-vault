@@ -65,14 +65,12 @@ export interface SealedGrant {
 }
 
 /**
- * The distinct grants behind the account's pending, unexpired operations. A row queued before
- * the grant columns existed has no grant to check, so it is never cancelled by grant (it
- * still expires on its own).
+ * The distinct grants behind the account's pending, unexpired operations.
  */
 export function pendingSealedGrants(sql: SqlStorage, account: string, nowMs: number): SealedGrant[] {
   return sql
     .exec<{ sid: string; iat: number }>(
-      'SELECT DISTINCT grant_id AS sid, token_iat AS iat FROM sealed_ops WHERE account = ? AND outcome IS NULL AND expires_at > ? AND grant_id IS NOT NULL AND token_iat IS NOT NULL',
+      'SELECT DISTINCT grant_id AS sid, token_iat AS iat FROM sealed_ops WHERE account = ? AND outcome IS NULL AND expires_at > ?',
       account,
       nowMs,
     )
@@ -81,7 +79,7 @@ export function pendingSealedGrants(sql: SqlStorage, account: string, nowMs: num
 
 /**
  * Cancel the account's pending operations queued under a grant the Worker found revoked
- * (spec §3.6 "Draining"). The ciphertext is cleared and the ID kept until expiry, as for an
+ * (spec §3.6 "Revoked grants"). The ciphertext is cleared and the ID kept until expiry, as for an
  * acknowledged one, so the operation is never served and a replay is still refused.
  */
 export function cancelRevokedSealedOps(sql: SqlStorage, account: string, grant: SealedGrant, nowMs: number): void {
