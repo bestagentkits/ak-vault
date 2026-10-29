@@ -9,7 +9,7 @@
  */
 import type { McpScope } from '@ak-vault/protocol';
 import { assertGrantNotRevoked } from '../auth/revocation-check.js';
-import { bearerToken, verifyMcpToken, type McpClaims } from '../auth/jwt-verify.js';
+import { bearerCredential, bearerToken, verifyMcpToken, type McpClaims } from '../auth/jwt-verify.js';
 import type { Env } from '../env.js';
 import { ApiError, errorResult, toApiError } from '../http/errors.js';
 import { resultResponse } from '../http/responses.js';
@@ -23,8 +23,7 @@ function unauthorized(env: Env, tokenPresented: boolean): Response {
 
 /** Whether the `Authorization` header carries a bearer token (the form `bearerToken` reads). */
 function bearerPresented(request: Request): boolean {
-  const header = request.headers.get('Authorization');
-  return header !== null && header.startsWith('Bearer ') && header.slice('Bearer '.length).trim().length > 0;
+  return bearerCredential(request.headers.get('Authorization')) !== null;
 }
 
 /** Verify the request's MCP token and its live revocation state. */

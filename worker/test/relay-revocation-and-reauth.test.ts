@@ -7,6 +7,7 @@ import { runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { randomId, signResult, type JsonObject, type McpScope } from '@ak-vault/protocol';
 import { REMOTE_ACCESS_LIMITS } from '../src/limits.js';
+import { AUDIT_MAX_ROWS } from '../src/relay/account-relay-durable-object.js';
 import { relayStub, type RelayCall } from '../src/relay/relay-rpc.js';
 import { clientLogTag } from '../src/http/operational-logger.js';
 import { createDevice } from './helpers/api-client.js';
@@ -376,5 +377,21 @@ describe('relay rate budgets and audit', () => {
     expect(await stub.recordAudit({ clientHash, tool: 'list', outcome: 'Has Spaces', ms: 1 })).toBe(false);
     const rows = await runInDurableObject(stub, async (_instance, state) => state.storage.sql.exec('SELECT client_hash, tool, outcome, ms FROM client_audit').toArray());
     expect(rows).toEqual([{ client_hash: clientHash, tool: 'set', outcome: 'no_device_online', ms: 3 }]);
+  });
+
+  it('keeps only the newest audit rows once the per-account cap is reached', async () => {
+    const stub = relayStub(env, `cct-${randomId()}`);
+    const clientHash = clientLogTag('client-1');
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.transactionSync(() => {
+        for (let i = 0; i < AUDIT_MAX_ROWS; i++) state.storage.sql.exec('INSERT INTO client_audit (ts, client_hash, tool, outcome, ms) VALUES (?, ?, ?, ?, ?)', Date.now(), clientHash, 'list', 'no_device_online', i);
+      });
+    });
+    expect(await stub.recordAudit({ clientHash, tool: 'set', outcome: 'ok', ms: 999_999 })).toBe(true);
+    expect(await stub.recordAudit({ clientHash, tool: 'set', outcome: 'ok', ms: 999_998 })).toBe(true);
+    const rows = await runInDurableObject(stub, async (_instance, state) => state.storage.sql.exec<{ ms: number }>('SELECT ms FROM client_audit ORDER BY rowid').toArray());
+    expect(rows).toHaveLength(AUDIT_MAX_ROWS);
+    expect(rows.slice(-2).map((r) => r.ms)).toEqual([999_999, 999_998]);
+    expect(rows[0]!.ms).toBe(2);
   });
 });
