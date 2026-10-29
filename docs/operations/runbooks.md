@@ -381,10 +381,11 @@ stale vault shows up depends on the revision:
   legacy change, clients accept the affected account's records under any role it held
   there, trusting the Worker's check for that span (spec §5). An owner closes the
   span by setting the account's role again with a current client, even to the same
-  role. Roll out in this order; no step blocks a released CLI:
-  1. Deploy the Worker with `VAULT_REFUSE_LEGACY_ROLE_SET` `"false"` (the value in
-     `wrangler.jsonc` for every environment). It accepts both `role_set` bodies, so
-     the released CLI keeps working unchanged, role changes included.
+  role. The planned order, in which no step blocks a released CLI (see the status
+  note below for where it stands):
+  1. Deploy the Worker with `VAULT_REFUSE_LEGACY_ROLE_SET` `"false"`. It accepts both
+     `role_set` bodies, so the released CLI keeps working unchanged, role changes
+     included.
   2. The owner tags the Go module release that contains this revision. Agents never
      create ak-vault tags.
   3. agentkit bumps the module and releases through its beta train
