@@ -376,12 +376,13 @@ stale vault shows up depends on the revision:
   removal would re-admit the removed device, so never do that. The Worker
   should refuse these too ([#52](https://github.com/bestagentkits/ak-vault/issues/52)).
 - Vaults from before the role fence revision (2026-10, #22), including production
-  vaults: a stored `role_set` without a fence still verifies, so no migration is
-  needed and these vaults keep working. Around such a legacy change, clients refuse
-  the affected account's records between the neighbouring fenced changes (spec §5).
-  An owner bounds that span going forward by setting the account's role again with a
-  current client, even to the same role. A client older than this revision gets
-  `bad_request` for every new `role_set`; upgrade it.
+  vaults: a stored `role_set` without a fence still verifies and their change logs
+  still replay, so no migration is needed. Between the fenced changes around such a
+  legacy change, clients accept the affected account's records under any role it held
+  there, trusting the Worker's check for that span (spec §5). An owner closes the
+  span by setting the account's role again with a current client, even to the same
+  role. A client older than this revision gets `bad_request` for every new
+  `role_set`, so release the clients that sign the fence before deploying the Worker.
 
 Before deploying a revision that changes stored data, write the deploy time (UTC)
 and the version ID it replaces on the issue. That is the backup: point-in-time

@@ -864,13 +864,18 @@ those of the device after its previous removal (if any) and before the removal t
 ends the term (if any). Let *i* be the first fenced term change (chain order) whose
 `log_fence` is ≥ `log_seq`, and *j* the last fenced term change before *i*. The
 candidate roles at `log_seq` are the `prev_role` of every term change after *j* up to
-and including *i*, plus the role at the term's end when there is no *i*; the author
-was a writer only if **every** candidate is `owner` or `editor`. Without legacy
-changes there is exactly one candidate: the `prev_role` of the first change whose
-`log_fence` is ≥ `log_seq`, or the role at the term's end. A legacy change has no
-position, so around one every role the author held between the neighbouring fenced
-changes counts. The membership state lists each removal (`removals`: `device_id`, `sign_pub`,
-`removed_seq`, `key_epoch`, `log_fence`, `log_head`, `role`, `kind`).
+and including *i*, plus the role at the term's end when there is no *i*. Every
+candidate MUST be in the closed role set, and the author was a writer if at least one
+candidate is `owner` or `editor`. Without legacy changes there is exactly one
+candidate: the `prev_role` of the first change whose `log_fence` is ≥ `log_seq`, or
+the role at the term's end. A legacy change has no position, so around one any role
+the author held between the neighbouring fenced changes counts: for that span the
+Worker's check at write time is the only evidence (refusing instead would make every
+full replay of such a vault fail, with no way to repair the log). The membership state lists each removal (`removals`: `device_id`, `sign_pub`,
+`removed_seq`, `key_epoch`, `log_fence`, `log_head`, `role`, `kind`). A client that
+reads membership before the change log can see a legitimate record accepted after
+its membership read (a rekey, enrollment or promotion in between); on a refusal it
+reads membership again and replays once more before treating the refusal as final.
 
 `verifyChangeLog(entries, state, {from?, complete?, keptHeads?})` (vectors: `removal-fence.json`,
 `role-history.json`) treats every fenced role change exactly like a removal fence
@@ -1746,9 +1751,9 @@ under an earlier revision does not verify and is reset rather than migrated.
   device, or an editor demoted at or below it) or whose `key_epoch` is above the
   state's, and `verifyChangeLog` checks role fences like removal fences. A legacy
   `role_set` without a fence, written under an earlier revision, still verifies and is
-  listed with `null` fences; around one the author must have been a writer under every
-  role it held between the neighbouring fenced changes. The Worker refuses a new
-  `role_set` without a fence, so a client of an earlier revision gets `bad_request`.
+  listed with `null` fences; around one a record is accepted if the author was a writer
+  under any role it held between the neighbouring fenced changes. The Worker refuses a
+  new `role_set` without a fence, so a client of an earlier revision gets `bad_request`.
 - **2026-10 (issue #7):** policy binding (§8.1): a policy item's payload layout,
   `meta.item_ids` naming the governed items, the payload `sensitivity` as a minimum,
   and `resolveItemPolicy`. Earlier revisions defined no policy-item layout and no
