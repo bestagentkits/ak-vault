@@ -148,8 +148,8 @@ describe('secrets_prepare_write', () => {
   });
 
   it('rate-limits per client and caps open requests per account', async () => {
-    await awaitRateWindowHeadroom();
     const s = await setup();
+    await awaitRateWindowHeadroom();
     for (let i = 0; i < L.mcp_prepare_write_per_minute_per_client; i++) {
       const { body } = await prepare(s, { name: `N${i}` });
       expect(body.status).toBe('pending_user');
@@ -453,9 +453,9 @@ describe('write request device and route checks', () => {
   });
 
   it('spends the per-device request budget of the browser device', async () => {
-    await awaitRateWindowHeadroom(LIMITS.rate_window_seconds * 1000);
     const s = await setup();
     const { body } = await prepare(s);
+    await awaitRateWindowHeadroom(LIMITS.rate_window_seconds * 1000);
     const did = s.fx.owner.keys.record.device_id;
     await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(s.fx.vaultId)), (_i: unknown, state: DurableObjectState) => {
       const windowMs = LIMITS.rate_window_seconds * 1000;
