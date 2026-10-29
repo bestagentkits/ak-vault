@@ -390,7 +390,11 @@ stale vault shows up depends on the revision:
   3. Once a vault holds a fenced `role_set`, a member device on a CLI built against
      an earlier module refuses that vault's chain (`bad_request`) and stops syncing
      until it is upgraded. Ask members to upgrade before owners change roles.
-  The CLI work is tracked in agentkit; see the issue linked from #22.
+  4. Once any vault holds a fenced `role_set`, roll forward only: an earlier Worker
+     re-verifies the stored chain on every append and refuses the fenced body, so a
+     rollback blocks every membership change in that vault, removals included.
+  The CLI work is tracked in
+  [agentkit#2822](https://github.com/bestagentkits/agentkit/issues/2822).
 
 Before deploying a revision that changes stored data, write the deploy time (UTC)
 and the version ID it replaces on the issue. That is the backup: point-in-time
