@@ -148,7 +148,7 @@ async function sealWrite(env: Env, claims: McpClaims, vaultId: string, role: Rol
     delete args['value'];
     if (op.op === 'set') op.value = '';
   }
-  const queued = await vault.enqueueSealed(wire);
+  const queued = await vault.enqueueSealed(wire, claims.iat);
   if (queued === 'queued') return ok({ status: 'queued', sealed_id: wire.sealed_id }, 'queued');
   if (queued === 'sealed_queue_full') return fail('sealed_queue_full');
   return fail('no_device_online');

@@ -335,6 +335,24 @@ are applied only by that account's own devices. For each operation, in order:
    `item_id`; never the name or value;
 6. acknowledge it with the outcome.
 
+**Revoked grants.** A queued sealed operation lives only while the MCP grant that queued
+it does, as for a write request (§3.10). The vault object keeps, beside the wire, the
+operation's `grant_id` and the `iat` of the MCP token that queued it. Before serving the
+queue (`GET …/sealed`) the Worker checks the revocation registry for each distinct
+grant-and-`iat` pair among the account's pending operations (`sid` = `grant_id`, and the
+account's minimum `iat`, §9.3) and cancels the pending operations of a revoked one: their
+ciphertext is cleared, the `sealed_id` is kept until expiry as for an acknowledged one (a
+replay is still refused), and the operation is not served or acknowledgeable
+(`not_found`). The registry failing to answer fails the request closed (`503`). Limits:
+revocation does not recall an operation already served to a device, which applies it as
+any other (audited `sealed_applied`); and the check and the listing are separate steps, so
+an operation queued by a request that passed its own revocation check just before the grant
+was revoked can be served by a drain in progress at that moment. Rows stored without the
+grant (queued before the vault object kept it, or by an earlier Worker revision) are
+backfilled from their wire, with the token `iat` set below the oldest a token accepted at
+queue time could carry (its lifetime, clock skew and a processing margin), erring toward
+over-cancelling them under a minimum-`iat` revocation.
+
 Vectors (`seal-key.json`, `sealed-op.json`): `seal_pub` derived for two epochs;
 document sign and verify; a `seal_pub` that does not match `VK` → `forbidden`; a
 non-owner author → `forbidden`; `set` and `delete` round trips; wrong epoch key and

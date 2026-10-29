@@ -115,7 +115,7 @@ describe('MCP sealed write fallback', () => {
     const { publicKey } = deriveSealKeyPair(fx.vk.get(fx.keyEpoch)!, fx.vaultId, fx.keyEpoch);
     for (let i = 0; i < REMOTE_ACCESS_LIMITS.sealed_queue_max; i++) {
       const wire = sealOp(publicKey, { vaultId: fx.vaultId, keyEpoch: fx.keyEpoch, origin: { kind: 'mcp', account: fx.owner.account, client_id: 'c', grant_id: 'g' }, ts: Date.now(), op: { op: 'delete', name: `K${i}` } });
-      expect(await stub.enqueueSealed(wire)).toBe('queued');
+      expect(await stub.enqueueSealed(wire, 0)).toBe('queued');
     }
     const token = await mintMcpToken({ sub: fx.owner.account });
     const res = await callTool(token, 'secrets_delete', { name: 'K', vault_id: fx.vaultId });

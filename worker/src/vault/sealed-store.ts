@@ -28,7 +28,7 @@ function prune(sql: SqlStorage, nowMs: number): void {
  * account is an `owner` or `editor` member, with a `ts` inside the drain window,
  * and never a `sealed_id` the queue already holds. Caller holds the transaction.
  */
-export function enqueueSealedOp(sql: SqlStorage, state: MembershipState, wire: unknown, nowMs: number): EnqueueSealedResult {
+export function enqueueSealedOp(sql: SqlStorage, state: MembershipState, wire: unknown, tokenIat: number, nowMs: number): EnqueueSealedResult {
   let op;
   try {
     op = parseSealedOp(wire);
@@ -46,14 +46,45 @@ export function enqueueSealedOp(sql: SqlStorage, state: MembershipState, wire: u
   const held = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM sealed_ops').one().n;
   if (held >= REMOTE_ACCESS_LIMITS.sealed_queue_max) return 'sealed_queue_full';
   sql.exec(
-    'INSERT INTO sealed_ops (sealed_id, account, wire, outcome, created_at, expires_at) VALUES (?, ?, ?, NULL, ?, ?)',
+    'INSERT INTO sealed_ops (sealed_id, account, wire, outcome, created_at, expires_at, grant_id, token_iat) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)',
     op.sealed_id,
     op.origin.account,
     cjson(op as unknown as JsonObject),
     nowMs,
     op.ts + TTL_MS,
+    op.origin.grant_id,
+    tokenIat,
   );
   return 'queued';
+}
+
+/** A pending operation's MCP grant and the `iat` of the token that queued it. */
+export interface SealedGrant {
+  sid: string;
+  iat: number;
+}
+
+/**
+ * The distinct grants behind the account's pending, unexpired operations.
+ */
+export function pendingSealedGrants(sql: SqlStorage, account: string, nowMs: number): SealedGrant[] {
+  return sql
+    .exec<{ sid: string; iat: number }>(
+      'SELECT DISTINCT grant_id AS sid, token_iat AS iat FROM sealed_ops WHERE account = ? AND outcome IS NULL AND expires_at > ?',
+      account,
+      nowMs,
+    )
+    .toArray();
+}
+
+/**
+ * Cancel the account's pending operations queued under a grant the Worker found revoked
+ * (spec §3.6 "Revoked grants"). The ciphertext is cleared and the ID kept until expiry, as for an
+ * acknowledged one, so the operation is never served and a replay is still refused.
+ */
+export function cancelRevokedSealedOps(sql: SqlStorage, account: string, grant: SealedGrant, nowMs: number): void {
+  prune(sql, nowMs);
+  sql.exec("UPDATE sealed_ops SET wire = NULL, outcome = 'cancelled' WHERE account = ? AND grant_id = ? AND token_iat = ? AND outcome IS NULL", account, grant.sid, grant.iat);
 }
 
 function requireOnlyParams(req: VaultRequest, allowed: readonly string[]): void {
