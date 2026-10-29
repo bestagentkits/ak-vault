@@ -1,5 +1,25 @@
-# Changes to the deploy pipeline and Worker deploy config need the owner's review.
+# Changes to the deploy pipeline, the Worker deploy config and everything the
+# Deploy job resolves or runs around the Cloudflare token need the owner's review.
 # Staging deploys automatically from main with a Cloudflare token that can also
 # reach production, so these paths are the path to production.
 /.github/ @mrgoonie
-/worker/wrangler.jsonc @mrgoonie
+
+# Wrangler config. Wrangler walks up from worker/ and prefers wrangler.json over
+# wrangler.jsonc, and it follows a .wrangler/deploy/config.json redirect, so any
+# of these files anywhere in the tree can replace the reviewed config.
+wrangler.json @mrgoonie
+wrangler.jsonc @mrgoonie
+wrangler.toml @mrgoonie
+.wrangler/ @mrgoonie
+# Wrangler loads .env, .env.local, .env.<env> and .env.<env>.local from its working
+# directory into its own environment (for example the Cloudflare API base URL).
+/worker/.env* @mrgoonie
+
+# Dependency resolution and install hooks. `pnpm install` resolves every workspace
+# package from these files and runs their lifecycle scripts and the pnpmfile, and
+# the deploy step then runs the wrangler they installed with the token.
+package.json @mrgoonie
+/pnpm-lock.yaml @mrgoonie
+/pnpm-workspace.yaml @mrgoonie
+/.pnpmfile.* @mrgoonie
+.npmrc @mrgoonie

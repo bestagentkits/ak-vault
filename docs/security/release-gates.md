@@ -377,10 +377,13 @@ Landing page and health endpoints are not affected by the flag.
   2026-10-16 (#67 merged; the ruleset requires code-owner review); check the
   ruleset rather than assuming. Maintainers then cannot change `.github/` or `worker/wrangler.jsonc`
   without the owner's review. The deploy job also runs `wrangler` from
-  dependencies resolved by the `package.json` files and the lockfile, which are not
-  code-owned, so a dependency change can still reach the deploy token without the
-  owner's review
-  ([#68](https://github.com/bestagentkits/ak-vault/issues/68)). **Residual risk:** agents act as the owner's
+  dependencies that `pnpm install` resolves. By owner decision
+  ([recorded on #68](https://github.com/bestagentkits/ak-vault/issues/68#issuecomment-6487445012)
+  by an agent, 2026-10-29) those inputs are code-owned too, rather than accepted
+  as a residual risk: the workspace manifests, the lockfile, the pnpm and npm
+  configuration, every Wrangler config file and deploy redirect, and the `.env`
+  files Wrangler loads in `worker/`. `.github/CODEOWNERS` owns the exact list.
+  **Residual risk:** agents act as the owner's
   GitHub account, so for agent PRs the control rests on the
   [AGENTS.md](../../AGENTS.md) rules (green CI, agents never approve production).
   Worker secrets stay separate per environment.
