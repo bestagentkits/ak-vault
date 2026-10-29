@@ -376,8 +376,10 @@ export class AccountRelay extends DurableObject<Env> {
   }
 
   /**
-   * older than 30 days are dropped. Failure and success rows are capped separately (see `pruneAudit`), checked every `AUDIT_PRUNE_EVERY` inserts. False, storing nothing, for an invalid entry.
-   * older than 30 days are dropped and only the newest AUDIT_MAX_ROWS are kept. False, storing nothing, for an invalid entry.
+   * Append one operational audit row (hashed client, tool, outcome, latency); rows
+   * older than 30 days are dropped. Failure and success rows are capped separately
+   * (see `pruneAudit`), checked every `AUDIT_PRUNE_EVERY` inserts. False, storing
+   * nothing, for an invalid entry.
    */
   async recordAudit(e: RelayAuditEntry, nowMs: number = Date.now()): Promise<boolean> {
     if (
