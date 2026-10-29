@@ -48,13 +48,15 @@ export const VAULT_SCHEMA = `
   -- head (unsigned, untrusted; the server never computes one). seal_keys: one owner-signed seal-key
   -- document per key epoch. sealed_ops: opaque sealed writes queued for the account's own devices; an
   -- acknowledged row keeps only its ID and outcome (ciphertext cleared) until it expires, so a replayed
-  -- sealed_id is refused for its whole lifetime.
+  -- sealed_id is refused for its whole lifetime. grant_id and token_iat (the MCP grant and the token's iat
+  -- that queued the op) let the Worker cancel a pending op whose grant was revoked; rows queued before
+  -- they existed hold NULL.
   CREATE TABLE IF NOT EXISTS name_tags (item_id TEXT PRIMARY KEY, key_epoch INTEGER NOT NULL, tag TEXT NOT NULL, revision INTEGER NOT NULL);
   CREATE INDEX IF NOT EXISTS name_tags_lookup ON name_tags (tag, key_epoch);
   CREATE TABLE IF NOT EXISTS seal_keys (key_epoch INTEGER PRIMARY KEY, doc TEXT NOT NULL, membership_seq INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS sealed_ops (
     seq INTEGER PRIMARY KEY AUTOINCREMENT, sealed_id TEXT NOT NULL UNIQUE, account TEXT NOT NULL,
-    wire TEXT, outcome TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+    wire TEXT, outcome TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, grant_id TEXT, token_iat INTEGER
   );
   CREATE INDEX IF NOT EXISTS sealed_ops_pending ON sealed_ops (account, seq) WHERE outcome IS NULL;
   CREATE INDEX IF NOT EXISTS sealed_ops_expiry ON sealed_ops (expires_at);
@@ -68,3 +70,14 @@ export const VAULT_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS write_requests_account ON write_requests (account, state);
 `;
+
+/**
+ * Apply the idempotent schema, then add the sealed_ops grant columns to a table created before
+ * they existed (CREATE TABLE IF NOT EXISTS leaves such a table unchanged).
+ */
+export function applyVaultSchema(sql: SqlStorage): void {
+  sql.exec(VAULT_SCHEMA);
+  const columns = sql.exec<{ name: string }>('SELECT name FROM pragma_table_info(\'sealed_ops\')').toArray().map((c) => c.name);
+  if (!columns.includes('grant_id')) sql.exec('ALTER TABLE sealed_ops ADD COLUMN grant_id TEXT');
+  if (!columns.includes('token_iat')) sql.exec('ALTER TABLE sealed_ops ADD COLUMN token_iat INTEGER');
+}

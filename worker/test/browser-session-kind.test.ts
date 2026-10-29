@@ -45,7 +45,7 @@ describe('browser session kind', () => {
       ts: Date.now(),
       op: { op: 'delete', name: 'A' },
     });
-    expect(await env.VAULT.get(env.VAULT.idFromName(fx.vaultId)).enqueueSealed(wire)).toBe('queued');
+    expect(await env.VAULT.get(env.VAULT.idFromName(fx.vaultId)).enqueueSealed(wire, 0)).toBe('queued');
     expect((await fx.get(fx.owner, '/sealed', BROWSER)).status).toBe(403);
     expect((await fx.post(fx.owner, `/sealed/${wire.sealed_id}/ack`, { outcome: 'applied' }, BROWSER)).status).toBe(403);
     expect((await fx.get(fx.owner, '/sealed')).json.sealed).toHaveLength(1);

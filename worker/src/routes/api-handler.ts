@@ -56,6 +56,13 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
     const grant = await stub.writeRequestGrant(writeRequestId, claims.sub);
     if (grant && (await isGrantRevoked(env, grant))) await stub.cancelRevokedWriteRequest(writeRequestId);
   }
+  // A sealed write lives only while the MCP grant that queued it does (spec §3.6): cancel the
+  // caller's pending operations of any revoked grant before the queue is served.
+  if (route.op === 'sealed.get') {
+    for (const grant of await stub.pendingSealedGrants(claims.sub)) {
+      if (await isGrantRevoked(env, { sub: claims.sub, ...grant })) await stub.cancelRevokedSealed(claims.sub, grant);
+    }
+  }
   return stub.handle({
     op: route.op,
     vaultId: route.vaultId,

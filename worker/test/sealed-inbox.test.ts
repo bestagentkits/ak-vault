@@ -3,29 +3,32 @@
  * handler (RPC only) and serves them to writer devices of the origin account.
  */
 import { env } from 'cloudflare:workers';
+import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { cjson, deriveSealKeyPair, parseSealedOp, randomId, sealOp, type JsonObject, type SealedOpWire } from '@ak-vault/protocol';
 import { REMOTE_ACCESS_LIMITS } from '../src/limits.js';
+import { applyVaultSchema } from '../src/vault/vault-schema.js';
+import { sendRevocation } from './helpers/webhook.js';
 import { call as rawCall, type CallOptions, type TestDevice } from './helpers/api-client.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 const TTL_MS = REMOTE_ACCESS_LIMITS.sealed_ttl_s * 1000;
 
-function sealFor(fx: VaultFixture, opts: { account?: string; ts?: number; keyEpoch?: number; vaultId?: string } = {}): SealedOpWire {
+function sealFor(fx: VaultFixture, opts: { account?: string; ts?: number; keyEpoch?: number; vaultId?: string; grantId?: string } = {}): SealedOpWire {
   const keyEpoch = opts.keyEpoch ?? fx.keyEpoch;
   const { publicKey } = deriveSealKeyPair(fx.vk.get(keyEpoch)!, fx.vaultId, keyEpoch);
   return sealOp(publicKey, {
     vaultId: opts.vaultId ?? fx.vaultId,
     keyEpoch,
-    origin: { kind: 'mcp', account: opts.account ?? fx.owner.account, client_id: 'client-1', grant_id: 'grant-1' },
+    origin: { kind: 'mcp', account: opts.account ?? fx.owner.account, client_id: 'client-1', grant_id: opts.grantId ?? 'grant-1' },
     ts: opts.ts ?? Date.now(),
     op: { op: 'set', name: 'API_TOKEN', value: 'secret-value' },
   });
 }
 
-function enqueue(fx: VaultFixture, wire: unknown, nowMs?: number) {
+function enqueue(fx: VaultFixture, wire: unknown, nowMs?: number, tokenIat = 0) {
   const stub = env.VAULT.get(env.VAULT.idFromName(fx.vaultId));
-  return nowMs === undefined ? stub.enqueueSealed(wire) : stub.enqueueSealed(wire, nowMs);
+  return nowMs === undefined ? stub.enqueueSealed(wire, tokenIat) : stub.enqueueSealed(wire, tokenIat, nowMs);
 }
 
 function call(fx: VaultFixture, device: TestDevice, method: string, sub: string, body?: unknown, opts: CallOptions = {}) {
@@ -111,7 +114,7 @@ describe('sealed inbox', () => {
     const device = await fx.addDevice();
     expect((await fx.removeDevice(device)).status).toBe(201);
     expect(await enqueue(fx, sealFor(fx))).toBe('refused');
-    expect(await env.VAULT.get(env.VAULT.idFromName(randomId())).enqueueSealed(sealFor(fx))).toBe('refused');
+    expect(await env.VAULT.get(env.VAULT.idFromName(randomId())).enqueueSealed(sealFor(fx), 0)).toBe('refused');
   });
 
   it('refuses a ts too far ahead or older than sealed_ttl_s, and drops an op when it expires', async () => {
@@ -185,5 +188,65 @@ describe('sealed inbox', () => {
     const fx = await VaultFixture.create();
     expect((await call(fx, fx.owner, 'POST', '/sealed', sealFor(fx))).status).toBe(404);
     expect((await call(fx, fx.owner, 'PUT', '/sealed', sealFor(fx))).status).toBe(404);
+  });
+
+  describe('grant revocation', () => {
+    const ids = async (fx: VaultFixture) => (await fx.get(fx.owner, '/sealed')).json.sealed.map((s: { op: SealedOpWire }) => s.op.sealed_id);
+
+    it('never serves operations queued under a revoked grant, and keeps their IDs against replay', async () => {
+      const fx = await VaultFixture.create();
+      const revoked = sealFor(fx, { grantId: 'grant-revoked' });
+      const live = sealFor(fx, { grantId: 'grant-live' });
+      expect(await enqueue(fx, revoked)).toBe('queued');
+      expect(await enqueue(fx, live)).toBe('queued');
+      expect(await ids(fx)).toEqual([revoked.sealed_id, live.sealed_id]);
+
+      expect((await sendRevocation({ revoke_sids: ['grant-revoked'] })).status).toBe(200);
+      expect(await ids(fx)).toEqual([live.sealed_id]);
+      expect((await ack(fx, fx.owner, revoked.sealed_id)).status).toBe(404);
+      expect(await enqueue(fx, revoked)).toBe('refused');
+      expect((await ack(fx, fx.owner, live.sealed_id)).status).toBe(200);
+
+      const row = await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(fx.vaultId)), (_i: unknown, state: DurableObjectState) =>
+        state.storage.sql.exec('SELECT wire, outcome FROM sealed_ops WHERE sealed_id = ?', revoked.sealed_id).one(),
+      );
+      expect(row).toEqual({ wire: null, outcome: 'cancelled' });
+    });
+
+    it('cancels only operations queued by tokens older than the account minimum iat', async () => {
+      const fx = await VaultFixture.create();
+      const old = sealFor(fx);
+      const fresh = sealFor(fx);
+      expect(await enqueue(fx, old, undefined, 1_000)).toBe('queued');
+      expect(await enqueue(fx, fresh, undefined, 5_000)).toBe('queued');
+      expect((await sendRevocation({ min_iat: [{ sub: fx.owner.account, iat: 3_000 }] })).status).toBe(200);
+      expect(await ids(fx)).toEqual([fresh.sealed_id]);
+    });
+
+    it('adds the grant columns to a queue created without them', async () => {
+      const fx = await VaultFixture.create();
+      const names = await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(fx.vaultId)), (_i: unknown, state: DurableObjectState) => {
+        const sql = state.storage.sql;
+        sql.exec('ALTER TABLE sealed_ops DROP COLUMN grant_id');
+        sql.exec('ALTER TABLE sealed_ops DROP COLUMN token_iat');
+        applyVaultSchema(sql);
+        applyVaultSchema(sql);
+        return sql.exec<{ name: string }>("SELECT name FROM pragma_table_info('sealed_ops')").toArray().map((c) => c.name);
+      });
+      expect(names).toEqual(expect.arrayContaining(['grant_id', 'token_iat']));
+    });
+
+    it('fails closed when the revocation registry cannot answer', async () => {
+      const fx = await VaultFixture.create();
+      expect(await enqueue(fx, sealFor(fx))).toBe('queued');
+      const registry = env.REVOCATIONS;
+      (env as { REVOCATIONS: unknown }).REVOCATIONS = { idFromName: () => ({}), get: () => ({ isGrantRevoked: () => Promise.reject(new Error('down')) }) };
+      try {
+        expect((await fx.get(fx.owner, '/sealed')).status).toBe(503);
+      } finally {
+        (env as { REVOCATIONS: unknown }).REVOCATIONS = registry;
+      }
+      expect(await ids(fx)).toHaveLength(1);
+    });
   });
 });
