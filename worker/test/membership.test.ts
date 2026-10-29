@@ -108,7 +108,7 @@ describe('membership appends', () => {
       expect(res.json.error.code).toBe('bad_request');
     }
     expect((await fx.append(event, wraps)).status).toBe(201);
-    const roleSet = fx.buildEvent('role_set', { account: fx.owner.account, role: 'owner' });
+    const roleSet = fx.buildEvent('role_set', { account: fx.owner.account, role: 'owner', ...(await fx.fence()) });
     expect((await fx.append(roleSet, wraps)).status).toBe(400);
   });
 

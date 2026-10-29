@@ -128,7 +128,7 @@ directories themselves are the authority for exact file names.
 | I3 | Removed member reads new material | Malicious member | `device_remove`/`member_remove` → `rekey_required` → rekey; `needs_rotate`; new devices receive keys only through signed wrap sets | `worker/test/` writes refused while rekey required; vectors: removed recipient |
 | D1 | Server outage blocks local use | Server, network | `resolve` reads local backend only | agentkit#2298 regression (owned there) |
 | D2 | Abuse / quota exhaustion, including a stolen token used to exhaust its device's rate budget | Any client, stolen token | Rate limits and quotas published by `/v1/meta`; requests the vault's Durable Object refuses at authorization of an existing vault (for example no valid proof, not a member, wrong scope, role or session kind, malformed body or Idempotency-Key) count against a separate per-device refused budget (refusals in the stateless Worker, such as a bad token or a missing Idempotency-Key, and requests for a vault that does not exist write no counter), so only the holder of the device key spends the per-device budget for authorized requests. Requests on the recovery-identity path whose proof verifies also count against a per-account budget in the vault, because their device IDs are the caller's choice. Limits: the refused budget is shared with whoever presents the device's token, so during a flood the device's own refusals also answer `rate_limited`; the recovery-identity budget is shared by every holder of a live owner-account session, which can mint tokens for keys of its own, so such a holder can keep the owner's recovery path answering `rate_limited` in each vault until its sessions are revoked; each request the Durable Object refuses costs its authorization work (proof check, and event verification for membership appends); volumetric flooding is left to the platform; membership quotas never block the rekey a removal requires, nor recovery enrollment | `worker/test/` rate-limit and quota responses (`rate-limit.test.ts`: stolen-token flood leaves the device's budget whole); `vault-storage-limits.test.ts` boundary cases |
-| E1 | Reader or machine identity writes | Member, CI | Role and device kind enforced read-only | `worker/test/` reader write denied, machine write denied |
+| E1 | Reader or machine identity writes, or an editor keeps writing after its demotion, alone or with a colluding server | Member, CI, server + demoted or read-only device | The Worker refuses writes by `reader` roles and `machine` devices. Every `role_set` signs `log_fence` and `log_head` like a removal, and the Worker stores it only at the current change-log head with the stored head there. Clients check every logged record against the role and device kind its author had at that position (`verifyLoggedRecord`: a `reader`, a `machine` device or an editor demoted at or below the position is refused; unknown roles and kinds fail closed), refuse a record `key_epoch` above the verified state's, and replay role fences like removal fences (`verifyChangeLog`). A legacy `role_set` without a fence still verifies; around it any role the author held counts (Worker-only trust for that span, a stated limitation). The Worker accepts a new one only during the transition window (`VAULT_REFUSE_LEGACY_ROLE_SET`), and never after a fenced one ([spec §5](../protocol/v1/spec.md#5-records-revisions-conflicts-and-tombstones)) | Vectors: `role-history.json` (reader before promotion, machine device, demoted editor after and before its demotion, re-promoted editor, record epoch above the state, substitution below a role fence, legacy demotion and promotion spans, a removed and re-added device); `worker/test/` reader write denied, machine write denied; `worker/test/role-fence.test.ts` stale, future and wrong-head role fences, demoted editor refused by the Worker and the verifier, legacy role_set accepted during the transition and refused after a fenced one or with the setting on |
 | E2 | Synced policy or profile elevates a grant | Hostile profile, injected agent | Policy is a maximum; profile text is untrusted data; project IDs only narrow the device-local grant; a policy item does not open in another vault ([spec §8](../protocol/v1/spec.md#8-portable-policy-restrictive-only)). A policy names the items it governs by item ID inside its ciphertext; several policies combine by intersection and can only raise sensitivity; an unopenable record or malformed binding anywhere in the vault, a malformed governing policy, or a governing policy in an unresolved conflict refuses release rather than falling back to the local grant alone ([spec §8.1](../protocol/v1/spec.md#81-policy-binding)). Limits: a device that never received a policy is subject to the withholding limitation (T5); any vault member can edit or delete a policy, as it can read every item; a policy covers only the item IDs it lists (no vault-wide default, a re-created secret under a new ID is ungoverned); an unopenable record or malformed binding refuses every item of the vault (availability, not confidentiality) | Vectors: `policy.json` (including `foreign_project_ids_grant_nothing`), `policy-binding.json`, `item.json` `moved_to_other_vault`; red-team hostile policy tests; `vectors-policy-binding.test.ts` / `vectors_policy_binding_test.go` (binding only narrows); agentkit#2299 / #7 negative tests (owned client-side) |
 | E3 | Unsupported version accepted | Server, attacker | Closed identifier sets; fail closed | Vectors: unsupported version, unknown algorithm |
 | C1 | Forked PR reaches secrets or deploys | Forked PR | No secrets to fork workflows; production Environment reviewer | Workflow config in `.github/`; red-team scenario in [release gates](./release-gates.md) |
@@ -265,10 +265,31 @@ These are accepted and must be stated wherever the guarantees are described:
 - **A live device can stall its own removal.** The fence must equal the current
   log head, so a device that keeps writing keeps the fence stale. Revoke it first;
   live revocation stops its requests.
-- **Records are not checked against role history.** `verifyLoggedRecord` accepts
-  records by any current device; read-only roles and machine devices are enforced
-  by the Worker only
-  ([#22](https://github.com/bestagentkits/ak-vault/issues/22)).
+- **Role history binds only clients that check it.** A client that verifies logged
+  records with `verifyLoggedRecord` refuses records by a `reader`, a `machine` device
+  or an editor demoted at or below the record's position
+  ([#22](https://github.com/bestagentkits/ak-vault/issues/22)); a client that predates
+  it relies on the Worker alone. Records an editor got accepted before its demotion
+  stay valid, a writing editor can keep its own demotion's fence stale (revoke it
+  first, as for a removal), and a client whose membership is behind a demotion it has
+  not received accepts the demoted editor's records until it does (the
+  withheld-updates limitation of spec §6).
+- **A legacy role change has no position.** A `role_set` signed before role fences
+  existed carries none and still verifies. Between the fenced changes around one, a
+  record is accepted if its author was a writer under any role it held there, so for
+  that span clients rely on the Worker alone, as before this revision: after a legacy
+  demotion, a demoted editor with a colluding server can still place records in the
+  span, up to the next fenced change of that account. An owner bounds the span with a
+  fenced `role_set`, which may re-affirm the current role. Clients refuse a legacy
+  `role_set` placed after a fenced one, so once a vault holds a fenced `role_set` no
+  new span can open, even through a colluding server. Machine devices and roles
+  outside the closed set are refused in the span too.
+- **Transition window for legacy role changes.** Until the operator turns on
+  `VAULT_REFUSE_LEGACY_ROLE_SET` (after a CLI that signs role fences has replaced
+  older ones), the Worker still accepts a new `role_set` without a fence, so an owner
+  on an older CLI keeps opening legacy spans in vaults that hold no fenced
+  `role_set` yet. Each one has the Worker-only trust above. The setting is read fail
+  closed: any value other than exactly `"false"` refuses.
 - **Recovery bundle contents are not server-checked.** The server cannot open the
   bundle. It refuses a `PUT /recovery` whose declared sealing position predates the
   latest `recovery_rotate`, which stops an honest but stale owner device from

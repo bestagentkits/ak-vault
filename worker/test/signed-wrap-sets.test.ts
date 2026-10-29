@@ -54,7 +54,7 @@ describe('signed wrap sets', () => {
 
   it('refuses an unknown membership event type', async () => {
     const fx = await VaultFixture.create();
-    const { sig: _sig, ...unsigned } = fx.buildEvent('role_set', { account: fx.owner.account, role: 'owner' });
+    const { sig: _sig, ...unsigned } = fx.buildEvent('role_set', { account: fx.owner.account, role: 'owner', ...(await fx.fence()) });
     const unknown = signMembershipEvent({ ...unsigned, type: 'grant_all' as never }, fx.owner.keys.signSecret);
     const res = await fx.append(unknown);
     expect(res.status).toBe(400);

@@ -140,6 +140,8 @@ export class FakeWorld {
   private readonly grantDevice = new Map<string, string>();
   private readonly jtis = new Set<string>();
   private grants = 0;
+  /** Runs once, just before the next change-log read is served (membership changing between two reads). */
+  beforeNextChanges: (() => void) | null = null;
   /** Knobs for hostile-server tests. */
   readonly hostile = {
     /** Account the next app token is issued for. */
@@ -247,9 +249,10 @@ export class FakeWorld {
     this.wraps.set(ev.seq, ws);
   }
 
-  /** The owner signs a role change for an account. */
-  setRole(account: string, role: 'owner' | 'editor' | 'reader'): void {
-    const ev = nextMembershipEvent(this.state(), { type: 'role_set', ts: Date.now(), author: this.owner.record.device_id, body: { account, role } }, this.owner.signSecret);
+  /** The owner signs a role change for an account; `fence` defaults to the current log position, like a removal. */
+  setRole(account: string, role: 'owner' | 'editor' | 'reader', fence = this.log.length): void {
+    const body = { account, role, log_fence: fence, log_head: this.logHeads[fence]! };
+    const ev = nextMembershipEvent(this.state(), { type: 'role_set', ts: Date.now(), author: this.owner.record.device_id, body }, this.owner.signSecret);
     this.events.push(ev);
   }
 
@@ -571,6 +574,9 @@ export class FakeWorld {
       return ws ? json(200, { membership_seq: seq, wraps: ws }) : apiError(404, 'not_found');
     }
     if (method === 'GET' && coll === 'changes') {
+      const before = this.beforeNextChanges;
+      this.beforeNextChanges = null;
+      before?.();
       const base = this.hostile.truncateLog === null ? this.log : this.log.slice(0, this.hostile.truncateLog);
       const served = base.filter((e) => e.log_seq !== this.hostile.dropLogSeq).map((e) => (this.hostile.mutateEntry ? this.hostile.mutateEntry(e) : e));
       const cursor = Number(url.searchParams.get('cursor') ?? 0);

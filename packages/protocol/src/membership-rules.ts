@@ -15,6 +15,7 @@ import {
   type MembershipEvent,
   type MembershipState,
   type Role,
+  type RoleChange,
   type VaultKind,
 } from './membership-types.js';
 import { parseLogPosition, type ChangeLogCursor } from './change-log.js';
@@ -35,6 +36,9 @@ export class ReplayState {
   readonly devices = new Map<string, DeviceRecord>();
   readonly removed = new Set<string>();
   readonly removals: DeviceRemoval[] = [];
+  readonly roleChanges: RoleChange[] = [];
+  /** Whether a fenced `role_set` was replayed; a legacy one after it is refused. */
+  private fencedRoleSet = false;
   /** Every recovery author ID the chain has ever trusted (genesis and each recovery_rotate). */
   readonly recoveryAuthors = new Set<string>();
 
@@ -64,7 +68,7 @@ export class ReplayState {
   /** Record a removal; the caller has already deleted the device from `devices`. */
   private recordRemoval(device: DeviceRecord, seq: number, fence: ChangeLogCursor): void {
     this.removed.add(device.device_id);
-    this.removals.push({ device_id: device.device_id, sign_pub: device.sign_pub, removed_seq: seq, key_epoch: this.keyEpoch, log_fence: fence.log_seq, log_head: fence.log_head });
+    this.removals.push({ device_id: device.device_id, sign_pub: device.sign_pub, removed_seq: seq, key_epoch: this.keyEpoch, log_fence: fence.log_seq, log_head: fence.log_head, role: device.role, kind: device.kind });
   }
 
   applyGenesis(body: JsonObject, author: string): DeviceRecord {
@@ -169,12 +173,24 @@ export class ReplayState {
         return;
       }
       case 'role_set': {
-        exactKeys(body, ['account', 'role'], 'role_set.body');
+        // A fenced body carries both log_fence and log_head; a legacy body, signed
+        // before role fences existed, carries neither and is recorded with null fences.
+        exactKeys(body, ['account', 'role'], 'role_set.body', ['log_fence', 'log_head']);
         const account = asString(body['account'], 'role_set.body.account', MAX_ACCOUNT_LENGTH, 1);
         const role = asEnum(body['role'], ROLES, 'role_set.body.role');
+        const fenced = body['log_fence'] !== undefined || body['log_head'] !== undefined;
+        const logFence = fenced ? parseLogPosition(body['log_fence'], body['log_head'], 'role_set.body.log_fence', 'role_set.body.log_head') : null;
+        // Once a chain holds a fenced role_set, every later one is fenced: no Worker
+        // accepted a legacy body after a fenced one, so a legacy span cannot reopen.
+        if (!logFence && this.fencedRoleSet) fail('bad_request', 'role_set must carry log_fence and log_head after a fenced role_set');
+        if (logFence) this.fencedRoleSet = true;
         if (!this.members.has(account)) fail('bad_request', 'account is not a member');
         this.members.set(account, role);
-        for (const [id, d] of this.devices) if (d.account === account) this.devices.set(id, { ...d, role });
+        const changed = [...this.devices.values()].filter((d) => d.account === account).sort((a, b) => (a.device_id < b.device_id ? -1 : 1));
+        for (const d of changed) {
+          this.devices.set(d.device_id, { ...d, role });
+          this.roleChanges.push({ device_id: d.device_id, changed_seq: event.seq, prev_role: d.role, role, log_fence: logFence?.log_seq ?? null, log_head: logFence?.log_head ?? null });
+        }
         if (this.ownerAccountCount() === 0 || this.ownerDeviceCount() === 0) fail('forbidden', 'cannot demote the last owner');
         return;
       }
@@ -222,6 +238,7 @@ export class ReplayState {
       devices: byKey([...this.devices.values()].map((d) => ({ ...d })), (d) => d.device_id),
       removed_device_ids: [...this.removed].sort(),
       removals: this.removals.map((r) => ({ ...r })),
+      role_changes: this.roleChanges.map((c) => ({ ...c })),
     };
   }
 }

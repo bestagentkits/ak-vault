@@ -117,7 +117,7 @@ export interface VaultSnapshot {
 /** What a replay leaves behind: enough to verify and apply only the entries after `head`. */
 export interface ReplayBase {
   head: { log_seq: number; log_head: string };
-  /** Membership the log was verified against; its removals' signed heads are the kept heads. */
+  /** Membership the log was verified against; the signed heads of its removals and role changes are the kept heads. */
   state: MembershipState;
   profiles: Map<string, Map<number, ProfileAt>>;
 }
@@ -344,9 +344,10 @@ export interface ProfileAt {
 /**
  * Replay the verified log into item states; check the offer checkpoint's state
  * digest on the way. With `prior`, `entries` continue from `prior.head`: the kept
- * heads are the witnessed position and every removal fence the prior pull had
- * already verified; a removal it had not seen, fenced below the cursor, is
- * {@link FullPullNeeded}, because records past that fence need re-checking.
+ * heads are the witnessed position and every removal and role fence the prior
+ * pull had already verified; a removal or role change it had not seen, fenced
+ * below the cursor, is {@link FullPullNeeded}, because records past that fence
+ * need re-checking.
  */
 export function replayLog(
   entries: readonly ChangeEntry[],
@@ -360,12 +361,19 @@ export function replayLog(
 ): Pick<VaultSnapshot, 'itemStates' | 'heads' | 'log' | 'profiles' | 'items' | 'unreadable' | 'hidden' | 'replay'> & { logHead: { log_seq: number; log_head: string } } {
   const kept = new Map<number, string>();
   if (prior) {
-    // Records the cursor already passed were checked against the removals known then. A removal
-    // this pull learned about, fenced below the cursor, changes what those records may be: replay in full.
-    const removalKey = (r: MembershipState['removals'][number]) => `${r.sign_pub}:${r.removed_seq}`;
-    const known = new Set(prior.replay.state.removals.map(removalKey));
-    for (const r of prior.replay.state.removals) if (r.log_fence > 0) kept.set(r.log_fence, r.log_head);
-    for (const r of state.removals) if (!known.has(removalKey(r)) && r.log_fence < prior.replay.head.log_seq) throw new FullPullNeeded();
+    // Records the cursor already passed were checked against the removals and role changes known
+    // then. One this pull learned about, fenced below the cursor, changes what those records may
+    // be: replay in full. A legacy role change signed no fence, so its position is unknown and a
+    // newly learned one is treated as fenced below the cursor.
+    const removalKey = (r: MembershipState['removals'][number]) => `removal:${r.sign_pub}:${r.removed_seq}`;
+    const changeKey = (c: MembershipState['role_changes'][number]) => `role:${c.device_id}:${c.changed_seq}`;
+    const fenced = (st: MembershipState) => [
+      ...st.removals.map((r) => ({ key: removalKey(r), log_fence: r.log_fence, log_head: r.log_head })),
+      ...st.role_changes.map((c) => ({ key: changeKey(c), log_fence: c.log_fence, log_head: c.log_head })),
+    ];
+    const known = new Set(fenced(prior.replay.state).map((f) => f.key));
+    for (const f of fenced(prior.replay.state)) if (f.log_fence !== null && f.log_head !== null && f.log_fence > 0) kept.set(f.log_fence, f.log_head);
+    for (const f of fenced(state)) if (!known.has(f.key) && (f.log_fence === null || f.log_fence < prior.replay.head.log_seq)) throw new FullPullNeeded();
   }
   if (own && own.log_seq > 0) kept.set(own.log_seq, own.log_head);
   if (enrollment.witnessed && enrollment.witnessed.log_seq > 0) kept.set(enrollment.witnessed.log_seq, enrollment.witnessed.log_head);
@@ -491,9 +499,24 @@ export interface PullResult {
  * Pull and verify everything for an enrolled (or awaiting approval) device. With
  * `prior`, the snapshot this session already verified, only the log entries after
  * it are fetched; anything that cannot be proved equivalent, or any verification
- * failure on that path, repeats as the full replay, whose verdict is final.
+ * failure on that path, repeats as the full replay.
+ *
+ * Membership is read before the change log, so the log can hold records accepted
+ * after that read: by a device enrolled, promoted or rekeyed in between, which the
+ * older membership refuses. A verification failure therefore reads membership
+ * again, now newer than the log just verified, and pulls once more; that verdict is
+ * final.
  */
 export async function pullVault(client: AkvClient, device: StoredDevice, kx: DeviceKx, prior?: VaultSnapshot | null): Promise<PullResult> {
+  try {
+    return await pullOnce(client, device, kx, prior);
+  } catch (err) {
+    if (!(err instanceof AppError && err.code === 'vault_verification_failed')) throw err;
+    return pullOnce(client, device, kx, prior);
+  }
+}
+
+async function pullOnce(client: AkvClient, device: StoredDevice, kx: DeviceKx, prior?: VaultSnapshot | null): Promise<PullResult> {
   const enrollment = device.enrollment;
   if (!enrollment) throw new AppError('enroll_not_approved');
   const events = await fetchMembership(client, enrollment.vaultId);

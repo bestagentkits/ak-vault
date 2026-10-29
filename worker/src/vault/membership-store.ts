@@ -26,6 +26,9 @@ export class MembershipStore {
     if (state !== null && !Array.isArray((state as { removals?: unknown }).removals)) {
       throw new ApiError('unsupported_version', { message: 'vault predates the current protocol revision' });
     }
+    // A state stored before the role fence revision lacks `role_changes` and the
+    // removals' `role` and `kind` until the next append re-derives it from the
+    // chain. The Worker reads none of them; re-verify the chain before relying on them.
     this.cached = state;
     return this.cached;
   }

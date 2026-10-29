@@ -727,7 +727,7 @@ Signing context `akv1/membership`. `seq` starts at 0 (genesis) and increments by
 | `device_remove` | `{"device_id","reason":"lost"|"stolen"|"retired"|"compromised","log_fence":n,"log_head":b64|""}` | closed reason set; `log_fence` and `log_head` are the removal fence (§5); sets `rekey_required`. |
 | `member_add` | `{"account","role","devices":[device],"wraps_digest":b64}` | shared vaults only; `wraps_digest` commits to the new devices' wrap set. |
 | `member_remove` | `{"account","log_fence":n,"log_head":b64|""}` | removes all its devices, each fenced at `log_fence` and `log_head` (§5); sets `rekey_required`. |
-| `role_set` | `{"account","role"}` | cannot demote the last owner. |
+| `role_set` | `{"account","role","log_fence":n,"log_head":b64|""}` | cannot demote the last owner; `log_fence` and `log_head` are the role fence (§5). A legacy `{"account","role"}` body still verifies before the chain's first fenced one; whether the Worker accepts a new one is a transition setting (§5). |
 | `rekey` | `{"new_key_epoch":e+1,"wraps_digest":b64,"needs_rotate":[item_id…]}` | clears `rekey_required`; `wraps_digest` (§11) commits to the wrap list for the new epoch. |
 | `recovery_rotate` | `{"recovery_sign_pub":b64}` | owner device only; replaces the recovery signing key (§3.5). The new key was never a recovery key of this chain and is not the key of a current or removed device (`bad_request`). |
 
@@ -811,6 +811,37 @@ A device that is still live can write between the remover's pull and its removal
 so keep the fence stale. The device MUST therefore be revoked first (§9, live
 revocation stops its requests); the remover then retries a `409` fence with backoff.
 
+**Role fence.** A demoted editor stays a reader: it keeps its signing key and the vault
+keys, so with a colluding server it could keep appending validly signed records. A
+`reader` account or a `machine` device could do the same at any time. Every `role_set`
+therefore signs `log_fence` and `log_head` exactly like a removal, with the same server
+rules (`409 conflict` when behind the current head, `bad_request` when ahead or when
+`log_head` is not the stored head at the fence) and the same scope: records at or
+below the fence were accepted under the account's previous role, records above it
+under the new one. A writing editor can keep the fence of its own demotion stale like
+a removal's; revoke it first. The membership state lists each role change per device
+of the account at that event (`role_changes`: `device_id`, `changed_seq`, `prev_role`,
+`role`, `log_fence`, `log_head`, in chain order, then by `device_id`), and each removal
+also records the removed device's `role` and `kind`. A client checks a role fence's
+head and keeps the head at it exactly as for a removal fence; one that learns of a
+role change after its cursor passed the fence re-checks the records above it (replay
+again, or compare kept heads and re-verify those records).
+
+A **legacy** `role_set`, signed by a client of an earlier revision with the body
+`{"account","role"}` and no fence, still verifies, so a stored chain that holds one
+keeps working; a body with only one of `log_fence` and `log_head` is `bad_request`.
+Its `role_changes` rows have `log_fence` and `log_head` `null`; such a row binds no
+log position or head and is skipped wherever fences are checked. A legacy `role_set`
+after a fenced `role_set` in the same chain is `bad_request` (no Worker ever accepted
+that order), so once a vault holds a fenced `role_set` no legacy span can open. While
+clients of earlier revisions are still in use, the Worker accepts a new `role_set`
+without a fence; an operator setting later makes it refuse one (`bad_request`), and
+stored legacy events keep verifying either way. An owner bounds a legacy change by
+appending a fenced `role_set` for that account, which may keep the role unchanged (a
+re-affirm). A client of an earlier revision parses only the legacy body, so it
+refuses (`bad_request`) any chain that holds a fenced `role_set`, and treats that as
+a membership integrity failure.
+
 **Scope of the fence.** `log_fence` guarantees that no record by a removed author is
 accepted above the fence; `log_head` binds the contents of every position at or below
 it. A device that first reads the log after the removal (newly enrolled, recovered,
@@ -829,20 +860,42 @@ replays the log again from position 1; it MUST NOT take the head from the server
 read the whole log, a fence beyond the last position means the log is behind a signed
 removal (`rollback`).
 
-`verifyLoggedRecord(record, state, log_seq)` (vectors: `removal-fence.json`) checks a
-record read from the change log against the verified membership state, in order:
-the record parses; same vault; `log_seq ≥ 1` (`bad_request`); the author is a current
-device, or a removed device whose record `key_epoch` is not newer than the key epoch
-current at its last removal (`forbidden`); the signature verifies under that device's
-key (`invalid_signature`); and for every removal of the author whose key epoch is ≥
-the record's `key_epoch`, a `log_seq` above that removal's `log_fence` is
-`forbidden`. Because writes are refused between a removal and the next rekey, every
-legitimate later write, including one by a re-added device ID, uses a newer key epoch
-and is unaffected. The membership state lists each removal (`removals`: `device_id`,
-`sign_pub`, `removed_seq`, `key_epoch`, `log_fence`, `log_head`).
+`verifyLoggedRecord(record, state, log_seq)` (vectors: `removal-fence.json`,
+`role-history.json`) checks a record read from the change log against the verified
+membership state, in order: the record parses; same vault; `log_seq ≥ 1`
+(`bad_request`); the record `key_epoch` is not above the state's `key_epoch`
+(`forbidden`); the author is a current device, or a removed device whose record
+`key_epoch` is not newer than the key epoch current at its last removal (`forbidden`);
+the signature verifies under that device's key (`invalid_signature`); for every
+removal of the author whose key epoch is ≥ the record's `key_epoch`, a `log_seq` above
+that removal's `log_fence` is `forbidden`; and the author was a writer at `log_seq`
+(`forbidden`): its kind is `human` and its role there is `owner` or `editor`, an
+allowlist, so any other role or kind is refused. Because writes are refused between a
+removal and the next rekey, every legitimate later write, including one by a re-added
+device ID, uses a newer key epoch and is unaffected. The same rule picks the author's
+**term**, the device as it was when it wrote the record: the first removal of the
+author (chain order) whose key epoch is ≥ the record's `key_epoch` ends it (kind and
+role from that removal), else the current device does. The term's role changes are
+those of the device after its previous removal (if any) and before the removal that
+ends the term (if any). Let *i* be the first fenced term change (chain order) whose
+`log_fence` is ≥ `log_seq`, and *j* the last fenced term change before *i*. The
+candidate roles at `log_seq` are the `prev_role` of every term change after *j* up to
+and including *i*, plus the role at the term's end when there is no *i*. Every
+candidate MUST be in the closed role set, and the author was a writer if at least one
+candidate is `owner` or `editor`. Without legacy changes there is exactly one
+candidate: the `prev_role` of the first change whose `log_fence` is ≥ `log_seq`, or
+the role at the term's end. A legacy change has no position, so around one any role
+the author held between the neighbouring fenced changes counts: for that span the
+Worker's check at write time is the only evidence (refusing instead would make every
+full replay of such a vault fail, with no way to repair the log). The membership state lists each removal (`removals`: `device_id`, `sign_pub`,
+`removed_seq`, `key_epoch`, `log_fence`, `log_head`, `role`, `kind`). A client that
+reads membership before the change log can see a legitimate record accepted after
+its membership read (a rekey, enrollment or promotion in between); on a refusal it
+reads membership again and replays once more before treating the refusal as final.
 
-`verifyChangeLog(entries, state, {from?, complete?, keptHeads?})` (vectors: `removal-fence.json`)
-replays change-log entries `{"log_seq","conflict_id","record"}` that continue from
+`verifyChangeLog(entries, state, {from?, complete?, keptHeads?})` (vectors: `removal-fence.json`,
+`role-history.json`) treats every fenced role change exactly like a removal fence
+(below, "removal" means either; a legacy role change binds nothing) and replays change-log entries `{"log_seq","conflict_id","record"}` that continue from
 `from` (a cursor `{log_seq, log_head}` the client computed itself; default position 0,
 head `""`). `keptHeads` are heads the client computed earlier, by position. In order:
 `from` is a valid position (`bad_request`); every removal whose `log_fence` is the
@@ -1713,6 +1766,19 @@ under an earlier revision does not verify and is reset rather than migrated.
   `log_fence`, and clients replay the head chain against it (`verifyChangeLog`); the
   change feed publishes per-entry and current heads; a recovery-authored `device_add`
   MUST deliver the current key epoch like every other device-adding event.
+- **2026-10 (issue #22):** `role_set` signs `log_fence` and `log_head` like a removal,
+  and the Worker enforces them the same way; the membership state lists
+  `role_changes` and each removal's `role` and `kind`; `verifyLoggedRecord` refuses a
+  record whose author was not a writer at its log position (a `reader`, a `machine`
+  device, or an editor demoted at or below it) or whose `key_epoch` is above the
+  state's, and `verifyChangeLog` checks role fences like removal fences. A legacy
+  `role_set` without a fence, written under an earlier revision, still verifies and is
+  listed with `null` fences; around one a record is accepted if the author was a writer
+  under any role it held between the neighbouring fenced changes, and a legacy
+  `role_set` after a fenced one is `bad_request`. During a transition the Worker still
+  accepts a new `role_set` without a fence, so clients of an earlier revision keep
+  working until an operator setting turns that off. A client of an earlier revision
+  refuses any chain that holds a fenced `role_set`.
 - **2026-10 (issue #7):** policy binding (§8.1): a policy item's payload layout,
   `meta.item_ids` naming the governed items, the payload `sensitivity` as a minimum,
   and `resolveItemPolicy`. Earlier revisions defined no policy-item layout and no

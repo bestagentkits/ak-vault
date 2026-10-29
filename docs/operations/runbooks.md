@@ -375,6 +375,36 @@ stale vault shows up depends on the revision:
   taken after the removal is refused the same way, and restoring to before the
   removal would re-admit the removed device, so never do that. The Worker
   should refuse these too ([#52](https://github.com/bestagentkits/ak-vault/issues/52)).
+- Vaults from before the role fence revision (2026-10, #22), including production
+  vaults: a stored `role_set` without a fence still verifies and their change logs
+  still replay, so no migration is needed. Between the fenced changes around such a
+  legacy change, clients accept the affected account's records under any role it held
+  there, trusting the Worker's check for that span (spec §5). An owner closes the
+  span by setting the account's role again with a current client, even to the same
+  role. Roll out in this order; no step blocks a released CLI:
+  1. Deploy the Worker with `VAULT_REFUSE_LEGACY_ROLE_SET` `"false"` (the value in
+     `wrangler.jsonc` for every environment). It accepts both `role_set` bodies, so
+     the released CLI keeps working unchanged, role changes included.
+  2. The owner tags the Go module release that contains this revision. Agents never
+     create ak-vault tags.
+  3. agentkit bumps the module and releases through its beta train
+     ([agentkit#2822](https://github.com/bestagentkits/agentkit/issues/2822)): the
+     new CLI signs the fence and reads both bodies.
+  4. Wait until older CLIs are gone; the owner decides when. Owners must not change
+     roles with the new CLI before every member of that vault has upgraded: once a
+     vault holds a fenced `role_set`, a member device on a CLI built against an
+     earlier module refuses its chain and stores a membership integrity alarm that
+     halts sync. Upgrading clears it only if the new release does so
+     ([agentkit#2822](https://github.com/bestagentkits/agentkit/issues/2822));
+     otherwise that device must purge its sync state and enroll again. A legacy
+     `role_set` after a fenced one is always refused; it strands no one extra, because
+     a CLI that still sends the legacy body already refuses such a chain.
+  5. Flip `VAULT_REFUSE_LEGACY_ROLE_SET` to `"true"` in `wrangler.jsonc` and deploy
+     (a separate change). Any value other than exactly `"false"` refuses. To undo,
+     set it back to `"false"` and deploy.
+  Once any vault holds a fenced `role_set`, roll the Worker forward only: an earlier
+  Worker re-verifies the stored chain on every append and refuses the fenced body, so
+  a rollback blocks every membership change in that vault, removals included.
 
 Before deploying a revision that changes stored data, write the deploy time (UTC)
 and the version ID it replaces on the issue. That is the backup: point-in-time
