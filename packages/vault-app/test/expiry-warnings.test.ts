@@ -6,6 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { randomId, type JsonObject } from '@ak-vault/protocol';
+import { calendarDaysUntil } from '../src/ui/views.js';
 import { DAY_MS, EXPIRING_SOON_DAYS, parseExpiresMs, rotationInfo, type RotationInput } from '../src/sync/rotation.js';
 import type { ItemView } from '../src/sync/vault-sync.js';
 import { FakeWorld } from './helpers/fake-world.js';
@@ -75,7 +76,7 @@ describe('expiry in rotationInfo', () => {
 function day(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${String(d.getFullYear()).padStart(4, '0')}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function vaultScreen(page: Page) {
@@ -100,7 +101,10 @@ describe('dashboard expiry warnings', () => {
   it('warns on expired and expiring-soon items from the verified profile and stays silent otherwise', async () => {
     const world = new FakeWorld();
     const owner = world.owner.record.device_id;
-    const at = Date.now();
+    // Local noon keeps every whole-day offset on the same side of midnight, DST included.
+    const t = new Date();
+    const at = new Date(t.getFullYear(), t.getMonth(), t.getDate(), 12).getTime();
+    vi.spyOn(Date, 'now').mockReturnValue(at);
     const meta = (profile?: JsonObject): JsonObject => ({ schema: 'agentkit.secret/v1', created_ms: at - DAY_MS, ...(profile ? { profile } : {}) });
     const field = (value: string, by = owner): JsonObject => ({ value, by, at, src: 'local' });
     world.ownerSet('expired', 'a', meta({ expires_at: field(iso(at - 2 * DAY_MS)) }), at);
@@ -160,6 +164,13 @@ describe('dashboard expiry warnings', () => {
     expect(badge('pre-1970')).toBe('expired');
     expect(text('pre-1970')).toMatch(new RegExp(`^expired ${day(-DAY_MS)} \\(\\d+ days ago\\)$`));
     expect(byTestId(page.root, 'expiry-expired').textContent).toBe('3 expired');
+  });
+
+  it('prints a year before 100 in full and counts its days from that year', () => {
+    const ms = parseExpiresMs('0050-06-01T00:00:00Z')!;
+    const now = new Date(2026, 9, 29, 12).getTime();
+    expect(day(ms)).toMatch(/^0050-/);
+    expect(calendarDaysUntil(ms, now)).toBeLessThan(-700_000);
   });
 
   it('ignores expires_at from a profile this device could not verify', async () => {

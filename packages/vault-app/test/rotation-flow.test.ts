@@ -33,10 +33,6 @@ const NOW = 1_800_000_000_000;
 const base: RotationInput = { createdMs: NOW - 10 * DAY_MS, rotatedMs: null, rotateTtlDays: null, flaggedMs: null, flaggedEpoch: null, keyEpoch: 1, workflow: null, expiresMs: null };
 
 describe('rotation due text', () => {
-  const text = (offsetMs: number) => {
-    const info = rotationInfo({ ...base, rotatedMs: NOW + offsetMs - 30 * DAY_MS, rotateTtlDays: 30 }, NOW);
-    return dueText(info, NOW).replace(/^due \S+ /, '');
-  };
   it('keeps the health state independent of the day rounding', () => {
     const health = (offsetMs: number) => rotationInfo({ ...base, rotatedMs: NOW + offsetMs - 30 * DAY_MS, rotateTtlDays: 30 }, NOW).health;
     expect(health(-1000)).toBe('overdue');

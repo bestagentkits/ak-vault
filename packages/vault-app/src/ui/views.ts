@@ -189,7 +189,7 @@ function fmtDate(ms: number | null): string {
   const d = new Date(ms);
   if (Number.isNaN(d.getTime())) return '';
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${String(d.getFullYear()).padStart(4, '0')}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function matchesFilter(item: ItemView, filter: string): boolean {
@@ -227,10 +227,14 @@ function infoOf(item: ItemView, nowMs: number): RotationInfo {
  * past, 0 for the same date). Display-only: health is computed from timestamps.
  */
 export function calendarDaysUntil(targetMs: number, nowMs: number): number {
-  const target = new Date(targetMs);
-  const now = new Date(nowMs);
-  return Math.round((Date.UTC(target.getFullYear(), target.getMonth(), target.getDate())
-    - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / DAY_MS);
+  // setUTCFullYear, unlike Date.UTC, keeps years 0 to 99 as written.
+  const dayNumber = (ms: number): number => {
+    const d = new Date(ms);
+    const t = new Date(0);
+    t.setUTCFullYear(d.getFullYear(), d.getMonth(), d.getDate());
+    return t.getTime();
+  };
+  return Math.round((dayNumber(targetMs) - dayNumber(nowMs)) / DAY_MS);
 }
 
 function relativeDays(days: number): string {
