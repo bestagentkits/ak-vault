@@ -83,7 +83,8 @@ describe('NFC name matching', () => {
     expect(page.controller.current()).toMatchObject({ kind: 'write', open: true });
     expect(await page.controller.submitWrite(SENTINEL)).toBe(true);
     expect(world.writeRequests.get(id)).toMatchObject({ state: 'completed' });
-    expect(lastWrittenName(world).itemId).toBe(itemId);
+    // The stored spelling is kept, so a device matching names byte for byte still finds the item.
+    expect(lastWrittenName(world)).toEqual({ itemId, name: NFC });
     expect(world.itemStates.get(itemId)!.revision).toBe(2);
     expect([...world.itemStates.values()].filter((s) => s.revision > 0 && !s.tombstone)).toHaveLength(1);
   });
@@ -93,8 +94,29 @@ describe('NFC name matching', () => {
     const itemId = world.ownerSet(NFC, 'old');
     const { page } = await enrolled(world);
     expect(await page.controller.set(NFD, SENTINEL)).toBe(true);
-    expect(lastWrittenName(world).itemId).toBe(itemId);
+    expect(lastWrittenName(world)).toEqual({ itemId, name: NFC });
     expect([...world.itemStates.values()].filter((s) => s.revision > 0 && !s.tombstone)).toHaveLength(1);
+  });
+
+  it('keeps an NFD spelling another device stored when the update names it in NFC', async () => {
+    const world = new FakeWorld();
+    const itemId = randomId();
+    expect(world.ownerWrite(itemId, NFD, 'old', { base: 0 }).status).toBe(200);
+    const { page } = await enrolled(world);
+    expect(await page.controller.set(NFC, SENTINEL)).toBe(true);
+    expect(lastWrittenName(world)).toEqual({ itemId, name: NFD });
+  });
+
+  it('stores a new item under the NFC spelling of the requested name', async () => {
+    const world = new FakeWorld();
+    const id = world.prepareWrite({ name: NFD });
+    const { b, page } = await enrolled(world);
+    expect(await page.controller.set(`${NFD}-form`, SENTINEL)).toBe(true);
+    expect(lastWrittenName(world).name).toBe(`${NFC}-form`);
+    const reqPage = await openRequest(world, b, id);
+    expect(await reqPage.controller.submitWrite(SENTINEL)).toBe(true);
+    expect(world.writeRequests.get(id)).toMatchObject({ state: 'completed' });
+    expect(lastWrittenName(world).name).toBe(NFC);
   });
 
   it('finds the NFC item by its NFD spelling', async () => {

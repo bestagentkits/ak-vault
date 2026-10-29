@@ -229,17 +229,23 @@ export async function setItem(args: {
   let base = 0;
   let meta: JsonObject;
   let sensitivity: ItemPayload['sensitivity'] = 'normal';
+  let name: string;
   if (existing) {
     const prev = openHead(snapshot, itemId);
     base = snapshot.itemStates.get(itemId)!.revision;
     meta = nextMeta(prev, prev.value !== args.value, nowMs, verifiedProfile(snapshot, itemId));
     sensitivity = prev.sensitivity;
+    // The stored spelling stays: devices that match names byte for byte must still find this item.
+    name = prev.name;
   } else {
     meta = nextMeta(null, true, nowMs, null);
+    // A new item is always stored under the NFC spelling, the one its name tag is computed from.
+    name = args.name.normalize('NFC');
+    if (!validItemName(name)) throw new AppError('invalid_name');
   }
   // A requested sensitivity only ever raises the head's.
   if (request?.sensitivity === 'high') sensitivity = 'high';
-  const payload: ItemPayload = { name: args.name, value: args.value, meta, sensitivity };
+  const payload: ItemPayload = { name, value: args.value, meta, sensitivity };
   return writeRevision({ ...args, itemId, base, vk, payload, resolves: [], nowMs, requestId: request?.requestId ?? null });
 }
 
