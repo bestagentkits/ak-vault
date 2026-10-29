@@ -43,7 +43,7 @@ export interface RotationInfo {
   health: RotationHealth;
   /** Base date plus the configured interval; null when either is missing. */
   dueMs: number | null;
-  /** Whole days until due (negative when overdue); null when no due date. */
+  /** Whole days until due, truncated toward zero (negative when overdue, 0 within a day either side); null when no due date. */
   daysUntilDue: number | null;
   /** The vault holds a new value written after the workflow started. */
   vaultUpdated: boolean;
@@ -133,7 +133,7 @@ export function stillNeedsRotate(i: RotationInput): boolean {
 export function rotationInfo(i: RotationInput, nowMs: number): RotationInfo {
   const base = i.rotatedMs ?? i.createdMs;
   const dueMs = base !== null && i.rotateTtlDays !== null ? base + i.rotateTtlDays * DAY_MS : null;
-  const daysUntilDue = dueMs === null ? null : Math.floor((dueMs - nowMs) / DAY_MS);
+  const daysUntilDue = dueMs === null ? null : Math.trunc((dueMs - nowMs) / DAY_MS) || 0;
   const vaultUpdated = i.workflow !== null && i.rotatedMs !== null && i.rotatedMs >= i.workflow.startedMs;
   const providerRevoked = vaultUpdated && i.workflow!.revokedMs !== null && i.workflow!.revokedMs >= i.rotatedMs!;
   let health: RotationHealth;

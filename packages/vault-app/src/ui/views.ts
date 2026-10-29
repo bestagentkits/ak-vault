@@ -225,8 +225,9 @@ function relativeDays(days: number): string {
   return days < 0 ? `${day} ago` : `in ${day}`;
 }
 
-function dueText(info: RotationInfo): string {
+export function dueText(info: RotationInfo): string {
   if (info.dueMs === null || info.daysUntilDue === null) return '';
+  if (info.daysUntilDue === 0) return `due ${fmtDate(info.dueMs)} (today)`;
   return `due ${fmtDate(info.dueMs)} (${relativeDays(info.daysUntilDue)})`;
 }
 
