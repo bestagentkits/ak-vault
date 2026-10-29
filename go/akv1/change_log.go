@@ -2,7 +2,7 @@ package akv1
 
 import "strconv"
 
-// Change-log head chain and log replay against signed removal fences (spec §5).
+// Change-log head chain and log replay against signed fences (spec §5).
 //
 // Every change-log position n has a head that commits to the prefix 1..n:
 //
@@ -11,10 +11,31 @@ import "strconv"
 //	              cjson({"conflict_id", "log_seq": n, "prev": log_head[n-1], "record": RecordDigest}))
 //
 // where conflict_id is the preserved branch's ID, or null for an applied
-// record. A removal signs {log_fence, log_head}, the head its author computed
-// itself at the fence, so a device that first reads the log after the removal
-// detects any position at or below the fence that differs from what the
-// remover verified.
+// record. A removal or a role_set signs {log_fence, log_head}, the head its
+// author computed itself at the fence, so a device that first reads the log
+// after it detects any position at or below the fence that differs from what
+// that author verified.
+
+// SignedFence is a signed {log_fence, log_head} of the verified chain.
+type SignedFence struct {
+	LogFence int64
+	LogHead  string
+}
+
+// SignedFences returns every signed fence of state: removals, then fenced role
+// changes. A legacy role_set signed no fence and binds nothing.
+func SignedFences(state MembershipState) []SignedFence {
+	out := make([]SignedFence, 0, len(state.Removals)+len(state.RoleChanges))
+	for _, rm := range state.Removals {
+		out = append(out, SignedFence{LogFence: rm.LogFence, LogHead: rm.LogHead})
+	}
+	for _, c := range state.RoleChanges {
+		if c.Fenced() {
+			out = append(out, SignedFence{LogFence: *c.LogFence, LogHead: *c.LogHead})
+		}
+	}
+	return out
+}
 
 // MaxChangeLogEntries bounds the entries of one VerifyChangeLog call (callers
 // verify page by page).
@@ -74,10 +95,11 @@ type VerifyChangeLogOptions struct {
 	// never a value the server supplied.
 	From ChangeLogCursor
 	// Complete states that the entries reach the server's current head (the
-	// last page); a removal fence beyond the last entry is then rollback.
+	// last page); a signed fence (removal or role_set) beyond the last entry
+	// is then rollback.
 	Complete bool
 	// KeptHeads are heads this client computed earlier, by position. Every
-	// removal whose fence lies below From (other than at 0) MUST be covered: a
+	// signed fence that lies below From (other than at 0) MUST be covered: a
 	// missing head is bad_request, a different one rollback. Keep the head of
 	// every verified position, or verify again from the empty log. A kept head
 	// at a position this call covers (From's or an entry's) MUST equal the head
@@ -96,19 +118,19 @@ type VerifiedChangeLog struct {
 }
 
 // VerifyChangeLog verifies change-log entries {log_seq, conflict_id, record}
-// that continue from opts.From, against verified membership. Order: From is a
-// valid position (bad_request); entries is bounded; every removal whose fence
-// is at From matches From.LogHead (rollback); a kept head at From equals
-// From.LogHead (rollback); every removal whose fence lies in
-// 1..From.LogSeq-1 has a kept head (bad_request) equal to its signed head
-// (rollback); then per entry: exact
+// that continue from opts.From, against verified membership. The signed
+// fences are those of every removal and every role change (SignedFences).
+// Order: From is a valid position (bad_request); entries is bounded; every
+// fence at From matches From.LogHead (rollback); a kept head at From equals
+// From.LogHead (rollback); every fence in 1..From.LogSeq-1 has a kept head
+// (bad_request) equal to its signed head (rollback); then per entry: exact
 // keys, log_seq integer, conflict_id null or an ID (bad_request); log_seq is
 // the previous position + 1 (rollback: gap, repeat or reorder);
-// VerifyLoggedRecord(record, state, log_seq); the head advances. Every removal
-// whose log_fence is a covered position (From's or an entry's) MUST have
-// signed exactly the head computed there (rollback), and every kept head at a
-// covered position MUST equal it (rollback). With opts.Complete, a removal
-// fence or a kept head beyond the last position is rollback.
+// VerifyLoggedRecord(record, state, log_seq); the head advances. Every fence
+// at a covered position (From's or an entry's) MUST have signed exactly the
+// head computed there (rollback), and every kept head at a covered position
+// MUST equal it (rollback). With opts.Complete, a fence or a kept head beyond
+// the last position is rollback.
 func VerifyChangeLog(entries []any, state MembershipState, opts VerifyChangeLogOptions) (VerifiedChangeLog, error) {
 	head, err := ParseLogPosition(opts.From.LogSeq, opts.From.LogHead, "from.log_seq", "from.log_head")
 	if err != nil {
@@ -117,10 +139,11 @@ func VerifyChangeLog(entries []any, state MembershipState, opts VerifyChangeLogO
 	if len(entries) > MaxChangeLogEntries {
 		return VerifiedChangeLog{}, badRequest("entries must be an array of at most %d entries", MaxChangeLogEntries)
 	}
+	fences := SignedFences(state)
 	checkFences := func(at ChangeLogCursor) error {
-		for _, rm := range state.Removals {
-			if rm.LogFence == at.LogSeq && rm.LogHead != at.LogHead {
-				return newErr(CodeRollback, "change log differs from the log a removal fence signed")
+		for _, f := range fences {
+			if f.LogFence == at.LogSeq && f.LogHead != at.LogHead {
+				return newErr(CodeRollback, "change log differs from the log a signed fence bound")
 			}
 		}
 		if kept, ok := opts.KeptHeads[at.LogSeq]; ok && kept != at.LogHead {
@@ -131,16 +154,16 @@ func VerifyChangeLog(entries []any, state MembershipState, opts VerifyChangeLogO
 	if err := checkFences(head); err != nil {
 		return VerifiedChangeLog{}, err
 	}
-	for _, rm := range state.Removals {
-		if rm.LogFence == 0 || rm.LogFence >= head.LogSeq {
+	for _, f := range fences {
+		if f.LogFence == 0 || f.LogFence >= head.LogSeq {
 			continue
 		}
-		kept, ok := opts.KeptHeads[rm.LogFence]
+		kept, ok := opts.KeptHeads[f.LogFence]
 		if !ok {
-			return VerifiedChangeLog{}, badRequest("a removal fence lies below from; pass the head kept at that position")
+			return VerifiedChangeLog{}, badRequest("a signed fence lies below from; pass the head kept at that position")
 		}
-		if kept != rm.LogHead {
-			return VerifiedChangeLog{}, newErr(CodeRollback, "change log differs from the log a removal fence signed")
+		if kept != f.LogHead {
+			return VerifiedChangeLog{}, newErr(CodeRollback, "change log differs from the log a signed fence bound")
 		}
 	}
 	records := make([]SignedRecord, 0, len(entries))
@@ -185,9 +208,9 @@ func VerifyChangeLog(entries []any, state MembershipState, opts VerifyChangeLogO
 		records = append(records, r)
 	}
 	if opts.Complete {
-		for _, rm := range state.Removals {
-			if rm.LogFence > head.LogSeq {
-				return VerifiedChangeLog{}, newErr(CodeRollback, "change log is behind a signed removal fence")
+		for _, f := range fences {
+			if f.LogFence > head.LogSeq {
+				return VerifiedChangeLog{}, newErr(CodeRollback, "change log is behind a signed fence")
 			}
 		}
 		for logSeq := range opts.KeptHeads {

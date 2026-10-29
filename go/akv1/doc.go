@@ -48,14 +48,17 @@
 // NextMembershipEvent, MembershipEventHash, ValidateWrapRecipients,
 // WrapsDigest, VerifyRekeyWraps, AddedDevices, VerifyDeviceWraps (signed
 // wrap sets of device-adding events); MembershipState.Removals lists each
-// removal (DeviceRemoval) with its signed log_fence and log_head.
+// removal (DeviceRemoval) with its signed log_fence and log_head, and
+// MembershipState.RoleChanges each role_set per device (RoleChange) with its
+// signed log_fence and log_head.
 //
 // Records (§5): SignRecord, ParseRecord, VerifyRecord, AuthorizeRecordWrite,
 // RecordDigest, ApplyRecord (pure CAS / conflict / tombstone model),
 // ComputeStateDigest, VerifyLoggedRecord (records read from the change log,
-// checked against each removal fence of their author), VerifyChangeLog,
+// checked against each removal fence of their author and the role and kind
+// their author had at that position), VerifyChangeLog, SignedFences,
 // NextLogHead and ParseLogPosition (change-log replay: the head chain checked
-// against each removal's signed log_head).
+// against each signed fence's log_head).
 //
 // Checkpoints (§6): SignCheckpoint, VerifyCheckpoint, CheckRollback.
 //

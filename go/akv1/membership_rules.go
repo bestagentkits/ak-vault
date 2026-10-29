@@ -21,6 +21,7 @@ type replayState struct {
 	devices         map[string]DeviceRecord
 	removed         map[string]bool
 	removals        []DeviceRemoval
+	roleChanges     []RoleChange
 	// recoveryAuthors holds every recovery author ID the chain has ever trusted.
 	recoveryAuthors map[string]bool
 }
@@ -75,7 +76,7 @@ func (r *replayState) admitDevice(d DeviceRecord, allowReadd bool) error {
 // recordRemoval records a removal; the caller has already deleted the device from devices.
 func (r *replayState) recordRemoval(d DeviceRecord, seq int64, fence ChangeLogCursor) {
 	r.removed[d.DeviceID] = true
-	r.removals = append(r.removals, DeviceRemoval{DeviceID: d.DeviceID, SignPub: d.SignPub, RemovedSeq: seq, KeyEpoch: r.keyEpoch, LogFence: fence.LogSeq, LogHead: fence.LogHead})
+	r.removals = append(r.removals, DeviceRemoval{DeviceID: d.DeviceID, SignPub: d.SignPub, RemovedSeq: seq, KeyEpoch: r.keyEpoch, LogFence: fence.LogSeq, LogHead: fence.LogHead, Role: d.Role, Kind: d.Kind})
 }
 
 func parseDeviceList(v any, what string) ([]DeviceRecord, error) {
@@ -230,31 +231,7 @@ func (r *replayState) apply(e MembershipEvent) error {
 		r.rekeyRequired = true
 		return nil
 	case EventRoleSet:
-		if err := exactKeys(body, []string{"account", "role"}, "role_set.body"); err != nil {
-			return err
-		}
-		account, err := asString(body["account"], "role_set.body.account", MaxAccountLength, 1)
-		if err != nil {
-			return err
-		}
-		role, err := asEnum(body["role"], roles, "role_set.body.role")
-		if err != nil {
-			return err
-		}
-		if _, ok := r.members[account]; !ok {
-			return badRequest("account is not a member")
-		}
-		r.members[account] = role
-		for id, d := range r.devices {
-			if d.Account == account {
-				d.Role = role
-				r.devices[id] = d
-			}
-		}
-		if r.ownerAccountCount() == 0 || r.ownerDeviceCount() == 0 {
-			return newErr(CodeForbidden, "cannot demote the last owner")
-		}
-		return nil
+		return r.applyRoleSet(body, e.Seq)
 	case EventRekey:
 		return r.applyRekey(e)
 	case EventRecoveryRotate:
@@ -415,6 +392,55 @@ func sortedKeys(set map[string]bool) []string {
 	return out
 }
 
+// applyRoleSet changes an account's role and records, for each of its current
+// devices, the change at the signed change-log fence (spec §4, §5).
+func (r *replayState) applyRoleSet(body map[string]any, seq int64) error {
+	// A fenced body carries both log_fence and log_head; a legacy body, signed
+	// before role fences existed, carries neither and is recorded with nil fences.
+	if err := exactKeys(body, []string{"account", "role"}, "role_set.body", "log_fence", "log_head"); err != nil {
+		return err
+	}
+	account, err := asString(body["account"], "role_set.body.account", MaxAccountLength, 1)
+	if err != nil {
+		return err
+	}
+	role, err := asEnum(body["role"], roles, "role_set.body.role")
+	if err != nil {
+		return err
+	}
+	_, hasFence := body["log_fence"]
+	_, hasHead := body["log_head"]
+	var fence *int64
+	var head *string
+	if hasFence || hasHead {
+		pos, err := ParseLogPosition(body["log_fence"], body["log_head"], "role_set.body.log_fence", "role_set.body.log_head")
+		if err != nil {
+			return err
+		}
+		fence, head = &pos.LogSeq, &pos.LogHead
+	}
+	if _, ok := r.members[account]; !ok {
+		return badRequest("account is not a member")
+	}
+	r.members[account] = role
+	changed := make([]DeviceRecord, 0)
+	for _, d := range r.devices {
+		if d.Account == account {
+			changed = append(changed, d)
+		}
+	}
+	sort.Slice(changed, func(i, j int) bool { return utf16Less(changed[i].DeviceID, changed[j].DeviceID) })
+	for _, d := range changed {
+		r.roleChanges = append(r.roleChanges, RoleChange{DeviceID: d.DeviceID, ChangedSeq: seq, PrevRole: d.Role, Role: role, LogFence: fence, LogHead: head})
+		d.Role = role
+		r.devices[d.DeviceID] = d
+	}
+	if r.ownerAccountCount() == 0 || r.ownerDeviceCount() == 0 {
+		return newErr(CodeForbidden, "cannot demote the last owner")
+	}
+	return nil
+}
+
 func (r *replayState) snapshot(vaultID string, seq int64, head string) MembershipState {
 	members := make([]Member, 0, len(r.members))
 	for account, role := range r.members {
@@ -432,6 +458,7 @@ func (r *replayState) snapshot(vaultID string, seq int64, head string) Membershi
 		Seq: seq, Head: head, MembershipEpoch: seq, KeyEpoch: r.keyEpoch, RekeyRequired: r.rekeyRequired,
 		NeedsRotate: sortedKeys(r.needsRotate), WrapsDigest: r.wrapsDigest,
 		Members: members, Devices: devices, RemovedDeviceIDs: sortedKeys(r.removed),
-		Removals: append([]DeviceRemoval(nil), r.removals...),
+		Removals:    append([]DeviceRemoval(nil), r.removals...),
+		RoleChanges: append([]RoleChange(nil), r.roleChanges...),
 	}
 }

@@ -245,16 +245,18 @@
         "author": "HuCy7tB5ixWPisxMZQdTTA",
         "body": {
           "account": "acct_carol",
-          "role": "editor"
+          "role": "editor",
+          "log_fence": 4,
+          "log_head": "VWwmeemWDSoykxUrp4MbdzlNMfwL7GtpIh13b9ulKRk"
         },
-        "sig": "stbS5UuJpbuP40FFdCPlPNIunX6hNkJcNPsCcFYAFntJ8NU4n3m6WXKKP5SSR-A3vu6S09cNzDMCfRDNry0hBA"
+        "sig": "TwJKMPdRwm6pEJSKlG46EcsiH4hobS-Wv4P041cgo_EDkFOzZmnTiMHM8X1rdhoTfLgCPuZmEeviXME3aLuIAA"
       },
       {
         "v": 1,
         "type": "device_remove",
         "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
         "seq": 5,
-        "prev": "l-5nz_xtIl03M9N3tonlpv2UaV7lKqstOMdgeWzlaIg",
+        "prev": "vjx3q4Abt7vj78h3HnivTyf-B_WI6jW9CcwgAPBtI0I",
         "membership_epoch": 5,
         "key_epoch": 1,
         "ts": 1767225900000,
@@ -265,7 +267,7 @@
           "log_fence": 4,
           "log_head": "VWwmeemWDSoykxUrp4MbdzlNMfwL7GtpIh13b9ulKRk"
         },
-        "sig": "PJLHKjPJkRl47M9ZVEQnLmcpZRiK4VM3GBXyGmVw-lqMYRCMILpKbYOQrSCuantY1Wkd-UXlk5MIEyREA6X5Dw"
+        "sig": "e2Ychb0A6mzHhN9kFulNhCK0tRDSKgEd6Yjs0vHEg5k-Vlh5INGCpqg9Ar2ooa3Has9HPdQi4SefrWRgGzR1Dw"
       }
     ],
     "epoch3": [
@@ -395,16 +397,18 @@
         "author": "HuCy7tB5ixWPisxMZQdTTA",
         "body": {
           "account": "acct_carol",
-          "role": "editor"
+          "role": "editor",
+          "log_fence": 4,
+          "log_head": "VWwmeemWDSoykxUrp4MbdzlNMfwL7GtpIh13b9ulKRk"
         },
-        "sig": "stbS5UuJpbuP40FFdCPlPNIunX6hNkJcNPsCcFYAFntJ8NU4n3m6WXKKP5SSR-A3vu6S09cNzDMCfRDNry0hBA"
+        "sig": "TwJKMPdRwm6pEJSKlG46EcsiH4hobS-Wv4P041cgo_EDkFOzZmnTiMHM8X1rdhoTfLgCPuZmEeviXME3aLuIAA"
       },
       {
         "v": 1,
         "type": "device_remove",
         "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
         "seq": 5,
-        "prev": "l-5nz_xtIl03M9N3tonlpv2UaV7lKqstOMdgeWzlaIg",
+        "prev": "vjx3q4Abt7vj78h3HnivTyf-B_WI6jW9CcwgAPBtI0I",
         "membership_epoch": 5,
         "key_epoch": 1,
         "ts": 1767225900000,
@@ -415,14 +419,14 @@
           "log_fence": 4,
           "log_head": "VWwmeemWDSoykxUrp4MbdzlNMfwL7GtpIh13b9ulKRk"
         },
-        "sig": "PJLHKjPJkRl47M9ZVEQnLmcpZRiK4VM3GBXyGmVw-lqMYRCMILpKbYOQrSCuantY1Wkd-UXlk5MIEyREA6X5Dw"
+        "sig": "e2Ychb0A6mzHhN9kFulNhCK0tRDSKgEd6Yjs0vHEg5k-Vlh5INGCpqg9Ar2ooa3Has9HPdQi4SefrWRgGzR1Dw"
       },
       {
         "v": 1,
         "type": "rekey",
         "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
         "seq": 6,
-        "prev": "Dol8g5u0Dr3o8SJQAJLb-fH5MZ-mduIdetDS1CGE9zc",
+        "prev": "6lS0NK0s_avyn4PVYcgF6m8PMeH2bb_C7--jtD34Qb8",
         "membership_epoch": 6,
         "key_epoch": 2,
         "ts": 1767225960000,
@@ -435,14 +439,14 @@
             "FAIn9G3vsydsuqirnEn95g"
           ]
         },
-        "sig": "01tF8hYU6_CEtpv7_1nvCf206a1PPowdEOLjTwXW_jLjqjx3nlurXgqjBLu_ko1oAL6tdd631l4iKu1zSYaeBg"
+        "sig": "dIQ1MiUoxEDRyN1QoJ68vrmcGKfJFTXRUYwldSqiEm37r3na7U9TIJ1CeyPJcUge_D54dqJgL611pWAO4OFrCQ"
       },
       {
         "v": 1,
         "type": "member_remove",
         "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
         "seq": 7,
-        "prev": "wWNvJZGxZplkahNWe5Glr6OpFrG-zkGK-qq4auVeOs8",
+        "prev": "9aSrq8WXyWu1bBQkVwFyyd-k1NGiROH494KXVfuGgHg",
         "membership_epoch": 7,
         "key_epoch": 2,
         "ts": 1767226020000,
@@ -450,16 +454,16 @@
         "body": {
           "account": "acct_carol",
           "log_fence": 7,
-          "log_head": "WekwrFZS0qMyUFmfWlyrHivE1FOg4MsfzDoBDA4iT0o"
+          "log_head": "9RR-5LLcERH7-acDVn8xpiCLBdj-aw4cOWsxjbEcVec"
         },
-        "sig": "LiBe5Y3RJGhJMc104Ee_ckpjQTILFUNyAADVxGDy7TE98UWyJpAk-QKEEGKtzfN6ms9hD8SGP9XH-B3-eIAdCQ"
+        "sig": "sX864wmNOQ3q5SNV3-6-ZqO17YO8MPIiYMvqXiDTuOIKC4xPhPIGeTiFQUG7HgriLxGecz64NtJfwipsqCziBg"
       },
       {
         "v": 1,
         "type": "rekey",
         "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
         "seq": 8,
-        "prev": "lKGx4lHQSoLo2rBhYMB80XGV4X6OcoxxZOSbc8G3pOQ",
+        "prev": "rDtqEA4PS93Cw-06sloPAs23qDgEgyboXpHnPA79GjM",
         "membership_epoch": 8,
         "key_epoch": 3,
         "ts": 1767226080000,
@@ -471,7 +475,7 @@
             "B94HiPggPKmPe3VT4nr3rQ"
           ]
         },
-        "sig": "avC7jKYH8EMHw52Lo2f79_wvAFNULcUsM5koHL31QWIIw6JL91GTRMNNbX6SdK2PRvoVwvWVTV2YVjmcnupxCw"
+        "sig": "qOhqhMgQfFGPsnZN359XtFlGcFm1dwoCmfnIM0IawS3zwIhWhPPH4G8MfVdRiv6BHZqXdBKEQCw0Iop2yro5Dg"
       }
     ]
   },
