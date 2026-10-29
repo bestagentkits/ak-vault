@@ -37,6 +37,8 @@ export class ReplayState {
   readonly removed = new Set<string>();
   readonly removals: DeviceRemoval[] = [];
   readonly roleChanges: RoleChange[] = [];
+  /** Whether a fenced `role_set` was replayed; a legacy one after it is refused. */
+  private fencedRoleSet = false;
   /** Every recovery author ID the chain has ever trusted (genesis and each recovery_rotate). */
   readonly recoveryAuthors = new Set<string>();
 
@@ -178,6 +180,10 @@ export class ReplayState {
         const role = asEnum(body['role'], ROLES, 'role_set.body.role');
         const fenced = body['log_fence'] !== undefined || body['log_head'] !== undefined;
         const logFence = fenced ? parseLogPosition(body['log_fence'], body['log_head'], 'role_set.body.log_fence', 'role_set.body.log_head') : null;
+        // Once a chain holds a fenced role_set, every later one is fenced: no Worker
+        // accepted a legacy body after a fenced one, so a legacy span cannot reopen.
+        if (!logFence && this.fencedRoleSet) fail('bad_request', 'role_set must carry log_fence and log_head after a fenced role_set');
+        if (logFence) this.fencedRoleSet = true;
         if (!this.members.has(account)) fail('bad_request', 'account is not a member');
         this.members.set(account, role);
         const changed = [...this.devices.values()].filter((d) => d.account === account).sort((a, b) => (a.device_id < b.device_id ? -1 : 1));

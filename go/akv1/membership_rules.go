@@ -22,6 +22,7 @@ type replayState struct {
 	removed         map[string]bool
 	removals        []DeviceRemoval
 	roleChanges     []RoleChange
+	fencedRoleSet   bool // a fenced role_set was replayed; a legacy one after it is refused
 	// recoveryAuthors holds every recovery author ID the chain has ever trusted.
 	recoveryAuthors map[string]bool
 }
@@ -418,6 +419,14 @@ func (r *replayState) applyRoleSet(body map[string]any, seq int64) error {
 			return err
 		}
 		fence, head = &pos.LogSeq, &pos.LogHead
+	}
+	// Once a chain holds a fenced role_set, every later one is fenced: no Worker
+	// accepted a legacy body after a fenced one, so a legacy span cannot reopen.
+	if fence == nil && r.fencedRoleSet {
+		return badRequest("role_set must carry log_fence and log_head after a fenced role_set")
+	}
+	if fence != nil {
+		r.fencedRoleSet = true
 	}
 	if _, ok := r.members[account]; !ok {
 		return badRequest("account is not a member")

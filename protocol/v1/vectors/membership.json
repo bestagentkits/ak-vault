@@ -4098,6 +4098,161 @@
       "expect_error": "bad_request"
     },
     {
+      "name": "legacy_role_set_after_fenced_role_set",
+      "events": [
+        {
+          "v": 1,
+          "type": "genesis",
+          "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+          "seq": 0,
+          "prev": "",
+          "membership_epoch": 0,
+          "key_epoch": 1,
+          "ts": 1767225600000,
+          "author": "HuCy7tB5ixWPisxMZQdTTA",
+          "body": {
+            "vault_kind": "shared",
+            "owner_account": "acct_alice",
+            "recovery_sign_pub": "cicjpS4sa49tP_XHQxIU9fqmlEzg3-5zEAB9hXr8f3w",
+            "devices": [
+              {
+                "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+                "sign_pub": "6HmixYpiJSFzQIgnT27y_mTRwBNlDQ-HiRJOPm32aXc",
+                "kx_pub": "LqtEeFnOdQnH87ofhDVV9PNJHIEajekVqv-SDVZR9Sc",
+                "account": "acct_alice",
+                "role": "owner",
+                "kind": "human"
+              },
+              {
+                "device_id": "mPcGN24XundmA61ifDsv_A",
+                "sign_pub": "z0vstIbiSxfLtTn69G72kmD3yZX5jnuTQLrZfz7h28I",
+                "kx_pub": "d3kbU9zPb7aVLzjIVYeeF57SPS5DHIX6K-IsT8zusCg",
+                "account": "acct_alice",
+                "role": "owner",
+                "kind": "human"
+              }
+            ],
+            "wraps_digest": "HcJN8DXKB6OH9LI_c9GtykUaegtP5WOJYTs99am8IgM"
+          },
+          "sig": "E0kZLnHTcl9VBKFBmuTH_LUDJFg_6sPSl3uLJxF_TZrX2_CaV1jQNLv6I_bs8ZG9aJRs9C7GlbsMRLWfgyxNBg"
+        },
+        {
+          "v": 1,
+          "type": "member_add",
+          "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+          "seq": 1,
+          "prev": "wUdV3e_ipp1TGh7owkpzswXqBIxmBQmrDB0ZAQgGkN4",
+          "membership_epoch": 1,
+          "key_epoch": 1,
+          "ts": 1767225660000,
+          "author": "HuCy7tB5ixWPisxMZQdTTA",
+          "body": {
+            "account": "acct_bob",
+            "role": "editor",
+            "devices": [
+              {
+                "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
+                "sign_pub": "8Sl_Qk5W-Cwk6HhY2S951u5xR2frlYJJyOtxvopuP1I",
+                "kx_pub": "ELlyqDkvIt0-bmTOd4jjkbzrOE4IdOoG4SRj7mWawnM",
+                "account": "acct_bob",
+                "role": "editor",
+                "kind": "human"
+              }
+            ],
+            "wraps_digest": "KsSvazWBE34zP9HVh05kQ2Z2Z_cat4nS_FlQQAFtSPU"
+          },
+          "sig": "47hSHpkuFGmrrcOR0dhWWcZJ7G02nKlnt_HRUm2gd_yU7rdPIWIlY737BpjPbYmoGMQLD5GUYf6WcXcdIBPrDQ"
+        },
+        {
+          "v": 1,
+          "type": "member_add",
+          "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+          "seq": 2,
+          "prev": "5fk4TZ32LusZfQl-xD6mFJkiSdahkuVCd-6vpurmK6U",
+          "membership_epoch": 2,
+          "key_epoch": 1,
+          "ts": 1767225720000,
+          "author": "HuCy7tB5ixWPisxMZQdTTA",
+          "body": {
+            "account": "acct_carol",
+            "role": "reader",
+            "devices": [
+              {
+                "device_id": "Y4CBEh--AKj7ERA_HtNgNQ",
+                "sign_pub": "3m2OkRW47bUiZF_IKdm24I-KFXOeLEhWhUSXip095w0",
+                "kx_pub": "4CYES0oBvJqiVfSPwAuuFB_hrYJWf0qypO3XcuOCnA0",
+                "account": "acct_carol",
+                "role": "reader",
+                "kind": "human"
+              }
+            ],
+            "wraps_digest": "U8GjaPQXn0e1_fGvgL9dBycuIRlMX5OeDzMcCq53Qms"
+          },
+          "sig": "SaJzZ_c5XsoQ4za5xRNseA62OiEDttGZw5eolFmOM67fimSSFklHrVD9VTabQfzNPzAmD5NuAfDEIRAmXn9rBQ"
+        },
+        {
+          "v": 1,
+          "type": "device_add",
+          "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+          "seq": 3,
+          "prev": "X5F0W4cNIA9sPFnyPZVt0T_1ExJfah8cTNI4wsluPI0",
+          "membership_epoch": 3,
+          "key_epoch": 1,
+          "ts": 1767225780000,
+          "author": "mPcGN24XundmA61ifDsv_A",
+          "body": {
+            "device": {
+              "device_id": "iQ2KsN3aGg31ygTNTWkxtw",
+              "sign_pub": "UeKy8UQ8xkq1u4KKdIrZyTuqetjHAEPHPGkw_3e__PE",
+              "kx_pub": "T4bYbMtzwVzqOohRmiEwh2dVDU8GH6PfzKWh66wagy4",
+              "account": "acct_bob",
+              "role": "editor",
+              "kind": "machine"
+            },
+            "sas": "W77TKucqNn1402Dup8g-41sYi4pVCBr361tCD9qNZLY",
+            "wraps_digest": "mmOP47ub4V2tYcbhoVr_lcYhMJcUREucOhaBygipXaw"
+          },
+          "sig": "POMVzjodShf90L8n7UZSXC901y7iZbD3MzHlwrPBPIfV9fO-tzM0oe5UbaaFYXj-rmjx8ZzvHDV4xtddeTdVBg"
+        },
+        {
+          "v": 1,
+          "type": "role_set",
+          "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+          "seq": 4,
+          "prev": "EnazFHyLImbiuWCFzSJfBuq6508-AXsaLV6RYnX6UZg",
+          "membership_epoch": 4,
+          "key_epoch": 1,
+          "ts": 1767225840000,
+          "author": "HuCy7tB5ixWPisxMZQdTTA",
+          "body": {
+            "account": "acct_carol",
+            "role": "editor",
+            "log_fence": 4,
+            "log_head": "VWwmeemWDSoykxUrp4MbdzlNMfwL7GtpIh13b9ulKRk"
+          },
+          "sig": "TwJKMPdRwm6pEJSKlG46EcsiH4hobS-Wv4P041cgo_EDkFOzZmnTiMHM8X1rdhoTfLgCPuZmEeviXME3aLuIAA"
+        },
+        {
+          "v": 1,
+          "type": "role_set",
+          "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+          "seq": 5,
+          "prev": "vjx3q4Abt7vj78h3HnivTyf-B_WI6jW9CcwgAPBtI0I",
+          "membership_epoch": 5,
+          "key_epoch": 1,
+          "ts": 1767225900000,
+          "author": "HuCy7tB5ixWPisxMZQdTTA",
+          "body": {
+            "account": "acct_bob",
+            "role": "reader"
+          },
+          "sig": "4qdrzPMl1ShSYOsPNren4gq4jBTgdyMW28EByMM9nCUIzAurERZOuTHjIfMTEZZxJTWaDfvVMuI7-adR4Op2Bg"
+        }
+      ],
+      "options": {},
+      "expect_error": "bad_request"
+    },
+    {
       "name": "role_set_null_log_fence_and_head",
       "events": [
         {

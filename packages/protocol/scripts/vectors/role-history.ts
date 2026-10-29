@@ -12,10 +12,10 @@
  * bobCi never.
  *
  * Chain `legacy` (same vault ID) holds `role_set` events signed without a fence,
- * as an earlier revision allowed: genesis; the same two member_adds; role_set
- * acct_bob editor (log_fence 2, a same-role re-affirm); legacy role_set acct_bob
- * reader; legacy role_set acct_carol editor; role_set acct_bob reader (log_fence
- * 4); role_set acct_carol editor (log_fence 6). Between two fenced changes a
+ * as an earlier revision allowed (only before the first fenced one): genesis; the
+ * same two member_adds; legacy role_set acct_bob reader; legacy role_set
+ * acct_carol editor; role_set acct_bob reader (log_fence 4, a same-role
+ * re-affirm); role_set acct_carol editor (log_fence 6, a re-affirm). Between two fenced changes a
  * legacy change has no position, so any role the author held there counts:
  * bobLaptop may write at 1..4 (a writer before its legacy demotion), carolPhone at
  * every position (a writer after its legacy promotion), bobCi never.
@@ -120,7 +120,6 @@ const legacyFenceAt = (logSeq: number) => ({ log_fence: logSeq, log_head: LEGACY
 
 const LEGACY_CHAIN = buildChain(VAULT_ROLES, [
   ...PREFIX,
-  { type: 'role_set', ...by(alicePhone), body: { account: 'acct_bob', role: 'editor', ...legacyFenceAt(2) } },
   { type: 'role_set', ...by(alicePhone), body: { account: 'acct_bob', role: 'reader' } },
   { type: 'role_set', ...by(alicePhone), body: { account: 'acct_carol', role: 'editor' } },
   { type: 'role_set', ...by(alicePhone), body: { account: 'acct_bob', role: 'reader', ...legacyFenceAt(4) } },
@@ -195,7 +194,7 @@ export function roleHistoryVectors(): Record<string, unknown> {
       ok('promoted_reader_after_promotion_fence', carolE1, 5),
       ok('promoted_reader_at_demotion_fence', carolE1, 7),
       ok('owner_unaffected', record('alice-e2', alicePhone, 2), 100),
-      ok('legacy_editor_at_reaffirm_fence_before_legacy_demotion', bobE1, 2, 'legacy'),
+      ok('legacy_editor_before_legacy_demotion', bobE1, 2, 'legacy'),
       ok('legacy_editor_in_legacy_demotion_span', bobE1, 3, 'legacy'),
       ok('legacy_editor_at_bounding_fence', bobE1, 4, 'legacy'),
       ok('legacy_reader_in_legacy_promotion_span', carolE1, 5, 'legacy'),

@@ -303,53 +303,35 @@
         "author": "HuCy7tB5ixWPisxMZQdTTA",
         "body": {
           "account": "acct_bob",
-          "role": "editor",
-          "log_fence": 2,
-          "log_head": "Oy3F1Uqo-bImWBlv0BfjW1b2Zl7kOLm-tFhCUJGz1mI"
+          "role": "reader"
         },
-        "sig": "RD_OT5CFCNPKr5auehJ7r06dH407mvufzxzbCXSAVgCnCrLnhppI7r80gfDO6_l74GzwzA2p5im6pendDVfVBQ"
+        "sig": "xVKHZhuhh4VxI8s5AbQ93dZyjXmWprZleeGuQx0ZveuCCGqhmV44CubGr1mZNF3y0KRCQAJ6iNdW626kKyM_CQ"
       },
       {
         "v": 1,
         "type": "role_set",
         "vault_id": "OHa5mSchm-W76I7C-jvZ9A",
         "seq": 4,
-        "prev": "tL0e4VFww92J5_vYXppeNOQI20GFEg7E9rWW89sCTJc",
+        "prev": "Mex9YejDTifvJf7NaGU0kO7Owp2nGJg6bDXW3Y-6uCM",
         "membership_epoch": 4,
         "key_epoch": 1,
         "ts": 1767225840000,
         "author": "HuCy7tB5ixWPisxMZQdTTA",
         "body": {
-          "account": "acct_bob",
-          "role": "reader"
+          "account": "acct_carol",
+          "role": "editor"
         },
-        "sig": "mxRM0V-ZZE1TtKVy5B7OMe-RJpLOb7Ic0-d5jatneb4eWVqBe2DZSTBOH8pD74EOaPzhp6mSaQiTtQGlCdlwBA"
+        "sig": "VzVNvYdZWFN3cdv3iJ-xjL8Q_Ygt796KCL4r9rvYqLsKclHvji2rwbFT-GbAC5-0qz7-C8xbKX34_BU52TtbAQ"
       },
       {
         "v": 1,
         "type": "role_set",
         "vault_id": "OHa5mSchm-W76I7C-jvZ9A",
         "seq": 5,
-        "prev": "-Dke-vD7JINxuxj0d_xgQ0HpTZxSQGOgH-BL5UQRgwE",
+        "prev": "1W5R4mQ-yTMTtx2mb1pFnRjAS-N2uz6NoCQc3qPdgJE",
         "membership_epoch": 5,
         "key_epoch": 1,
         "ts": 1767225900000,
-        "author": "HuCy7tB5ixWPisxMZQdTTA",
-        "body": {
-          "account": "acct_carol",
-          "role": "editor"
-        },
-        "sig": "ds0TQuPSW-HQvEBL9ACpphKSbgIjlqvfTEi-jiNKjbYrpBOOSeo4C29bFFW02VJr66dc2KhHb_e8jx4MGYKUAg"
-      },
-      {
-        "v": 1,
-        "type": "role_set",
-        "vault_id": "OHa5mSchm-W76I7C-jvZ9A",
-        "seq": 6,
-        "prev": "viqG6fRZ-x5hFxwVHsQ1QqRbaD0yy98Ddn0LHSR2Y3s",
-        "membership_epoch": 6,
-        "key_epoch": 1,
-        "ts": 1767225960000,
         "author": "HuCy7tB5ixWPisxMZQdTTA",
         "body": {
           "account": "acct_bob",
@@ -357,17 +339,17 @@
           "log_fence": 4,
           "log_head": "ecjAlpemHKzLsgbKvpxhpWxQxccOeNufgANDcn4qBpA"
         },
-        "sig": "mTf8DoSD5YcQ_nKw0lNI-UTd_KHElaZPzue76oeTR1fP9dHUaQlBpNf_DhS47rJg1p22p1-BYyOkrB6s9URlBw"
+        "sig": "5-JZpu3Q3nVrmMpyiGFqvY5ZmDOGD8vnFVNGLiGr2tgJtODpqRvVtQXsx3NBPc5zUurm2e71g2ysCPmtbsamDA"
       },
       {
         "v": 1,
         "type": "role_set",
         "vault_id": "OHa5mSchm-W76I7C-jvZ9A",
-        "seq": 7,
-        "prev": "GWZl7hp34oXMQDaqsGlI4FvBwfkgpI_tZetH2bTz1i4",
-        "membership_epoch": 7,
+        "seq": 6,
+        "prev": "vY0OZSAZL7wUImQPS6fst9nWD1Ruae1DogNqeuImbOg",
+        "membership_epoch": 6,
         "key_epoch": 1,
-        "ts": 1767226020000,
+        "ts": 1767225960000,
         "author": "HuCy7tB5ixWPisxMZQdTTA",
         "body": {
           "account": "acct_carol",
@@ -375,7 +357,7 @@
           "log_fence": 6,
           "log_head": "zV8gipc4h4KMfCckyckPthRIe3rgw5-ctUYZyP_FQvw"
         },
-        "sig": "-Yz_CM8kfTgQOWqTGXxdj1HNPGEUdhdNfL9m6S_x_-6eqVtoz99NCRqpr2fht-ywqrG5klx14oK5TVxijNOtDw"
+        "sig": "RvK_oPaxU6ovIoIco4mOe5su9Ip5bOrHeZBI2vgPfftUjGpCrEfJQfyuq8X1OFuiOj4ZtbpteR3li6T7w6qoDg"
       }
     ],
     "readded": [
@@ -649,53 +631,37 @@
         "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
         "changed_seq": 3,
         "prev_role": "editor",
-        "role": "editor",
-        "log_fence": 2,
-        "log_head": "Oy3F1Uqo-bImWBlv0BfjW1b2Zl7kOLm-tFhCUJGz1mI"
+        "role": "reader",
+        "log_fence": null,
+        "log_head": null
       },
       {
         "device_id": "iQ2KsN3aGg31ygTNTWkxtw",
         "changed_seq": 3,
         "prev_role": "editor",
-        "role": "editor",
-        "log_fence": 2,
-        "log_head": "Oy3F1Uqo-bImWBlv0BfjW1b2Zl7kOLm-tFhCUJGz1mI"
-      },
-      {
-        "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
-        "changed_seq": 4,
-        "prev_role": "editor",
-        "role": "reader",
-        "log_fence": null,
-        "log_head": null
-      },
-      {
-        "device_id": "iQ2KsN3aGg31ygTNTWkxtw",
-        "changed_seq": 4,
-        "prev_role": "editor",
         "role": "reader",
         "log_fence": null,
         "log_head": null
       },
       {
         "device_id": "Y4CBEh--AKj7ERA_HtNgNQ",
+        "changed_seq": 4,
+        "prev_role": "reader",
+        "role": "editor",
+        "log_fence": null,
+        "log_head": null
+      },
+      {
+        "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
         "changed_seq": 5,
         "prev_role": "reader",
-        "role": "editor",
-        "log_fence": null,
-        "log_head": null
-      },
-      {
-        "device_id": "VnU8BMAC7zPBg_J4WIZmkA",
-        "changed_seq": 6,
-        "prev_role": "reader",
         "role": "reader",
         "log_fence": 4,
         "log_head": "ecjAlpemHKzLsgbKvpxhpWxQxccOeNufgANDcn4qBpA"
       },
       {
         "device_id": "iQ2KsN3aGg31ygTNTWkxtw",
-        "changed_seq": 6,
+        "changed_seq": 5,
         "prev_role": "reader",
         "role": "reader",
         "log_fence": 4,
@@ -703,7 +669,7 @@
       },
       {
         "device_id": "Y4CBEh--AKj7ERA_HtNgNQ",
-        "changed_seq": 7,
+        "changed_seq": 6,
         "prev_role": "editor",
         "role": "editor",
         "log_fence": 6,
@@ -915,7 +881,7 @@
       "log_seq": 100
     },
     {
-      "name": "legacy_editor_at_reaffirm_fence_before_legacy_demotion",
+      "name": "legacy_editor_before_legacy_demotion",
       "chain": "legacy",
       "record": {
         "v": 1,

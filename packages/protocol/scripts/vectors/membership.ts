@@ -146,6 +146,7 @@ function invalidChains() {
     bad('demote_last_owner', 'forbidden', withStep(1, { type: 'role_set', ...by(alicePhone), body: { account: 'acct_alice', role: 'editor', log_fence: 0, log_head: '' } })),
     bad('role_set_without_log_fence', 'bad_request', withStep(4, { ...SHARED[4]!, body: { account: 'acct_carol', role: 'editor', log_head: fenceAt('shared', 4).log_head } })),
     bad('role_set_without_log_head', 'bad_request', withStep(4, { ...SHARED[4]!, body: { account: 'acct_carol', role: 'editor', log_fence: 4 } })),
+    bad('legacy_role_set_after_fenced_role_set', 'bad_request', withStep(5, { type: 'role_set', ...by(alicePhone), body: { account: 'acct_bob', role: 'reader' } })),
     bad('role_set_null_log_fence_and_head', 'bad_request', withStep(4, { ...SHARED[4]!, body: { account: 'acct_carol', role: 'editor', log_fence: null, log_head: null } })),
     bad('role_set_empty_log_head_above_zero', 'bad_request', withStep(4, { ...SHARED[4]!, body: { account: 'acct_carol', role: 'editor', log_fence: 4, log_head: '' } })),
     bad('remove_last_owner_device', 'forbidden', personal(1, { type: 'device_remove', ...by(alicePhone), body: { device_id: alicePhone.record.device_id, reason: 'retired', log_fence: 0, log_head: '' } })),
