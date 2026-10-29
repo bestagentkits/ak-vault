@@ -451,7 +451,9 @@ operator script's `bookmark` action: it is exact, while a time lookup is not (be
    moves the bookmark, so a `409` means the vault changed in between: read it again.
    On a busy vault, turn sync off first with the [kill switch](#kill-switch). A
    time-based target on a young vault can land before its genesis: a `bookmark`
-   read afterwards then shows `vault_exists: false`, and the undo still works.
+   read afterwards then shows `vault_exists: false`, and the undo still works. `vault_exists`
+   means a membership state is stored, even if the Worker refuses that vault to clients
+   as predating the current protocol revision; the bookmark is still readable then.
 5. The response holds the target and the **undo bookmark** (the moment just before
    the restore). Record both on the incident issue before going on; nothing else
    keeps them. From scheduling until the restart the vault refuses every request
