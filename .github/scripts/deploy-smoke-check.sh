@@ -34,6 +34,9 @@ esac
 max_attempts="${SMOKE_MAX_ATTEMPTS:-24}"
 interval_s="${SMOKE_INTERVAL_SECONDS:-5}"
 required_passes="${SMOKE_REQUIRED_PASSES:-3}"
+case "$max_attempts$interval_s$required_passes" in
+  *[!0-9]* | "") echo "SMOKE_* overrides must be non-negative integers" >&2; exit 2 ;;
+esac
 if [ "$max_attempts" -lt "$required_passes" ]; then
   echo "SMOKE_MAX_ATTEMPTS must be at least SMOKE_REQUIRED_PASSES" >&2
   exit 2
