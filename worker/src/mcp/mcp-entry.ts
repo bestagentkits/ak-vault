@@ -44,7 +44,7 @@ import { callLocalTool } from './write-request-tools.js';
 
 const SERVER_INFO = { name: 'ak-vault', title: 'AgentKit Vault', version: WORKER_VERSION };
 const INSTRUCTIONS =
-  'Search, describe and use the secrets in your AgentKit Vault. Secret values are never returned. To store a secret you do not have, call secrets_prepare_write (name only) and give the user the form_url so they type the value in their browser; never ask for or pass a secret value in chat. Reads, requests and run need one of your devices online with `ak secrets sync now --watch --relay`; a set or delete with no device online is sealed and queued until a device applies it.';
+  'Search, describe and use the secrets in your AgentKit Vault. Secret values are never returned. To store a secret you do not have, call secrets_request_input (name only) and give the user the form_url so they type the value in their browser; never ask for or pass a secret value in chat, even when that tool fails. Reads, requests and run need one of your devices online with `ak secrets sync now --watch --relay`; a set or delete with no device online is sealed and queued until a device applies it.';
 const CAPABILITIES = { tools: { listChanged: false } };
 
 export async function handleMcp(request: Request, env: Env): Promise<Response> {

@@ -86,7 +86,8 @@ export function ensureAuditSchema(storage: DurableObjectStorage): void {
 }
 const AUDIT_CAPS = [[0, AUDIT_MAX_ROWS], [1, AUDIT_MAX_SUCCESS_ROWS]] as const;
 const RATE_WINDOW_MS = 60_000;
-const WRITE_TOOLS: ReadonlySet<RelayTool> = new Set<RelayTool>(['set', 'delete']);
+/** Tools only a writer (owner or editor) device takes: it writes a record for them. */
+const WRITE_TOOLS: ReadonlySet<RelayTool> = new Set<RelayTool>(['set', 'delete', 'request_input', 'input_deliver']);
 
 interface PendingCall {
   cid: string;
@@ -284,12 +285,14 @@ export class AccountRelay extends DurableObject<Env> {
   }
 
   /**
-   * Relay one MCP tool call to an online device of this account (spec §9.7). Throws
+   * Relay one tool call to an online device of this account (spec §9.7), or only to
+   * `call.deviceId` when set (an input request's issuing device). Throws
    * when the revocation registry or a vault object cannot answer (fail closed).
    */
   async dispatch(call: RelayCall): Promise<RelayOutcome> {
     const tool = call.tool;
     if (!(RELAY_TOOLS as readonly string[]).includes(tool) || !Number.isSafeInteger(call.deadlineMs) || call.deadlineMs < 1) return { kind: 'invalid_args' };
+    if (call.deviceId !== undefined && typeof call.deviceId !== 'string') return { kind: 'invalid_args' };
     try {
       parseToolArgs(tool, call.args);
     } catch {
@@ -308,7 +311,7 @@ export class AccountRelay extends DurableObject<Env> {
       vaultId = [...known][0]!;
     }
     const candidates = ready
-      .filter(([, c]) => c.vaults.includes(vaultId) && c.tools.includes(tool))
+      .filter(([, c]) => c.vaults.includes(vaultId) && c.tools.includes(tool) && (call.deviceId === undefined || c.did === call.deviceId))
       .sort(([, a], [, b]) => b.helloAt - a.helloAt);
     let busy = false;
     for (const [ws, initial] of candidates) {

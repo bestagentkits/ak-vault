@@ -25,6 +25,11 @@ export interface RelayCall {
   caller: RelayCaller;
   /** Requested device deadline; capped at `relay_call_deadline_ms` (`run`: `relay_run_deadline_ms`). */
   deadlineMs: number;
+  /**
+   * Only this device may take the call (an input request's issuing device, ADR 0004);
+   * every other check still applies. When absent, the newest eligible device takes it.
+   */
+  deviceId?: string;
 }
 
 /**

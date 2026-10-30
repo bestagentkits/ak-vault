@@ -17,6 +17,13 @@ export interface Env {
    */
   VAULT_REMOTE_ACCESS_ENABLED?: string;
   /**
+   * Device-sealed input requests (ADR 0004): the `/v1/vaults/:vid/input-requests/:rid`
+   * routes, the item PUT `?input_request=` parameter and the device flow of
+   * `secrets_request_input` serve only when exactly "true" and remote access is on.
+   * Unset in every deployed environment until ak-web mints `input` session tokens.
+   */
+  VAULT_INPUT_REQUESTS_ENABLED?: string;
+  /**
    * Refuse a new `role_set` without a signed log fence (spec §5). "false" in every
    * environment until the CLIs that sign the fence have replaced older ones; any
    * other value, or none, refuses (fail closed).
@@ -44,6 +51,11 @@ export function remoteAccessEnabled(env: Pick<Env, 'VAULT_REMOTE_ACCESS_ENABLED'
   return env.VAULT_REMOTE_ACCESS_ENABLED === 'true';
 }
 
+/** Whether the device-sealed input requests serve: remote access on and the input flag exactly "true" (fail closed). */
+export function inputRequestsEnabled(env: Pick<Env, 'VAULT_REMOTE_ACCESS_ENABLED' | 'VAULT_INPUT_REQUESTS_ENABLED'>): boolean {
+  return remoteAccessEnabled(env) && env.VAULT_INPUT_REQUESTS_ENABLED === 'true';
+}
+
 /** Whether a new unfenced `role_set` is refused (fail closed: anything but exactly "false" refuses). */
 export function refuseLegacyRoleSet(env: Pick<Env, 'VAULT_REFUSE_LEGACY_ROLE_SET'>): boolean {
   return env.VAULT_REFUSE_LEGACY_ROLE_SET !== 'false';
@@ -57,6 +69,11 @@ export function mcpResource(env: Pick<Env, 'VAULT_AUDIENCE'>): string {
 /** The dashboard sign-in resource, `<origin>/app` (ADR 0002 D6). */
 export function appResource(env: Pick<Env, 'VAULT_AUDIENCE'>): string {
   return `${env.VAULT_AUDIENCE}/app`;
+}
+
+/** The input-form session resource, `<origin>/input` (ADR 0004 D3): the audience of `input` session tokens. */
+export function inputResource(env: Pick<Env, 'VAULT_AUDIENCE'>): string {
+  return `${env.VAULT_AUDIENCE}/input`;
 }
 
 /** Origin of the token issuer (the authorization server the dashboard talks to). */

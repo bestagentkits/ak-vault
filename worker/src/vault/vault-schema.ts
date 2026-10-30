@@ -69,11 +69,14 @@ export const VAULT_SCHEMA = `
   CREATE INDEX IF NOT EXISTS sealed_ops_expiry ON sealed_ops (expires_at);
   -- Human write requests (spec §3.10): a person types the value in the dashboard instead of the AI client.
   -- intent is the sealed write intent (the secret name is only inside its ciphertext) and is cleared when the
-  -- request closes or expires; the row keeps the sanitized outcome until it is purged.
+  -- request closes or expires; the row keeps the sanitized outcome until it is purged. flow 'device' rows are
+  -- device-sealed input requests (ADR 0004): no intent, the issuing device_id and its one-time public input_pub
+  -- (a public key, never the secret half, never the sealed value).
   CREATE TABLE IF NOT EXISTS write_requests (
     request_id TEXT PRIMARY KEY, account TEXT NOT NULL, client_id TEXT NOT NULL, grant_id TEXT NOT NULL,
     token_iat INTEGER NOT NULL, operation TEXT NOT NULL, state TEXT NOT NULL, intent TEXT, reason TEXT, receipt TEXT,
-    created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, closed_at INTEGER
+    created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, closed_at INTEGER,
+    flow TEXT NOT NULL DEFAULT 'dashboard', device_id TEXT, input_pub TEXT
   );
   CREATE INDEX IF NOT EXISTS write_requests_account ON write_requests (account, state);
 `;
@@ -88,8 +91,9 @@ export const VAULT_SCHEMA = `
 const LEGACY_SEALED_IAT_MARGIN_S = MCP_MAX_LIFETIME_SECONDS + 2 * LIMITS.clock_skew_seconds;
 
 /**
- * Apply the idempotent schema, then add the sealed_ops grant columns to a table created before
- * they existed (CREATE TABLE IF NOT EXISTS leaves such a table unchanged), and backfill every
+ * Apply the idempotent schema, then add the sealed_ops grant columns and the write_requests input
+ * columns to tables created before they existed (CREATE TABLE IF NOT EXISTS leaves such a table
+ * unchanged), and backfill every
  * pending row stored without them. The backfill runs on every start, not only when a column is
  * added: a row written by an earlier revision after the columns existed (a rollback, then a roll
  * forward) must not stay uncancellable.
@@ -99,6 +103,11 @@ export function applyVaultSchema(sql: SqlStorage): void {
   const columns = sql.exec<{ name: string }>("SELECT name FROM pragma_table_info('sealed_ops')").toArray().map((c) => c.name);
   if (!columns.includes('grant_id')) sql.exec('ALTER TABLE sealed_ops ADD COLUMN grant_id TEXT');
   if (!columns.includes('token_iat')) sql.exec('ALTER TABLE sealed_ops ADD COLUMN token_iat INTEGER');
+  // write_requests created before input requests existed hold dashboard rows only.
+  const requestColumns = sql.exec<{ name: string }>("SELECT name FROM pragma_table_info('write_requests')").toArray().map((c) => c.name);
+  if (!requestColumns.includes('flow')) sql.exec("ALTER TABLE write_requests ADD COLUMN flow TEXT NOT NULL DEFAULT 'dashboard'");
+  if (!requestColumns.includes('device_id')) sql.exec('ALTER TABLE write_requests ADD COLUMN device_id TEXT');
+  if (!requestColumns.includes('input_pub')) sql.exec('ALTER TABLE write_requests ADD COLUMN input_pub TEXT');
   // The grant is inside the stored wire; the token iat is bounded from below by queue time.
   sql.exec(
     "UPDATE sealed_ops SET grant_id = COALESCE(grant_id, json_extract(wire, '$.origin.grant_id')), token_iat = COALESCE(token_iat, created_at / 1000 - ?) WHERE wire IS NOT NULL AND (grant_id IS NULL OR token_iat IS NULL)",

@@ -8,11 +8,12 @@
  * `session_kind` is required and must be one of SESSION_KINDS: an absent, unknown or
  * non-string value is refused, so a token ak-web minted without it never passes as a
  * human `email_otp` session.
- * MCP access tokens (`<origin>/mcp`, spec §9.8) have their own verifier and claim set.
+ * MCP access tokens (`<origin>/mcp`, spec §9.8) and `input` session tokens
+ * (`<origin>/input`, ADR 0004) have their own verifiers and claim sets.
  * Every failure is `unauthorized`; nothing from the token is echoed.
  */
 import { MCP_SCOPES, b64decode, b64decodeLength, utf8Decode, utf8Encode, type McpScope } from '@ak-vault/protocol';
-import { mcpResource } from '../env.js';
+import { inputResource, mcpResource } from '../env.js';
 import { ApiError } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
 import { getIssuerKey } from './jwks.js';
@@ -227,6 +228,49 @@ export async function verifyMcpToken(token: string, config: TokenConfig, nowMs =
     iat,
     exp,
     scope: parseMcpScope(claims['scope']),
+  };
+}
+
+/**
+ * Claims of a verified `input` session token (ADR 0004 D3): the signed-in account of
+ * the `/input` form. No device, no proof, no scope: it reaches only the two
+ * input-request routes, and only for its own account's requests.
+ */
+export interface InputClaims {
+  sub: string;
+  sid: string;
+  jti: string;
+  iat: number;
+  exp: number;
+}
+
+/** Exactly the claims an `input` session token carries. */
+const INPUT_CLAIMS = ['iss', 'aud', 'sub', 'sid', 'session_kind', 'jti', 'iat', 'nbf', 'exp'];
+export const INPUT_SESSION_KIND = 'input';
+export const INPUT_MAX_LIFETIME_SECONDS = 600;
+
+/**
+ * Verify an `input` session token for `<origin>/input` (ADR 0004 D3). Self-contained
+ * so its contract can change without touching the sync or MCP verifiers: header `typ`
+ * `JWT` or `at+jwt` (required), the shared issuer and JWKS, exactly the listed claims
+ * (so a `did` or `scope` is refused), `session_kind` = `input`, and `exp` after `iat`
+ * by at most 600 s. Every failure is `unauthorized`. Live revocation is separate:
+ * `assertGrantNotRevoked` by `sid`. Its audience keeps it out of every other route,
+ * and the sync, MCP and dashboard audiences keep their tokens out of the input routes.
+ */
+export async function verifyInputToken(token: string, config: TokenConfig, nowMs = Date.now()): Promise<InputClaims> {
+  const { header, claims, iat, exp } = await verifyJwt(token, config, inputResource(config), nowMs);
+  if (header['typ'] !== 'JWT' && header['typ'] !== 'at+jwt') deny();
+  const keys = Object.keys(claims);
+  if (keys.length !== INPUT_CLAIMS.length || !keys.every((k) => INPUT_CLAIMS.includes(k))) deny();
+  if (claims['session_kind'] !== INPUT_SESSION_KIND) deny();
+  if (exp - iat > INPUT_MAX_LIFETIME_SECONDS || exp <= iat) deny();
+  return {
+    sub: boundedString(claims['sub']),
+    sid: boundedString(claims['sid']),
+    jti: boundedString(claims['jti']),
+    iat,
+    exp,
   };
 }
 
