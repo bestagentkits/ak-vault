@@ -118,6 +118,23 @@ section will restate it normatively.
   `error.code` `conflict` when the PUT loses a compare-and-swap. The value is never
   logged, returned or kept after the write.
 
+### Implementation notes
+
+The spec ([§3.11](../protocol/v1/spec.md#311-input-seals-device-sealed-input-requests))
+owns the wire. Where the implementation made a choice this ADR left open:
+
+- **D1 order.** The Worker has no record of which devices are browsers, so
+  `secrets_request_input` tries the device-sealed flow first and falls back to the D8
+  dashboard flow when no online device of the account lists the input tools; with no
+  seal-key document either it fails `device_offline`. The device flow keeps the key
+  in one device for ten minutes, narrower than D8's `VK[e]`.
+- **D3 token.** The `input` token is a vault token with its own audience
+  `<origin>/input`, so no sync, relay or MCP route can accept it even before its
+  `session_kind` is read. Claims, lifetime and revocation are in the spec.
+- **Rollout.** The input routes and the device flow are off unless
+  `VAULT_INPUT_REQUESTS_ENABLED` is `true`. They stay off until ak-web mints `input`
+  tokens and the `/input` page ships; until then the tool behaves as D8.
+
 ## Alternatives rejected
 
 | Alternative | Why rejected |

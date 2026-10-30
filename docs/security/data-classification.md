@@ -21,6 +21,7 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Sealed operation contents (`op`, name, value, sensitivity) at rest | Sealed to the epoch's `seal_pub`; only member devices derive `SealSK[e]` ([spec §3.6](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)). The Worker saw them in plaintext before sealing ([transit table](#transits-worker-memory-never-stored-or-logged-remote-access-only)) |
 | Write intent contents (requested name, purpose, sensitivity) at rest | Sealed to the epoch's `seal_pub` under its own context; carries no value; cleared when the request closes, or lazily after it expires ([spec §3.10](../protocol/v1/spec.md#310-write-intents-human-write-requests)). The Worker saw them in plaintext before sealing |
 | Value typed into a write-request form | Encrypted and signed by the browser device as a normal item record; never in the MCP client or Worker in plaintext |
+| Value typed into an input-request form | Sealed in the browser to the issuing device's one-time `input_pub` ([spec §3.11](../protocol/v1/spec.md#311-input-seals-device-sealed-input-requests)); the Worker relays the ciphertext and never stores or logs it; the device writes it as a normal item record |
 | Audit of drained sealed operations and dropped profile fields (`sealed_applied`, `sealed_refused`, `profile_invalid`, `profile_provenance_invalid`) and of dashboard rotation state changes (`rotation_*`: type, item ID, author device, time) | Encrypted audit stream |
 
 ## Visible operational metadata (unavoidable)
@@ -40,7 +41,8 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | `name_tag` per record head (16-byte keyed tag and its `key_epoch`) | `lookup`; reveals which records share a name within an epoch, not the name ([spec §3.7](../protocol/v1/spec.md#37-name-tags-keyed-blind-index)) |
 | Seal-key document (vault ID, key epoch, membership position, `seal_pub`, author, time, signature) | Serving the key the MCP handler seals to |
 | Sealed operation envelope: `sealed_id`, key epoch, queue position, `origin` (`account`, `client_id`, `grant_id`), time, ciphertext size, the `iat` of the MCP token that queued it, and the `applied`/`refused`/`cancelled` outcome (`cancelled`: its grant was revoked) | Queueing, deduplication, expiry and audit attribution |
-| Write request row: `request_id`, requesting `account`, `client_id`, `grant_id`, the MCP token's `iat`, operation (`create`/`replace`), state, closed reason, opaque receipt, created, expiry and close times, intent ciphertext size | Binding the request to its account and grant, revocation re-checks, single use, expiry and status for the requesting client |
+| Write request row: `request_id`, requesting `account`, `client_id`, `grant_id`, the MCP token's `iat`, operation (`create`/`replace`), state, closed reason, opaque receipt, created, expiry and close times, intent ciphertext size; for an input request also `flow` (`device`), the issuing `device_id` and its public `input_pub` (no intent, no name, no ciphertext) | Binding the request to its account and grant, revocation re-checks, single use, expiry and status for the requesting client; routing the one submission to the device that holds the key |
+| `input` session token claims: `sub`, `sid`, `session_kind` (`input`), `jti` ([spec §3.11](../protocol/v1/spec.md#input-sessions-and-routes-worker)) | Binding the input form to the requesting account and revoking it with its sign-in grant |
 | Lookup requests: the requested `(key_epoch, tag)` pairs and the hits served | Answering name lookups; reveals which names a reader looks for, not the names |
 | Relay connection and call metadata: device ID, vault IDs and tool names from `hello`, `call_id`, vault ID and tool of each call, caller `client_id`/`grant_id`/scopes, result `ok` and error code, timing | Routing calls to a device and enforcing scopes, deadlines and rate limits |
 | Quota and rate-limit counters | Abuse protection |
@@ -61,6 +63,7 @@ termination and are held only for the request or relayed call
 |---|---|
 | MCP tool arguments, including a `set` value | MCP client → Worker → relayed to a device or sealed |
 | `secrets_prepare_write` name and purpose | MCP client → Worker → sealed into a write intent |
+| `secrets_request_input` name and purpose | MCP client → Worker → relayed to the issuing device (`request_input`) and placed in the form link's fragment; never stored |
 | Relayed results: names, profile fields, sensitivity, timestamps, request status | Device → Worker → MCP client |
 | Redacted `run` output (`stdout`, `stderr`) | Device → Worker → MCP client |
 
