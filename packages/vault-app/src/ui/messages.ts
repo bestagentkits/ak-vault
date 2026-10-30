@@ -1,8 +1,9 @@
 /** Fixed text for every notice and error code. Nothing here is built from server or item data. */
 import type { AppErrorCode } from '../app-error.js';
 import type { Notice } from '../app-controller.js';
+import type { InputNoticeCode } from '../input/input-controller.js';
 
-const TEXT: Record<AppErrorCode | Notice['code'], string> = {
+const TEXT: Record<AppErrorCode | Notice['code'] | InputNoticeCode, string> = {
   unsupported_browser: 'This browser cannot keep a non-extractable Ed25519 and X25519 device key. Use a current version of Chrome, Edge, Firefox or Safari.',
   config_invalid: 'The dashboard configuration could not be verified. Reload the page; if this persists the deployment is misconfigured.',
   signin_required: 'Your sign-in ended. Sign in again to continue.',
@@ -62,8 +63,28 @@ const TEXT: Record<AppErrorCode | Notice['code'], string> = {
   write_exists: 'A secret with this name already exists, so the request was closed without writing. Ask the assistant for a replace request instead.',
   write_missing: 'No secret with this name exists to replace, so the request was closed without writing.',
   write_device_error: 'This browser could not open or complete the request, so it was closed without writing.',
+  input_link_invalid: 'This link is invalid or incomplete, so nothing was opened. Ask the assistant for a new link.',
+  input_signin: 'An assistant asked you to enter a secret value. Sign in with the AgentKit account it works for to continue; the value is typed here, encrypted in this browser for your own device, and never shown to the assistant.',
+  input_unavailable: 'Entering a value on this page is not available yet. Ask the assistant to use another way to request it.',
+  input_not_found: 'This request does not exist or is not yours. Sign in with the account the assistant works for, or ask it for a new link.',
+  input_invalid_response: 'The server answered with a request this page cannot use, so nothing was sent.',
+  input_value_empty: 'Enter a value first.',
+  input_saved: 'Saved. The value was encrypted in this browser and written by your device; the assistant only learns that the request completed.',
+  input_submitted: 'A value was already submitted for this request and is being delivered to your device.',
+  input_completed: 'This request was already completed.',
+  input_expired: 'This request expired. Nothing was written. Ask the assistant for a new link if you still need it.',
+  input_failed: 'This request failed and was closed without writing. Ask the assistant for a new link if you still need it.',
+  input_conflict: 'Another change to this secret landed at the same time. Your value was kept as a conflict branch; resolve it from the CLI.',
+  input_closed: 'This request is no longer open: a value was already submitted or it was closed. Ask the assistant for a new link if you still need it.',
+  input_cancelled: 'This request was cancelled. Nothing was written.',
+  input_device_offline: 'Your device is offline, so nothing was sent. Keep it running and connected, then enter the value again.',
+  input_device_busy: 'Your device is busy, so nothing was sent. Wait a moment, then enter the value again.',
+  input_undeliverable: 'The value could not be delivered to your device, so nothing was sent. Try again; if this repeats, ask the assistant for a new link.',
+  input_rejected: 'Your device could not accept the value, so the request was closed without writing. Ask the assistant for a new link.',
+  input_timeout: 'Your device did not answer in time, so the request was closed. Check whether the secret was written before asking for a new link.',
+  input_refused: 'Your device refused this request, so it was closed without writing.',
 };
 
-export function messageFor(code: AppErrorCode | Notice['code']): string {
+export function messageFor(code: AppErrorCode | Notice['code'] | InputNoticeCode): string {
   return TEXT[code];
 }

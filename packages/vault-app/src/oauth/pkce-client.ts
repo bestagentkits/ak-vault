@@ -7,13 +7,16 @@
  * Tokens live in memory only (`OAuthSession`). The only thing that survives the
  * redirect to the authorization server and back is the pending `{state,
  * verifier}` pair in `sessionStorage` (with the two opaque IDs of a write-request
- * link the sign-in was started from), removed the moment the callback reads it.
+ * link, or the input-request link with its name and purpose, the sign-in was
+ * started from), removed the moment the callback reads it and refused after ten
+ * minutes. The input form keeps its pending sign-in under its own key.
  * Revocation (RFC 7009) ends the grant when the dashboard signs out, locks, is
  * closed, or signs in again.
  */
 import { b64decode, b64encode, randomBytes, sha256, utf8Decode, utf8Encode } from '@ak-vault/protocol';
 import { AppError } from '../app-error.js';
 import { APP_SCOPE, type AppConfig } from '../config.js';
+import { checkInputLink, type InputLink } from '../input/input-link.js';
 import { isOpaqueId, type WriteLink } from '../sync/write-request.js';
 
 /** The subset of RFC 8414 metadata the dashboard uses, validated. */
@@ -48,6 +51,8 @@ export interface PendingSignIn {
   createdAt: number;
   /** The write-request link this sign-in continues to. */
   writeLink?: WriteLink;
+  /** The input-request link this sign-in continues to (input form only). */
+  inputLink?: InputLink;
 }
 
 /** Where the pending sign-in waits across the redirect (sessionStorage in the browser). */
@@ -58,17 +63,19 @@ export interface PendingStore {
 }
 
 const PENDING_KEY = 'akv-dashboard-signin';
+/** The input form's pending sign-in, kept apart from the dashboard's. */
+export const INPUT_PENDING_KEY = 'akv-input-signin';
 /** ak-web keeps a consent request for ten minutes; a slower callback is refused. */
 const PENDING_MAX_AGE_MS = 10 * 60 * 1000;
 
-export function sessionPendingStore(storage: Storage): PendingStore {
+export function sessionPendingStore(storage: Storage, key: string = PENDING_KEY): PendingStore {
   return {
     save(pending) {
-      storage.setItem(PENDING_KEY, JSON.stringify(pending));
+      storage.setItem(key, JSON.stringify(pending));
     },
     take() {
-      const raw = storage.getItem(PENDING_KEY);
-      storage.removeItem(PENDING_KEY);
+      const raw = storage.getItem(key);
+      storage.removeItem(key);
       if (raw === null) return null;
       try {
         const v = JSON.parse(raw) as Record<string, unknown>;
@@ -79,6 +86,11 @@ export function sessionPendingStore(storage: Storage): PendingStore {
           const { requestId, vaultId } = link ?? {};
           if (typeof requestId !== 'string' || typeof vaultId !== 'string' || !isOpaqueId(requestId) || !isOpaqueId(vaultId)) return null;
           pending.writeLink = { requestId, vaultId };
+        }
+        if (v['inputLink'] !== undefined) {
+          const inputLink = checkInputLink(v['inputLink']);
+          if (!inputLink) return null;
+          pending.inputLink = inputLink;
         }
         return pending;
       } catch {
@@ -137,8 +149,11 @@ export function pkceChallenge(verifier: string): string {
  * Start a sign-in: store `{state, verifier}` and return the authorization URL.
  * The verifier is 32 random bytes in base64url (43 characters, RFC 7636 §4.1).
  */
-export function beginSignIn(config: AppConfig, as: AuthServerMetadata, store: PendingStore, now = Date.now(), writeLink: WriteLink | null = null): string {
-  const pending: PendingSignIn = { state: b64encode(randomBytes(32)), verifier: b64encode(randomBytes(32)), createdAt: now, ...(writeLink ? { writeLink } : {}) };
+export function beginSignIn(config: AppConfig, as: AuthServerMetadata, store: PendingStore, now = Date.now(), writeLink: WriteLink | null = null, inputLink: InputLink | null = null): string {
+  const pending: PendingSignIn = {
+    state: b64encode(randomBytes(32)), verifier: b64encode(randomBytes(32)), createdAt: now,
+    ...(writeLink ? { writeLink } : {}), ...(inputLink ? { inputLink } : {}),
+  };
   store.save(pending);
   const url = new URL(as.authorization_endpoint);
   const params: Record<string, string> = {
@@ -211,12 +226,13 @@ async function tokenRequest(fetchFn: typeof fetch, as: AuthServerMetadata, confi
  * Finish a sign-in from the callback URL. Refused, without any token request,
  * when no sign-in is pending, the pending one is stale, `state` differs, the
  * server reports an error, or `iss` is missing (when advertised) or differs.
- * Returns the session and the write-request link the sign-in was started from.
+ * Returns the session and the write-request or input-request link the sign-in
+ * was started from.
  */
 export async function completeSignIn(
   url: URL,
   deps: { config: AppConfig; as: AuthServerMetadata; store: PendingStore; fetchFn: typeof fetch; now?: number },
-): Promise<{ session: OAuthSession; writeLink: WriteLink | null }> {
+): Promise<{ session: OAuthSession; writeLink: WriteLink | null; inputLink: InputLink | null }> {
   const now = deps.now ?? Date.now();
   const pending = deps.store.take();
   const q = url.searchParams;
@@ -237,7 +253,7 @@ export async function completeSignIn(
     code_verifier: pending.verifier,
     resource: deps.config.resource,
   }, now);
-  return { session, writeLink: pending.writeLink ?? null };
+  return { session, writeLink: pending.writeLink ?? null, inputLink: pending.inputLink ?? null };
 }
 
 /** Rotate the in-memory refresh token for a fresh access token of the same grant. */
