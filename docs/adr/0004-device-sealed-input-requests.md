@@ -131,6 +131,9 @@ owns the wire. Where the implementation made a choice this ADR left open:
 - **D3 token.** The `input` token is a vault token with its own audience
   `<origin>/input`, so no sync, relay or MCP route can accept it even before its
   `session_kind` is read. Claims, lifetime and revocation are in the spec.
+- **`/input` page.** `GET /input` is a redirect to `/app/`; the browser carries the
+  fragment across it, and the dashboard bundle runs the form under the `/app` CSP with
+  the dashboard's OAuth client, so no new client or redirect URI is registered.
 - **Rollout.** The input routes and the device flow are off unless
   `VAULT_INPUT_REQUESTS_ENABLED` is `true`. They stay off until ak-web mints `input`
   tokens and the `/input` page ships; until then the tool behaves as D8.

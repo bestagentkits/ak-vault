@@ -56,8 +56,8 @@ Node 22+ and pnpm (version pinned in `package.json`) are required.
   protected-resource metadata, `/mcp`, `/v1/relay`, the lookup, seal-key and
   sealed-queue routes, and the write-request routes with the `?write_request` item PUT
   (`browser` session of the requesting account only, ADR 0002 D8), and the
-  input-request routes with the `?input_request` item PUT (`input` session of the
-  requesting account, recorded device only,
+  `/input` redirect to `/app/` with the input-request routes and the `?input_request`
+  item PUT (`input` session of the requesting account, recorded device only,
   [ADR 0004](./docs/adr/0004-device-sealed-input-requests.md)) are the only new
   routes, each with the auth REVIEW.md lists;
   plaintext may transit Worker memory only as ADR 0002 D7 describes and is never

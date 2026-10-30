@@ -79,6 +79,14 @@ opaque IDs in the browser's `sessionStorage` only for the sign-in redirect, and 
 them when the callback reads them. The request ID authorizes nothing by itself. The
 dashboard never stores or logs the typed value, which is cleared on submit and cancel.
 
+The input form (`/input`, served by the same bundle) is the one place a secret
+**name** sits in browser storage: the link's name and purpose wait in
+`sessionStorage` across the sign-in redirect. They are deleted when the callback, a new
+input link or a dashboard load in that tab reads them, or when the tab closes; a
+callback more than 10 minutes after the sign-in started is refused, but a tab left on
+the sign-in page keeps them until one of those happens. The typed value is cleared from the field before it is sealed
+and is never stored, logged or rendered; the `input` token stays in page memory.
+
 ## Kept in the browser (dashboard device)
 
 The dashboard at `/app` is a device ([ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md)),
@@ -91,6 +99,7 @@ name or a value.
 | Enrollment: vault ID, trust anchor, offer checkpoint, approving device ID, SAS | Same entry | Verifying the chain from the offer, as every device does |
 | Sync position: membership and log sequence numbers and heads, key epoch | Same entry | Anti-rollback and fork detection across visits and tabs; never a server value |
 | Pending sign-in: `state`, PKCE verifier, creation time, and a write-request link's request and vault IDs | `sessionStorage`, removed when the callback reads it, refused after 10 minutes | Surviving the redirect to the authorization server |
+| Pending input-form sign-in: the same, plus the input link's request and vault IDs, public `input_pub`, secret **name** and purpose (from the link fragment) | `sessionStorage` under its own key, removed when the callback reads it or a dashboard page loads, refused after 10 minutes; never sent to a server | Showing the request again after the redirect and binding the seal's AAD ([spec §3.11](../protocol/v1/spec.md#input-form-browser)) |
 | Tokens, vault keys, item names, values, metadata, profile fields | Page memory only | Dropped on lock, sign-out and page exit; there is **no** local cache of vault contents, so every visit verifies from the server |
 
 Clearing site data removes the device; an owner should then remove it from the
