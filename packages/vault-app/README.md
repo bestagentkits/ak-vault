@@ -86,6 +86,20 @@ environment has no real IndexedDB); the memory store and the merge rule are. A d
 from the vault's `Date` header is reported as such. What the browser keeps locally
 is listed in [data classification](../../docs/security/data-classification.md).
 
+## Input form
+
+The same bundle serves the device-sealed input form
+([spec §3.11](../../docs/protocol/v1/spec.md#input-form-browser)). The Worker
+redirects `/input` to `/app/`, the browser keeps the link fragment
+(`#r=…&v=…&k=…&n=…[&p=…]`), and `src/main.ts` runs the input controller
+(`src/input/`) instead of the dashboard when the fragment is an input link or the
+page is the callback of a sign-in the form started (pending key `akv-input-signin`).
+An account with no enrolled browser device uses it: it signs in with the dashboard
+client, takes a short-lived `input` token from ak-web, checks the request is open,
+seals the typed value to the issuing device's one-time key and posts it once. It
+holds no device key and never stores, shows or logs the value; a terminal outcome
+or leaving the page revokes the sign-in grant.
+
 ## Build
 
 The deploy step runs no bundler, so the built files are committed:

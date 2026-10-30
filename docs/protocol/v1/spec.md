@@ -887,6 +887,36 @@ and answers it as `input_request: {"state":"completed","receipt"}`. Any mismatch
 refuses the PUT and writes nothing. Expiry also moves `pending_user` and `submitted`
 requests to `expired`; revoking the requesting MCP grant cancels them as §3.10.
 
+#### Input form (browser)
+
+`GET`/`HEAD /input` answers `302` with `Location: /app/` and `Cache-Control: no-store`
+(`404 not_found` under the same flags as the routes above, and for any other method).
+The browser keeps the link's fragment across the redirect, so the dashboard bundle at
+`/app/` reads `#r=<request_id>&v=<vault_id>&k=<input_pub>&n=<name>[&p=<purpose>]`: IDs
+and `input_pub` (32 B) base64url, `name` and `purpose` percent-encoded, exactly these
+keys, each at most once. Any other fragment that carries one of these keys is an
+invalid link and is refused, never shown as the dashboard. The page drops the fragment
+from the address bar once read and never sends it to a server.
+
+The person signs in with the dashboard's OAuth client unchanged (`<origin>/app/client.json`,
+redirect `<origin>/app/`, resource `<origin>/app`, scope `vault-app:session`); the
+link waits in `sessionStorage` under its own key across the redirect; it is deleted when
+the callback, a new input link or a dashboard load reads it (or when the tab closes),
+and a callback more than 10 minutes after the sign-in started is refused. The page then trades the app access token for an `input`
+token at ak-web `POST <issuer>/api/agentkit/vault/input-token` (bearer app token, no
+body) and refuses it unless `aud` = `<origin>/input`, `session_kind` = `input`, `sub`
+is the signed-in account and there is no `did`. It fetches the request, shows the form
+only for `pending_user` before `expires_at`, and seals the value with the
+input-seal context built from: `request_id`, `vault_id`, `name` and `purpose` (`null`
+when absent) from the fragment; `device_id`, `operation` and `expires_at` from the
+`GET`; `account` = the app token's `sub`. The value is cleared from the field before
+sealing, never stored, logged or rendered, and posted as `{"sealed": …}`; the Worker's
+claim is what makes the request single use (a renewed token may repost the same seal,
+and an outcome that releases the request lets the person submit again). After a
+terminal outcome, and when the page is left, the page revokes the sign-in grant, which
+also ends the `input` token. A fragment edited to show another name or purpose seals
+under an AAD the device does not hold and fails `decrypt_failed`.
+
 ## 4. Membership log (owner-signed, hash-chained)
 
 ```json
@@ -2013,4 +2043,6 @@ under an earlier revision does not verify and is reset rather than migrated.
   routes and the `input_request` item-PUT query (§3.11), the write-request state
   `submitted` and device-flow reasons (§3.10), the `secrets_request_input` MCP tool
   (§9.8) and its errors (§10). A device that lists neither input tool is unaffected;
-  every existing route, frame and body keeps its meaning.
+  every existing route, frame and body keeps its meaning. The input form (§3.11):
+  `GET /input` redirects to the dashboard bundle, which signs in with the dashboard
+  client, takes an `input` token from ak-web and seals the value in the browser.
