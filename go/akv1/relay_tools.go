@@ -19,7 +19,11 @@ var (
 	entryOrigins = []string{ProfileSrcLocal, ProfileSrcImport, ProfileOriginSync}
 )
 
-const maxToolResultItems = 100
+const (
+	maxToolResultItems = 100
+	// maxInputReceiptBytes bounds the receipt an input_deliver result returns.
+	maxInputReceiptBytes = 128
+)
 
 // ValidateToolArgs checks a call's args against the exact keys and limits of
 // its tool. Every failure is bad_request.
@@ -104,9 +108,56 @@ func ValidateToolArgs(tool string, args map[string]any) error {
 		return optionalInt(args, "ttl_s", what, 1, 86400)
 	case ToolRun:
 		return validateRunArgs(args)
+	case ToolRequestInput:
+		return validateRequestInputArgs(args)
+	case ToolInputDeliver:
+		if err := exactKeys(args, []string{"request_id", "sealed"}, what); err != nil {
+			return err
+		}
+		requestID, err := asID(args["request_id"], what+".request_id")
+		if err != nil {
+			return err
+		}
+		// Every args refusal is bad_request (the device answers invalid_args), an unknown seal version included.
+		sealed, err := ParseInputSeal(args["sealed"])
+		if err != nil {
+			return badRequest("%s.sealed is not a valid input seal", what)
+		}
+		if sealed.RequestID != requestID {
+			return badRequest("%s.sealed belongs to another request", what)
+		}
+		return nil
 	default:
 		return badRequest("%s: unknown tool", what)
 	}
+}
+
+func validateRequestInputArgs(args map[string]any) error {
+	const what = "args"
+	if err := exactKeys(args, []string{"request_id", "name", "operation", "expires_at"}, what, "purpose", "sensitivity"); err != nil {
+		return err
+	}
+	if _, err := asID(args["request_id"], what+".request_id"); err != nil {
+		return err
+	}
+	if _, err := asItemName(args["name"], what+".name"); err != nil {
+		return err
+	}
+	if p, ok := args["purpose"]; ok {
+		if _, err := asWellFormedString(p, what+".purpose", MaxWritePurpose, 1); err != nil {
+			return err
+		}
+	}
+	if _, err := asEnum(args["operation"], WriteIntentOperations, what+".operation"); err != nil {
+		return err
+	}
+	if s, ok := args["sensitivity"]; ok {
+		if _, err := asEnum(s, sensitivities, what+".sensitivity"); err != nil {
+			return err
+		}
+	}
+	_, err := asUint(args["expires_at"], what+".expires_at")
+	return err
 }
 
 func validateRunArgs(args map[string]any) error {
@@ -257,6 +308,24 @@ func ValidateToolResult(tool string, result map[string]any) error {
 			}
 		}
 		_, err := asBool(result["truncated"], what+".truncated")
+		return err
+	case ToolRequestInput:
+		if err := exactKeys(result, []string{"request_id", "input_pub"}, what); err != nil {
+			return err
+		}
+		if _, err := asID(result["request_id"], what+".request_id"); err != nil {
+			return err
+		}
+		_, err := asB64(result["input_pub"], what+".input_pub", KeyBytes)
+		return err
+	case ToolInputDeliver:
+		if err := exactKeys(result, []string{"status", "receipt"}, what); err != nil {
+			return err
+		}
+		if _, err := asEnum(result["status"], []string{"stored"}, what+".status"); err != nil {
+			return err
+		}
+		_, err := asPrintableASCII(result["receipt"], what+".receipt", 1, maxInputReceiptBytes)
 		return err
 	default:
 		return badRequest("%s: unknown tool", what)

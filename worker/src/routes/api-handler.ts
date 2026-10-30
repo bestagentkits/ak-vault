@@ -6,11 +6,14 @@
  * `GET /v1/relay` (remote access only) runs the same kill switch, token and revocation
  * checks plus the relay session rules, then hands the upgrade to the account's relay
  * object, which verifies the proof and owns the connection.
+ *
+ * The input-request routes (remote access and input requests only) take an `input`
+ * session token instead of a device token; `input-request-routes.ts` owns them.
  */
 import { assertDeviceNotRevoked, isGrantRevoked } from '../auth/revocation-check.js';
 import { b64decodeLength } from '@ak-vault/protocol';
 import { bearerToken, verifyToken } from '../auth/jwt-verify.js';
-import { remoteAccessEnabled, type Env } from '../env.js';
+import { inputRequestsEnabled, remoteAccessEnabled, type Env } from '../env.js';
 import { ApiError, type ApiResult } from '../http/errors.js';
 import { readBodyCapped } from '../http/read-body-capped.js';
 import { LIMITS } from '../limits.js';
@@ -18,6 +21,7 @@ import { relayStub } from '../relay/relay-rpc.js';
 import { RELAY_OPEN_HEADER, deviceKeyMatches, encodeRelayOpen, relaySessionRefusal } from '../relay/relay-session.js';
 import { isMutation } from '../vault/vault-request.js';
 import { matchVaultRoute } from './api-routes.js';
+import { handleInputRequest, matchInputRoute } from './input-request-routes.js';
 import { meta, syncEnabled } from './meta-routes.js';
 
 export interface RouteInfo {
@@ -36,6 +40,9 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
   }
   if (!syncEnabled(env)) throw new ApiError('sync_disabled');
   const remoteAccess = remoteAccessEnabled(env);
+  const inputRequests = inputRequestsEnabled(env);
+  const inputRoute = inputRequests ? matchInputRoute(request.method, url.pathname) : null;
+  if (inputRoute) return handleInputRequest(request, env, info, inputRoute);
   const route = matchVaultRoute(request.method, url.pathname, { remoteAccess });
   if (!route) throw new ApiError('not_found');
   info.template = route.template;
@@ -49,12 +56,15 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
   if (isMutation(route.op) && !idempotencyKey) throw new ApiError('bad_request', { message: 'a valid Idempotency-Key header is required' });
 
   const stub = env.VAULT.get(env.VAULT.idFromName(route.vaultId));
-  const writeRequestId = route.writeRequestId ?? writeRequestParam(url, route.op, remoteAccess);
-  // A human write request lives only while the MCP grant that asked for it does (spec §3.10).
+  const writeRequestId = route.writeRequestId ?? requestParam(url, 'write_request', route.op, remoteAccess);
+  const inputRequestId = requestParam(url, 'input_request', route.op, inputRequests);
+  if (writeRequestId !== undefined && inputRequestId !== undefined) throw new ApiError('bad_request');
+  // A write or input request lives only while the MCP grant that asked for it does (spec §3.10).
   // Only the caller's own request is looked up; the vault object then runs membership and proof.
-  if (writeRequestId !== undefined && route.op !== 'writereq.close') {
-    const grant = await stub.writeRequestGrant(writeRequestId, claims.sub);
-    if (grant && (await isGrantRevoked(env, grant))) await stub.cancelRevokedWriteRequest(writeRequestId);
+  const grantedRequestId = route.op === 'writereq.close' ? undefined : (writeRequestId ?? inputRequestId);
+  if (grantedRequestId !== undefined) {
+    const grant = await stub.writeRequestGrant(grantedRequestId, claims.sub);
+    if (grant && (await isGrantRevoked(env, grant))) await stub.cancelRevokedWriteRequest(grantedRequestId);
   }
   // A sealed write lives only while the MCP grant that queued it does (spec §3.6): cancel the
   // caller's pending operations of any revoked grant before the queue is served.
@@ -69,6 +79,7 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
     ...(route.itemId ? { itemId: route.itemId } : {}),
     ...(route.sealedId ? { sealedId: route.sealedId } : {}),
     ...(writeRequestId !== undefined ? { writeRequestId } : {}),
+    ...(inputRequestId !== undefined ? { inputRequestId } : {}),
     method: request.method,
     htu: request.url,
     path: url.pathname,
@@ -85,15 +96,19 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
   });
 }
 
-/** The `write_request` query of an item PUT (the person's completion of a write request), validated; undefined when absent. */
-function writeRequestParam(url: URL, op: string, remoteAccess: boolean): string | undefined {
-  const values = url.searchParams.getAll('write_request');
+/**
+ * The `write_request` (a browser's completion of a write request) or `input_request` (a
+ * device's completion of an input request) query of an item PUT, validated; undefined when
+ * absent or on another op. Refused while its feature is off, repeated or malformed.
+ */
+function requestParam(url: URL, param: 'write_request' | 'input_request', op: string, enabled: boolean): string | undefined {
+  const values = url.searchParams.getAll(param);
   if (values.length === 0 || op !== 'item.put') return undefined;
-  if (!remoteAccess || values.length > 1) throw new ApiError('bad_request');
+  if (!enabled || values.length > 1) throw new ApiError('bad_request');
   try {
     b64decodeLength(values[0]!, 16);
   } catch {
-    throw new ApiError('bad_request', { message: 'malformed write_request' });
+    throw new ApiError('bad_request', { message: `malformed ${param}` });
   }
   return values[0];
 }
