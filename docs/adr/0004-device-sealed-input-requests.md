@@ -1,8 +1,9 @@
 # ADR 0004: Device-sealed input requests for accounts without a browser device
 
-- **Status:** Proposed. An agent drafted it on the AgentKit v3 run's instruction
-  ([#203](https://github.com/bestagentkits/ak-vault/issues/203)); it is not accepted until
-  the owner accepts it on that issue.
+- **Status:** Accepted. An agent drafted it on the AgentKit v3 run's instruction; the
+  owner approved it as written on 2026-10-30 (owner instruction in the orchestrator
+  chat, relayed and recorded by an agent on the owner's behalf,
+  [record on #203](https://github.com/bestagentkits/ak-vault/issues/203)).
 - **Proposed:** 2026-10-30
 - **Amends:** [ADR 0002](./0002-browser-device-relay-and-remote-mcp.md) D8 (human write
   requests), which today needs an enrolled browser device. On acceptance and
