@@ -91,6 +91,15 @@ export class VaultDurableObject extends DurableObject<Env> {
     return this.schemaReady && this.membership.state() !== null;
   }
 
+  /**
+   * True when a membership state row is stored, whatever its revision. Unlike
+   * `vaultExists` it never refuses a vault that predates the current protocol
+   * revision, so operator recovery can still read such a vault's bookmark.
+   */
+  private hasStoredState(): boolean {
+    return this.schemaReady && this.sql.exec("SELECT 1 FROM meta WHERE k = 'membership_state'").toArray().length > 0;
+  }
+
   private ensureSchema(): void {
     if (this.schemaReady) return;
     applyVaultSchema(this.sql);
@@ -163,7 +172,7 @@ export class VaultDurableObject extends DurableObject<Env> {
       this.refuseWhileRestorePending();
       const storage = this.ctx.storage;
       const bookmark = atMs === null ? await currentBookmark(storage) : await bookmarkForTime(storage, atMs, nowMs);
-      return okResult({ bookmark, vault_exists: this.vaultExists() });
+      return okResult({ bookmark, vault_exists: this.hasStoredState() });
     } catch (err) {
       return errorResult(toApiError(err));
     }

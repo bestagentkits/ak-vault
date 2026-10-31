@@ -366,6 +366,9 @@ stale vault shows up depends on the revision:
 - Vaults from before the signed-wrap-set / removal-fence revision: the Worker
   refuses every request with `unsupported_version` ("vault predates the current
   protocol revision"), and their old `wraps` table is no longer read.
+  The [operator restore route](#durable-object-backup-and-restore) still reads
+  their bookmark and restores them, on staging and production alike, so a restore
+  that lands on such a state can always be undone; client requests stay refused.
 - Vaults from before the removal `log_head` revision (2026-10, #21): on its first
   start under the new code each vault backfills its change-log heads, and vaults
   without removals keep working. A vault whose membership log already holds a
@@ -451,7 +454,9 @@ operator script's `bookmark` action: it is exact, while a time lookup is not (be
    moves the bookmark, so a `409` means the vault changed in between: read it again.
    On a busy vault, turn sync off first with the [kill switch](#kill-switch). A
    time-based target on a young vault can land before its genesis: a `bookmark`
-   read afterwards then shows `vault_exists: false`, and the undo still works.
+   read afterwards then shows `vault_exists: false`, and the undo still works. `vault_exists`
+   means a membership state is stored, even if the Worker refuses that vault to clients
+   as predating the current protocol revision; the bookmark is still readable then.
 5. The response holds the target and the **undo bookmark** (the moment just before
    the restore). Record both on the incident issue before going on; nothing else
    keeps them. From scheduling until the restart the vault refuses every request
