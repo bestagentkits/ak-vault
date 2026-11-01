@@ -291,10 +291,10 @@ projections, not measurements; each lever is re-measured when it lands.
 - Quotas and rate limits (published by `GET /v1/meta`, owned by
   `worker/src/limits.ts`) bound the worst case per vault.
 
-## Remote access (staging only, not measured)
+## Remote access (not measured)
 
 Remote access ([ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md)) is on
-for staging only and is not in the estimates above. Its cost line, from the request
+for staging and, by owner decision on 2026-11-01, production, and is not in the estimates above. Its cost line, from the request
 path rather than a measurement: a relayed MCP tool call adds a second
 revocation-registry hop (the Worker checks the MCP grant, then the account's relay
 object checks the device before it hands over the call), several calls to that
