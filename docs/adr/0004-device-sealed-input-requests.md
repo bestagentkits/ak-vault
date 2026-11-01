@@ -136,7 +136,8 @@ owns the wire. Where the implementation made a choice this ADR left open:
   the dashboard's OAuth client, so no new client or redirect URI is registered.
 - **Rollout.** The input routes and the device flow are off unless
   `VAULT_INPUT_REQUESTS_ENABLED` is `true`. They stay off until ak-web mints `input`
-  tokens and the `/input` page ships; until then the tool behaves as D8.
+  tokens and the `/input` page ships; until then the tool behaves as D8. The flag is
+  on for staging and unset for production (`worker/wrangler.jsonc`).
 
 ## Alternatives rejected
 

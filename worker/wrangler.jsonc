@@ -74,6 +74,9 @@
         // ak-web staging's JWKS; its keys are separate from production's.
         "VAULT_JWKS_URL": "https://staging.agentkit.best/.well-known/jwks.json",
         "VAULT_REMOTE_ACCESS_ENABLED": "true",
+        // Device-sealed input requests (ADR 0004): staging only; ak-web staging mints
+        // `input` tokens at /api/agentkit/vault/input-token. Off in production.
+        "VAULT_INPUT_REQUESTS_ENABLED": "true",
         "VAULT_REFUSE_LEGACY_ROLE_SET": "true"
       }
     }
