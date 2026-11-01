@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FAQ: sync status, privacy, agents and recovery | ak-vault</title>
-  <meta name="description" content="Answers about ak-vault: whether sync is available, what the server can see, conflicts, agents, teams, lost devices and recovery. Sync is not generally available.">
+  <meta name="description" content="Answers about ak-vault: whether sync is available, what the server can see, conflicts, agents, teams, lost devices and recovery.">
   <link rel="canonical" href="https://vault.agentkit.best/faq/">
   <link rel="alternate" type="text/markdown" href="https://vault.agentkit.best/faq/index.md" title="Markdown version">
   <meta name="theme-color" content="#08090c" media="(prefers-color-scheme: dark)">
@@ -19,7 +19,7 @@
   <meta property="og:image" content="https://vault.agentkit.best/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, reviewed by the owner, not independently; sync is pre-release, not GA.">
+  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, reviewed by the owner, not independently; sync is pre-release.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ak-vault FAQ">
   <meta name="twitter:description" content="Straight answers on status, privacy, agents, teams and recovery for ak-vault end-to-end encrypted secrets sync.">
@@ -48,7 +48,7 @@
           "name": "Can I use cloud sync today?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Only as a preview. Protocol v1 is proposed; its review gate was accepted by the owner, not by an independent third party (issue #8), and cloud sync is not generally available. By owner decision the production sync API went live before that review as a pre-release preview: if you are signed in and run the preview ak secrets sync commands, your device syncs with it. It is not yet recommended for production credentials. The local ak secrets vault works today."
+            "text": "Only as a preview. Protocol v1 is proposed; its review gate was accepted by the owner, not by an independent third party (issue #8). By owner decision the production sync API went live before that review as a pre-release preview: if you are signed in and run the preview ak secrets sync commands, your device syncs with it. It is not yet recommended for production credentials. The local ak secrets vault works today."
           }
         },
         {
@@ -274,7 +274,6 @@
   <main id="main">
     <section class="page-hero" aria-labelledby="page-title">
       <div class="container">
-        <span class="badge badge-review hero-badge reveal"><span class="dot" aria-hidden="true"></span>Sync not generally available</span>
         <h1 id="page-title" class="reveal">Questions worth asking a <span class="grad">secrets product</span>.</h1>
         <p class="lede reveal">Straight answers about status, privacy, everyday use, teams, agents and recovery. Guarantees here are design properties of protocol v1 as proposed, and each comes with its limitation.</p>
         <nav class="toc reveal" aria-label="Question groups"><a href="#status">Status and availability</a><a href="#privacy">Security and privacy</a><a href="#everyday">Everyday use</a><a href="#teams">Teams and agents</a><a href="#recovery">Devices and recovery</a><a href="#project">The project</a></nav>
@@ -288,7 +287,7 @@
         <div class="faq-group reveal" id="status">
           <h2>Status and availability</h2>
           <div class="faq">
-            <details><summary>Can I use cloud sync today?</summary><div><p>Only as a preview. Protocol v1 is proposed; its review gate was accepted by the owner, not by an independent third party (<a href="https://github.com/bestagentkits/ak-vault/issues/8">issue #8</a>), and cloud sync is not generally available. By owner decision the production sync API went live before that review as a pre-release preview: if you are signed in and run the preview <code>ak secrets sync</code> commands, your device syncs with it. It is not yet recommended for production credentials. The local <code>ak secrets</code> vault works today.</p></div></details>
+            <details><summary>Can I use cloud sync today?</summary><div><p>Only as a preview. Protocol v1 is proposed; its review gate was accepted by the owner, not by an independent third party (<a href="https://github.com/bestagentkits/ak-vault/issues/8">issue #8</a>). By owner decision the production sync API went live before that review as a pre-release preview: if you are signed in and run the preview <code>ak secrets sync</code> commands, your device syncs with it. It is not yet recommended for production credentials. The local <code>ak secrets</code> vault works today.</p></div></details>
             <details><summary>What works right now?</summary><div><p>The local vault in the AgentKit CLI: importing a <code>.env</code> file, setting, rotating and inspecting secrets, <code>${secret:NAME}</code> references, agent grants and approvals, and the access audit. See <a href="/guide/#local">Part 1 of the guide</a>.</p></div></details>
             <details><summary>Is there a date for general availability?</summary><div><p>No date is promised. Sync ships when every item in the <a href="https://github.com/bestagentkits/ak-vault/blob/main/docs/security/release-gates.md">release gates</a> is met at the release commit, including the owner's review. Progress is tracked on <a href="https://github.com/bestagentkits/ak-vault/issues/1">the epic</a>.</p></div></details>
             <details><summary>Is the server code open?</summary><div><p>Yes. The Worker, the TypeScript and Go protocol implementations and the cross-language test vectors are in the <a href="https://github.com/bestagentkits/ak-vault">public repository</a> under the MIT license.</p></div></details>

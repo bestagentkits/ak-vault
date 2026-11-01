@@ -19,7 +19,7 @@
   <meta property="og:image" content="https://vault.agentkit.best/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, reviewed by the owner, not independently; sync is pre-release, not GA.">
+  <meta property="og:image:alt" content="ak-vault: a secret is sealed on your device, the Worker stores ciphertext, another device verifies and decrypts. Protocol v1, reviewed by the owner, not independently; sync is pre-release.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ak-vault security model: guarantees and limitations">
   <meta name="twitter:description" content="Threat model summary for ak-vault protocol v1: malicious server, stolen devices, removed members, rollback and more.">
@@ -261,7 +261,7 @@
         </div>
         <div class="gate-wrap reveal">
           <ul class="gate">
-            <li class="gate-head"><span>Gate items; status and evidence are in the release gates</span><span class="badge badge-review">sync not GA</span></li>
+            <li class="gate-head"><span>Gate items; status and evidence are in the release gates</span></li>
             <li>ADR 0001 accepted by the owner on 2026-10-16. Restore reconciliation stays an open item of the ADR.</li>
             <li>Go and TypeScript reproduce every test vector byte for byte, including every rejection vector.</li>
             <li>The Worker integration suite is green: conflicts, tombstones, idempotency, cross-tenant denial, replayed proofs, revoked devices and stale membership.</li>
