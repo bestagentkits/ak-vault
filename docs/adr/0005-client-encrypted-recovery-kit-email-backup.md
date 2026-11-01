@@ -1,11 +1,13 @@
 # ADR 0005: Opt-in email delivery of a client-encrypted recovery kit
 
-- **Status:** Proposed. An agent drafted it on the owner's request of 2026-11-01
-  ([#209](https://github.com/bestagentkits/ak-vault/issues/209)). The owner's request
-  authorizes the feature work, **not** a waiver of the release gates and **not** an
-  approval of this construction: it needs the owner's review like ADR 0001 did, and no
-  agent may record that approval for the owner without an explicit instruction.
-- **Proposed:** 2026-11-01
+- **Status:** Accepted
+- **Proposed:** 2026-11-01, drafted by an agent on the owner's request
+  ([#209](https://github.com/bestagentkits/ak-vault/issues/209)).
+- **Accepted:** 2026-11-01, by the repository owner (owner instruction in chat, recorded
+  by an agent on the owner's behalf,
+  [record on #209](https://github.com/bestagentkits/ak-vault/issues/209#issuecomment-6557957425)),
+  with the answers under [Owner decisions](#owner-decisions). Acceptance is the owner's
+  design decision, not an independent review, and waives no release gate.
 - **Amends:** [ADR 0001](./0001-opt-in-zero-knowledge-sync.md) (recovery). It adds no
   Worker route, changes no stored vault data and widens no [REVIEW.md](../../REVIEW.md)
   hard-rejection exception. The envelope is a client-side file format, specified in
@@ -147,11 +149,15 @@ disagreements.
 Client, delivery and dashboard tests are tracked in agentkit and ak-web with the
 acceptance criteria of #209.
 
-## Open questions for the owner
+## Owner decisions
 
-1. Accept D3 and the spec §3.12 bounds, in particular the KDF floor `t>=3` and the
-   `m` range 65536..524288 KiB, which refuse some files a lenient reader would open?
-2. Accept the passphrase policy: a generated 160-bit passphrase by default and at least
-   12 code points when the user chooses one?
-3. Confirm that no ak-web retention for "send again later" is wanted (D4). If it is, it
-   needs a separate ADR with its own retention and abuse analysis.
+Answered by the owner on 2026-11-01 when accepting this ADR
+([record on #209](https://github.com/bestagentkits/ak-vault/issues/209#issuecomment-6557957425)):
+
+1. D3 and the spec §3.12 bounds are accepted, including the KDF floor `t>=3` and the
+   `m` range 65536..524288 KiB. A file outside them is refused even where a lenient
+   reader would open it.
+2. The passphrase policy is accepted: a generated 160-bit passphrase by default and at
+   least 12 code points when the user chooses one.
+3. ak-web keeps no copy for "send again later" (D4). Retention would need a separate
+   ADR with its own retention and abuse analysis.
