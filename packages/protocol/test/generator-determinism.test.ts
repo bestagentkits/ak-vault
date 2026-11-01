@@ -5,15 +5,18 @@ import { describe, expect, it } from 'vitest';
 import { buildAllVectors, VECTOR_FILES } from '../scripts/vectors/index.js';
 import { VECTORS_DIR } from './helpers.js';
 
+// The kit-backup vectors run many Argon2id derivations at the format's minimum memory, so a build takes tens of seconds.
+const BUILD_TIMEOUT_MS = 240_000;
+
 describe('vector generator', () => {
   it('produces identical output on repeated runs', () => {
     expect(buildAllVectors()).toEqual(buildAllVectors());
-  });
+  }, BUILD_TIMEOUT_MS);
   it('matches the committed vector files byte for byte', () => {
     const built = buildAllVectors();
     expect(Object.keys(built)).toEqual(VECTOR_FILES);
     for (const [name, text] of Object.entries(built)) expect(readFileSync(join(VECTORS_DIR, name), 'utf8'), name).toBe(text);
-  });
+  }, BUILD_TIMEOUT_MS);
   it('every negative vector names a stable error code', () => {
     const codes = new Set<string>();
     const walk = (v: unknown): void => {

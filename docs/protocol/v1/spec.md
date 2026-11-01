@@ -917,6 +917,71 @@ terminal outcome, and when the page is left, the page revokes the sign-in grant,
 also ends the `input` token. A fragment edited to show another name or purpose seals
 under an AAD the device does not hold and fails `decrypt_failed`.
 
+### 3.12 Recovery kit backup (client-encrypted email backup)
+
+A **kit backup** is the recovery kit (vault ID, account, vault origin and the 32-byte
+recovery key) encrypted on the owner's trusted device under a separate **backup
+passphrase**, so the file can be kept in a mailbox
+([ADR 0005](../../adr/0005-client-encrypted-recovery-kit-email-backup.md)). It is a
+client-side file format: no Worker route stores or reads it, and the Worker never sees
+the passphrase, the key or the file.
+
+**File (wire).** UTF-8 JSON, at most 4096 bytes; a sealer writes canonical JSON, and an opener accepts any JSON in the restricted data model (key order and whitespace are free, duplicate keys are not) because the AAD is rebuilt from the parsed values. Exactly these keys:
+
+```json
+{"v":1,"alg":"argon2id-xc20p-kit","vault_id":"<b64 16B>","account":"<1..256>",
+ "recovery_sign_pub":"<b64 32B>","s":"<b64 16B>","t":3,"m":262144,"p":1,
+ "n":"<b64 24B>","ct":"<b64 ct||tag, 16..1280 bytes>"}
+```
+
+```
+K_pw  = Argon2id(utf8(NFC(passphrase)), s, t, m KiB, p, L=32)
+key   = HKDF-SHA256(ikm=K_pw, salt=utf8("akv1"), info=utf8("akv1/kit-backup-key"), L=32)
+aad   = cjson({"ctx":"akv1/kit-backup","vault_id","account","recovery_sign_pub","t","m","p"})
+ct    = XChaCha20-Poly1305(key, n, cjson({"v":1,"vault_id","account","vault_origin","recovery_key":b64 32B}), aad)
+```
+
+`vault_origin` is 1..256 bytes of printable ASCII. `recovery_sign_pub` is the recovery
+signing public key (§3.5) of the recovery key in the kit; it identifies the kit's
+generation and is replaced exactly by `recovery_rotate`.
+
+**Bounds, checked before any KDF work** (`bad_request`): `t` 3..10, `m` 65536..524288
+KiB, `p` 1..4, a 16-byte salt, a 24-byte nonce, a ciphertext of 16..1280 bytes. Defaults
+for sealing are `t=3`, `m=262144`, `p=1`. Salt and nonce come from a CSPRNG; only vectors
+inject fixed values.
+
+**Passphrase.** Sealing requires a non-empty well-formed string of at least 12 Unicode
+code points and at most 1024 bytes after NFC (`bad_request`); opening accepts any
+non-empty one of at most 1024 bytes. It is used as typed (NFC only): no case folding,
+no trimming. A generated passphrase is 20 CSPRNG bytes as 32 Crockford base32 symbols
+(§11 alphabet, uppercase) in 8 groups of 4 joined by `-`, entered exactly as shown. A
+client MUST NOT accept the vault password or the account password as the backup
+passphrase when it can tell, MUST read the passphrase only from the user (never from a
+command-line argument, environment variable or agent-visible channel), and MUST NOT
+log or persist it.
+
+**Opening.** The opener supplies the expected `account` from its own signed-in session,
+and SHOULD supply `vault_id` and, when it has verified the chain, the chain's current
+`recovery_sign_pub`. Order: file longer than 4096 bytes or invalid JSON
+(`bad_request`; duplicate keys and values outside the data model are refused); unknown `v` or `alg` (`unsupported_version`); wrong keys, shape
+or bounds (`bad_request`); header `account`, `vault_id` or `recovery_sign_pub` different
+from what the opener expects (`bad_request`, before any KDF work); AEAD failure
+(`decrypt_failed`: wrong passphrase, or any change to the header, the parameters, the
+salt, the nonce or the ciphertext); inner payload not canonical, with unknown keys,
+a missing or invalid field, or `vault_id` or `account` different from the
+header (`bad_request`); an inner `v` other than 1 is `unsupported_version`. The opened
+kit is the input of the existing recovery flow (§3.5): the file is never trusted for the
+recovery signing key, which recovery checks against the membership chain, so a stale or
+substituted kit fails there.
+
+**Guarantees and limits.** Without the passphrase the file reveals only its header
+(vault ID, account, recovery signing public key, parameters, sizes). The passphrase
+alone reveals nothing: a recovery additionally needs an owner `email_otp` session and
+the device proof (§9). The file can be guessed offline against the passphrase; Argon2id
+bounds the rate, entropy bounds the outcome. Opening a file made for an earlier recovery
+key yields that key and the vault keys its bundle held; the chain refuses enrollment by
+it (§3.5). Vectors: `kit-backup.json`.
+
 ## 4. Membership log (owner-signed, hash-chained)
 
 ```json
@@ -2046,3 +2111,5 @@ under an earlier revision does not verify and is reset rather than migrated.
   every existing route, frame and body keeps its meaning. The input form (§3.11):
   `GET /input` redirects to the dashboard bundle, which signs in with the dashboard
   client, takes an `input` token from ak-web and seals the value in the browser.
+- **2026-11 (issue #209):** the recovery kit backup file (§3.12), additive and client-side;
+  no existing wire body, route, error or vector changes.

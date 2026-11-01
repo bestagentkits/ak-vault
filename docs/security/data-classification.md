@@ -22,6 +22,7 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Write intent contents (requested name, purpose, sensitivity) at rest | Sealed to the epoch's `seal_pub` under its own context; carries no value; cleared when the request closes, or lazily after it expires ([spec §3.10](../protocol/v1/spec.md#310-write-intents-human-write-requests)). The Worker saw them in plaintext before sealing |
 | Value typed into a write-request form | Encrypted and signed by the browser device as a normal item record; never in the MCP client or Worker in plaintext |
 | Value typed into an input-request form | Sealed in the browser to the issuing device's one-time `input_pub` ([spec §3.11](../protocol/v1/spec.md#311-input-seals-device-sealed-input-requests)); the Worker relays the ciphertext and never stores or logs it; the device writes it as a normal item record |
+| Recovery kit backup (recovery key and vault origin) | Inside the AEAD of the backup file, under a key derived from a separate backup passphrase that only the user holds ([spec §3.12](../protocol/v1/spec.md#312-recovery-kit-backup-client-encrypted-email-backup)); never sent to the Worker |
 | Audit of drained sealed operations and dropped profile fields (`sealed_applied`, `sealed_refused`, `profile_invalid`, `profile_provenance_invalid`) and of dashboard rotation state changes (`rotation_*`: type, item ID, author device, time) | Encrypted audit stream |
 
 ## Visible operational metadata (unavoidable)
@@ -52,6 +53,19 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 `device_remove.reason` is a closed set (`lost`, `stolen`, `retired`,
 `compromised`; [spec §4](../protocol/v1/spec.md#4-membership-log-owner-signed-hash-chained)),
 so it carries no free text.
+
+## Recovery kit backup (client-encrypted, delivered by ak-web)
+
+The backup file is produced on the owner's device and emailed by ak-web
+([ADR 0005](../adr/0005-client-encrypted-recovery-kit-email-backup.md)). The Worker
+never receives it. What each party may see:
+
+| Data | Who sees it | Rule |
+|---|---|---|
+| Backup passphrase, plaintext recovery key, plaintext kit | Only the user's trusted device while it prepares or opens the file | Never sent, logged, put in an argument, environment variable, error, metric, trace or fixture |
+| File header: vault ID, account, recovery signing public key, KDF parameters, salt, nonce, ciphertext size | ak-web, the mail provider, the mailbox | Operational metadata; never logged beyond opaque IDs and sizes |
+| Ciphertext | ak-web in transit to the provider, the provider, the mailbox | ak-web does not store it after the delivery attempt; no copy in logs, traces or error reports |
+| Delivery status (requested, provider accepted, time, recipient binding by account) | ak-web, the dashboard | Non-sensitive metadata; never claims a completed backup |
 
 ## Transits Worker memory, never stored or logged (remote access only)
 

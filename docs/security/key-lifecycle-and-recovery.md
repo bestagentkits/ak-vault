@@ -171,6 +171,42 @@ signing key, so an old bundle opened with a leaked recovery key cannot add a
 device. It still yields the vault keys it held, so treat a leaked recovery key as a
 compromise (below).
 
+## Recovery kit email backup
+
+An owner may choose, per recovery kit, to email an **encrypted** copy of the kit to their
+verified address ([ADR 0005](../adr/0005-client-encrypted-recovery-kit-email-backup.md),
+format in [spec §3.12](../protocol/v1/spec.md#312-recovery-kit-backup-client-encrypted-email-backup)).
+It is off by default. Three independent things are needed to use it, and none replaces
+the others:
+
+1. AgentKit sign-in to the owner's account (email OTP), which recovery already requires.
+2. The encrypted file from the mailbox.
+3. The separate backup passphrase, which only the user holds.
+
+Behavior a client implements:
+
+- The client creates the kit locally as today, makes the user confirm it is saved, and
+  only then offers the email backup. It encrypts on the device, sends only the file, and
+  reports "requested", "provider accepted" and "opened locally" as different states. A
+  failed send is never shown as a completed backup and never blocks local use.
+- After a recovery or a recovery-key rotation the old file is obsolete. The client tells
+  the user and offers a new opt-in backup of the new kit; it never sends one on its own.
+  If the send fails after a successful rotation, the rotation stands and the client
+  keeps the new kit for the user to save or retry.
+- After losing every device: sign in, download the attachment, open it with the
+  passphrase on the new device, and run the ordinary recovery above with the recovered
+  kit. Nothing in the email path adds a device or skips the account session and device
+  proof. Then remove the lost devices, rekey and, if wanted, send a new backup.
+- Disabling stops later sends. It does not delete mail already delivered; treat an
+  obsolete file in a compromised mailbox like a leaked recovery key (the chain refuses
+  enrollment by it, but it still opens to the vault keys its bundle held).
+- If the mailbox is compromised, change the backup by rotating the recovery key
+  (`ak secrets sync rotate-recovery`) and choose a new passphrase; if the passphrase is
+  known to be weak, treat the file as exposed.
+
+If the passphrase, the paper kit, every device and the vault password are all lost,
+the vault is unrecoverable by design; the service cannot rebuild a key.
+
 ## Lost home or all devices
 
 A fresh device with the password or recovery key:
