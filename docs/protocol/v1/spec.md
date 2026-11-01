@@ -942,8 +942,9 @@ ct    = XChaCha20-Poly1305(key, n, cjson({"v":1,"vault_id","account","vault_orig
 ```
 
 `vault_origin` is 1..256 bytes of printable ASCII. `recovery_sign_pub` is the recovery
-signing public key (§3.5) of the recovery key in the kit; it identifies the kit's
-generation and is replaced exactly by `recovery_rotate`.
+signing public key (§3.5) of the recovery key in the kit and is replaced exactly by
+`recovery_rotate`. It identifies one kit only when every new recovery key comes with a
+`recovery_rotate`; a kit replaced without one shares its predecessor's key.
 
 **Bounds, checked before any KDF work** (`bad_request`): `t` 3..10, `m` 65536..524288
 KiB, `p` 1..4, a 16-byte salt, a 24-byte nonce, a ciphertext of 16..1280 bytes. Defaults

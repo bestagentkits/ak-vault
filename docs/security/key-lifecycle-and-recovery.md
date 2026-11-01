@@ -189,10 +189,15 @@ Behavior a client implements:
   only then offers the email backup. It encrypts on the device, sends only the file, and
   reports "requested", "provider accepted" and "opened locally" as different states. A
   failed send is never shown as a completed backup and never blocks local use.
-- After a recovery or a recovery-key rotation the old file is obsolete. The client tells
-  the user and offers a new opt-in backup of the new kit; it never sends one on its own.
+- After a recovery or a recovery-key rotation that signs `recovery_rotate`, the old file
+  can no longer enroll a device. A new kit handed out without that event leaves the old
+  recovery signing key current, so the old file is not obsolete
+  ([#210](https://github.com/bestagentkits/ak-vault/issues/210)). The client tells the
+  user, without calling old files harmless, and offers a new opt-in backup of the new
+  kit; it never sends one on its own. There is no resend: by design a new backup needs
+  a new kit from a rotation.
   If the send fails after a successful rotation, the rotation stands and the client
-  keeps the new kit for the user to save or retry.
+  holds the new kit, without persisting it, until the user saves it or the retry ends.
 - After losing every device: sign in, download the attachment, open it with the
   passphrase on the new device, and run the ordinary recovery above with the recovered
   kit. Nothing in the email path adds a device or skips the account session and device
@@ -200,9 +205,12 @@ Behavior a client implements:
 - Disabling stops later sends. It does not delete mail already delivered; treat an
   obsolete file in a compromised mailbox like a leaked recovery key (the chain refuses
   enrollment by it, but it still opens to the vault keys its bundle held).
-- If the mailbox is compromised, change the backup by rotating the recovery key
-  (`ak secrets sync rotate-recovery`) and choose a new passphrase; if the passphrase is
-  known to be weak, treat the file as exposed.
+- If the mailbox is compromised, follow the "password or recovery key leaked" row of
+  the [compromise response](#compromise-response): rekey, rotate the recovery key
+  (`ak secrets sync rotate-recovery`, which signs `recovery_rotate`), and rotate items
+  if the bundle may have been taken, because an old file still opens an old bundle copy. Choose a new
+  passphrase for any new backup; if the passphrase is known to be weak, treat the file
+  as exposed.
 
 If the passphrase, the paper kit, every device and the vault password are all lost,
 the vault is unrecoverable by design; the service cannot rebuild a key.
@@ -244,7 +252,7 @@ restored by sync; the user re-grants on the new device.
 | Event | Response |
 |---|---|
 | Device compromised | Revoke session/device, `device_remove`, rekey, rotate all `needs-rotate` items |
-| Password or recovery key leaked | Rekey and replace both wraps and the bundle; rotate items if the attacker may also have obtained the bundle |
+| Password or recovery key leaked | Rekey and replace both wraps and the bundle, then rotate the recovery key with `recovery_rotate` (`ak secrets sync rotate-recovery`), so the leaked key can no longer author `device_add`; rotate items if the attacker may also have obtained the bundle |
 | Owner device compromised | As device compromised; the attacker could have signed membership events, so review the membership log from the last trusted checkpoint |
 | Server compromised | Values stay encrypted; treat metadata as exposed; follow the [runbook](../operations/runbooks.md#incident-response) and rotate Worker secrets |
 | Token signing key (ak-web JWKS) compromised | Owned by ak-web; Worker trusts only current JWKS keys after rotation ([runbooks](../operations/runbooks.md#key-rotation)) |
