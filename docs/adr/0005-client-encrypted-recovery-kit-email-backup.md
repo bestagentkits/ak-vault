@@ -14,6 +14,8 @@
 - **Tracking:** [#209](https://github.com/bestagentkits/ak-vault/issues/209); epic
   [#1](https://github.com/bestagentkits/ak-vault/issues/1); account UX
   [ak-web#569](https://github.com/bestagentkits/ak-web/issues/569)
+- **Rollout:** staging only, behind a flag; production only through the owner-gated
+  process. Nothing ships before the owner accepts this ADR and the D9 vectors exist.
 - **Wire contract:** none yet. The envelope in D3 is a **file format**, not a
   protocol message. When accepted, a spec section and deterministic vectors own it
   (D9); until then this ADR fixes only the shape, and the spec wins if they disagree.
@@ -32,26 +34,30 @@ What exists today, from the code and the spec:
 - The kit is five fields: vault ID, issuing device ID, account, vault origin and the
   recovery key (`secretsync.RecoveryKit`). The recovery key is 32 random bytes
   ([spec §3.4](../protocol/v1/spec.md#34-password-and-recovery-wraps)).
-- **No enrolled device keeps the recovery key.** It is shown once at `enable` or
-  `rotate-recovery`. Devices hold only vault keys wrapped to themselves. So no
+- **No enrolled device keeps the recovery key.** The CLI hands out a new one whenever it
+  reseals the bundle with a new key (`enable`, `rotate-recovery`, `recover`, and the
+  member-removal, removal-fence and device-rotation paths) and shows it once. Devices hold only vault keys wrapped to themselves. So no
   device, and certainly not the server or the dashboard, can later "send the kit
   again": only a **new** recovery key can be mailed, which means a rotation.
 - Reading the bundle and recovery enrollment already need a human email-OTP
-  session of the owner account plus the password or recovery key
+  session of the owner account; opening the bundle needs the password or recovery key,
+  which only the client checks
   ([spec §3.5](../protocol/v1/spec.md#35-owner-recovery-signing-key-and-sas-enrollment)).
-  The `browser`, `api_key_device` and `machine` sessions are refused on those routes.
+  The `browser`, `api_key_device` and `machine` sessions are refused on those routes, and
+  an `input` session is accepted only on the input-request routes. `enable` itself may run
+  under an `api_key_device` session (genesis seal), so D5 asks for its own step-up.
 
 ## Decision
 
 1. **D1: opt-in, off by default, never a precondition.** `enable` and
    `rotate-recovery` keep issuing the kit locally exactly as today. "Email an
-   encrypted backup" is a separate, clearly labeled choice that the user must turn on
-   each time. Declining, failing or interrupting it never blocks, delays or rolls back
+   encrypted backup" is a separate, clearly labeled choice that the user chooses at each
+   issuance (`enable`, `rotate-recovery`); the choice is not sticky, so a new kit is never
+   mailed without a fresh yes. Declining, failing or interrupting it never blocks, delays or rolls back
    enabling sync, a rotation, or local use of the vault. Sync off means no network
    request and no behavior change.
 2. **D2: the kit is encrypted on the user's trusted device, before anything leaves
-   it.** Only a device that holds the plaintext kit (the one that just ran `enable` or
-   `rotate-recovery`, a human owner session) can prepare a backup. ak-web, the Worker
+   it.** Only a device that holds the plaintext kit (the one that just issued it) can prepare a backup. ak-web, the Worker
    and the mail provider receive only the envelope. The **backup passphrase** is typed
    or generated on that device, used to derive the key and discarded; it is never sent,
    stored, logged or put in an email. The dashboard at `/app` and any unenrolled browser
@@ -66,7 +72,7 @@ What exists today, from the code and the spec:
    ikm  = Argon2id(passphrase_utf8_nfc, s, t, m_KiB, p, L=32)
    key  = HKDF(ikm=ikm, salt=utf8("akv1"), info=utf8("akv1/recovery-backup-kek"), L=32)
    n    = random 24 bytes
-   aad  = cjson({"ctx":"akv1/recovery-backup","v":1,"vault_id","account","t","m","p"})
+   aad  = cjson({"ctx":"akv1/recovery-backup","v":1,"alg","vault_id","account","t","m","p"})
    ct   = XC20P(key, n, pt, aad)
    file = cjson({"v":1,"alg":"argon2id-xc20p-backup","vault_id","account","s":b64,
                  "t","m","p","n":b64,"ct":b64})
@@ -78,13 +84,16 @@ What exists today, from the code and the spec:
      enforces `t` in 3..10, `m` in 65536..262144 KiB, `p` in 1..4 before running Argon2id,
      so a hostile file cannot make a device burn memory or time: stricter floors than
      the bundle's, because a mailbox copy is attacker-readable offline for ever, and
-     tighter ceilings, because the file arrives from outside. Anything outside refuses.
+     tighter ceilings, because the file arrives from outside (a pure-JS Argon2id at the
+     ceiling can take a minute and 256 MiB, so a TypeScript client may lower `t`'s ceiling). Anything outside refuses.
    - `v`, `alg` and every field are closed sets. Unknown version or algorithm, a missing
      or extra field, non-canonical JSON, an invalid base64 length, or a file over 2 KiB is
      `bad_request` before any KDF work. Wrong passphrase, a tampered or truncated `ct`,
      and a wrong `vault_id`/`account`/parameter all surface as the same `decrypt_failed`.
    - `vault_id` and `account` are authenticated: a blob moved to another vault or
      account fails. They are in the clear, and the mailbox owner already knows both.
+   - `vault_id` and `account` also sit in the plaintext; the decrypter MUST refuse a file
+     whose plaintext values differ from the envelope's.
    - The plaintext holds no device ID, vault key, password, session token or name of
      any secret.
 4. **D4: the passphrase is a separate secret, and the client is strict about it.**
@@ -124,16 +133,21 @@ What exists today, from the code and the spec:
    **locally** (`ak secrets sync recover` gains a file/passphrase input; the decrypted
    recovery key goes into the existing signed recovery flow unchanged), and enrolls a new
    device with the recovery signing key. The Worker, its routes and its authorization are
-   not touched. Possessing the mailbox alone, or the passphrase alone, adds no device.
+   not touched. Possessing the mailbox alone (which yields the sign-in and the file but not the
+   passphrase), or the passphrase alone, adds no device.
 8. **D8: "send again" means "rotate".** Because no device keeps the recovery key, the
    only way to produce a fresh backup is `rotate-recovery` on an enrolled owner device,
    which issues a new kit, and then optionally D1-D5 again. The dashboard shows the D6
    status and instructions and points to the CLI or Desktop app; it has no resend button
-   and never derives, fetches or displays the key. After a rotation or a recovery, the old
-   kit is obsolete: earlier emails hold a recovery key the chain refuses (the bundle no
-   longer opens with it and a `device_add` signed by the old recovery key is `forbidden`),
-   so the client tells the user that those emails are unusable and offers a new opt-in
-   backup. It never sends the new kit on its own.
+   and never derives, fetches or displays the key. A backup is offered only after an
+   operation that also signs `recovery_rotate` (`rotate-recovery`, `recover`): from that
+   event on a `device_add` signed by the old recovery key is `forbidden`. The other paths
+   that hand out a new key without that event leave the old recovery signing key current
+   ([#210](https://github.com/bestagentkits/ak-vault/issues/210) checks what that allows),
+   so they do not obsolete older kits and do not trigger the offer. After a rotation the
+   client tells the user that earlier emails can no longer enroll a device, **not** that
+   they are harmless: see the first consequence below. It never sends the new kit on its
+   own.
 9. **D9: cross-language vectors before shipping.** The envelope is produced and read by
    Go (CLI) and may be produced by TypeScript (Desktop). Before any client ships it, a
    spec section ("Recovery-kit backup file") and `protocol/v1/vectors/recovery-backup.json`
@@ -144,24 +158,35 @@ What exists today, from the code and the spec:
    procedure in [AGENTS.md](../../AGENTS.md#spec-and-vector-changes) applies, and the
    threat model rows below are claimed only when those vectors and the ak-web and CLI
    tests exist.
-10. **D10: disabling is forward-only.** The user can turn future backups off. That cannot
-    remove mail already delivered; the UX says so and tells the user that a rotation
-    makes every earlier copy useless.
+10. **D10: declining is forward-only.** The user can decline at any later issuance and
+    ak-web drops the opted-in flag. That cannot
+    remove mail already delivered; the UX says so.
 
 ## Consequences and limits
 
 - **A mailbox copy is an offline-guessable target for ever.** Anyone who gets the file
   (mailbox compromise, mail provider, a forwarded message) can guess the passphrase
   offline; Argon2id cost and a generated 80-bit passphrase are the only barrier, and a
-  user who picks a weak one weakens it. That is why D4 refuses weak input and why a
-  rotation (which obsoletes old kits) is the response to a suspected mailbox leak.
+  user who picks a weak one weakens it. That is why D4 refuses weak input.
+  The response to a suspected mailbox leak is the recovery-key compromise response of the
+  [key lifecycle](../security/key-lifecycle-and-recovery.md#compromise-response): rotate
+  the recovery key, rekey, and rotate items if the bundle may have been taken. Rotation
+  alone is not enough, because an old kit still opens an old bundle (anyone with an
+  owner-account token can fetch bundles; the server and its backups hold old ones) and
+  yields the vault keys that bundle held.
 - **It is not escrow.** If the passphrase and every device are lost, the vault is
   unrecoverable. Encrypting the file under the **same** lost vault password would not help
   recovery from a forgotten password, so the passphrase is separate by design; the price
   is that the user must keep a second secret.
-- **Three independent things are needed:** AgentKit sign-in (email OTP, the account),
-  the encrypted file from the mailbox, and the backup passphrase. Compromising one never
-  suffices.
+- **The passphrase is the only barrier independent of the mailbox.** The AgentKit sign-in
+  is an email-OTP session sent to the same mailbox, so controlling the mailbox yields the
+  sign-in, the file and the step-up code. The user needs three things in practice (sign-in,
+  file, passphrase), but only the passphrase is not reachable from the mailbox. Mailbox
+  compromise alone still cannot decrypt the file or add a device, solely because of it.
+- **Replay.** The file carries no issue time, so a superseded file decrypts and is found
+  stale only when `recover` fails; the chain refuses it only after `recovery_rotate`.
+- **Provider retention.** The mail provider and the mailbox may keep the message and
+  attachment for their own retention period, outside ak-web's control.
 - **ak-web is trusted for delivery only:** it can refuse, delay or drop the mail and can
   see the envelope in transit, like any relay of ciphertext. It cannot make the file
   decrypt, and cannot add a device.

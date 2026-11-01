@@ -162,8 +162,10 @@ No guarantee here is claimed for it: per the rule that a guarantee needs a vecto
 test, its threat rows (mailbox compromise alone, passphrase alone, tamper and
 downgrade, KDF denial of service, replay of a superseded kit, delivery failure shown as
 success) are added with the vectors and tests that prove them, in the implementing pull
-requests. Known residual: a file in a mailbox can be guessed offline for ever, so the
-passphrase strength is the only barrier and a rotation is the response to a leak.
+requests. Known residuals: a file in a mailbox can be guessed offline for ever, so the
+passphrase strength is the only barrier independent of the mailbox (the email-OTP
+sign-in goes to the same mailbox); and an old kit still opens the old bundle it matches,
+so a leak calls for the recovery-key compromise response, not a rotation alone.
 
 ## Explicit limitations
 

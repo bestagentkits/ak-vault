@@ -177,9 +177,11 @@ compromise (below).
 opt-in encrypted copy of the kit sent to the account's verified email, decrypted
 locally with a separate backup passphrase and fed to the recovery flow below. Nothing
 here changes until it is accepted and implemented. Two facts hold either way: no
-enrolled device keeps the recovery key, so a new backup means rotating it (the old kit,
-and every earlier email, becomes unusable); and the mailbox, the AgentKit sign-in and
-the passphrase are three independent things, none enough alone.
+enrolled device keeps the recovery key, so a new backup means issuing a new one, offered
+only after `recovery_rotate` (earlier kits can then no longer enroll a device, but still
+open the old bundles they match, so a leaked mailbox calls for the compromise response
+below, not just a rotation); and the sign-in is an email-OTP session sent to the same
+mailbox, so the backup passphrase is the only barrier independent of the mailbox.
 
 ## Lost home or all devices
 

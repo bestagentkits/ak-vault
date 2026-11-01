@@ -29,7 +29,8 @@ the optional **recovery-kit backup file** is encrypted on the client under a sep
 passphrase before it leaves the device. ak-web and the mail provider would see its
 ciphertext and the cleartext `vault_id` and `account` in transit; the Worker never
 receives it. The passphrase, the recovery key and the plaintext kit are never sent,
-logged or emailed, and ak-web keeps only opt-in state, last attempt time and outcome.
+logged or emailed, and ak-web keeps only the vault ID, opt-in state, last attempt time and outcome (the
+mail provider may retain the message for its own period).
 
 ## Visible operational metadata (unavoidable)
 
