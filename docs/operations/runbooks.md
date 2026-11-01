@@ -170,7 +170,12 @@ exactly `true` turns them off, and each then answers `404` (an item PUT with
 `?write_request=` answers `400`; the `/v1/vaults/…` ones answer
 `503 sync_disabled` instead while sync is also off). It is on for staging and off for production in
 `worker/wrangler.jsonc`; remote access is staging only, pre-release, and not for
-production credentials. The sync kill switch also stops it: with sync off, `/mcp`
+production credentials. `VAULT_INPUT_REQUESTS_ENABLED` adds the device-sealed input
+requests of [ADR 0004](../adr/0004-device-sealed-input-requests.md) (`/input` and the
+input-request routes) on top of remote access; it is on for staging and unset for
+production, and while off those routes answer `404` (an item PUT with
+`?input_request=` answers `400`); its gate is tested in `worker/test/input-request.test.ts`
+and `worker/test/input-form-redirect.test.ts`. The sync kill switch also stops it: with sync off, `/mcp`
 answers `503 sync_disabled`. Route behavior is owned by `worker/src/index.ts`,
 `worker/src/env.ts` and `worker/test/remote-access-flag.test.ts`; the design and its
 plaintext-in-memory boundary by
