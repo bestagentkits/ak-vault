@@ -15,9 +15,9 @@ import {
   signKeyPairFromSeed,
   unwrapFromDevice,
   verifyDeviceWraps,
+  verifyMembershipChain,
   wrapsDigest,
   wrapToDevice,
-  verifyMembershipChain,
   type MembershipEvent,
 } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';

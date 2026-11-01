@@ -173,7 +173,10 @@ reseal under the recovery key already in use keeps the signing key and needs no 
 The server cannot check this: it sees neither the kit nor the bundle. Until the chain
 rotates, an old kit and a copy of the bundle it opened can still author `device_add`; a
 bundle without the current epoch cannot give that device the vault keys, but the chain
-accepts it as an owner device.
+accepts it as an owner device. As an owner device it can then post a voluntary `rekey`
+under a key it chose, which makes it read everything written after that, and remove
+honest devices. The same holds for a new password: an old bundle copy still opens with
+the old password, so a client that replaces the password rotates the signing key too.
 
 **Reads by a device outside membership (recovery identity).** The server returns the
 opaque bundle (`GET /v1/vaults/{vid}/recovery`) to a current owner device, and the
