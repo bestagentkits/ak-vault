@@ -307,6 +307,24 @@ export {
   type InputSealPayload,
   type InputSealWire,
 } from './input-seal.js';
+export {
+  KIT_BACKUP_ALG,
+  KIT_BACKUP_ARGON2_BOUNDS,
+  KIT_BACKUP_ARGON2_DEFAULTS,
+  KIT_BACKUP_MAX_FILE_BYTES,
+  KIT_BACKUP_MIN_PASSPHRASE_CODE_POINTS,
+  generateBackupPassphrase,
+  kitBackupFileBytes,
+  openKitBackup,
+  parseKitBackupFile,
+  parseKitBackupKit,
+  sealKitBackup,
+  validateKitBackupParams,
+  type KitBackupArgon,
+  type KitBackupExpected,
+  type KitBackupFile,
+  type KitBackupKit,
+} from './kit-backup.js';
 export { NAME_TAG_BYTES, nameIndexKey, nameTag } from './name-tag.js';
 export {
   JOIN_CODE_CONTEXT,

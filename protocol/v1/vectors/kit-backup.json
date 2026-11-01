@@ -1,0 +1,1283 @@
+{
+  "version": 1,
+  "description": "Recovery kit backup (spec §3.12). file = cjson({\"v\":1,\"alg\":\"argon2id-xc20p-kit\",\"vault_id\",\"account\",\"recovery_sign_pub\",\"s\",\"t\",\"m\",\"p\",\"n\",\"ct\"}); K_pw = Argon2id(NFC(passphrase), s, t, m, p, 32); key = HKDF-SHA256(ikm=K_pw, salt=utf8(\"akv1\"), info=utf8(\"akv1/kit-backup-key\"), L=32); aad = cjson({\"ctx\":\"akv1/kit-backup\",\"vault_id\",\"account\",\"recovery_sign_pub\",\"t\",\"m\",\"p\"}); ct = XChaCha20-Poly1305(key, n, cjson({\"v\":1,\"vault_id\",\"account\",\"vault_origin\",\"recovery_key\"}), aad). Argon2id bounds t 3..10, m 65536..524288 KiB, p 1..4, checked before any KDF work. Opening takes the expected account (and optionally vault_id and recovery_sign_pub); a mismatch is bad_request before any KDF work. Sealing requires a passphrase of at least 12 code points after NFC; opening accepts any non-empty one. All passphrases, keys and identifiers here are synthetic.",
+  "cases": [
+    {
+      "name": "ascii_passphrase",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "salt": "1qsSq7tQnG4cMCJlPoDs9A",
+      "nonce": "zp0_HC7A7wKXAFfIhbEq9ET8FfD-5F1h",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "1qsSq7tQnG4cMCJlPoDs9A",
+        "n": "zp0_HC7A7wKXAFfIhbEq9ET8FfD-5F1h",
+        "ct": "yt-zf5N5RExKaTGkC0y90zZHk68lKELgzf0CObI5BD6SJJ3ZRqBYhOfBSWuI4HaLz4eVFhi46u4pR0wvH59Gu4MlFEUr1Ka10BfSAauByaK2KBgm99ZIDNQQ71X93unCST-d53hYv2pPyUQt5pdBhNmUuq_g83R_YvrTdS75t72XyniG7sRUJiTJKatVClgzDgtQkUXPgN5_WY4xPFIfcXMW-voAA3BEbbB6aLxh_BJEg6ADAmydasznCw"
+      },
+      "file_text": "{\"account\":\"acct_alice\",\"alg\":\"argon2id-xc20p-kit\",\"ct\":\"yt-zf5N5RExKaTGkC0y90zZHk68lKELgzf0CObI5BD6SJJ3ZRqBYhOfBSWuI4HaLz4eVFhi46u4pR0wvH59Gu4MlFEUr1Ka10BfSAauByaK2KBgm99ZIDNQQ71X93unCST-d53hYv2pPyUQt5pdBhNmUuq_g83R_YvrTdS75t72XyniG7sRUJiTJKatVClgzDgtQkUXPgN5_WY4xPFIfcXMW-voAA3BEbbB6aLxh_BJEg6ADAmydasznCw\",\"m\":65536,\"n\":\"zp0_HC7A7wKXAFfIhbEq9ET8FfD-5F1h\",\"p\":1,\"recovery_sign_pub\":\"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\"s\":\"1qsSq7tQnG4cMCJlPoDs9A\",\"t\":3,\"v\":1,\"vault_id\":\"ybMmbnfZYAMGGXcGAMZl7A\"}",
+      "file_text_reformatted": "{\n  \"ct\": \"yt-zf5N5RExKaTGkC0y90zZHk68lKELgzf0CObI5BD6SJJ3ZRqBYhOfBSWuI4HaLz4eVFhi46u4pR0wvH59Gu4MlFEUr1Ka10BfSAauByaK2KBgm99ZIDNQQ71X93unCST-d53hYv2pPyUQt5pdBhNmUuq_g83R_YvrTdS75t72XyniG7sRUJiTJKatVClgzDgtQkUXPgN5_WY4xPFIfcXMW-voAA3BEbbB6aLxh_BJEg6ADAmydasznCw\",\n  \"n\": \"zp0_HC7A7wKXAFfIhbEq9ET8FfD-5F1h\",\n  \"s\": \"1qsSq7tQnG4cMCJlPoDs9A\",\n  \"p\": 1,\n  \"m\": 65536,\n  \"t\": 3,\n  \"recovery_sign_pub\": \"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\n  \"account\": \"acct_alice\",\n  \"vault_id\": \"ybMmbnfZYAMGGXcGAMZl7A\",\n  \"alg\": \"argon2id-xc20p-kit\",\n  \"v\": 1\n}"
+    },
+    {
+      "name": "generated_shape_passphrase",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.agentkit.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "K7QM-3XPD-9TVA-C2HW-NE4R-8BJF-ZY6G-0S5H",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "salt": "IEr1yNJAOF96QkwPmKd-YA",
+      "nonce": "HcH-hVvPM7jBPoIM8r0zDnCzv7p2VKTE",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "IEr1yNJAOF96QkwPmKd-YA",
+        "n": "HcH-hVvPM7jBPoIM8r0zDnCzv7p2VKTE",
+        "ct": "rgMWfwFJ5aaa_MbNDMPh8ezs3pQOPNwvXBv1rfwplCvWr7NUHErCzo6mGYbDFDpKk6HAARATZQgrqTvdEw8IkKFGxpVJceUaeBuxKn860xZfPgcRH9C4EGzAWowGliN29UN-qvMyDXvYBw_8FEYEolJqTOmCBD8b2VppIDi9YuAP96BKQ6yiQ7q7qE3mWcJWNqBSSkdSpcUXnmaNxuF8IWd5-Hxu1bArpHrqiwyPx1fnpxHO1k98iuNsY8w"
+      },
+      "file_text": "{\"account\":\"acct_alice\",\"alg\":\"argon2id-xc20p-kit\",\"ct\":\"rgMWfwFJ5aaa_MbNDMPh8ezs3pQOPNwvXBv1rfwplCvWr7NUHErCzo6mGYbDFDpKk6HAARATZQgrqTvdEw8IkKFGxpVJceUaeBuxKn860xZfPgcRH9C4EGzAWowGliN29UN-qvMyDXvYBw_8FEYEolJqTOmCBD8b2VppIDi9YuAP96BKQ6yiQ7q7qE3mWcJWNqBSSkdSpcUXnmaNxuF8IWd5-Hxu1bArpHrqiwyPx1fnpxHO1k98iuNsY8w\",\"m\":65536,\"n\":\"HcH-hVvPM7jBPoIM8r0zDnCzv7p2VKTE\",\"p\":1,\"recovery_sign_pub\":\"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\"s\":\"IEr1yNJAOF96QkwPmKd-YA\",\"t\":3,\"v\":1,\"vault_id\":\"ybMmbnfZYAMGGXcGAMZl7A\"}",
+      "file_text_reformatted": "{\n  \"ct\": \"rgMWfwFJ5aaa_MbNDMPh8ezs3pQOPNwvXBv1rfwplCvWr7NUHErCzo6mGYbDFDpKk6HAARATZQgrqTvdEw8IkKFGxpVJceUaeBuxKn860xZfPgcRH9C4EGzAWowGliN29UN-qvMyDXvYBw_8FEYEolJqTOmCBD8b2VppIDi9YuAP96BKQ6yiQ7q7qE3mWcJWNqBSSkdSpcUXnmaNxuF8IWd5-Hxu1bArpHrqiwyPx1fnpxHO1k98iuNsY8w\",\n  \"n\": \"HcH-hVvPM7jBPoIM8r0zDnCzv7p2VKTE\",\n  \"s\": \"IEr1yNJAOF96QkwPmKd-YA\",\n  \"p\": 1,\n  \"m\": 65536,\n  \"t\": 3,\n  \"recovery_sign_pub\": \"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\n  \"account\": \"acct_alice\",\n  \"vault_id\": \"ybMmbnfZYAMGGXcGAMZl7A\",\n  \"alg\": \"argon2id-xc20p-kit\",\n  \"v\": 1\n}"
+    },
+    {
+      "name": "nfd_input_matches_nfc",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "Pässwörd-für-backup-ü",
+      "passphrase_input": "Pässwörd-für-backup-ü",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "salt": "tNEYGiefYLKFPa-zlcN-SQ",
+      "nonce": "y2TaYYxRX_wJvODNWThdhTW7x2eC6iMe",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "tNEYGiefYLKFPa-zlcN-SQ",
+        "n": "y2TaYYxRX_wJvODNWThdhTW7x2eC6iMe",
+        "ct": "dsHtaiJPSIYCCBhyO68K_fv_hJeGwgrENlCDmkzg0i8iL4hpg_FoIY-HV4TRaWZTf-Oavvl_JU023LUb2xZcKHQ3fx2bxjeR3ecDUuZ6P85VzEH7A9FJlVc2kfI5ZbuD83qq9BkBXTZR4X_c8_8g4bEntUJvFcGGQEhXRPv3moAS8kkiFkGOMRWlAVQQZCBUAalPRv2MufS3IhVlnZZIV0pWuMVd4d0m5t88DLsvu812ckr4gqEyHJC9SA"
+      },
+      "file_text": "{\"account\":\"acct_alice\",\"alg\":\"argon2id-xc20p-kit\",\"ct\":\"dsHtaiJPSIYCCBhyO68K_fv_hJeGwgrENlCDmkzg0i8iL4hpg_FoIY-HV4TRaWZTf-Oavvl_JU023LUb2xZcKHQ3fx2bxjeR3ecDUuZ6P85VzEH7A9FJlVc2kfI5ZbuD83qq9BkBXTZR4X_c8_8g4bEntUJvFcGGQEhXRPv3moAS8kkiFkGOMRWlAVQQZCBUAalPRv2MufS3IhVlnZZIV0pWuMVd4d0m5t88DLsvu812ckr4gqEyHJC9SA\",\"m\":65536,\"n\":\"y2TaYYxRX_wJvODNWThdhTW7x2eC6iMe\",\"p\":1,\"recovery_sign_pub\":\"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\"s\":\"tNEYGiefYLKFPa-zlcN-SQ\",\"t\":3,\"v\":1,\"vault_id\":\"ybMmbnfZYAMGGXcGAMZl7A\"}",
+      "file_text_reformatted": "{\n  \"ct\": \"dsHtaiJPSIYCCBhyO68K_fv_hJeGwgrENlCDmkzg0i8iL4hpg_FoIY-HV4TRaWZTf-Oavvl_JU023LUb2xZcKHQ3fx2bxjeR3ecDUuZ6P85VzEH7A9FJlVc2kfI5ZbuD83qq9BkBXTZR4X_c8_8g4bEntUJvFcGGQEhXRPv3moAS8kkiFkGOMRWlAVQQZCBUAalPRv2MufS3IhVlnZZIV0pWuMVd4d0m5t88DLsvu812ckr4gqEyHJC9SA\",\n  \"n\": \"y2TaYYxRX_wJvODNWThdhTW7x2eC6iMe\",\n  \"s\": \"tNEYGiefYLKFPa-zlcN-SQ\",\n  \"p\": 1,\n  \"m\": 65536,\n  \"t\": 3,\n  \"recovery_sign_pub\": \"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\n  \"account\": \"acct_alice\",\n  \"vault_id\": \"ybMmbnfZYAMGGXcGAMZl7A\",\n  \"alg\": \"argon2id-xc20p-kit\",\n  \"v\": 1\n}"
+    },
+    {
+      "name": "maximum_length_kit",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "vault_origin": "https://oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "salt": "t2NTZOJfg6WxrwY8HRYdKg",
+      "nonce": "fZcNku_uRX9lw4xyUuOuledF-maxXrgO",
+      "expected": {
+        "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "t2NTZOJfg6WxrwY8HRYdKg",
+        "n": "fZcNku_uRX9lw4xyUuOuledF-maxXrgO",
+        "ct": "V4TAYduUoYoZqH9xgr5JBl-RM_ReCmwvMk1j2rHcHwiVbiWGpAwpcgsveEf7kKk6RglJvzeCl5499Ly-wSOu7hqguT5730_Tj87HAuSTwoL77AEdiiRf0bU5OcmyNZqdKtVNH58n_K-2MZ66b1t0frn587Uhq_yCzIFrA_gZ7y9KzJ2wmsEBukrZKeLnXBbjvWqRhctd5hL3XvTPW1pX5GMUf8gziNbpMK9XHO1LXe5TyxXyzP8vI9jgwkfBosxCrg_9s-8MQwZFYQvjBZVNyQZ6hj2CFrwGx5yhYX-bY5vOiK8OIT-CVlxH-9-YzCBBrUJjbhbwKrkyrWRU1hv0hLlTml3EaTmRE2E3luIiOOc2r-yUjBk4V-qd4ihYOMUstqceopy6BAWpK6QwSPR0pNQKj6fORP99_5gYmwxdNKPWFHLkFhO8TbOV9N5NmHaPijTlBBAwAgEr3V4SydwHDorU5O6Pj9sqVM3wGYqsvHAbjm2TL0mJd7MFC3128Aq0duxEmYJD0LJ4TuZ3YEE8mDgnfAYEOhJT6SedEW6h6PVXEso2u_jik4C_OguiIp-r2d4RqvMU2QZDPF-vYyaygLinzakUMdygHvNJbd_-jzY77Rk41jiTIQuubyAGhH3uNZhlducjuHmsXhek8EzJNS5Xwb78h8s3kUEMSsNnzSZh2giu3lfYfkYWTVVOqq9slASYx4DBJdSdlMFBH97yOTYp_ROsqVAVqo77UheUMez2gQiPCHotc_NSk8qD8R3snGql3Ne-ADeLfnr-m6pZfSu_pCwlIEYnMXQ_fsOE-DNhAyegMFJ_k_dViSRIvJUMeGmmqL4UcgYQZfqP28cJYyTNUCgdMUR9LW_AacFmTKaFkmb5ztP6"
+      },
+      "file_text": "{\"account\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"alg\":\"argon2id-xc20p-kit\",\"ct\":\"V4TAYduUoYoZqH9xgr5JBl-RM_ReCmwvMk1j2rHcHwiVbiWGpAwpcgsveEf7kKk6RglJvzeCl5499Ly-wSOu7hqguT5730_Tj87HAuSTwoL77AEdiiRf0bU5OcmyNZqdKtVNH58n_K-2MZ66b1t0frn587Uhq_yCzIFrA_gZ7y9KzJ2wmsEBukrZKeLnXBbjvWqRhctd5hL3XvTPW1pX5GMUf8gziNbpMK9XHO1LXe5TyxXyzP8vI9jgwkfBosxCrg_9s-8MQwZFYQvjBZVNyQZ6hj2CFrwGx5yhYX-bY5vOiK8OIT-CVlxH-9-YzCBBrUJjbhbwKrkyrWRU1hv0hLlTml3EaTmRE2E3luIiOOc2r-yUjBk4V-qd4ihYOMUstqceopy6BAWpK6QwSPR0pNQKj6fORP99_5gYmwxdNKPWFHLkFhO8TbOV9N5NmHaPijTlBBAwAgEr3V4SydwHDorU5O6Pj9sqVM3wGYqsvHAbjm2TL0mJd7MFC3128Aq0duxEmYJD0LJ4TuZ3YEE8mDgnfAYEOhJT6SedEW6h6PVXEso2u_jik4C_OguiIp-r2d4RqvMU2QZDPF-vYyaygLinzakUMdygHvNJbd_-jzY77Rk41jiTIQuubyAGhH3uNZhlducjuHmsXhek8EzJNS5Xwb78h8s3kUEMSsNnzSZh2giu3lfYfkYWTVVOqq9slASYx4DBJdSdlMFBH97yOTYp_ROsqVAVqo77UheUMez2gQiPCHotc_NSk8qD8R3snGql3Ne-ADeLfnr-m6pZfSu_pCwlIEYnMXQ_fsOE-DNhAyegMFJ_k_dViSRIvJUMeGmmqL4UcgYQZfqP28cJYyTNUCgdMUR9LW_AacFmTKaFkmb5ztP6\",\"m\":65536,\"n\":\"fZcNku_uRX9lw4xyUuOuledF-maxXrgO\",\"p\":1,\"recovery_sign_pub\":\"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\"s\":\"t2NTZOJfg6WxrwY8HRYdKg\",\"t\":3,\"v\":1,\"vault_id\":\"ybMmbnfZYAMGGXcGAMZl7A\"}",
+      "file_text_reformatted": "{\n  \"ct\": \"V4TAYduUoYoZqH9xgr5JBl-RM_ReCmwvMk1j2rHcHwiVbiWGpAwpcgsveEf7kKk6RglJvzeCl5499Ly-wSOu7hqguT5730_Tj87HAuSTwoL77AEdiiRf0bU5OcmyNZqdKtVNH58n_K-2MZ66b1t0frn587Uhq_yCzIFrA_gZ7y9KzJ2wmsEBukrZKeLnXBbjvWqRhctd5hL3XvTPW1pX5GMUf8gziNbpMK9XHO1LXe5TyxXyzP8vI9jgwkfBosxCrg_9s-8MQwZFYQvjBZVNyQZ6hj2CFrwGx5yhYX-bY5vOiK8OIT-CVlxH-9-YzCBBrUJjbhbwKrkyrWRU1hv0hLlTml3EaTmRE2E3luIiOOc2r-yUjBk4V-qd4ihYOMUstqceopy6BAWpK6QwSPR0pNQKj6fORP99_5gYmwxdNKPWFHLkFhO8TbOV9N5NmHaPijTlBBAwAgEr3V4SydwHDorU5O6Pj9sqVM3wGYqsvHAbjm2TL0mJd7MFC3128Aq0duxEmYJD0LJ4TuZ3YEE8mDgnfAYEOhJT6SedEW6h6PVXEso2u_jik4C_OguiIp-r2d4RqvMU2QZDPF-vYyaygLinzakUMdygHvNJbd_-jzY77Rk41jiTIQuubyAGhH3uNZhlducjuHmsXhek8EzJNS5Xwb78h8s3kUEMSsNnzSZh2giu3lfYfkYWTVVOqq9slASYx4DBJdSdlMFBH97yOTYp_ROsqVAVqo77UheUMez2gQiPCHotc_NSk8qD8R3snGql3Ne-ADeLfnr-m6pZfSu_pCwlIEYnMXQ_fsOE-DNhAyegMFJ_k_dViSRIvJUMeGmmqL4UcgYQZfqP28cJYyTNUCgdMUR9LW_AacFmTKaFkmb5ztP6\",\n  \"n\": \"fZcNku_uRX9lw4xyUuOuledF-maxXrgO\",\n  \"s\": \"t2NTZOJfg6WxrwY8HRYdKg\",\n  \"p\": 1,\n  \"m\": 65536,\n  \"t\": 3,\n  \"recovery_sign_pub\": \"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\n  \"account\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n  \"vault_id\": \"ybMmbnfZYAMGGXcGAMZl7A\",\n  \"alg\": \"argon2id-xc20p-kit\",\n  \"v\": 1\n}"
+    },
+    {
+      "name": "account_and_vault_only",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "salt": "pxx0MxQe9Sgnqb8tAGGUZg",
+      "nonce": "QX-NkYO8T7oQAwAazyNzeqOIBW2kgYa6",
+      "expected": {
+        "account": "acct_alice"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "pxx0MxQe9Sgnqb8tAGGUZg",
+        "n": "QX-NkYO8T7oQAwAazyNzeqOIBW2kgYa6",
+        "ct": "NdWOXMa-bodq2DYxZz_faqV_TeeGmGp_2t10JFFlk_A3XpXtWtdiviN8WEsWuFm4RE5LyLIhKG02T-mWdoVz2_6Lo1wlAlP8Kquj6Xz4omavV2qmap45o3mEkoDKteGpyfQU4jhiyyr7N8qGhd8KrnUKFEIUZ-UMA0P1GI-5-nYQVOszsBUQzsMpzS20UzHsrGLteidfX47XhaJ3wFKqF6FdaHb6fI8mEihTIaru3jKW-ugy9K43xh4-LA"
+      },
+      "file_text": "{\"account\":\"acct_alice\",\"alg\":\"argon2id-xc20p-kit\",\"ct\":\"NdWOXMa-bodq2DYxZz_faqV_TeeGmGp_2t10JFFlk_A3XpXtWtdiviN8WEsWuFm4RE5LyLIhKG02T-mWdoVz2_6Lo1wlAlP8Kquj6Xz4omavV2qmap45o3mEkoDKteGpyfQU4jhiyyr7N8qGhd8KrnUKFEIUZ-UMA0P1GI-5-nYQVOszsBUQzsMpzS20UzHsrGLteidfX47XhaJ3wFKqF6FdaHb6fI8mEihTIaru3jKW-ugy9K43xh4-LA\",\"m\":65536,\"n\":\"QX-NkYO8T7oQAwAazyNzeqOIBW2kgYa6\",\"p\":1,\"recovery_sign_pub\":\"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\"s\":\"pxx0MxQe9Sgnqb8tAGGUZg\",\"t\":3,\"v\":1,\"vault_id\":\"ybMmbnfZYAMGGXcGAMZl7A\"}",
+      "file_text_reformatted": "{\n  \"ct\": \"NdWOXMa-bodq2DYxZz_faqV_TeeGmGp_2t10JFFlk_A3XpXtWtdiviN8WEsWuFm4RE5LyLIhKG02T-mWdoVz2_6Lo1wlAlP8Kquj6Xz4omavV2qmap45o3mEkoDKteGpyfQU4jhiyyr7N8qGhd8KrnUKFEIUZ-UMA0P1GI-5-nYQVOszsBUQzsMpzS20UzHsrGLteidfX47XhaJ3wFKqF6FdaHb6fI8mEihTIaru3jKW-ugy9K43xh4-LA\",\n  \"n\": \"QX-NkYO8T7oQAwAazyNzeqOIBW2kgYa6\",\n  \"s\": \"pxx0MxQe9Sgnqb8tAGGUZg\",\n  \"p\": 1,\n  \"m\": 65536,\n  \"t\": 3,\n  \"recovery_sign_pub\": \"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\n  \"account\": \"acct_alice\",\n  \"vault_id\": \"ybMmbnfZYAMGGXcGAMZl7A\",\n  \"alg\": \"argon2id-xc20p-kit\",\n  \"v\": 1\n}"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "wrong_passphrase",
+      "passphrase": "correct horse battery staple 7x",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "case_changed_passphrase",
+      "passphrase": "CORRECT HORSE BATTERY STAPLE 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "wrong_account_expected",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_mallory",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "wrong_vault_expected",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "k21TdmjoWSyLxNCdrs5EJQ",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "stale_recovery_key_expected",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "c7zPpccOrYFZcP4YKSmri76c2fBqonjn4kOTVWpuXZU"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "header_vault_relabelled",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "k21TdmjoWSyLxNCdrs5EJQ",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "header_account_relabelled",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_mallory"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_mallory",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "header_sign_pub_relabelled",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "c7zPpccOrYFZcP4YKSmri76c2fBqonjn4kOTVWpuXZU",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "param_t_relabelled",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 4,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "param_m_relabelled",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 131072,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "param_p_relabelled",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 2,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "ciphertext_flipped",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyXshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "nonce_flipped",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "o5qaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "salt_flipped",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UTQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "tag_truncated",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEE"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "extra_key",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg",
+        "note": "x"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "missing_key",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "unknown_alg",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "unsupported_version"
+    },
+    {
+      "name": "version_2",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 2,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "unsupported_version"
+    },
+    {
+      "name": "t_below_minimum",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 2,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "m_below_minimum",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 19456,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "m_above_maximum",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 1048576,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "t_above_maximum",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 11,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "p_above_maximum",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 5,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "short_salt",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "AAAAAAAAAAAAAAAAAAAA",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "short_nonce",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "short_sign_pub",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "short_ct",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "AAAAAAAAAAAAAAAAAAAA"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "long_ct",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "empty_passphrase",
+      "passphrase": "",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "s": "UDQXiSj7AFu6p-oJEQ25Rw",
+        "n": "opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa",
+        "ct": "5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "not_json",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file_text": "AKVAULT recovery kit",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "duplicate_key",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file_text": "{\"account\":\"acct_alice\",\"alg\":\"argon2id-xc20p-kit\",\"ct\":\"5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg\",\"m\":65536,\"n\":\"opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa\",\"p\":1,\"recovery_sign_pub\":\"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\"s\":\"UDQXiSj7AFu6p-oJEQ25Rw\",\"t\":3,\"v\":1,\"v\":1,\"vault_id\":\"ybMmbnfZYAMGGXcGAMZl7A\"}",
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "oversize_file",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file_text": "{\"account\":\"acct_alice\",\"alg\":\"argon2id-xc20p-kit\",\"ct\":\"5hkIyHshtpUXcHPR5dWSsLNxcTyi95EmlhEVxm-vpImaCAB3kPchyXX_1nBW9a09-C_3cX2acll7-HgQXcUVkIUzKARl1eRlTKm17r0O9jM41ukSOveL4XdeeGgIx1ixIukaSibLf2p-wYSzP036n_1R81nXB7_YVc8u5WlAc6izDdKbkZUpyKCS-9kIxElfMy0C9BPEoITcAAMltRidXRajDb27rVZnZ_qgUfFwmaTEDGChWqX52xEEWg\",\"m\":65536,\"n\":\"opqaRJOJHkQI4JtHvc3V-vY9GEoSBvfa\",\"p\":1,\"recovery_sign_pub\":\"ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE\",\"s\":\"UDQXiSj7AFu6p-oJEQ25Rw\",\"t\":3,\"v\":1,\"vault_id\":\"ybMmbnfZYAMGGXcGAMZl7A\"}",
+      "trailing_spaces": 4096,
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "payload_vault_disagrees",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "s": "BcMhkem_ksjauz7W3BAbLw",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "n": "-HXU8Frr0zdaKGW_OF36cRFgi-mX3q5T",
+        "ct": "cBTB5sQNKlCNDN76QForrv91ff_SOxFc_hMy5JRwSXoW6p9kTq0C-8L1uHsIqIV7ydM54_koTRsmCnIGiwj72i9FG7YnGn-_ykRrcYz4DQp4nSb_5EReF48ENEaqH9X_Z46jdGCPHqGzmC-wwqTjzqV8r2do20ejdOr2v_4qNWPnFkXHS3n0txGedFEh02Z_O4iy0ZYWqf0g-pdIkcZif2AcIERfdGdlnNrXVDyTYiJmHMSqqWt_A2hPMQ"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "payload_account_disagrees",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "s": "bDWNSmRQyEeg4yp8CgdF-g",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "n": "Fly7T9UNsmbiF1FGh_Hrh0p3v4SZkrCp",
+        "ct": "ThIAsim_TjZru4xa0YrEtauuis8Zz8MeZzQ0klW3uZCw8lyCFNP7ZGpkGGYgkdlRO6iWWbVtH09_ZSO6jdzvc3OG9KXfMlMZCSXRhMB2zCoExaB_CBlq4DwA8la7AaUotNEWWoBU772aY_6YYGbiSouVdVck7v5BSLNZkyxra84_Vub1ZqSGJH6FfkNGMPCLeO-j1AAXhqndobfXwoM67IG26MRR0layLVmAiR4s4Qi7D4erWYz8t6seGlrZ"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "payload_not_canonical",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "s": "fSCxnwNXAU8Ka9TaZx8ZzQ",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "n": "9Vae-hmn4aaeh-NskqbdKSP6RjDn4d1B",
+        "ct": "Blj6KtprbdI1AuxpztRZqMh_GNZj91COsnZpcq9VVdTHAKhL97eD3C9mbNO64Yh8Q7nVh7YZu4BK7WKsjkk1W4O-xVh6QJ_-Ay05WnaQkLRst49wC2DGNsRyZgR5BA2kh9IB-3EgTHXH8_4oWM1Ad632MM8ag2AIhqpk5QbR66Rb-1SWeWI4EyUN8q7sY6gL4m8ktlaqw0RHCWVs1Oi-BDTc7bPAhHZ-WCUdKMV_UHxwt-NhWHycME8civjrrdpoQ_4wko3PW9gjrxc"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "payload_extra_key",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "s": "LjUvHlMNYMuVg2QkUKVizw",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "n": "vsv8gXvyZht7GhBrEWDztt1nPKdiC0MR",
+        "ct": "FW8oJPp0D7irlPZx7aCyMn_yZQ-zdlyCGF9yVNznbQJta8uDf4RRE_9gOBCIgEWQL9w7_ToeJkE1m_yfnFG2Rlo3CAKrew1aFCMreZgel4Qpyti2o55ZFREJlmKPFzm4-FrtZgw1FYizfOUmJN40XBpk0hr2iX5KVkgFiXpJUZg5yLqG9lalLXvuUPEDvY-gTpRhwM4uvMxvnPRYocsIVIb8sKqlw63lGhmrbGkm3OlAURZl_4dc_HPLlz6-V9eNWaGb0Ek1"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "payload_version_2",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "s": "T7zksdL24O5Dl_fPgM3yLA",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "n": "uSGR7AZod5V4MrNnRIfhWqMq08Bs4Uir",
+        "ct": "rVR7ccoWAS9N3U46BRZyDoHGktY83Em-mRexIdwsQ0cqDLyx1klEen5E3obDz5SKY4HTLqwbu4CoEWh4dW24kG_0FWF1ZDlhabbTeIW_xiwIURwfLDUkC0qNls_QQ3-6tSBkIk14a3YaN__sTrZaP8FbnneaYWMLfQfsqYeff2-g_xV17jCp4UKrXNIGCt2YuqomysJs2CGLnmtV1c32RjMIPqP42NaoJFXZijNRTX-5BgWwZTNc4Y0TZg"
+      },
+      "expect_error": "unsupported_version"
+    },
+    {
+      "name": "payload_short_key",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "s": "FxB0NLWJ8KYnlvzUydRxVA",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "n": "kWabFuvTvQaNr41zw6CaeF2K-i_N9TQW",
+        "ct": "yUv3jMn39pHjKjx2Qbwe8y2eeEDIVeAs6NeygInegayJ2bd6zfnQgVOvGb34_l-oTmQtEk0vNaCuEWSJ7vNc9IrcynLisvCFOvHcA1WIwEqp28XyXH6egPBE9cbYZ7NhOuvS0evKbag6EIJzKFSRcJInPLmga_GVvN3S6xil5MiQbjA-IJ3u9QPh80L64vsW7MA_fC40Idvw1pURPVoRSiNCVLCNQJJzhcy3pujJPvJYke0gmwtxdLAK"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "payload_missing_origin",
+      "passphrase": "correct horse battery staple 7",
+      "expected": {
+        "account": "acct_alice",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE"
+      },
+      "file": {
+        "v": 1,
+        "alg": "argon2id-xc20p-kit",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+        "s": "3Y8Ws9VCa4dh_9xQA8bklA",
+        "t": 3,
+        "m": 65536,
+        "p": 1,
+        "n": "Ru1NiX1w2QBpvSpfGljp081PQh9IzoCH",
+        "ct": "VJZFPKmMKQdEvryfXJLi1s16hCMDfOtSMkgEW1vuVA4MVsRp3ezECvo5ILNfAriSiEastYy9Ee4XmM1virOq9Xgq9dy2p8WRVk3lGoc-ZygVZ8XOn-hnI_GaUf2F4CZ4WwMhoFbPlzbGfGoZzNjZwg8KapSkwZEI_8ClMgyhyKuntQzNp6xWz2GragzctUs"
+      },
+      "expect_error": "bad_request"
+    }
+  ],
+  "seal_invalid": [
+    {
+      "name": "passphrase_too_short",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "short-pass1",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "passphrase_empty",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "passphrase_too_long",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "passphrase_fill": "p",
+      "passphrase_length": 1025,
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "recovery_key_short",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "kit_extra_key",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0",
+        "note": "x"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "origin_not_ascii",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://välue.example",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "origin_empty",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "sign_pub_short",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 1
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "t_below_minimum",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 2,
+        "m": 65536,
+        "p": 1
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "m_below_minimum",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 3,
+        "m": 19456,
+        "p": 1
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "m_above_maximum",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 3,
+        "m": 524289,
+        "p": 1
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "p_above_maximum",
+      "kit": {
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "vault_origin": "https://vault.example.test",
+        "recovery_key": "Q4dtBxPl8x5VruMPldZtPDbVN2Gcn0khD4nXYd44qC0"
+      },
+      "recovery_sign_pub": "ZWzYmQYAN6UsxptOSPnP5nvaYjESbAeJgEE-3xJEaiE",
+      "passphrase": "correct horse battery staple 7",
+      "params": {
+        "t": 3,
+        "m": 65536,
+        "p": 5
+      },
+      "expect_error": "bad_request"
+    }
+  ]
+}
