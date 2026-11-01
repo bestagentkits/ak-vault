@@ -26,14 +26,17 @@ export interface GrantRevocationSubject {
 
 type Registry = Pick<Env, 'REVOCATIONS'>;
 
-async function ask(env: Registry, query: (stub: DurableObjectStub<RevocationRegistry>) => Promise<boolean>): Promise<boolean> {
-  let revoked: boolean;
+async function query<T>(env: Registry, run: (stub: DurableObjectStub<RevocationRegistry>) => Promise<T>): Promise<T> {
   try {
-    revoked = await query(env.REVOCATIONS.get(env.REVOCATIONS.idFromName(REVOCATION_REGISTRY_NAME)));
+    return await run(env.REVOCATIONS.get(env.REVOCATIONS.idFromName(REVOCATION_REGISTRY_NAME)));
   } catch {
     throw new ApiError('unauthorized', { status: 503, message: 'revocation status unavailable', headers: { 'Retry-After': '5' } });
   }
-  return revoked !== false;
+}
+
+/** Anything but an explicit `false` counts as revoked. */
+async function ask(env: Registry, run: (stub: DurableObjectStub<RevocationRegistry>) => Promise<boolean>): Promise<boolean> {
+  return (await query(env, run)) !== false;
 }
 
 /** True when the device token's session, device or age is revoked; throws 503 when the registry cannot answer. */
@@ -48,6 +51,17 @@ export async function assertDeviceNotRevoked(env: Registry, s: DeviceRevocationS
 /** True when the MCP grant (`sid`) or the token's age is revoked; throws 503 when the registry cannot answer. */
 export function isGrantRevoked(env: Registry, s: GrantRevocationSubject): Promise<boolean> {
   return ask(env, (stub) => stub.isGrantRevoked({ sub: s.sub, sid: s.sid, iat: s.iat }));
+}
+
+/**
+ * One registry call for many grants, answers in order. A missing, malformed or non-false
+ * answer counts as revoked; throws 503 when the registry cannot answer.
+ */
+export async function areGrantsRevoked(env: Registry, subjects: GrantRevocationSubject[]): Promise<boolean[]> {
+  if (subjects.length === 0) return [];
+  const queries = subjects.map((s) => ({ sub: s.sub, sid: s.sid, iat: s.iat }));
+  const answers = await query(env, (stub) => stub.areGrantsRevoked(queries));
+  return subjects.map((_, i) => !Array.isArray(answers) || answers[i] !== false);
 }
 
 export async function assertGrantNotRevoked(env: Registry, s: GrantRevocationSubject): Promise<void> {
