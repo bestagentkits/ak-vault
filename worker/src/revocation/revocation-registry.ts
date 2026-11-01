@@ -61,6 +61,11 @@ export class RevocationRegistry extends DurableObject<Env> {
     return belowMinIat(this.sql, q.sub, q.iat);
   }
 
+  /** `isGrantRevoked` for each query, in order, answered in one call. */
+  areGrantsRevoked(queries: GrantRevocationQuery[]): boolean[] {
+    return queries.map((q) => this.isGrantRevoked(q));
+  }
+
   /** Apply a verified webhook batch atomically. Returns 'duplicate' for a replayed event ID. */
   applyBatch(batch: RevocationBatch, nowMs: number): 'applied' | 'duplicate' {
     return this.ctx.storage.transactionSync(() => {

@@ -124,10 +124,14 @@ describe('sealed inbox', () => {
     expect(await enqueue(fx, sealFor(fx, { ts: now - TTL_MS }), now)).toBe('refused');
     expect(await enqueue(fx, sealFor(fx, { ts: now + 60_000 }), now)).toBe('queued');
 
-    const expiring = sealFor(fx, { ts: Date.now() - TTL_MS + 200 });
+    // The GET path reads the real clock, so the margin must outlast a loaded machine's
+    // enqueue plus listing; the wait then runs past the exact expiry instant.
+    const expiryMargin = 3_000;
+    const expiresAt = Date.now() + expiryMargin;
+    const expiring = sealFor(fx, { ts: expiresAt - TTL_MS });
     expect(await enqueue(fx, expiring)).toBe('queued');
     expect((await fx.get(fx.owner, '/sealed')).json.sealed).toHaveLength(2);
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, Math.max(0, expiresAt - Date.now()) + 200));
     const page = await fx.get(fx.owner, '/sealed');
     expect(page.json.sealed.map((s: { op: SealedOpWire }) => s.op.sealed_id)).not.toContain(expiring.sealed_id);
     expect(page.json.sealed).toHaveLength(1);
@@ -240,13 +244,37 @@ describe('sealed inbox', () => {
       const fx = await VaultFixture.create();
       expect(await enqueue(fx, sealFor(fx))).toBe('queued');
       const registry = env.REVOCATIONS;
-      (env as { REVOCATIONS: unknown }).REVOCATIONS = { idFromName: () => ({}), get: () => ({ isRevoked: () => Promise.resolve(false), isGrantRevoked: () => Promise.reject(new Error('down')) }) };
+      (env as { REVOCATIONS: unknown }).REVOCATIONS = { idFromName: () => ({}), get: () => ({ isRevoked: () => Promise.resolve(false), areGrantsRevoked: () => Promise.reject(new Error('down')) }) };
       try {
         expect((await fx.get(fx.owner, '/sealed')).status).toBe(503);
       } finally {
         (env as { REVOCATIONS: unknown }).REVOCATIONS = registry;
       }
       expect(await ids(fx)).toHaveLength(1);
+    });
+
+    it('asks the revocation registry once for all pending grants', async () => {
+      const fx = await VaultFixture.create();
+      for (const grantId of ['grant-a', 'grant-b', 'grant-c']) expect(await enqueue(fx, sealFor(fx, { grantId }))).toBe('queued');
+      const registry = env.REVOCATIONS;
+      const real = registry.get(registry.idFromName('global'));
+      let calls = 0;
+      (env as { REVOCATIONS: unknown }).REVOCATIONS = {
+        idFromName: () => ({}),
+        get: () => ({
+          isRevoked: () => Promise.resolve(false),
+          areGrantsRevoked: (q: Parameters<typeof real.areGrantsRevoked>[0]) => {
+            calls += 1;
+            return real.areGrantsRevoked(q);
+          },
+        }),
+      };
+      try {
+        expect((await fx.get(fx.owner, '/sealed')).status).toBe(200);
+      } finally {
+        (env as { REVOCATIONS: unknown }).REVOCATIONS = registry;
+      }
+      expect(calls).toBe(1);
     });
 
     it('backfills the grant of a pending row queued before the columns existed', async () => {

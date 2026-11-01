@@ -2,7 +2,7 @@
 import { env } from 'cloudflare:workers';
 import { randomId, utf8Encode } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';
-import { REVOCATION_REGISTRY_NAME, assertDeviceNotRevoked, assertGrantNotRevoked, isDeviceRevoked, isGrantRevoked } from '../src/auth/revocation-check.js';
+import { REVOCATION_REGISTRY_NAME, assertDeviceNotRevoked, assertGrantNotRevoked, areGrantsRevoked, isDeviceRevoked, isGrantRevoked } from '../src/auth/revocation-check.js';
 import { call } from './helpers/api-client.js';
 import { mintToken } from './helpers/issuer.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
@@ -95,6 +95,28 @@ describe('registry checks by token kind', () => {
     expect(await registry().isGrantRevoked({ sub, sid: other, iat: now() - 30 })).toBe(true);
     expect(await registry().isGrantRevoked({ sub, sid: other, iat: now() })).toBe(false);
     expect(await registry().isGrantRevoked({ sub: `acct-${randomId()}`, sid: other, iat: now() - 30 })).toBe(false);
+  });
+
+  it('a batch answers every grant in order with one registry call and fails closed', async () => {
+    const sub = `acct-${randomId()}`;
+    const live = `grant-${randomId()}`;
+    const dead = `grant-${randomId()}`;
+    expect((await sendRevocation({ revoke_sids: [dead] })).status).toBe(200);
+    const subjects = [
+      { sub, sid: live, iat: now() },
+      { sub, sid: dead, iat: now() },
+    ];
+    expect(await areGrantsRevoked(env, subjects)).toEqual([false, true]);
+    expect(await areGrantsRevoked(env, [])).toEqual([]);
+
+    let calls = 0;
+    const stubbed = (answer: () => unknown) =>
+      ({ REVOCATIONS: { idFromName: () => ({}), get: () => ({ areGrantsRevoked: () => { calls += 1; return Promise.resolve(answer()); } }) } }) as unknown as typeof env;
+    expect(await areGrantsRevoked(stubbed(() => [false, false, false]), [...subjects, subjects[0]!])).toEqual([false, false, false]);
+    expect(calls).toBe(1);
+    expect(await areGrantsRevoked(stubbed(() => [false]), subjects)).toEqual([false, true]);
+    expect(await areGrantsRevoked(stubbed(() => 'nope'), subjects)).toEqual([true, true]);
+    expect(await areGrantsRevoked(stubbed(() => [null, 0]), subjects)).toEqual([true, true]);
   });
 
   it('a device token is still refused by its revoked did, its sid or min_iat', async () => {
