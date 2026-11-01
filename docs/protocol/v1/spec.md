@@ -163,6 +163,21 @@ recovery key is `forbidden`; a recovery key is never reused and never collides w
 device key (`bad_request`). The server cannot open the bundle, so it cannot check that
 the bundle holds the key the event names; the recovering device does (above).
 
+**A new recovery key retires the old one.** The recovery signing key lives inside every
+bundle ever sealed with it, and the server accepts a `device_add` signed by the chain's
+current key whichever bundle or recovery key the signer opened. A client that hands out
+a new recovery key therefore MUST rotate the recovery signing key in the same request (a
+`recovery_rotate` event with the resealed bundle), on every path: recovery-key rotation,
+member or device removal, device-key rotation and a reseal that only replaces the kit. A
+reseal under the recovery key already in use keeps the signing key and needs no event.
+The server cannot check this: it sees neither the kit nor the bundle. Until the chain
+rotates, an old kit and a copy of the bundle it opened can still author `device_add`; a
+bundle without the current epoch cannot give that device the vault keys, but the chain
+accepts it as an owner device. As an owner device it can then post a voluntary `rekey`
+under a key it chose, which makes it read everything written after that, and remove
+honest devices. The same holds for a new password: an old bundle copy still opens with
+the old password, so a client that replaces the password rotates the signing key too.
+
 **Reads by a device outside membership (recovery identity).** The server returns the
 opaque bundle (`GET /v1/vaults/{vid}/recovery`) to a current owner device, and the
 bundle or the signed membership log (`GET /v1/vaults/{vid}/membership`, read-only) to a

@@ -16,6 +16,8 @@ import {
   unwrapFromDevice,
   verifyDeviceWraps,
   verifyMembershipChain,
+  wrapsDigest,
+  wrapToDevice,
   type MembershipEvent,
 } from '@ak-vault/protocol';
 import { describe, expect, it } from 'vitest';
@@ -185,5 +187,35 @@ describe('recovery_rotate', () => {
     const rotated = signKeyPairFromSeed(randomBytes(32));
     const event = fx.buildEvent('recovery_rotate', { recovery_sign_pub: b64encode(rotated.publicKey) }, signerOf(editor));
     expect((await fx.append(event, undefined, editor, {}, { bundle: sealTestBundle(fx, 1, undefined, rotated.secretKey) as never })).status).toBe(403);
+  });
+});
+
+describe('a reseal that signs no recovery_rotate', () => {
+  it('leaves the recovery signing key in force: the server cannot tell an old kit from the new one', async () => {
+    const fx = await VaultFixture.create();
+    const oldRk = generateRecoveryKey();
+    expect((await putTestBundle(fx, fx.owner, sealTestBundle(fx, 1, oldRk))).status).toBe(200);
+    const oldBundle = (await fx.get(fx.owner, '/recovery')).json.bundle;
+    const laptop = await fx.addDevice();
+    expect((await fx.removeDevice(laptop)).status).toBe(201);
+    expect((await fx.rekey()).status).toBe(201);
+    // The removal's last step reseals under a new recovery key and the same recovery signing key.
+    expect((await putTestBundle(fx, fx.owner, sealTestBundle(fx, 2, generateRecoveryKey()))).status).toBe(200);
+
+    // Whoever kept the old bundle and the old recovery key still opens the recovery signing key,
+    // and it is the chain's current one.
+    const events = (await fx.get(fx.owner, '/membership')).json.events as MembershipEvent[];
+    const chain = verifyMembershipChain(events, { trustedAnchor: fx.owner.keys.record.sign_pub, vaultId: fx.vaultId });
+    const stolen = openRecoveryBundle({ bundle: oldBundle, vaultId: fx.vaultId, rk: oldRk, recoverySignPub: chain.recovery_sign_pub });
+
+    // The bundle holds epoch 1 only. The server cannot see inside a wrap, so an epoch-2 wrap of
+    // a key the holder made up enrolls an owner device it cannot read the vault with.
+    const intruder = createDevice(fx.owner.account, 'owner');
+    const wraps = [
+      wrapToDevice({ vk: stolen.vk['1']!, vaultId: fx.vaultId, keyEpoch: 1, recipient: intruder.keys.record }),
+      wrapToDevice({ vk: randomBytes(32), vaultId: fx.vaultId, keyEpoch: 2, recipient: intruder.keys.record }),
+    ];
+    const event = fx.buildEvent('device_add', { device: intruder.keys.record as never, sas: '', wraps_digest: wrapsDigest(wraps) }, { id: chain.recovery_author, secret: stolen.recovery_sign_sk });
+    expect((await fx.append(event, wraps, intruder)).status).toBe(201);
   });
 });
