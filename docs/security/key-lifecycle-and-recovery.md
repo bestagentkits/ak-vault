@@ -171,6 +171,14 @@ signing key, so an old bundle opened with a leaked recovery key cannot add a
 device. It still yields the vault keys it held, so treat a leaked recovery key as a
 compromise (below).
 
+Every path that hands out a new recovery key rotates the signing key too: the CLI
+signs `recovery_rotate` in the same request as the resealed bundle, also when the
+new key comes with a member removal, a device removal, a device-key rotation or a
+reseal-only resume. A kit replaced without that event would leave the old kit, with
+any copy of the old bundle, able to author `device_add`, because the server cannot see
+which kit a bundle is sealed under. A vault whose kit was replaced by an earlier CLI
+that did not rotate keeps its old signing key: run the recovery-key rotation once.
+
 ## Lost home or all devices
 
 A fresh device with the password or recovery key:
