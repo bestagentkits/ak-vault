@@ -1,0 +1,37 @@
+name: PR intent
+
+# Refuses a pull request whose description has no complete `## Intent` block
+# (.github/pull_request_template.md). It runs again when the description is
+# edited. It is a separate workflow from CI so that Deploy, which follows CI runs
+# on main, is not affected. The body reaches the script only through an
+# environment variable, so nothing in it is interpreted by the shell. A pull
+# request runs its own copy of this workflow and script, so the check is
+# description hygiene, not a security control.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-intent-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  intent:
+    name: Intent block
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Checker tests
+        run: node --test .github/scripts/check-pr-intent.test.mjs
+      - name: Check the Intent block
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node .github/scripts/check-pr-intent.mjs
