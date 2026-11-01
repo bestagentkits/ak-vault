@@ -10,8 +10,10 @@ import { recoveryBundleVectors, rekeyWrapsVectors } from './bundle-rekey.js';
 import { edgeCaseVectors } from './edge-cases.js';
 import { deviceAddWrapsVectors } from './device-add-wraps.js';
 import { removalFenceVectors } from './removal-fence.js';
+import { roleHistoryVectors } from './role-history.js';
 import { nameTagVectors, sealedOpVectors, sealKeyVectors } from './seal-and-name-tag.js';
 import { writeIntentVectors } from './write-intent.js';
+import { inputSealVectors } from './input-seal.js';
 import { enrollCodeVectors } from './enroll-codes.js';
 import { enrollCommitVectors } from './enroll-commit.js';
 import { profileVectors } from './profile-provenance.js';
@@ -36,11 +38,13 @@ const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'rekey-wraps.json': rekeyWrapsVectors,
   'device-add-wraps.json': deviceAddWrapsVectors,
   'removal-fence.json': removalFenceVectors,
+  'role-history.json': roleHistoryVectors,
   'edge-cases.json': edgeCaseVectors,
   'seal-key.json': sealKeyVectors,
   'sealed-op.json': sealedOpVectors,
   'name-tag.json': nameTagVectors,
   'write-intent.json': writeIntentVectors,
+  'input-seal.json': inputSealVectors,
   'enroll-codes.json': enrollCodeVectors,
   'enroll-commit.json': enrollCommitVectors,
   'profile.json': profileVectors,

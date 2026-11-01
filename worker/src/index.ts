@@ -6,6 +6,8 @@
  *   /mcp, /.well-known/oauth-protected-resource/mcp
  *                                     remote MCP endpoint (remote access only)
  *   /app, /app/*                      vault dashboard (remote access only)
+ *   GET /input                        302 to /app/, the input form (remote access
+ *                                     and input requests only)
  *   POST /internal/v1/revocations     HMAC-authenticated ak-web revocation feed
  *   POST /internal/v1/operator        HMAC-authenticated operator restore of one
  *                                     vault (404 unless its secret is set)
@@ -15,7 +17,7 @@
  * one operational log line (route template, status, code, latency, vault tag).
  */
 import { handleApp } from './dashboard/app-entry.js';
-import { remoteAccessEnabled, type Env } from './env.js';
+import { inputRequestsEnabled, remoteAccessEnabled, type Env } from './env.js';
 import { ApiError, errorResult, toApiError, type ApiResult } from './http/errors.js';
 import { logRequest } from './http/operational-logger.js';
 import { isAppPath, resultResponse, withSecurityHeaders } from './http/responses.js';
@@ -32,6 +34,18 @@ export { RevocationRegistry } from './revocation/revocation-registry.js';
 export { AccountRelay } from './relay/account-relay-durable-object.js';
 
 const MCP_PATHS: ReadonlySet<string> = new Set(['/mcp', PRM_MCP_PATH]);
+/** The input form link's path (spec §3.11): the form is the dashboard bundle. */
+const INPUT_PATH = '/input';
+
+/**
+ * `GET /input` redirects to the dashboard document. The Location carries no
+ * fragment, so the browser keeps the link's (`#r=…&v=…&k=…&n=…`), which never
+ * reaches this Worker.
+ */
+function inputRedirect(request: Request, env: Env): Response {
+  if (!inputRequestsEnabled(env) || (request.method !== 'GET' && request.method !== 'HEAD')) throw new ApiError('not_found');
+  return new Response(null, { status: 302, headers: { Location: '/app/', 'Cache-Control': 'no-store' } });
+}
 
 async function route(request: Request, env: Env, info: RouteInfo): Promise<ApiResult> {
   const { pathname } = new URL(request.url);
@@ -55,6 +69,10 @@ async function route(request: Request, env: Env, info: RouteInfo): Promise<ApiRe
 /** Routes whose handlers build their own `Response` (WebSocket upgrade, MCP, dashboard). */
 async function routeResponse(request: Request, env: Env, info: RouteInfo, pathname: string): Promise<Response> {
   if (pathname === RELAY_PATH) return handleRelayUpgrade(request, env, info);
+  if (pathname === INPUT_PATH) {
+    info.template = `${request.method} /input`;
+    return inputRedirect(request, env);
+  }
   if (MCP_PATHS.has(pathname)) {
     info.template = pathname;
     if (!remoteAccessEnabled(env)) throw new ApiError('not_found');
@@ -70,7 +88,7 @@ function isApiPath(pathname: string): boolean {
 }
 
 function isResponsePath(pathname: string): boolean {
-  return pathname === RELAY_PATH || MCP_PATHS.has(pathname) || isAppPath(pathname);
+  return pathname === RELAY_PATH || pathname === INPUT_PATH || MCP_PATHS.has(pathname) || isAppPath(pathname);
 }
 
 /** The stable error code of a JSON error response, for the log line; never the body itself. */

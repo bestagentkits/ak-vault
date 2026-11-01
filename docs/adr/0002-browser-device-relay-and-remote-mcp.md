@@ -14,7 +14,9 @@
   §9 item 1, §9.6, §9.7 and §10. This ADR records *why*; the spec owns *what goes on
   the wire*. If they disagree, the spec wins and this ADR is corrected.
 - **Rollout:** staging only, behind `VAULT_REMOTE_ACCESS_ENABLED` (Worker) and the
-  ak-web flag of the same name. Production stays dark until a later decision.
+  ak-web flag of the same name. Production was turned on by owner decision on
+  2026-11-01 ([#203](https://github.com/bestagentkits/ak-vault/issues/203)), before the
+  remote-access release gate passed.
 
 ## Context
 

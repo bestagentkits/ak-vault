@@ -79,6 +79,14 @@ export function verifyRecord(value: unknown, state: MembershipState): SignedReco
 }
 
 /**
+ * Writers are human `owner` and `editor` devices (spec §11). An allowlist, so a
+ * role or kind outside the closed sets is never a writer.
+ */
+export function mayWrite(role: string, kind: string): boolean {
+  return kind === 'human' && (role === 'owner' || role === 'editor');
+}
+
+/**
  * Write-side authorization (server and client): author must be a human
  * `owner`/`editor` device (`forbidden`), the vault must not be in
  * `rekey_required` (`rekey_required`), and `key_epoch` must equal the current
@@ -87,7 +95,7 @@ export function verifyRecord(value: unknown, state: MembershipState): SignedReco
 export function authorizeRecordWrite(state: MembershipState, record: SignedRecord): void {
   const device = state.devices.find((d) => d.device_id === record.author);
   if (!device) fail('forbidden', 'record author is not a current device');
-  if (device.kind !== 'human' || (device.role !== 'owner' && device.role !== 'editor')) fail('forbidden', 'author may not write');
+  if (!mayWrite(device.role, device.kind)) fail('forbidden', 'author may not write');
   if (state.rekey_required) fail('rekey_required', 'writes are refused until rekey');
   if (record.key_epoch !== state.key_epoch) fail('bad_request', 'record key_epoch is not the current key epoch');
 }

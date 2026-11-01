@@ -63,6 +63,13 @@ export const LIMITS = {
    * refuses at authorization of an existing vault.
    */
   rate_requests_per_window: 120,
+  /**
+   * Per account, per vault, per rate window: requests by a not-yet-enrolled device
+   * on the recovery-identity path (`GET /recovery`, `GET /membership` with
+   * `AKV-Device-Key`) whose proof verifies, whatever device ID the token names.
+   * Counted on top of the per-device budgets above.
+   */
+  recovery_identity_requests_per_window: 30,
   rate_window_seconds: 60,
   /** Idempotency records are kept this long. */
   idempotency_ttl_seconds: 24 * 60 * 60,

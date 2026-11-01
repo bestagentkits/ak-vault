@@ -133,6 +133,9 @@ of expired `jti` entries, with their index updates (`worker/src/vault/request-gu
 A request refused at authorization writes a second per-device counter instead of
 the first; one refused because the device's authorized budget is spent writes
 neither.
+A device's first request of each rate window also deletes the counter rows of
+earlier windows, so those tables stay bounded; the rows-written figure above
+predates that change and has not been re-measured.
 The model counted rows written only for item writes.
 
 The revocation check read no rows in this run (the registry was empty), yet its

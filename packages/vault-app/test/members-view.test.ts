@@ -25,7 +25,7 @@ function state(over: Partial<MembershipState> = {}): MembershipState {
     seq: 4, head: 'h', membership_epoch: 4, key_epoch: 2, rekey_required: false, needs_rotate: [], wraps_digest: null,
     members: [{ account: 'acct-owner-1', role: 'owner' }, { account: 'acct-reader-2', role: 'reader' }, { account: 'acct-editor-3', role: 'editor' }],
     devices: [device('acct-owner-1', 'dev-owner-aaaa', 'owner'), device('acct-reader-2', 'dev-reader-bbbb', 'reader'), device('acct-editor-3', 'dev-editor-cccc', 'editor'), device('acct-editor-3', 'dev-machine-dddd', 'editor', 'machine')],
-    removed_device_ids: [], removals: [],
+    removed_device_ids: [], removals: [], role_changes: [],
     ...over,
   } as MembershipState;
 }
@@ -56,7 +56,7 @@ describe('membership projection', () => {
 
   it('reports removals and the rotation flags, naming only items this browser lists', () => {
     const v = buildMembershipView(
-      state({ rekey_required: true, needs_rotate: ['i1', 'i2', 'i3'], removals: [{ device_id: 'dev-gone-eeee', sign_pub: 's', removed_seq: 3, key_epoch: 1, log_fence: 0, log_head: '' }] }),
+      state({ rekey_required: true, needs_rotate: ['i1', 'i2', 'i3'], removals: [{ device_id: 'dev-gone-eeee', sign_pub: 's', removed_seq: 3, key_epoch: 1, log_fence: 0, log_head: '', role: 'owner', kind: 'human' }] }),
       'dev-owner-aaaa',
       new Map([['i1', 'stripe-key'], ['i3', 'db-url']]),
     );

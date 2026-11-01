@@ -267,6 +267,7 @@ var vectorHandlers = map[string]fileHandler{
 	"rekey-wraps.json":      checkRekeyWraps,
 	"device-add-wraps.json": checkDeviceAddWraps,
 	"removal-fence.json":    checkRemovalFence,
+	"role-history.json":     checkRoleHistory,
 	"edge-cases.json":       checkEdgeCases,
 	"seal-key.json":         checkSealKey,
 	"sealed-op.json":        checkSealedOp,

@@ -154,7 +154,7 @@ func AuthorizeRecordWrite(state MembershipState, r SignedRecord) error {
 	if !ok {
 		return newErr(CodeForbidden, "record author is not a current device")
 	}
-	if d.Kind != KindHuman || (d.Role != RoleOwner && d.Role != RoleEditor) {
+	if !mayWrite(d.Role, d.Kind) {
 		return newErr(CodeForbidden, "author may not write")
 	}
 	if state.RekeyRequired {

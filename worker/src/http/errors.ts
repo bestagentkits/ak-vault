@@ -7,8 +7,13 @@
  */
 import { isAkvError, type AkvErrorCode } from '@ak-vault/protocol';
 
-/** Protocol codes a server may return, plus the server-only `internal` (spec §10). */
-export type ApiErrorCode = Exclude<AkvErrorCode, 'decrypt_failed'> | 'internal';
+/**
+ * Protocol codes a server may return, plus the server-only `internal` (spec §10) and
+ * the input-request route codes (ADR 0004): `expired` (the request lapsed or its device
+ * no longer holds it), `device_offline` (the issuing device is not connected) and
+ * `device_timeout` (it did not answer; the outcome is unknown).
+ */
+export type ApiErrorCode = Exclude<AkvErrorCode, 'decrypt_failed'> | 'internal' | 'expired' | 'device_offline' | 'device_timeout';
 
 const DEFAULT_STATUS: Record<ApiErrorCode, number> = {
   unauthorized: 401,
@@ -26,6 +31,9 @@ const DEFAULT_STATUS: Record<ApiErrorCode, number> = {
   sync_disabled: 503,
   bad_request: 400,
   internal: 500,
+  expired: 410,
+  device_offline: 503,
+  device_timeout: 504,
 };
 
 const GENERIC_MESSAGE: Record<ApiErrorCode, string> = {
@@ -44,6 +52,9 @@ const GENERIC_MESSAGE: Record<ApiErrorCode, string> = {
   sync_disabled: 'sync is disabled',
   bad_request: 'malformed request',
   internal: 'internal error',
+  expired: 'request expired',
+  device_offline: 'the device holding this request is offline',
+  device_timeout: 'the device did not answer in time',
 };
 
 /** Extra, non-sensitive fields allowed next to code/message (e.g. a server-assigned conflict_id). */

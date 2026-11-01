@@ -107,4 +107,42 @@ describe('rate limit', () => {
     expect(rows.refused).toEqual([{ count: 121 }]);
     expect(rows.authorized).toBe(0);
   });
+
+  it('prunes counter rows of earlier windows, so fresh device IDs never accumulate', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Math.floor(Date.now() / 60_000) * 60_000 + 10_000 });
+    const fx = await VaultFixture.create();
+    const counts = () =>
+      runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) => ({
+        refused: state.storage.sql.exec('SELECT 1 FROM refused_rate_counters').toArray().length,
+        authorized: state.storage.sql.exec('SELECT 1 FROM rate_counters').toArray().length,
+      }));
+    // Each outsider is refused at authorization and writes one refused row in this window.
+    for (let i = 0; i < 5; i++) expect((await fx.get(fx.newDevice({ account: `acct-${randomId()}` }), '/changes')).status).toBe(403);
+    expect((await counts()).refused).toBe(5);
+
+    // In the next window the first request of any device drops every row of the old one.
+    vi.setSystemTime(Date.now() + 60_000);
+    expect((await fx.get(fx.newDevice({ account: `acct-${randomId()}` }), '/changes')).status).toBe(403);
+    expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
+    expect(await counts()).toEqual({ refused: 1, authorized: 1 });
+  });
+
+  it('pruning leaves the current window counts of other devices alone', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Math.floor(Date.now() / 60_000) * 60_000 + 10_000 });
+    const fx = await VaultFixture.create();
+    const laptop = await fx.addDevice();
+    for (let i = 0; i < 5; i++) expect((await fx.get(laptop, '/membership')).status).toBe(200);
+    vi.setSystemTime(Date.now() + 60_000);
+    // The owner's first request of the new window prunes the old rows, leaving only its own.
+    expect((await fx.get(fx.owner, '/membership')).status).toBe(200);
+    const rows = await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) =>
+      state.storage.sql.exec('SELECT did FROM rate_counters').toArray().length,
+    );
+    expect(rows).toBe(1);
+    // A device that already spent budget in this window keeps it when another device prunes.
+    for (let i = 0; i < 119; i++) expect((await fx.get(laptop, '/membership')).status).toBe(200);
+    expect((await fx.get(fx.owner, '/membership')).status).toBe(200);
+    expect((await fx.get(laptop, '/membership')).status).toBe(200);
+    expect((await fx.get(laptop, '/membership')).status).toBe(429);
+  });
 });

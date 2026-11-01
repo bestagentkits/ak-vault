@@ -4,6 +4,7 @@ import {
   parseRelayFrame,
   parseToolArgs,
   parseToolResult,
+  RELAY_TOOLS,
   signHello,
   signResult,
   verifyHello,
@@ -12,7 +13,9 @@ import {
   type RelayTool,
   utf8Encode,
 } from '../../src/index.js';
-import { alicePhone, aliceNewPhone, BASE_TS, flipByte, id, negative, VAULT_PERSONAL, VAULT_SHARED } from './fixtures.js';
+import { sealInputWithVectorValues } from '../../src/input-seal.js';
+import { kxKeyPairFromSecret } from '../../src/signing.js';
+import { alicePhone, aliceNewPhone, b64, BASE_TS, flipByte, id, negative, nonce, seed, VAULT_PERSONAL, VAULT_SHARED } from './fixtures.js';
 
 const MAX_BYTES = 131_072;
 const NOW = BASE_TS + 3_600_000;
@@ -29,10 +32,25 @@ export function relayFrameVectors(): Record<string, unknown> {
   const vaultList = (n: number) => Array.from({ length: n }, (_, i) => id(`relay/vault/${i}`));
   const helloLimits = signHello({ device_id: alicePhone.record.device_id, vaults: vaultList(16), tools: ['search'], ts: NOW }, alicePhone.signSecret);
   const helloMin = signHello({ device_id: alicePhone.record.device_id, vaults: [VAULT_SHARED], tools: ['list'], ts: NOW }, alicePhone.signSecret);
+  const helloInput = signHello({ device_id: alicePhone.record.device_id, vaults: [VAULT_SHARED], tools: [...RELAY_TOOLS], ts: NOW }, alicePhone.signSecret);
+  const inputCtx = {
+    request_id: id('relay/input-request'), vault_id: VAULT_SHARED, account: 'acct_alice', device_id: alicePhone.record.device_id,
+    name: 'STRIPE_SECRET_KEY', purpose: 'Billing service', operation: 'create' as const, expires_at: NOW + 600_000,
+  };
+  const inputPub = kxKeyPairFromSecret(seed('relay/input-secret')).publicKey;
+  const sealed = sealInputWithVectorValues(inputPub, inputCtx, { value: 'sk_test_synthetic' }, { ephemeralSecret: seed('relay/input-esk'), nonce: nonce('relay/input') });
+  const requestInputArgs = { request_id: inputCtx.request_id, name: inputCtx.name, purpose: inputCtx.purpose, operation: inputCtx.operation, sensitivity: 'high', expires_at: inputCtx.expires_at };
+  const callInput = { ...call, call_id: id('relay/call/3'), tool: 'request_input', args: requestInputArgs };
+  const expiredResult = signResult({ call_id: id('relay/call/4'), ok: false, error: { code: 'expired' } }, alicePhone.signSecret);
+  const decryptFailedResult = signResult({ call_id: id('relay/call/5'), ok: false, error: { code: 'decrypt_failed' } }, alicePhone.signSecret);
   const frames = [
     { name: 'hello', frame: hello },
     { name: 'hello_16_vaults_1_tool', frame: helloLimits },
     { name: 'hello_1_vault_1_tool', frame: helloMin },
+    { name: 'hello_all_tools', frame: helloInput },
+    { name: 'call_request_input', frame: callInput },
+    { name: 'result_error_expired', frame: expiredResult },
+    { name: 'result_error_decrypt_failed', frame: decryptFailedResult },
     { name: 'call_1_scope', frame: { ...call, caller: { ...call.caller, scopes: ['vault-mcp:use'] } } },
     { name: 'call_3_scopes', frame: { ...call, caller: { ...call.caller, scopes: ['vault-mcp:read', 'vault-mcp:write', 'vault-mcp:use'] } } },
     { name: 'ready', frame: { v: 1, type: 'ready', exp: NOW + 900_000 } },
@@ -64,7 +82,7 @@ export function relayFrameVectors(): Record<string, unknown> {
     version: 1,
     description:
       'Device relay frames and tools (spec §9.7). Frames are canonical-JSON text WebSocket frames of at most max_bytes UTF-8 bytes (a binary frame is refused). parseRelayFrame(text, {max_bytes}): size; canonical cjson; v = 1 (unsupported_version); type in {hello, ready, reauth, call, result}; exact keys per type: ' +
-      'hello {v,type,device_id,vaults (1..16 unique IDs),tools (1..7 unique tool names),ts,sig}; ready {v,type,exp}; reauth {v,type,token,proof} (non-empty strings); call {v,type,call_id,vault_id,tool,args (object),caller {client_id 1..256 and grant_id 1..64 printable ASCII, scopes 1..3 unique of vault-mcp:read|write|use},deadline_ms >= 1}; result {v,type,call_id,ok,sig} plus result (object) when ok is true or error {code} when ok is false, code in {denied, pending_approval, not_found, invalid_args, conflict, unsupported, internal}. Every refusal is bad_request. ' +
+      'hello {v,type,device_id,vaults (1..16 unique IDs),tools (1..9 unique tool names; request_input and input_deliver both or neither),ts,sig}; ready {v,type,exp}; reauth {v,type,token,proof} (non-empty strings); call {v,type,call_id,vault_id,tool,args (object),caller {client_id 1..256 and grant_id 1..64 printable ASCII, scopes 1..3 unique of vault-mcp:read|write|use},deadline_ms >= 1}; result {v,type,call_id,ok,sig} plus result (object) when ok is true or error {code} when ok is false, code in {denied, pending_approval, not_found, invalid_args, conflict, unsupported, internal, expired, decrypt_failed}. Every refusal is bad_request. ' +
       'hello is signed with context "akv1/relay", result with "akv1/relay-result", over the frame without sig, by the device key. verifyHello(frame, {sign_pub, now}): device_id = kid(sign_pub) (forbidden); signature (invalid_signature); |now - ts| <= 60000 (unauthorized). verifyResult(frame, sign_pub): signature (invalid_signature). ' +
       'frames MUST parse; invalid_text MUST fail parseRelayFrame (binary: a binary frame carrying binary_utf8 bytes); invalid_hello and invalid_result MUST fail with expect_error. tool_args and tool_results: parseToolArgs(tool, args) and parseToolResult(tool, result) per the §9.7 table; *_invalid MUST fail with bad_request (a device answers invalid_args); an args object with value_fill uses value = value_fill repeated value_length times.',
     max_bytes: MAX_BYTES,
@@ -86,7 +104,9 @@ export function relayFrameVectors(): Record<string, unknown> {
       badText('hello_empty_vaults', 'bad_request', t({ ...hello, vaults: [] })),
       badText('hello_17_vaults', 'bad_request', t({ ...hello, vaults: vaultList(17) })),
       badText('hello_no_tools', 'bad_request', t({ ...hello, tools: [] })),
-      badText('hello_8_tools', 'bad_request', t({ ...hello, tools: [...hello.tools, 'search'] })),
+      badText('hello_10_tools', 'bad_request', t({ ...hello, tools: [...RELAY_TOOLS, 'search'] })),
+      badText('hello_only_request_input', 'bad_request', t({ ...hello, tools: ['search', 'request_input'] })),
+      badText('hello_only_input_deliver', 'bad_request', t({ ...hello, tools: ['input_deliver'] })),
       badText('hello_duplicate_tool', 'bad_request', t({ ...hello, tools: ['search', 'search'] })),
       badText('hello_unknown_tool', 'bad_request', t({ ...hello, tools: ['exec'] })),
       badText('call_empty_scopes', 'bad_request', t({ ...call, caller: { ...call.caller, scopes: [] } })),
@@ -119,6 +139,9 @@ export function relayFrameVectors(): Record<string, unknown> {
       argOk({ name: 'delete', tool: 'delete', args: { name: 'A' } }),
       argOk({ name: 'request', tool: 'request', args: { name: 'A', purpose: 'Deploy the billing service', project: 'billing', ttl_s: 3600 } }),
       argOk({ name: 'run', tool: 'run', args: { argv: ['npm', 'run', 'deploy'], env: [{ var: 'STRIPE_KEY', name: 'STRIPE_SECRET_KEY' }], cwd_project: 'billing', timeout_s: 110 } }),
+      argOk({ name: 'request_input', tool: 'request_input', args: requestInputArgs }),
+      argOk({ name: 'request_input_minimal', tool: 'request_input', args: { request_id: inputCtx.request_id, name: 'A', operation: 'replace', expires_at: inputCtx.expires_at } }),
+      argOk({ name: 'input_deliver', tool: 'input_deliver', args: { request_id: inputCtx.request_id, sealed } }),
     ],
     tool_args_invalid: [
       argBad({ name: 'search_empty_query', tool: 'search', args: { query: '' } }),
@@ -134,6 +157,17 @@ export function relayFrameVectors(): Record<string, unknown> {
       argBad({ name: 'run_bad_var', tool: 'run', args: { argv: ['x'], env: [{ var: 'lower', name: 'A' }] } }),
       argBad({ name: 'run_duplicate_var', tool: 'run', args: { argv: ['x'], env: [{ var: 'A', name: 'A' }, { var: 'A', name: 'B' }] } }),
       argBad({ name: 'run_timeout_111', tool: 'run', args: { argv: ['x'], env: [{ var: 'A', name: 'A' }], timeout_s: 111 } }),
+      argBad({ name: 'request_input_missing_expires_at', tool: 'request_input', args: { request_id: inputCtx.request_id, name: 'A', operation: 'create' } }),
+      argBad({ name: 'request_input_unknown_operation', tool: 'request_input', args: { ...requestInputArgs, operation: 'delete' } }),
+      argBad({ name: 'request_input_empty_purpose', tool: 'request_input', args: { ...requestInputArgs, purpose: '' } }),
+      argBad({ name: 'request_input_purpose_too_long', tool: 'request_input', args: { ...requestInputArgs, purpose: 'p'.repeat(201) } }),
+      argBad({ name: 'request_input_bad_request_id', tool: 'request_input', args: { ...requestInputArgs, request_id: 'req_1' } }),
+      argBad({ name: 'request_input_unknown_sensitivity', tool: 'request_input', args: { ...requestInputArgs, sensitivity: 'low' } }),
+      argBad({ name: 'request_input_with_value', tool: 'request_input', args: { ...requestInputArgs, value: 'v' } }),
+      argBad({ name: 'input_deliver_other_request', tool: 'input_deliver', args: { request_id: id('relay/other-request'), sealed } }),
+      argBad({ name: 'input_deliver_sealed_v2', tool: 'input_deliver', args: { request_id: inputCtx.request_id, sealed: { ...sealed, v: 2 } } }),
+      argBad({ name: 'input_deliver_sealed_extra_key', tool: 'input_deliver', args: { request_id: inputCtx.request_id, sealed: { ...sealed, value: 'v' } } }),
+      argBad({ name: 'input_deliver_missing_sealed', tool: 'input_deliver', args: { request_id: inputCtx.request_id } }),
     ],
     tool_results: [
       resOk({ name: 'search', tool: 'search', result: { items: [entry] } }),
@@ -144,6 +178,8 @@ export function relayFrameVectors(): Record<string, unknown> {
       resOk({ name: 'delete_not_found', tool: 'delete', result: { status: 'not_found' } }),
       resOk({ name: 'request', tool: 'request', result: { status: 'pending', request_id: 'req_1' } }),
       resOk({ name: 'run', tool: 'run', result: { exit_code: 137, stdout: '', stderr: 'killed', truncated: false } }),
+      resOk({ name: 'request_input', tool: 'request_input', result: { request_id: inputCtx.request_id, input_pub: b64(inputPub) } }),
+      resOk({ name: 'input_deliver', tool: 'input_deliver', result: { status: 'stored', receipt: 'rcpt_synthetic_1' } }),
     ],
     tool_results_invalid: [
       resBad({ name: 'entry_unknown_origin', tool: 'search', result: { items: [{ ...entry, profile: { provider: { value: 'x', origin: 'remote' } } }] } }),
@@ -153,6 +189,13 @@ export function relayFrameVectors(): Record<string, unknown> {
       resBad({ name: 'delete_unknown_status', tool: 'delete', result: { status: 'gone' } }),
       resBad({ name: 'run_missing_truncated', tool: 'run', result: { exit_code: 0, stdout: '', stderr: '' } }),
       resBad({ name: 'run_negative_exit_code', tool: 'run', result: { exit_code: -1, stdout: '', stderr: '', truncated: false } }),
+      resBad({ name: 'request_input_short_input_pub', tool: 'request_input', result: { request_id: inputCtx.request_id, input_pub: b64(inputPub.slice(0, 31)) } }),
+      resBad({ name: 'request_input_extra_key', tool: 'request_input', result: { request_id: inputCtx.request_id, input_pub: b64(inputPub), input_sk: b64(inputPub) } }),
+      resBad({ name: 'input_deliver_unknown_status', tool: 'input_deliver', result: { status: 'written', receipt: 'r' } }),
+      resBad({ name: 'input_deliver_empty_receipt', tool: 'input_deliver', result: { status: 'stored', receipt: '' } }),
+      resBad({ name: 'input_deliver_receipt_too_long', tool: 'input_deliver', result: { status: 'stored', receipt: 'r'.repeat(129) } }),
+      resBad({ name: 'input_deliver_receipt_not_ascii', tool: 'input_deliver', result: { status: 'stored', receipt: 'rcpt\u00e9' } }),
+      resBad({ name: 'input_deliver_with_value', tool: 'input_deliver', result: { status: 'stored', receipt: 'r', value: 'v' } }),
     ],
   };
 }

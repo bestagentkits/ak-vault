@@ -100,6 +100,21 @@ describe('operator restore route: authentication and shape', () => {
     });
   });
 
+  it('reads the bookmark of a vault whose stored state predates the current protocol revision', async () => {
+    const fx = await VaultFixture.create();
+    await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(fx.vaultId)), (instance: unknown, state: DurableObjectState) => {
+      const row = state.storage.sql.exec<{ v: string }>("SELECT v FROM meta WHERE k = 'membership_state'").toArray()[0];
+      const { removals: _removals, ...stale } = JSON.parse(row?.v ?? '{}') as Record<string, unknown>;
+      state.storage.sql.exec("UPDATE meta SET v = ? WHERE k = 'membership_state'", JSON.stringify(stale));
+      // The object caches the verified state; drop it so the stored one is read again.
+      (instance as unknown as { membership: { invalidate(): void } }).membership.invalidate();
+    });
+    const res = await send(bookmarkOf(fx.vaultId));
+    expect(res.status).toBe(200);
+    expect(res.json?.['vault_exists']).toBe(true);
+    expect(typeof res.json?.['bookmark']).toBe('string');
+  });
+
   it('works with the sync kill switch off', async () => {
     const fx = await VaultFixture.create();
     const res = await send(bookmarkOf(fx.vaultId), { env: { ...WITH_SECRET, VAULT_SYNC_ENABLED: 'false' } });

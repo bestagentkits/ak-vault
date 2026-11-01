@@ -62,6 +62,12 @@ incident issue and notify the owner at once.
   request answers `503 sync_disabled` instead of `401`. Edge propagation is not
   atomic: in the rehearsal, requests still reached the previous version up to 12 s
   after the deploy. Keep probing until several consecutive probes agree.
+  After every deploy the Deploy workflow runs this check for each environment against
+  the `VAULT_SYNC_ENABLED` value in the deployed commit's Wrangler config
+  ([`deploy-smoke-check.sh`](../../.github/scripts/deploy-smoke-check.sh), read-only,
+  no credentials). It cannot verify an
+  [emergency kill switch](#emergency-kill-switch), whose value comes from `--var`
+  rather than the config, so probe that one by hand.
 - The switch is a var baked into each Worker version. Every later deploy from
   `main` applies the value in the Wrangler config, and a [rollback](#worker-rollback)
   applies the value of the version it targets. Either can silently re-enable sync,
@@ -119,7 +125,9 @@ echoing them, and only after `pnpm install` (as CI does).
    list them with
    `gh run list -R bestagentkits/ak-vault --workflow deploy.yml --status in_progress`
    (and again with `--status waiting`) and cancel each with `gh run cancel <run-id>`.
-   If a production deploy step is already running, let it finish before step 4.
+   If a production deploy step is already running, let it finish before step 4. Its
+   smoke step may then fail because the live flag no longer matches the config; that
+   is expected, so do not re-run it.
    Never approve a production deployment that is waiting for review.
 3. Find the commit production runs: the latest Deploy workflow run whose
    `production` job succeeded. Its Deploy step log shows the version it created
@@ -160,9 +168,14 @@ echoing them, and only after `pnpm install` (as CI does).
 lookup, seal-key, sealed-queue and write-request routes. Any value other than
 exactly `true` turns them off, and each then answers `404` (an item PUT with
 `?write_request=` answers `400`; the `/v1/vaults/…` ones answer
-`503 sync_disabled` instead while sync is also off). It is on for staging and off for production in
-`worker/wrangler.jsonc`; remote access is staging only, pre-release, and not for
-production credentials. The sync kill switch also stops it: with sync off, `/mcp`
+`503 sync_disabled` instead while sync is also off). It is on for staging and, by owner decision on
+[#203](https://github.com/bestagentkits/ak-vault/issues/203) (2026-11-01), for production in
+`worker/wrangler.jsonc`; remote access is pre-release, enabled in production before its
+[release gate](../security/release-gates.md#remote-access-gates) passes. `VAULT_INPUT_REQUESTS_ENABLED` adds the device-sealed input
+requests of [ADR 0004](../adr/0004-device-sealed-input-requests.md) (`/input` and the
+input-request routes) on top of remote access; it is on for staging and production, and while off those routes answer `404` (an item PUT with
+`?input_request=` answers `400`); its gate is tested in `worker/test/input-request.test.ts`
+and `worker/test/input-form-redirect.test.ts`. The sync kill switch also stops it: with sync off, `/mcp`
 answers `503 sync_disabled`. Route behavior is owned by `worker/src/index.ts`,
 `worker/src/env.ts` and `worker/test/remote-access-flag.test.ts`; the design and its
 plaintext-in-memory boundary by
@@ -180,8 +193,9 @@ the cause could touch sync itself, use the [kill switch](#kill-switch) instead.
    checkout of the commit it runs, as in the [staging rehearsal](#kill-switch), with
    `--var VAULT_REMOTE_ACCESS_ENABLED:false` instead of the sync variable; land the
    same change in `wrangler.jsonc` the same day, so the next deploy from `main` does
-   not turn it back on. Production already runs with it off; turning it on there is
-   a later owner decision, not an incident step.
+   not turn it back on. Production has no direct-deploy path for this flag: when it
+   must stop faster than a pull request and the Deploy workflow, use the
+   [kill switch](#kill-switch), which also answers `/mcp` with `503 sync_disabled`.
 3. Verify from outside until several consecutive probes agree: `/mcp`, `/app` and
    `/.well-known/oauth-protected-resource/mcp` answer `404`, and `GET /v1/meta` no
    longer lists the relay, sealed-queue and MCP limits.
@@ -358,15 +372,54 @@ stale vault shows up depends on the revision:
 - Vaults from before the signed-wrap-set / removal-fence revision: the Worker
   refuses every request with `unsupported_version` ("vault predates the current
   protocol revision"), and their old `wraps` table is no longer read.
+  The [operator restore route](#durable-object-backup-and-restore) still reads
+  their bookmark and restores them, on staging and production alike, so a restore
+  that lands on such a state can always be undone; client requests stay refused.
 - Vaults from before the removal `log_head` revision (2026-10, #21): on its first
   start under the new code each vault backfills its change-log heads, and vaults
   without removals keep working. A vault whose membership log already holds a
-  `device_remove` or `member_remove` is still **served** by the Worker (reads `200`,
-  writes `409 rekey_required` until rekeyed), but clients refuse its chain with
-  `bad_request` ("log_head is required"). Reset it: create a fresh vault. A backup
-  taken after the removal is refused the same way, and restoring to before the
-  removal would re-admit the removed device, so never do that. The Worker
-  should refuse these too ([#52](https://github.com/bestagentkits/ak-vault/issues/52)).
+  `device_remove` or `member_remove` is refused on every request with
+  `unsupported_version` ("vault predates the current protocol revision"), and
+  clients refuse its chain with `bad_request` ("log_head is required"). Reset it:
+  create a fresh vault. A backup taken after the removal is refused the same way,
+  and restoring to before the removal would re-admit the removed device, so never
+  do that.
+- Vaults from before the role fence revision (2026-10, #22), including production
+  vaults: a stored `role_set` without a fence still verifies and their change logs
+  still replay, so no migration is needed. Between the fenced changes around such a
+  legacy change, clients accept the affected account's records under any role it held
+  there, trusting the Worker's check for that span (spec §5). An owner closes the
+  span by setting the account's role again with a current client, even to the same
+  role. The planned order, in which no step blocks a released CLI (see the status
+  note below for where it stands):
+  1. Deploy the Worker with `VAULT_REFUSE_LEGACY_ROLE_SET` `"false"`. It accepts both
+     `role_set` bodies, so the released CLI keeps working unchanged, role changes
+     included.
+  2. The owner tags the Go module release that contains this revision. Agents never
+     create ak-vault tags.
+  3. agentkit bumps the module and releases through its beta train
+     ([agentkit#2822](https://github.com/bestagentkits/agentkit/issues/2822)): the
+     new CLI signs the fence and reads both bodies.
+  4. Wait until older CLIs are gone; the owner decides when. Owners must not change
+     roles with the new CLI before every member of that vault has upgraded: once a
+     vault holds a fenced `role_set`, a member device on a CLI built against an
+     earlier module refuses its chain and stores a membership integrity alarm that
+     halts sync. Upgrading clears it only if the new release does so
+     ([agentkit#2822](https://github.com/bestagentkits/agentkit/issues/2822));
+     otherwise that device must purge its sync state and enroll again. A legacy
+     `role_set` after a fenced one is always refused; it strands no one extra, because
+     a CLI that still sends the legacy body already refuses such a chain.
+  5. Flip `VAULT_REFUSE_LEGACY_ROLE_SET` to `"true"` in `wrangler.jsonc` and deploy
+     (a separate change). Any value other than exactly `"false"` refuses. To undo,
+     set it back to `"false"` and deploy.
+  Status: the owner turned the setting on early, on 2026-10-29, for production and
+  staging (only the owner used sync then), and set production back to `"false"` at
+  the AgentKit v3.0.0 GO the same day, so the released CLI can change roles. Staging
+  stays `"true"` to exercise step 3 before it ships. Step 5 for production follows
+  the AgentKit release that contains agentkit#2822 (planned v3.0.1).
+  Once any vault holds a fenced `role_set`, roll the Worker forward only: an earlier
+  Worker re-verifies the stored chain on every append and refuses the fenced body, so
+  a rollback blocks every membership change in that vault, removals included.
 
 Before deploying a revision that changes stored data, write the deploy time (UTC)
 and the version ID it replaces on the issue. That is the backup: point-in-time
@@ -407,7 +460,9 @@ operator script's `bookmark` action: it is exact, while a time lookup is not (be
    moves the bookmark, so a `409` means the vault changed in between: read it again.
    On a busy vault, turn sync off first with the [kill switch](#kill-switch). A
    time-based target on a young vault can land before its genesis: a `bookmark`
-   read afterwards then shows `vault_exists: false`, and the undo still works.
+   read afterwards then shows `vault_exists: false`, and the undo still works. `vault_exists`
+   means a membership state is stored, even if the Worker refuses that vault to clients
+   as predating the current protocol revision; the bookmark is still readable then.
 5. The response holds the target and the **undo bookmark** (the moment just before
    the restore). Record both on the incident issue before going on; nothing else
    keeps them. From scheduling until the restart the vault refuses every request

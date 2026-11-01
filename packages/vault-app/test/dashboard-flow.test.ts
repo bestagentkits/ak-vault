@@ -6,7 +6,7 @@
  * tenants apart.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { b64encode, openItem, randomBytes, randomId, type MembershipEvent } from '@ak-vault/protocol';
+import { b64encode, createDeviceKeys, openItem, randomBytes, randomId, type MembershipEvent } from '@ak-vault/protocol';
 import { ACCOUNT, FakeWorld, ISSUER, ORIGIN } from './helpers/fake-world.js';
 import { Browser, allByTestId, byTestId, settle } from './helpers/dashboard-page.js';
 import { deviceIdOf } from '../src/keys/webcrypto-device-keys.js';
@@ -388,6 +388,56 @@ describe('vault', () => {
     expect(cursor).toBeGreaterThan(1);
   });
 
+  it('replays in full when a demotion learned later is fenced below the cursor, and refuses the demoted account\'s later records', async () => {
+    const world = new FakeWorld({ shared: true });
+    world.addMember(createDeviceKeys({ account: 'acct-bob', role: 'owner', kind: 'human' }), 'owner');
+    world.ownerSet('one', 'a');
+    const { page } = await new Browser(world).enroll();
+    expect(await page.controller.set('from-browser', SENTINEL)).toBe(true);
+    await page.controller.refresh();
+    expect(names(page.root)).toEqual(['from-browser', 'one']);
+    // The account is demoted with a fence below the browser's record, which it already holds.
+    world.setRole(ACCOUNT, 'reader', 1);
+    const before = world.exchanges.length;
+    await page.controller.refresh();
+    expect(world.exchanges.slice(before).filter((e) => e.url.includes('/changes')).map((e) => new URL(e.url).searchParams.get('cursor'))).toContain('0');
+    expect(page.controller.current()).toMatchObject({ kind: 'fatal', code: 'vault_verification_failed' });
+  });
+
+  it('keeps pulling incrementally past a role change it already verified', async () => {
+    const world = new FakeWorld({ shared: true });
+    world.addMember(createDeviceKeys({ account: 'acct-bob', role: 'reader', kind: 'human' }), 'reader');
+    world.ownerSet('one', 'a');
+    const { page } = await new Browser(world).enroll();
+    world.ownerSet('two', 'b');
+    world.setRole('acct-bob', 'editor');
+    const cursorsOf = async () => {
+      const before = world.exchanges.length;
+      await page.controller.refresh();
+      return world.exchanges.slice(before).filter((e) => e.url.includes('/changes')).map((e) => new URL(e.url).searchParams.get('cursor'));
+    };
+    expect(await cursorsOf()).toEqual(['1']);
+    world.ownerSet('three', 'c');
+    expect(await cursorsOf()).toEqual(['2']);
+    // The role fence (2) now lies below the cursor: the continuation checks it against the head kept there.
+    world.ownerSet('four', 'd');
+    expect(await cursorsOf()).toEqual(['3']);
+    expect(names(page.root)).toEqual(['four', 'one', 'three', 'two']);
+  });
+
+  it('reads membership again when the log holds a record from a rekey that landed between the two reads', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const { page } = await new Browser(world).enroll();
+    world.beforeNextChanges = () => {
+      world.rekey();
+      world.ownerSet('rotated', 'b');
+    };
+    await page.controller.refresh();
+    expect(page.controller.current()).not.toMatchObject({ kind: 'fatal' });
+    expect(names(page.root)).toEqual(['one', 'rotated']);
+  });
+
   it('does not let a second removal at an already seen fence hide records past it', async () => {
     const world = new FakeWorld();
     world.ownerSet('one', 'a');
@@ -489,6 +539,122 @@ describe('vault', () => {
     world.hostile.truncateLog = 1;
     await pageA.controller.refresh();
     expect(pageA.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+  });
+
+  it('pulls again instead of showing a first view older than the position another tab stored', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const tabA = new Browser(world);
+    const { page: pageA } = await tabA.enroll();
+    // A second tab's first pull reads the log, then waits while the first tab stores a newer position.
+    const tabB = new Browser(world, { devices: tabA.devices });
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let holding = false;
+    tabB.afterFetch = async (url) => {
+      if (holding && url.includes('/changes')) {
+        holding = false;
+        await held;
+      }
+    };
+    const start = await tabB.load();
+    await start.controller.signIn();
+    holding = true;
+    const loading = tabB.load(world.authorize(start.navigated.at(-1)!));
+    await settle(() => expect(holding).toBe(false));
+    world.ownerSet('two', 'b');
+    await pageA.controller.refresh();
+    const stored = tabA.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!;
+    expect(stored.log_seq).toBe(2);
+    release();
+    const pageB = await loading;
+    expect(pageB.controller.current().kind).toBe('vault');
+    expect(names(pageB.root)).toEqual(['one', 'two']);
+    expect(tabA.devices.entries.get(ACCOUNT)!.enrollment!.witnessed).toEqual(stored);
+  });
+
+  it('pulls again when a saved position is ahead of the view on another component', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const tabA = new Browser(world);
+    const { page: pageA } = await tabA.enroll();
+    const tabB = new Browser(world, { devices: tabA.devices });
+    const start = await tabB.load();
+    await start.controller.signIn();
+    const callback = world.authorize(start.navigated.at(-1)!);
+    // Tab A reads membership, then waits; the owner adds a device; tab B reads the newer membership
+    // and the log, then waits; a new item lands and tab A finishes with the newer log.
+    let releaseA!: () => void;
+    const heldA = new Promise<void>((r) => { releaseA = r; });
+    let holdA = true;
+    tabA.afterFetch = async (url) => {
+      if (holdA && url.includes('/membership')) {
+        holdA = false;
+        await heldA;
+      }
+    };
+    let releaseB!: () => void;
+    const heldB = new Promise<void>((r) => { releaseB = r; });
+    let holdB = true;
+    tabB.afterFetch = async (url) => {
+      if (holdB && url.includes('/changes')) {
+        holdB = false;
+        await heldB;
+      }
+    };
+    const refreshA = pageA.controller.refresh();
+    await settle(() => expect(holdA).toBe(false));
+    world.addDevice(createDeviceKeys({ account: ACCOUNT, role: 'owner', kind: 'human' }));
+    const loading = tabB.load(callback);
+    await settle(() => expect(holdB).toBe(false));
+    world.ownerSet('two', 'b');
+    releaseA();
+    await refreshA;
+    const stored = tabA.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!;
+    expect(stored.log_seq).toBe(2);
+    releaseB();
+    const pageB = await loading;
+    expect(pageB.controller.current().kind).toBe('vault');
+    expect(names(pageB.root)).toEqual(['one', 'two']);
+    const merged = tabA.devices.entries.get(ACCOUNT)!.enrollment!.witnessed!;
+    expect(merged.log_seq).toBe(2);
+    expect(merged.membership_seq).toBeGreaterThan(stored.membership_seq);
+    expect(pageB.controller.current()).toMatchObject({ kind: 'vault', membership: { membershipSeq: merged.membership_seq } });
+  });
+
+  it('refuses another history served to a tab with no view once another tab stored a further position', async () => {
+    const world = new FakeWorld();
+    world.ownerSet('one', 'a');
+    const tabA = new Browser(world);
+    await tabA.enroll();
+    // The honest history reaches position 3; the server then serves another one that ends at position 2.
+    world.ownerSet('two', 'b');
+    world.ownerSet('three', 'c');
+    const honestHead = world.logHeads[3]!;
+    world.log.length = 1;
+    world.logHeads.length = 2;
+    world.ownerSet('other', 'd');
+    const tabB = new Browser(world, { devices: tabA.devices });
+    const start = await tabB.load();
+    await start.controller.signIn();
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let holding = true;
+    tabB.afterFetch = async (url) => {
+      if (holding && url.includes('/changes')) {
+        holding = false;
+        await held;
+      }
+    };
+    const loading = tabB.load(world.authorize(start.navigated.at(-1)!));
+    await settle(() => expect(holding).toBe(false));
+    // Meanwhile another tab verified the honest history to position 3.
+    const stored = tabA.devices.entries.get(ACCOUNT)!;
+    tabA.devices.entries.set(ACCOUNT, { ...stored, enrollment: { ...stored.enrollment!, witnessed: { ...stored.enrollment!.witnessed!, log_seq: 3, log_head: honestHead } } });
+    release();
+    const pageB = await loading;
+    expect(pageB.controller.current()).toMatchObject({ kind: 'fatal', code: 'rollback' });
+    expect(pageB.root.textContent).not.toContain('other');
   });
 
   it('raises an integrity alarm when two pulls reach the same position with different heads', async () => {

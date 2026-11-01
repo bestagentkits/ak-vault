@@ -40,15 +40,26 @@ function verifyEventWraps(event: MembershipEvent, raw: unknown, next: Membership
 }
 
 /**
- * A removal's signed `log_fence` must be the change-log head at the moment the
- * removal lands: then every record the removed device got accepted is at or below
- * the fence, and nothing it writes later can be. A stale fence is `conflict` (pull
- * the change log and re-sign); a fence ahead of the log is `bad_request`. Its
- * signed `log_head` must equal the stored head at the fence (`bad_request`), so
- * the signed head describes the log every later reader is served.
+ * A removal's or `role_set`'s signed `log_fence` must be the change-log head at
+ * the moment the event lands: then every record the removed device got accepted,
+ * or the account wrote under its old role, is at or below the fence, and every
+ * later one is above it. A stale fence is `conflict` (pull the change log and
+ * re-sign); a fence ahead of the log is `bad_request`. Its signed `log_head` must
+ * equal the stored head at the fence (`bad_request`), so the signed head
+ * describes the log every later reader is served.
+ *
+ * Chain verification accepts a legacy `role_set` without a fence (only before the
+ * chain's first fenced one), so CLIs that predate role fences keep working during
+ * the transition. With `refuseLegacyRoleSet` (the `VAULT_REFUSE_LEGACY_ROLE_SET`
+ * setting) a new one is `bad_request`; stored ones keep verifying either way.
  */
-function checkLogFence(sql: SqlStorage, event: MembershipEvent): void {
-  if (event.type !== 'device_remove' && event.type !== 'member_remove') return;
+function checkLogFence(sql: SqlStorage, event: MembershipEvent, refuseLegacyRoleSet: boolean): void {
+  if (event.type !== 'device_remove' && event.type !== 'member_remove' && event.type !== 'role_set') return;
+  // Only a role_set reaches this without a fence: chain verification requires one on removals.
+  if (event.body['log_fence'] === undefined) {
+    if (refuseLegacyRoleSet) throw new ApiError('bad_request', { message: 'a new role_set must carry log_fence and log_head' });
+    return;
+  }
   const fence = event.body['log_fence'] as number; // integer >= 0, checked by chain verification
   const head = currentLogSeq(sql);
   if (fence > head) throw new ApiError('bad_request', { message: 'log_fence is ahead of the change log' });
@@ -83,13 +94,20 @@ export function handleGenesis(sql: SqlStorage, store: MembershipStore, body: Jso
  * digest) and, for `recovery_rotate`, the resealed recovery bundle land in one
  * transaction, so the chain never trusts a recovery key the stored bundle lacks.
  */
-export function handleMembershipPost(sql: SqlStorage, store: MembershipStore, vaultId: string, body: JsonObject, next: MembershipState): ApiResult {
+export function handleMembershipPost(
+  sql: SqlStorage,
+  store: MembershipStore,
+  vaultId: string,
+  body: JsonObject,
+  next: MembershipState,
+  opts: { refuseLegacyRoleSet: boolean },
+): ApiResult {
   requireKeys(body, ['event'], ['wraps', 'bundle']);
   const event = parseMembershipEvent(body['event']);
   const rotating = event.type === 'recovery_rotate';
   if (rotating !== (body['bundle'] !== undefined)) throw new ApiError('bad_request', { message: 'recovery_rotate, and only it, carries the resealed bundle' });
   const wraps = verifyEventWraps(event, body['wraps'], next);
-  checkLogFence(sql, event);
+  checkLogFence(sql, event, opts.refuseLegacyRoleSet);
   const before = store.requireState();
   const recoveryEnrollment = event.type === 'device_add' && event.author === before.recovery_author;
   checkDeviceCount(event, next, recoveryEnrollment);

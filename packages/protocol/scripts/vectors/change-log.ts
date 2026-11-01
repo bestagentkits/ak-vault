@@ -2,8 +2,8 @@
  * Deterministic change logs of the membership.json chains, used by membership.ts (each
  * removal signs the head at its fence) and removal-fence.ts (log replay vectors).
  *
- * Shared vault: aliceLaptop is removed with log_fence 4 (key epoch 1) and acct_carol with
- * log_fence 7 (key epoch 2). Personal vault: alicePhone is removed with log_fence 5 (key
+ * Shared vault: acct_carol is promoted from reader to editor with log_fence 4, aliceLaptop
+ * is removed with log_fence 4 (key epoch 1) and acct_carol with log_fence 7 (key epoch 2). Personal vault: alicePhone is removed with log_fence 5 (key
  * epoch 1) and re-added at key epoch 2. Each log holds an applied record, a preserved
  * conflict branch and its resolution below the first fence, and records above every fence.
  */
@@ -59,7 +59,7 @@ export const CHANGE_LOGS: Record<ChainName, LogEntry[]> = {
     entry('shared', 2, { label: 'log/shared/2', author: aliceLaptop, keyEpoch: 1, item: 'log/b' }),
     entry('shared', 3, { label: 'log/shared/3', author: bobLaptop, keyEpoch: 1, item: 'log/a' }, SHARED_CONFLICT),
     entry('shared', 4, { label: 'log/shared/4', author: aliceLaptop, keyEpoch: 1, item: 'log/a', base: 1, resolves: [SHARED_CONFLICT] }),
-    entry('shared', 5, { label: 'log/shared/5', author: carolPhone, keyEpoch: 2, item: 'log/c' }),
+    entry('shared', 5, { label: 'log/shared/5', author: bobLaptop, keyEpoch: 2, item: 'log/c' }),
     entry('shared', 6, { label: 'log/shared/6', author: bobLaptop, keyEpoch: 2, item: 'log/b', base: 1 }),
     entry('shared', 7, { label: 'log/shared/7', author: carolPhone, keyEpoch: 2, item: 'log/c', base: 1 }),
     entry('shared', 8, { label: 'log/shared/8', author: bobLaptop, keyEpoch: 3, item: 'log/d' }),

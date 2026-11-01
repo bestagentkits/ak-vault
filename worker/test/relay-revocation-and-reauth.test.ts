@@ -44,6 +44,7 @@ describe('relay reauth', () => {
     const cases: ((c: RelayConnection) => Promise<void>)[] = [
       async (c) => c.reauth(await relayToken(fx.owner, { claims: { did: other.keys.record.device_id } })),
       async (c) => c.reauth(await relayToken(fx.owner, { claims: { sub: `acct-${randomId()}` } })),
+      async (c) => c.reauth(await relayToken(fx.owner, { claims: { session_kind: undefined } })),
       async (c) => c.reauth('not.a.jwt', 'x'),
       async (c) => {
         const token = await relayToken(fx.owner);

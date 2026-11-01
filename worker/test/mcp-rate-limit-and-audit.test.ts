@@ -10,6 +10,7 @@ import { accountLogTag, clientLogTag } from '../src/http/operational-logger.js';
 import { REMOTE_ACCESS_LIMITS } from '../src/limits.js';
 import { relayStub } from '../src/relay/relay-rpc.js';
 import { answerNext, callTool, mintMcpToken, modern } from './helpers/mcp-client.js';
+import { awaitRateWindowHeadroom } from './helpers/rate-window.js';
 import { readyRelay } from './helpers/relay-client.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
@@ -19,19 +20,13 @@ beforeEach(() => {
 });
 afterEach(() => spy.mockRestore());
 
-/** Stay clear of a minute boundary so a burst lands in one rate window. */
-async function freshWindow(): Promise<void> {
-  const into = Date.now() % 60_000;
-  if (into > 45_000) await new Promise((r) => setTimeout(r, 60_000 - into + 50));
-}
-
 function auditRows(sub: string): Promise<Record<string, unknown>[]> {
   return runInDurableObject(relayStub(env, sub), (_i: unknown, state: DurableObjectState) => state.storage.sql.exec('SELECT * FROM client_audit ORDER BY ts').toArray());
 }
 
 describe('MCP rate limits', () => {
   it('refuses a client past its per-minute budget with retry_after_s; another client is unaffected', async () => {
-    await freshWindow();
+    await awaitRateWindowHeadroom();
     const sub = `acct-${randomId()}`;
     const token = await mintMcpToken({ sub, clientId: 'client-busy' });
     for (let i = 0; i < REMOTE_ACCESS_LIMITS.mcp_calls_per_minute_per_client; i++) {
@@ -50,7 +45,7 @@ describe('MCP rate limits', () => {
   });
 
   it('secrets_run has its own smaller budget', async () => {
-    await freshWindow();
+    await awaitRateWindowHeadroom();
     const token = await mintMcpToken({ sub: `acct-${randomId()}` });
     const run = { argv: ['true'], env: [{ var: 'A', name: 'B' }] };
     for (let i = 0; i < REMOTE_ACCESS_LIMITS.mcp_run_calls_per_minute_per_client; i++) {
@@ -61,7 +56,7 @@ describe('MCP rate limits', () => {
   });
 
   it('meters every JSON-RPC method: tools/list, ping and server/discover spend the same budget as tools', async () => {
-    await freshWindow();
+    await awaitRateWindowHeadroom();
     const sub = `acct-${randomId()}`;
     const token = await mintMcpToken({ sub, clientId: 'client-chatty' });
     const methods = ['tools/list', 'ping', 'server/discover'];
@@ -85,7 +80,7 @@ describe('MCP rate limits', () => {
   });
 
   it('a call refused as rate_limited writes no audit row but keeps its log line', async () => {
-    await freshWindow();
+    await awaitRateWindowHeadroom();
     const sub = `acct-${randomId()}`;
     const clientId = 'client-flood';
     const token = await mintMcpToken({ sub, clientId });

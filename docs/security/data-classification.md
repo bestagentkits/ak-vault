@@ -21,6 +21,7 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Sealed operation contents (`op`, name, value, sensitivity) at rest | Sealed to the epoch's `seal_pub`; only member devices derive `SealSK[e]` ([spec §3.6](../protocol/v1/spec.md#36-seal-key-and-sealed-operations)). The Worker saw them in plaintext before sealing ([transit table](#transits-worker-memory-never-stored-or-logged-remote-access-only)) |
 | Write intent contents (requested name, purpose, sensitivity) at rest | Sealed to the epoch's `seal_pub` under its own context; carries no value; cleared when the request closes, or lazily after it expires ([spec §3.10](../protocol/v1/spec.md#310-write-intents-human-write-requests)). The Worker saw them in plaintext before sealing |
 | Value typed into a write-request form | Encrypted and signed by the browser device as a normal item record; never in the MCP client or Worker in plaintext |
+| Value typed into an input-request form | Sealed in the browser to the issuing device's one-time `input_pub` ([spec §3.11](../protocol/v1/spec.md#311-input-seals-device-sealed-input-requests)); the Worker relays the ciphertext and never stores or logs it; the device writes it as a normal item record |
 | Audit of drained sealed operations and dropped profile fields (`sealed_applied`, `sealed_refused`, `profile_invalid`, `profile_provenance_invalid`) and of dashboard rotation state changes (`rotation_*`: type, item ID, author device, time) | Encrypted audit stream |
 
 ## Visible operational metadata (unavoidable)
@@ -31,7 +32,7 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Revisions, `base_revision`, change-log sequence and heads (hashes of stored record digests), cursors | CAS, incremental pull and removal fences |
 | Tombstone flag | Refusing resurrection |
 | `key_epoch`, `membership_epoch`, `rekey_required` | Refusing stale-epoch writes |
-| Membership log in clear (signed): accounts, device IDs, device public keys, roles, device kind, `needs_rotate` item IDs, `device_remove.reason`, recovery signing public keys, removal `log_fence` positions and `log_head` values, `wraps_digest` values | Enforcing membership and roles; the recovery identity may read it |
+| Membership log in clear (signed): accounts, device IDs, device public keys, roles, device kind, `needs_rotate` item IDs, `device_remove.reason`, recovery signing public keys, removal and `role_set` `log_fence` positions and `log_head` values, `wraps_digest` values | Enforcing membership and roles; the recovery identity may read it |
 | Wrap headers: recipient device ID, ephemeral public key, Argon2id salt and `t`/`m`/`p`; which membership event each device wrap set belongs to (kept after its recipients are removed) | Delivering the right wrap to each device and serving each signed set whole |
 | Checkpoint fields (sequences, digests, author, timestamp) | Relayed to devices for anti-rollback |
 | Timestamps and ciphertext sizes | Inherent to storage; sizes leak approximate value length |
@@ -40,7 +41,8 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | `name_tag` per record head (16-byte keyed tag and its `key_epoch`) | `lookup`; reveals which records share a name within an epoch, not the name ([spec §3.7](../protocol/v1/spec.md#37-name-tags-keyed-blind-index)) |
 | Seal-key document (vault ID, key epoch, membership position, `seal_pub`, author, time, signature) | Serving the key the MCP handler seals to |
 | Sealed operation envelope: `sealed_id`, key epoch, queue position, `origin` (`account`, `client_id`, `grant_id`), time, ciphertext size, the `iat` of the MCP token that queued it, and the `applied`/`refused`/`cancelled` outcome (`cancelled`: its grant was revoked) | Queueing, deduplication, expiry and audit attribution |
-| Write request row: `request_id`, requesting `account`, `client_id`, `grant_id`, the MCP token's `iat`, operation (`create`/`replace`), state, closed reason, opaque receipt, created, expiry and close times, intent ciphertext size | Binding the request to its account and grant, revocation re-checks, single use, expiry and status for the requesting client |
+| Write request row: `request_id`, requesting `account`, `client_id`, `grant_id`, the MCP token's `iat`, operation (`create`/`replace`), state, closed reason, opaque receipt, created, expiry and close times, intent ciphertext size; for an input request also `flow` (`device`), the issuing `device_id` and its public `input_pub` (no intent, no name, no ciphertext) | Binding the request to its account and grant, revocation re-checks, single use, expiry and status for the requesting client; routing the one submission to the device that holds the key |
+| `input` session token claims: `sub`, `sid`, `session_kind` (`input`), `jti` ([spec §3.11](../protocol/v1/spec.md#input-sessions-and-routes-worker)) | Binding the input form to the requesting account and revoking it with its sign-in grant |
 | Lookup requests: the requested `(key_epoch, tag)` pairs and the hits served | Answering name lookups; reveals which names a reader looks for, not the names |
 | Relay connection and call metadata: device ID, vault IDs and tool names from `hello`, `call_id`, vault ID and tool of each call, caller `client_id`/`grant_id`/scopes, result `ok` and error code, timing | Routing calls to a device and enforcing scopes, deadlines and rate limits |
 | Quota and rate-limit counters | Abuse protection |
@@ -61,6 +63,7 @@ termination and are held only for the request or relayed call
 |---|---|
 | MCP tool arguments, including a `set` value | MCP client → Worker → relayed to a device or sealed |
 | `secrets_prepare_write` name and purpose | MCP client → Worker → sealed into a write intent |
+| `secrets_request_input` name and purpose | MCP client → Worker → relayed to the issuing device (`request_input`) and placed in the form link's fragment; never stored |
 | Relayed results: names, profile fields, sensitivity, timestamps, request status | Device → Worker → MCP client |
 | Redacted `run` output (`stdout`, `stderr`) | Device → Worker → MCP client |
 
@@ -76,6 +79,14 @@ opaque IDs in the browser's `sessionStorage` only for the sign-in redirect, and 
 them when the callback reads them. The request ID authorizes nothing by itself. The
 dashboard never stores or logs the typed value, which is cleared on submit and cancel.
 
+The input form (`/input`, served by the same bundle) is the one place a secret
+**name** sits in browser storage: the link's name and purpose wait in
+`sessionStorage` across the sign-in redirect. They are deleted when the callback, a new
+input link or a dashboard load in that tab reads them, or when the tab closes; a
+callback more than 10 minutes after the sign-in started is refused, but a tab left on
+the sign-in page keeps them until one of those happens. The typed value is cleared from the field before it is sealed
+and is never stored, logged or rendered; the `input` token stays in page memory.
+
 ## Kept in the browser (dashboard device)
 
 The dashboard at `/app` is a device ([ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md)),
@@ -88,6 +99,7 @@ name or a value.
 | Enrollment: vault ID, trust anchor, offer checkpoint, approving device ID, SAS | Same entry | Verifying the chain from the offer, as every device does |
 | Sync position: membership and log sequence numbers and heads, key epoch | Same entry | Anti-rollback and fork detection across visits and tabs; never a server value |
 | Pending sign-in: `state`, PKCE verifier, creation time, and a write-request link's request and vault IDs | `sessionStorage`, removed when the callback reads it, refused after 10 minutes | Surviving the redirect to the authorization server |
+| Pending input-form sign-in: the same, plus the input link's request and vault IDs, public `input_pub`, secret **name** and purpose (from the link fragment) | `sessionStorage` under its own key, removed when the callback reads it or a dashboard page loads, refused after 10 minutes; never sent to a server | Showing the request again after the redirect and binding the seal's AAD ([spec §3.11](../protocol/v1/spec.md#input-form-browser)) |
 | Tokens, vault keys, item names, values, metadata, profile fields | Page memory only | Dropped on lock, sign-out and page exit; there is **no** local cache of vault contents, so every visit verifies from the server |
 
 Clearing site data removes the device; an owner should then remove it from the

@@ -23,7 +23,7 @@ Landing page: https://vault.agentkit.best
 AgentKit's local vault works without this service and without a network
 connection. Sync is off unless you turn it on.
 
-**Remote access (staging only, pre-release, not for production credentials):** a
+**Remote access (pre-release; on in production by owner decision, before its release gate):** a
 browser dashboard at `/app`, where the browser is an enrolled device, and a remote
 MCP endpoint at `/mcp` for hosted AI tools. During a remote MCP call plaintext passes
 through Worker memory; it is never stored or logged

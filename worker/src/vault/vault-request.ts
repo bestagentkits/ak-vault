@@ -39,6 +39,8 @@ export interface VaultRequest {
   sealedId?: string;
   /** `request_id` path segment of `…/write-requests/{request_id}`, or the `write_request` query of an item PUT. */
   writeRequestId?: string;
+  /** The `input_request` query of an item PUT: the issuing device's completion of a device-sealed input request (ADR 0004). */
+  inputRequestId?: string;
   method: string;
   /** Exact request URL compared with the proof `htu`. */
   htu: string;

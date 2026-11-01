@@ -51,6 +51,7 @@ describe('token verification', () => {
     ['non-string session kind', { session_kind: 7 }],
     ['empty session kind', { session_kind: '' }],
     ['null session kind', { session_kind: null }],
+    ['missing session kind', { session_kind: undefined }],
   ])('rejects %s', async (_name, claims) => {
     const res = await withToken(await mintToken({ sub: sub(), did: did(), claims }));
     expect(res.status).toBe(401);

@@ -30,7 +30,7 @@ export const CLOSE_REASON: Record<CloseCode, string> = {
 
 /**
  * Hibernation attachment of one device connection (at most 2 KiB serialized:
- * bounded claims, at most 16 vault IDs and 7 tool names).
+ * bounded claims, at most 16 vault IDs and 9 tool names).
  */
 export interface Connection {
   /** Random per connection; calls are bound to it, so a replaced connection's results never match. */

@@ -1,10 +1,11 @@
 /**
- * The seven MCP tools (spec §9.8): one per relay tool (§9.7), same arguments plus
- * an optional `vault_id`, same scopes. No tool returns a secret value: reads
- * return names and profile metadata, writes return a status, and `run` returns
- * output the device redacted.
+ * The MCP tools (spec §9.8): one per MCP relay tool (§9.7), same arguments plus an
+ * optional `vault_id`, same scopes, and the Worker-local write-request tools. The
+ * input relay tools (`request_input`, `input_deliver`) are never MCP tools: the Worker
+ * calls them itself. No tool returns a secret value: reads return names and profile
+ * metadata, writes return a status, and `run` returns output the device redacted.
  */
-import { RELAY_TOOLS, SEARCH_FIELDS, TOOL_SCOPE, b64decodeLength, parseToolArgs, type JsonObject, type McpScope, type RelayTool } from '@ak-vault/protocol';
+import { MCP_RELAY_TOOLS, SEARCH_FIELDS, TOOL_SCOPE, b64decodeLength, parseToolArgs, type JsonObject, type McpRelayTool, type McpScope } from '@ak-vault/protocol';
 import { REMOTE_ACCESS_LIMITS } from '../limits.js';
 
 export interface ToolAnnotations {
@@ -37,7 +38,7 @@ function schema(properties: Record<string, unknown>, required: string[] = []): R
   return { type: 'object', properties: { ...properties, vault_id: vaultId }, required, additionalProperties: false };
 }
 
-const DEFINITIONS: Record<RelayTool, Omit<ToolDefinition, 'name'>> = {
+const DEFINITIONS: Record<McpRelayTool, Omit<ToolDefinition, 'name'>> = {
   search: {
     title: 'Search secrets',
     description: `Find secrets by name and profile metadata (description, provider, account, environment, projects, tags). Needs one of your devices online with \`ak secrets sync now --watch --relay\`. ${NEVER_VALUES}`,
@@ -131,45 +132,57 @@ const DEFINITIONS: Record<RelayTool, Omit<ToolDefinition, 'name'>> = {
 };
 
 /**
- * Tools the Worker answers itself, without a device: a human write request (spec §3.10).
- * Neither takes a secret value: the person types it into the dashboard.
+ * Tools the Worker answers itself: a human write request (spec §3.10) and a
+ * device-sealed input request (spec §3.11). None takes a secret value: the person
+ * types it into a form in their browser.
  */
-export const LOCAL_TOOLS = ['prepare_write', 'write_status'] as const;
+export const LOCAL_TOOLS = ['prepare_write', 'request_input', 'write_status'] as const;
 export type LocalTool = (typeof LOCAL_TOOLS)[number];
 
-const LOCAL_SCOPE: Record<LocalTool, McpScope> = { prepare_write: 'vault-mcp:write', write_status: 'vault-mcp:write' };
+const LOCAL_SCOPE: Record<LocalTool, McpScope> = { prepare_write: 'vault-mcp:write', request_input: 'vault-mcp:write', write_status: 'vault-mcp:write' };
 
 /** Default and maximum write-request lifetime, in whole minutes, for the tool description. */
 const WRITE_TTL_MINUTES = Math.floor(REMOTE_ACCESS_LIMITS.write_request_ttl_s / 60);
 
-const requestId = { type: 'string', minLength: 1, maxLength: 64, description: 'request_id returned by secrets_prepare_write.' };
+const requestId = { type: 'string', minLength: 1, maxLength: 64, description: 'request_id returned by secrets_request_input or secrets_prepare_write.' };
+
+/** Arguments of both write-request tools: a name and its intent, never a value. */
+const WRITE_REQUEST_SCHEMA = schema(
+  {
+    name: itemName,
+    operation: { type: 'string', enum: ['create', 'replace'], description: '"create" (default) refuses a name that already exists; "replace" needs one that does.' },
+    purpose: { type: 'string', minLength: 1, maxLength: 200, description: 'Why the secret is needed; shown to the user on the form.' },
+    sensitivity: { type: 'string', enum: ['normal', 'high'] },
+    ttl_s: {
+      type: 'integer',
+      minimum: REMOTE_ACCESS_LIMITS.write_request_min_ttl_s,
+      maximum: REMOTE_ACCESS_LIMITS.write_request_ttl_s,
+      description: `How long the link stays valid, in seconds; default ${REMOTE_ACCESS_LIMITS.write_request_ttl_s}.`,
+    },
+  },
+  ['name'],
+);
 
 const LOCAL_DEFINITIONS: Record<LocalTool, Omit<ToolDefinition, 'name'>> = {
   prepare_write: {
     title: 'Ask the user to enter a secret',
     description:
-      `Create or replace a secret WITHOUT seeing its value: returns a one-time form_url for the user to open in their browser and type the value there. Never ask the user to paste a secret value into this chat and never pass one to any tool. Give the form_url to the user, then poll secrets_write_status with request_id. The link expires (default ${WRITE_TTL_MINUTES} minutes), works once, and only the signed-in vault owner can use it, so a request from an editor account is refused (use secrets_set instead). ` +
+      `Create or replace a secret WITHOUT seeing its value: returns a one-time form_url for the user to open in the vault dashboard and type the value there. Prefer secrets_request_input, which also works for users without a browser device. Never ask the user to paste a secret value into this chat and never pass one to any tool. Give the form_url to the user, then poll secrets_write_status with request_id. The link expires (default ${WRITE_TTL_MINUTES} minutes), works once, and only the signed-in vault owner can use it, so a request from an editor account is refused (use secrets_request_input instead). ` +
       NEVER_VALUES,
-    inputSchema: schema(
-      {
-        name: itemName,
-        operation: { type: 'string', enum: ['create', 'replace'], description: '"create" (default) refuses a name that already exists; "replace" needs one that does.' },
-        purpose: { type: 'string', minLength: 1, maxLength: 200, description: 'Why the secret is needed; shown to the user on the form.' },
-        sensitivity: { type: 'string', enum: ['normal', 'high'] },
-        ttl_s: {
-          type: 'integer',
-          minimum: REMOTE_ACCESS_LIMITS.write_request_min_ttl_s,
-          maximum: REMOTE_ACCESS_LIMITS.write_request_ttl_s,
-          description: `How long the link stays valid, in seconds; default ${REMOTE_ACCESS_LIMITS.write_request_ttl_s}.`,
-        },
-      },
-      ['name'],
-    ),
+    inputSchema: WRITE_REQUEST_SCHEMA,
     annotations: { title: 'Ask the user to enter a secret', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  request_input: {
+    title: 'Request a secret from the user',
+    description:
+      `Create or replace a secret WITHOUT seeing its value: returns a one-time form_url for the user to open in their browser, sign in and type the value there. The value is sealed in the browser to one of the user's online devices (flow "device") or completed in the vault dashboard (flow "dashboard"); with neither available the tool fails with device_offline. Never ask the user to paste a secret value into this chat and never pass one to any tool, even when this tool fails. Give the form_url to the user, then poll secrets_write_status with request_id. The link expires (default ${WRITE_TTL_MINUTES} minutes), works once, and only the signed-in account that asked can use it. ` +
+      NEVER_VALUES,
+    inputSchema: WRITE_REQUEST_SCHEMA,
+    annotations: { title: 'Request a secret from the user', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   write_status: {
     title: 'Check a secret write request',
-    description: `Status of a request made with secrets_prepare_write: pending_user, completed, conflict, cancelled, expired or failed, with a sanitized reason and, once completed, an opaque receipt. ${NEVER_VALUES}`,
+    description: `Status of a request made with secrets_request_input or secrets_prepare_write: pending_user, submitted, completed, conflict, cancelled, expired or failed, with a sanitized reason and, once completed, an opaque receipt. ${NEVER_VALUES}`,
     inputSchema: schema({ request_id: requestId }, ['request_id']),
     annotations: { title: 'Check a secret write request', readOnlyHint: true, openWorldHint: false },
   },
@@ -177,7 +190,7 @@ const LOCAL_DEFINITIONS: Record<LocalTool, Omit<ToolDefinition, 'name'>> = {
 
 /** Tool definitions for `tools/list`, in a fixed order. */
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
-  ...RELAY_TOOLS.map((tool) => ({ name: `${MCP_TOOL_PREFIX}${tool}`, ...DEFINITIONS[tool] })),
+  ...MCP_RELAY_TOOLS.map((tool) => ({ name: `${MCP_TOOL_PREFIX}${tool}`, ...DEFINITIONS[tool] })),
   ...LOCAL_TOOLS.map((tool) => ({ name: `${MCP_TOOL_PREFIX}${tool}`, ...LOCAL_DEFINITIONS[tool] })),
 ];
 
@@ -192,21 +205,21 @@ export function localScopeOf(tool: LocalTool): McpScope {
   return LOCAL_SCOPE[tool];
 }
 
-/** The relay tool an MCP tool name maps to, or null for an unknown name. */
-export function relayToolOf(name: string): RelayTool | null {
+/** The MCP relay tool an MCP tool name maps to, or null for an unknown name (the input relay tools included). */
+export function relayToolOf(name: string): McpRelayTool | null {
   if (!name.startsWith(MCP_TOOL_PREFIX)) return null;
   const tool = name.slice(MCP_TOOL_PREFIX.length);
-  return (RELAY_TOOLS as readonly string[]).includes(tool) ? (tool as RelayTool) : null;
+  return (MCP_RELAY_TOOLS as readonly string[]).includes(tool) ? (tool as McpRelayTool) : null;
 }
 
-export function scopeOf(tool: RelayTool): McpScope {
+export function scopeOf(tool: McpRelayTool): McpScope {
   return TOOL_SCOPE[tool];
 }
 
 export type SplitArgs = { ok: true; vaultId?: string; args: JsonObject } | { ok: false };
 
 /** Separate the optional `vault_id` from the relay arguments and validate both (spec §9.7, §9.8). */
-export function splitArgs(tool: RelayTool, value: unknown): SplitArgs {
+export function splitArgs(tool: McpRelayTool, value: unknown): SplitArgs {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return { ok: false };
   const { vault_id: vault, ...rest } = value as Record<string, unknown>;
   if (vault !== undefined) {

@@ -83,20 +83,38 @@ func checkRemovalFence(t *testing.T, f *rec, n *counter) {
 	cr := f.obj("chains")
 	eqJSON(t, "chains.shared equals membership.json chains[0]", cr.raw("shared"), shared)
 	eqJSON(t, "chains.personal equals membership.json chains[1]", cr.raw("personal"), personal)
+	checkLoggedRecords(t, f, n)
+}
+
+// checkRoleHistory reproduces role-history.json: the same layout as
+// removal-fence.json, over its own chain and change log.
+func checkRoleHistory(t *testing.T, f *rec, n *counter) { checkLoggedRecords(t, f, n) }
+
+// checkLoggedRecords reproduces the chains' removals and role changes, the
+// VerifyLoggedRecord cases and the change logs of a fenced-log vector file.
+func checkLoggedRecords(t *testing.T, f *rec, n *counter) {
+	cr := f.obj("chains")
 	states := map[string]MembershipState{}
 	for name := range cr.m {
 		states[name] = mustOK(VerifyMembershipChain(cr.list(name), VerifyChainOptions{}))(t, cr.path+"."+name)
 	}
 	cr.done()
 	rr := f.obj("removals")
+	rc := f.obj("role_changes")
 	for name, st := range states {
 		removals := make([]any, len(st.Removals))
 		for i, r := range st.Removals {
 			removals[i] = r.JSONValue()
 		}
 		eqJSON(t, rr.path+"."+name, removals, rr.raw(name))
+		changes := make([]any, len(st.RoleChanges))
+		for i, c := range st.RoleChanges {
+			changes[i] = c.JSONValue()
+		}
+		eqJSON(t, rc.path+"."+name, changes, rc.raw(name))
 	}
 	rr.done()
+	rc.done()
 	n.add(1)
 	state := func(c *rec) MembershipState {
 		st, ok := states[c.str("chain")]
@@ -121,7 +139,7 @@ func checkRemovalFence(t *testing.T, f *rec, n *counter) {
 }
 
 // checkChangeLogs reproduces the change-log head chains and the log replay
-// cases of removal-fence.json.
+// cases of removal-fence.json and role-history.json.
 func checkChangeLogs(t *testing.T, f *rec, n *counter, states map[string]MembershipState) {
 	cl := f.obj("change_logs")
 	for name := range cl.m {
@@ -147,8 +165,8 @@ func checkChangeLogs(t *testing.T, f *rec, n *counter, states map[string]Members
 			e.done()
 		}
 		st := states[name]
-		for _, rm := range st.Removals {
-			eqStr(t, log.path+" removal log_head", rm.LogHead, heads[rm.LogFence].(string))
+		for _, sf := range SignedFences(st) {
+			eqStr(t, log.path+" fence log_head", sf.LogHead, heads[sf.LogFence].(string))
 		}
 		got := mustOK(VerifyChangeLog(entries, st, VerifyChangeLogOptions{Complete: true}))(t, log.path)
 		eqJSON(t, log.path+" head", got.Head, ChangeLogCursor{LogSeq: int64(len(entries)), LogHead: heads[len(entries)].(string)})

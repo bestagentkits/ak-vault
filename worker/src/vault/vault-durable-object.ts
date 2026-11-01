@@ -16,7 +16,7 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import { randomId, type MembershipState, type Role, type SealKeyDoc } from '@ak-vault/protocol';
-import type { Env } from '../env.js';
+import { refuseLegacyRoleSet, type Env } from '../env.js';
 import { ApiError, errorResult, okResult, toApiError, type ApiResult } from '../http/errors.js';
 import { appendAudit, readAudit } from './audit-store.js';
 import { backfillLogHeads } from './change-log-heads.js';
@@ -33,14 +33,24 @@ import { currentSealKey, getSealKey, putSealKey } from './seal-key-store.js';
 import { ackSealedOp, cancelRevokedSealedOps, enqueueSealedOp, listSealedOps, pendingSealedGrants, type EnqueueSealedResult, type SealedGrant } from './sealed-store.js';
 import {
   cancelRevokedWriteRequest,
+  claimInputRequest,
   closeWriteRequest,
   completeWithItemPut,
+  createInputRequest,
   createWriteRequest,
+  getInputRequest,
   getWriteRequest,
   openWriteRequestGrant,
+  releaseInputRequest,
+  settleInputRequest,
+  writeRequestRoom,
   writeRequestStatus,
+  type ClaimInputResult,
   type CreateWriteRequestResult,
+  type InputRequestInput,
   type WriteRequestOrigin,
+  type WriteRequestReason,
+  type WriteRequestState,
   type WriteRequestStatus,
 } from './write-request-store.js';
 import { enforceRateLimit, requireRateBudget } from './request-guard.js';
@@ -79,6 +89,15 @@ export class VaultDurableObject extends DurableObject<Env> {
   /** True once a genesis has been stored; reads only, never creates storage. */
   private vaultExists(): boolean {
     return this.schemaReady && this.membership.state() !== null;
+  }
+
+  /**
+   * True when a membership state row is stored, whatever its revision. Unlike
+   * `vaultExists` it never refuses a vault that predates the current protocol
+   * revision, so operator recovery can still read such a vault's bookmark.
+   */
+  private hasStoredState(): boolean {
+    return this.schemaReady && this.sql.exec("SELECT 1 FROM meta WHERE k = 'membership_state'").toArray().length > 0;
   }
 
   private ensureSchema(): void {
@@ -153,7 +172,7 @@ export class VaultDurableObject extends DurableObject<Env> {
       this.refuseWhileRestorePending();
       const storage = this.ctx.storage;
       const bookmark = atMs === null ? await currentBookmark(storage) : await bookmarkForTime(storage, atMs, nowMs);
-      return okResult({ bookmark, vault_exists: this.vaultExists() });
+      return okResult({ bookmark, vault_exists: this.hasStoredState() });
     } catch (err) {
       return errorResult(toApiError(err));
     }
@@ -279,6 +298,55 @@ export class VaultDurableObject extends DurableObject<Env> {
     this.ctx.storage.transactionSync(() => cancelRevokedWriteRequest(this.sql, requestId, nowMs));
   }
 
+  /*
+   * Device-sealed input requests (ADR 0004), called only by Worker code: the MCP handler
+   * (room and creation) and the input routes after `verifyInputToken` and the grant
+   * revocation checks (read, claim, release, settle). Every answer is scoped to the
+   * verified account; none creates storage for a vault that does not exist.
+   */
+
+  /** Whether account `sub` may open one more request from `clientId`; false for a vault that cannot take one. */
+  async writeRequestRoom(sub: string, clientId: string, nowMs: number = Date.now()): Promise<boolean> {
+    if (!this.remoteState()) return false;
+    return this.ctx.storage.transactionSync(() => writeRequestRoom(this.sql, sub, clientId, nowMs));
+  }
+
+  /** Store a device-flow request after its device issued the input key (the only way one is created). */
+  async createInputRequest(input: InputRequestInput, nowMs: number = Date.now()): Promise<CreateWriteRequestResult> {
+    const state = this.remoteState();
+    if (!state) return 'refused';
+    return this.ctx.storage.transactionSync(() => createInputRequest(this.sql, state, input, nowMs));
+  }
+
+  /** `GET …/input-requests/{id}` for account `sub`. */
+  async getInputRequest(requestId: string, sub: string, nowMs: number = Date.now()): Promise<ApiResult> {
+    if (!this.remoteState()) return errorResult(new ApiError('not_found'));
+    return this.ctx.storage.transactionSync(() => getInputRequest(this.sql, requestId, sub, nowMs));
+  }
+
+  /** Take the single submission of account `sub`'s device-flow request, in one transaction. */
+  async claimInputRequest(requestId: string, sub: string, nowMs: number = Date.now()): Promise<ClaimInputResult> {
+    if (!this.remoteState()) return { error: errorResult(new ApiError('not_found')) };
+    return this.ctx.storage.transactionSync(() => claimInputRequest(this.sql, requestId, sub, nowMs));
+  }
+
+  /** Put a claimed request whose value never reached its device back to `pending_user`. */
+  async releaseInputRequest(requestId: string, nowMs: number = Date.now()): Promise<void> {
+    if (!this.remoteState()) return;
+    this.ctx.storage.transactionSync(() => releaseInputRequest(this.sql, requestId, nowMs));
+  }
+
+  /** Close a still-`submitted` request its device could not complete; the request's state and receipt afterwards. */
+  async settleInputRequest(
+    requestId: string,
+    state: 'failed' | 'expired' | 'conflict',
+    reason: WriteRequestReason | null,
+    nowMs: number = Date.now(),
+  ): Promise<{ state: WriteRequestState; receipt: string | null } | null> {
+    if (!this.remoteState()) return null;
+    return this.ctx.storage.transactionSync(() => settleInputRequest(this.sql, requestId, state, reason, nowMs));
+  }
+
   private read(req: VaultRequest, auth: Authorized): ApiResult {
     switch (req.op) {
       case 'membership.get':
@@ -314,10 +382,12 @@ export class VaultDurableObject extends DurableObject<Env> {
       case 'genesis':
         return handleGenesis(this.sql, this.membership, body, auth.state);
       case 'membership.post':
-        return handleMembershipPost(this.sql, this.membership, req.vaultId, body, auth.next ?? this.membership.verifyAppend(body['event']));
+        return handleMembershipPost(this.sql, this.membership, req.vaultId, body, auth.next ?? this.membership.verifyAppend(body['event']), {
+          refuseLegacyRoleSet: refuseLegacyRoleSet(this.env),
+        });
       case 'item.put': {
         const put = () => putRecord(this.sql, auth.state, req.claims.did, req.itemId!, body, { remoteAccess: req.remoteAccess });
-        return req.writeRequestId === undefined ? put() : completeWithItemPut(this.sql, req, req.itemId!, body, put);
+        return req.writeRequestId === undefined && req.inputRequestId === undefined ? put() : completeWithItemPut(this.sql, req, req.itemId!, body, put);
       }
       case 'sealkey.put':
         return putSealKey(this.sql, auth.state, req.claims.did, this.membership.chain(), body);

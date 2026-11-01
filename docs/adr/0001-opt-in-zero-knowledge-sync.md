@@ -194,9 +194,11 @@ path next to email OTP; it does not change the cryptographic design.
   a leaked key syncs until revoked, exposes recovery bundles).
 - A personal API key in CI gets full personal-device rights; read-only scoped CI stays
   in [#6](https://github.com/bestagentkits/ak-vault/issues/6).
-- Transition: a token without `session_kind` is read as `email_otp` until ak-web emits
-  the claim; ak-web must set it on every `api_key_device` and machine token before
-  those sessions are minted.
+- Transition (closed): a token without `session_kind` was read as `email_otp` until ak-web
+  emitted the claim on every vault token. Since
+  [#88](https://github.com/bestagentkits/ak-vault/issues/88) the claim is mandatory and
+  a token without it is `401 unauthorized`, so a token ak-web forgets to mark fails
+  closed instead of passing as a human session.
 
 ## External review milestone
 

@@ -14,11 +14,16 @@ import { asArray, asB64, asBool, asEnum, asId, asIdList, asInt, asObject, asPrin
 
 export const RELAY_FRAME_TYPES = ['hello', 'ready', 'reauth', 'call', 'result'] as const;
 export type RelayFrameType = (typeof RELAY_FRAME_TYPES)[number];
-export const RELAY_TOOLS = ['search', 'list', 'describe', 'set', 'delete', 'request', 'run'] as const;
+/** Relay tools the MCP endpoint exposes one-to-one as `secrets_<tool>` (spec §9.8). */
+export const MCP_RELAY_TOOLS = ['search', 'list', 'describe', 'set', 'delete', 'request', 'run'] as const;
+export type McpRelayTool = (typeof MCP_RELAY_TOOLS)[number];
+/** Device-sealed input tools (spec §3.11); a device lists both in `hello` or neither. */
+export const INPUT_RELAY_TOOLS = ['request_input', 'input_deliver'] as const;
+export const RELAY_TOOLS = [...MCP_RELAY_TOOLS, ...INPUT_RELAY_TOOLS] as const;
 export type RelayTool = (typeof RELAY_TOOLS)[number];
 export const MCP_SCOPES = ['vault-mcp:read', 'vault-mcp:write', 'vault-mcp:use'] as const;
 export type McpScope = (typeof MCP_SCOPES)[number];
-export const RELAY_ERROR_CODES = ['denied', 'pending_approval', 'not_found', 'invalid_args', 'conflict', 'unsupported', 'internal'] as const;
+export const RELAY_ERROR_CODES = ['denied', 'pending_approval', 'not_found', 'invalid_args', 'conflict', 'unsupported', 'internal', 'expired', 'decrypt_failed'] as const;
 export type RelayErrorCode = (typeof RELAY_ERROR_CODES)[number];
 /** Scope each tool needs (spec §9.7). */
 export const TOOL_SCOPE: Record<RelayTool, McpScope> = {
@@ -29,6 +34,8 @@ export const TOOL_SCOPE: Record<RelayTool, McpScope> = {
   delete: 'vault-mcp:write',
   request: 'vault-mcp:use',
   run: 'vault-mcp:use',
+  request_input: 'vault-mcp:write',
+  input_deliver: 'vault-mcp:write',
 };
 export const MAX_HELLO_VAULTS = 16;
 
@@ -99,12 +106,15 @@ export function parseRelayFrameObject(value: unknown, what = 'relay frame'): Rel
       exactKeys(obj, ['v', 'type', 'device_id', 'vaults', 'tools', 'ts', 'sig'], what);
       const vaults = asIdList(obj['vaults'], `${what}.vaults`, MAX_HELLO_VAULTS);
       if (vaults.length < 1) fail('bad_request', `${what}.vaults must not be empty`);
+      const tools = uniqueEnumList(obj['tools'], RELAY_TOOLS, `${what}.tools`, 1, RELAY_TOOLS.length);
+      const inputTools = tools.filter((t) => (INPUT_RELAY_TOOLS as readonly string[]).includes(t)).length;
+      if (inputTools !== 0 && inputTools !== INPUT_RELAY_TOOLS.length) fail('bad_request', `${what}.tools must list both input tools or neither`);
       return {
         v: 1,
         type,
         device_id: asId(obj['device_id'], `${what}.device_id`),
         vaults,
-        tools: uniqueEnumList(obj['tools'], RELAY_TOOLS, `${what}.tools`, 1, RELAY_TOOLS.length),
+        tools,
         ts: asInt(obj['ts'], `${what}.ts`),
         sig: asB64(obj['sig'], `${what}.sig`, 64),
       };

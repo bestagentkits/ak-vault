@@ -7,12 +7,14 @@
 import { utf8Encode } from './bytes.js';
 import { cjsonBytes, type JsonObject } from './canonical-json.js';
 import { MAX_PLAINTEXT_BYTES } from './aead.js';
-import { fail } from './errors.js';
+import { fail, isAkvError } from './errors.js';
+import { parseInputSeal, type InputSealWire } from './input-seal.js';
 import { SENSITIVITIES } from './item.js';
 import { PROFILE_KEYS, asProfileText, parseProfileValue, type ProfileKey } from './profile.js';
 import type { RelayTool } from './relay-frames.js';
 import { MAX_ITEM_NAME, MAX_ITEM_VALUE } from './sealed-op.js';
-import { asArray, asBool, asEnum, asInt, asObject, asPrintableAscii, asString, asWellFormed, exactKeys, type Obj } from './validate.js';
+import { asArray, asB64, asBool, asEnum, asId, asInt, asObject, asPrintableAscii, asString, asWellFormed, exactKeys, type Obj } from './validate.js';
+import { MAX_WRITE_PURPOSE, WRITE_INTENT_OPERATIONS } from './write-intent.js';
 
 export const SEARCH_FIELDS = ['name', 'description', 'provider', 'account', 'environment', 'projects', 'tags'] as const;
 export const ENTRY_ORIGINS = ['local', 'import', 'sync'] as const;
@@ -94,6 +96,29 @@ export function parseToolArgs(tool: RelayTool, value: unknown, what = 'args'): J
       optional(obj, 'timeout_s', (v) => asInt(v, `${what}.timeout_s`, 1, 110));
       break;
     }
+    case 'request_input':
+      exactKeys(obj, ['request_id', 'name', 'operation', 'expires_at'], what, ['purpose', 'sensitivity']);
+      asId(obj['request_id'], `${what}.request_id`);
+      name(obj['name'], `${what}.name`);
+      optional(obj, 'purpose', (v) => asWellFormed(asString(v, `${what}.purpose`, MAX_WRITE_PURPOSE, 1), `${what}.purpose`));
+      asEnum(obj['operation'], WRITE_INTENT_OPERATIONS, `${what}.operation`);
+      optional(obj, 'sensitivity', (v) => asEnum(v, SENSITIVITIES, `${what}.sensitivity`));
+      asInt(obj['expires_at'], `${what}.expires_at`);
+      break;
+    case 'input_deliver': {
+      exactKeys(obj, ['request_id', 'sealed'], what);
+      const requestId = asId(obj['request_id'], `${what}.request_id`);
+      let sealed: InputSealWire;
+      try {
+        sealed = parseInputSeal(obj['sealed'], `${what}.sealed`);
+      } catch (err) {
+        // Every args refusal is bad_request (the device answers invalid_args), an unknown seal version included.
+        if (isAkvError(err)) fail('bad_request', `${what}.sealed is not a valid input seal`);
+        throw err;
+      }
+      if (sealed.request_id !== requestId) fail('bad_request', `${what}.sealed belongs to another request`);
+      break;
+    }
     default:
       fail('bad_request', `${what}: unknown tool`);
   }
@@ -168,6 +193,16 @@ export function parseToolResult(tool: RelayTool, value: unknown, what = 'result'
       asWellFormed(asString(obj['stdout'], `${what}.stdout`, Number.MAX_SAFE_INTEGER), `${what}.stdout`);
       asWellFormed(asString(obj['stderr'], `${what}.stderr`, Number.MAX_SAFE_INTEGER), `${what}.stderr`);
       asBool(obj['truncated'], `${what}.truncated`);
+      break;
+    case 'request_input':
+      exactKeys(obj, ['request_id', 'input_pub'], what);
+      asId(obj['request_id'], `${what}.request_id`);
+      asB64(obj['input_pub'], `${what}.input_pub`, 32);
+      break;
+    case 'input_deliver':
+      exactKeys(obj, ['status', 'receipt'], what);
+      status(obj, ['stored'], what);
+      asPrintableAscii(obj['receipt'], `${what}.receipt`, 128, 1);
       break;
     default:
       fail('bad_request', `${what}: unknown tool`);

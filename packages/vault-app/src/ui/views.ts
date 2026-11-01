@@ -120,8 +120,8 @@ export function remaining(expiresAt: number, nowMs: number): string {
 }
 
 /** A countdown that ticks while it is in the document and stops once a re-render removes it. */
-function countdown(expiresAt: number): HTMLElement {
-  const el = h('span', { 'data-testid': 'write-expiry' }, [remaining(expiresAt, Date.now())]);
+export function countdown(expiresAt: number, testId = 'write-expiry'): HTMLElement {
+  const el = h('span', { 'data-testid': testId }, [remaining(expiresAt, Date.now())]);
   const timer = setInterval(() => {
     if (!el.isConnected) {
       clearInterval(timer);

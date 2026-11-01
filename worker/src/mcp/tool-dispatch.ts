@@ -9,7 +9,7 @@
  * hashed client/account only. Every result passes an output guard first, so no
  * tool can return a field named `value` or `secret` outside profile metadata.
  */
-import { parseToolResult, sealOp, type JsonObject, type RelayErrorCode, type RelayTool, type Role, type SealedOperation } from '@ak-vault/protocol';
+import { parseToolResult, sealOp, type JsonObject, type McpRelayTool, type RelayErrorCode, type RelayTool, type Role, type SealedOperation } from '@ak-vault/protocol';
 import type { McpClaims } from '../auth/jwt-verify.js';
 import type { Env } from '../env.js';
 import { accountLogTag, clientLogTag, logMcpCall } from '../http/operational-logger.js';
@@ -36,6 +36,8 @@ const MESSAGES: Record<ToolErrorCode, string> = {
   conflict: 'The secret changed concurrently; the device kept both versions as a conflict.',
   unsupported: 'The online device does not offer this tool.',
   internal: 'Internal error.',
+  expired: 'The request expired.',
+  decrypt_failed: 'The device could not open the sealed value.',
   no_device_online: RELAY_HINT,
   device_timeout: 'The device did not answer in time; the outcome is unknown.',
   sealed_queue_full: 'The queue of writes waiting for a device is full. Start a device to drain it.',
@@ -91,7 +93,7 @@ export function guardResult(tool: RelayTool, result: unknown): JsonObject | null
   return clean(parsed, []) ? parsed : null;
 }
 
-function fromRelay(tool: RelayTool, outcome: RelayOutcome): Outcome {
+function fromRelay(tool: McpRelayTool, outcome: RelayOutcome): Outcome {
   switch (outcome.kind) {
     case 'result': {
       if (!outcome.ok) return fail(outcome.code);
@@ -154,7 +156,7 @@ async function sealWrite(env: Env, claims: McpClaims, vaultId: string, role: Rol
   return fail('no_device_online');
 }
 
-async function execute(env: Env, claims: McpClaims, tool: RelayTool, rawArgs: unknown): Promise<Outcome> {
+async function execute(env: Env, claims: McpClaims, tool: McpRelayTool, rawArgs: unknown): Promise<Outcome> {
   const relay = relayStub(env, claims.sub);
   const rate = await relay.takeRate(claims.client_id, tool);
   if (!rate.ok) return fail('rate_limited', { extra: { retry_after_s: rate.retryAfterS ?? 60 } });
@@ -192,7 +194,7 @@ async function execute(env: Env, claims: McpClaims, tool: RelayTool, rawArgs: un
  * Run one tool call for an authenticated token whose scopes cover `tool`. Never
  * throws: an unavailable relay or vault object is an `internal` tool error.
  */
-export async function callTool(env: Env, claims: McpClaims, tool: RelayTool, rawArgs: unknown): Promise<CallToolResult> {
+export async function callTool(env: Env, claims: McpClaims, tool: McpRelayTool, rawArgs: unknown): Promise<CallToolResult> {
   const started = Date.now();
   let outcome: Outcome;
   try {

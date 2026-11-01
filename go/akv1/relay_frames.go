@@ -29,6 +29,10 @@ const (
 	ToolRequest  = "request"
 	ToolRun      = "run"
 
+	// Device-sealed input tools (spec §3.11): a device lists both or neither.
+	ToolRequestInput = "request_input"
+	ToolInputDeliver = "input_deliver"
+
 	ScopeMCPRead  = "vault-mcp:read"
 	ScopeMCPWrite = "vault-mcp:write"
 	ScopeMCPUse   = "vault-mcp:use"
@@ -43,6 +47,8 @@ const (
 	RelayErrConflict        = "conflict"
 	RelayErrUnsupported     = "unsupported"
 	RelayErrInternal        = "internal"
+	RelayErrExpired         = "expired"
+	RelayErrDecryptFailed   = "decrypt_failed"
 )
 
 // Session kinds of a sync token's session_kind claim (spec §9 item 1).
@@ -59,11 +65,18 @@ const RelayFrameMaxBytes = 131072
 
 var (
 	relayFrameTypes = []string{RelayHello, RelayReady, RelayReauth, RelayCall, RelayResult}
-	RelayTools      = []string{ToolSearch, ToolList, ToolDescribe, ToolSet, ToolDelete, ToolRequest, ToolRun}
+	// MCPRelayTools are the relay tools the MCP endpoint exposes one-to-one (spec §9.8).
+	MCPRelayTools = []string{ToolSearch, ToolList, ToolDescribe, ToolSet, ToolDelete, ToolRequest, ToolRun}
+	// InputRelayTools are the device-sealed input tools (spec §3.11).
+	InputRelayTools = []string{ToolRequestInput, ToolInputDeliver}
+	RelayTools      = append(append([]string{}, MCPRelayTools...), InputRelayTools...)
 	mcpScopes       = []string{ScopeMCPRead, ScopeMCPWrite, ScopeMCPUse}
-	relayErrorCodes = []string{RelayErrDenied, RelayErrPendingApproval, RelayErrNotFound, RelayErrInvalidArgs, RelayErrConflict, RelayErrUnsupported, RelayErrInternal}
-	relayToolScopes = map[string]string{ToolSearch: ScopeMCPRead, ToolList: ScopeMCPRead, ToolDescribe: ScopeMCPRead, ToolSet: ScopeMCPWrite, ToolDelete: ScopeMCPWrite, ToolRequest: ScopeMCPUse, ToolRun: ScopeMCPUse}
-	maxRelayVaults  = 16
+	relayErrorCodes = []string{RelayErrDenied, RelayErrPendingApproval, RelayErrNotFound, RelayErrInvalidArgs, RelayErrConflict, RelayErrUnsupported, RelayErrInternal, RelayErrExpired, RelayErrDecryptFailed}
+	relayToolScopes = map[string]string{
+		ToolSearch: ScopeMCPRead, ToolList: ScopeMCPRead, ToolDescribe: ScopeMCPRead, ToolSet: ScopeMCPWrite, ToolDelete: ScopeMCPWrite,
+		ToolRequest: ScopeMCPUse, ToolRun: ScopeMCPUse, ToolRequestInput: ScopeMCPWrite, ToolInputDeliver: ScopeMCPWrite,
+	}
+	maxRelayVaults = 16
 )
 
 // ToolScope returns the MCP scope a relay tool needs ("" for an unknown tool).
@@ -238,6 +251,15 @@ func parseHello(obj map[string]any, f *RelayFrame) error {
 	}
 	if len(f.Tools) == 0 {
 		return badRequest("%s.tools must list at least one tool", what)
+	}
+	inputTools := 0
+	for _, tool := range f.Tools {
+		if contains(InputRelayTools, tool) {
+			inputTools++
+		}
+	}
+	if inputTools != 0 && inputTools != len(InputRelayTools) {
+		return badRequest("%s.tools must list both input tools or neither", what)
 	}
 	if f.TS, err = asUint(obj["ts"], what+".ts"); err != nil {
 		return err

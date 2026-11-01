@@ -379,7 +379,7 @@ export class AppController {
     await this.sync(null);
   }
 
-  private async sync(notice: Notice | null): Promise<void> {
+  private async sync(notice: Notice | null, again = false): Promise<void> {
     // Everything the pull needs is captured now: a lock or sign-out during an await drops the fields.
     const start = this.device;
     const client = this.client;
@@ -413,8 +413,14 @@ export class AppController {
       if (saved.outcome === 'stale') throw new AppError('signin_required');
       const position = saved.position ?? enrollment.witnessed;
       this.device = { ...latest, enrollment: { ...enrollment, witnessed: position } };
-      // Another tab is further along: keep the newer view already shown, if any.
-      if (!(saved.outcome === 'older' && this.snapshot)) this.snapshot = snapshot;
+      // Another tab stored a position this view is behind on some component: pull once more from that
+      // position rather than show it, so the kept head checks this server's history against the stored
+      // one. Only once: a position stored during that second pull is left to the next one.
+      if (!again && enrollment.witnessed && position && isWitnessedOlder(enrollment.witnessed, position)) {
+        await this.sync(notice, true);
+        return;
+      }
+      this.snapshot = snapshot;
       const link = this.writeLink;
       if (link) {
         this.writeLink = null;

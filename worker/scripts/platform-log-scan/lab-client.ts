@@ -70,6 +70,7 @@ export class LabIssuer {
       iat: now,
       nbf: now,
       exp: now + 300,
+      session_kind: 'email_otp', // mandatory claim (spec §9.1)
       ...opts.claims,
     };
     return this.sign({ alg: 'ES256', typ: 'at+jwt', kid: this.kid }, claims);

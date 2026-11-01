@@ -1,0 +1,880 @@
+{
+  "version": 1,
+  "description": "Input seals x25519-xc20p-input (spec §3.11, ADR 0004): a secret value typed into the /input form, sealed to the one-time input_pub that one online device issued for one input request. epk = X25519(ephemeral_secret, 9); shared = X25519(ephemeral_secret, input_pub) (all-zero: bad_request); key = HKDF-SHA256(ikm=shared, salt=epk || input_pub, info=utf8(\"akv1/input-seal\"), L=32); aad = cjson({\"ctx\":\"akv1/input-seal\",\"request_id\",\"vault_id\",\"account\",\"device_id\",\"name\",\"purpose\" (null when absent),\"operation\",\"expires_at\"}) from context; ct = XChaCha20-Poly1305(key, n, cjson(payload), aad); payload = {\"value\", \"sensitivity\"?}. cases: sealInput(input_pub, context, payload) with the given ephemeral_secret and nonce wire.n MUST reproduce wire byte for byte, and openInput(input_secret, wire, context) MUST yield payload. openInput order: parse (v or alg unknown: unsupported_version; exact keys, request_id ID, epk 32 B, n 24 B, ct 16..65552 B: bad_request); wire.request_id other than context.request_id (bad_request); all-zero shared secret (bad_request); AEAD failure (decrypt_failed); pt not canonical, no value, unknown keys, value not a string or over 65536 UTF-16 code units, unknown sensitivity (bad_request). invalid: openInput(input_secret, wire, context) MUST fail with expect_error; a case with ct_zero_bytes replaces wire.ct with that many zero bytes. seal_invalid: sealInput MUST refuse context and payload with expect_error; value_fill sets payload.value to value_fill repeated value_length times.",
+  "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+  "input_pub": "FrzVVXvqXWmnYUY7BqB_oCY_eSpepUXJMXHQ2V_hJG4",
+  "cases": [
+    {
+      "name": "create",
+      "ephemeral_secret": "IjTqqoPEjQZ2N5BJ3zE34XhPTh159Q0-6HtMm7I-xR4",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "payload": {
+        "value": "sk_test_synthetic_value_1",
+        "sensitivity": "high"
+      },
+      "plaintext": "{\"sensitivity\":\"high\",\"value\":\"sk_test_synthetic_value_1\"}",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      }
+    },
+    {
+      "name": "purpose_null",
+      "ephemeral_secret": "6HKAYZUuQTxw4UevDZ6ahprOOrBmHLMuWymeIjBVMB0",
+      "context": {
+        "request_id": "KfU8kNMaxDbtZukkS_By7w",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": null,
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "payload": {
+        "value": "Grüße synthetic"
+      },
+      "plaintext": "{\"value\":\"Grüße synthetic\"}",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "KfU8kNMaxDbtZukkS_By7w",
+        "epk": "N1D4xPjB4yLXGTsTLrvVIoDTRCVAhENPKlJO_PwvOjs",
+        "n": "t66FHBuSC6T6w5su8AMHwlwLr0fdwr_X",
+        "ct": "eDJafF-xbyU9xpg98_IB_Tk2U7LarFYql432NMbgZbx0EHvesEai-Al42w2P"
+      }
+    },
+    {
+      "name": "replace_empty_value",
+      "ephemeral_secret": "DPYpN9OP6q8WfYa5q5twTLgnNxt-uYl5fBHtc8PV55s",
+      "context": {
+        "request_id": "5_Dq4bvtVpqtWJkw-EhWzg",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "OLD_TOKEN",
+        "purpose": "Billing service",
+        "operation": "replace",
+        "expires_at": 1767229800000
+      },
+      "payload": {
+        "value": ""
+      },
+      "plaintext": "{\"value\":\"\"}",
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "5_Dq4bvtVpqtWJkw-EhWzg",
+        "epk": "n5yrAo6-lPUlSHz-pJUtEYLHXMS4aqrXZ4tJqoX_igs",
+        "n": "XIpoCw3Sz4I6RZvhkj4CHynkxulMw4qa",
+        "ct": "9WPMH6ZPWLtfF_W_H8oMZNirNMPt_ZUeUzm_8Q"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "wrong_input_key",
+      "input_secret": "wMCTPXsA5finj4tkFSHBuTsK1XI1H-7YFTuAFLqSy2E",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "moved_to_other_request",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "tcRs2zdqsfKQhSsoABMVnQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "tcRs2zdqsfKQhSsoABMVnQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "other_vault",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "ybMmbnfZYAMGGXcGAMZl7A",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "other_account",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_bob",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "other_device",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "v8UUmf0frkDcvG-vvOXAQg",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "other_name",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "OTHER_SECRET",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "other_purpose",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Something else",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "purpose_null_vs_set",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": null,
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "other_operation",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "replace",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "other_expires_at",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800001
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "tampered_ct",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GcWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "tampered_epk",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPvUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "write_intent_info",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "_5Kvn_tdvHAovs8yJg6dZkd89WD0psvArj41ASTFuEU",
+        "n": "YuKOzYLc8rKL5cdiZXn6oubiOoT9a27g",
+        "ct": "7rTC8Utvv0HS8Z98rlXFvwWKV8VoJYMBFnmtdmY"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "write_intent_ctx",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "NFMHrmZimk__iRyloceagXF-x86VHGnM6FBUQ6boGSE",
+        "n": "IXiLEAT_JtmweoClf2iiFY7bY3Tt2pfm",
+        "ct": "kUtURsren1SCnO3Xj_MO8NwCtvoNi0h8_3fTxew"
+      },
+      "expect_error": "decrypt_failed"
+    },
+    {
+      "name": "request_id_mismatch",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "tcRs2zdqsfKQhSsoABMVnQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "zero_epk",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "extra_wire_key",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q",
+        "note": "x"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "missing_wire_key",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "short_epk",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "short_nonce",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "short_ct",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "AAAAAAAAAAAAAAAAAAAA"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "long_ct",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "ct_zero_bytes": 65553,
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "unknown_alg",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-seal",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "unsupported_version"
+    },
+    {
+      "name": "version_2",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 2,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "PPrUCL9YPHwEd2i6cQeI1DcycHUO8gUVcLQLHHjmb0E",
+        "n": "WOHcrnOUis-mGFjLNb9ar6qN4c4Qise1",
+        "ct": "1Gd7GMWeLHLb4dEaD7wgq51X8ht_xEnee7HMBPnlMhdVWhGihKG1PW4c4o19KAnJC-xPqyjLRxk8dTbhhTrYgFm2fKLkHcGtP6Q"
+      },
+      "expect_error": "unsupported_version"
+    },
+    {
+      "name": "non_canonical_pt",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "GSjBrrKLxscd1lZ2q4y_VYgkNfDnQVtyTLQcx24aukA",
+        "n": "XcytpAWHpa0i8U_nePB2duhZpLxBfKJ9",
+        "ct": "M6N0AIaCm4DEmY8fRwNDFxqNTTMvQ43iPamWn3i7scW-p3OH1LgDfYTtYspIF9Uypi4"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "extra_pt_key",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "bV1LhtUYaaIVKzGNLt7XWvmE4T9opJVharAOzbm5nH0",
+        "n": "dFf4Xt4G5KJlSHy_h2GtlwN_JeEl7Lkt",
+        "ct": "Cgh34V3KRrFKA8CsRqkjiQ9sJW1NjB1ZOjYGi_-hn6SUe08v5YfTFw"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "missing_value",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "rxFyO5jwngjV7oLxrVY9iaxV7LibkpXIKJAROOaNQTo",
+        "n": "Gz3OgF608vG7pF55yOh7-ij0N4_Rt4b0",
+        "ct": "5ia4H4aN8UyM4oVvyvW8TrZLO19a4RjuTMhhMgQNTDrOY7vDREI"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "value_not_string",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "3X8VxZFTL_W3XdKfEe2p7EZ9GcghvNz3HyKUkZhyGzM",
+        "n": "G4rXpNILpSysy2yXqHgm739XiQenx_gh",
+        "ct": "jbwMtnzetXhWMgsYZLzr6eqqj7tUednn4qNn"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "unknown_sensitivity",
+      "input_secret": "p42D7s4VmhhL9uxkbd-PJCmFhILW3kDhALZWt3wfzDI",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "wire": {
+        "v": 1,
+        "alg": "x25519-xc20p-input",
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "epk": "sZwMQPhnpdhSI_Zj6H6WE9Jy_Lg-F45FdJ_4ZxjYPgc",
+        "n": "if-IXIPZZHasZSSzIcCU2GwKMc-q3VF7",
+        "ct": "LtESzbKQCxWB0jvlasMB5u9_DJaXWRVqwqVcIcqghOWqJQIic9mv3xLWR196UzY8BQ"
+      },
+      "expect_error": "bad_request"
+    }
+  ],
+  "seal_invalid": [
+    {
+      "name": "empty_name",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "payload": {
+        "value": "v"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "empty_purpose",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "payload": {
+        "value": "v"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "purpose_too_long",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "payload": {
+        "value": "v"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "unknown_operation",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "delete",
+        "expires_at": 1767229800000
+      },
+      "payload": {
+        "value": "v"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "context_extra_key",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000,
+        "ts": 1
+      },
+      "payload": {
+        "value": "v"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "payload_extra_key",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "payload": {
+        "value": "v",
+        "name": "A"
+      },
+      "expect_error": "bad_request"
+    },
+    {
+      "name": "plaintext_too_large",
+      "context": {
+        "request_id": "_ebhWtSuZpvl3weJc8xokQ",
+        "vault_id": "0iAObB5k16qc2AvUJ7MGPQ",
+        "account": "acct_alice",
+        "device_id": "HuCy7tB5ixWPisxMZQdTTA",
+        "name": "STRIPE_SECRET_KEY",
+        "purpose": "Billing service",
+        "operation": "create",
+        "expires_at": 1767229800000
+      },
+      "payload": {},
+      "value_fill": "v",
+      "value_length": 65536,
+      "expect_error": "bad_request"
+    }
+  ]
+}

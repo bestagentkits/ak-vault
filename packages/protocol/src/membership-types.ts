@@ -55,6 +55,30 @@ export interface DeviceRemoval {
   log_fence: number;
   /** Signed `log_head` of the removing event: the change-log head at `log_fence` (`""` at 0). */
   log_head: string;
+  /** Role of the device when it was removed. */
+  role: Role;
+  /** Kind of the removed device. */
+  kind: DeviceKind;
+}
+
+/**
+ * One `role_set` as it applied to one device: the account's role changed from
+ * `prev_role` to `role` at change-log position `log_fence`. Records at or below
+ * the fence were accepted under `prev_role`, records above it under `role`.
+ */
+export interface RoleChange {
+  device_id: string;
+  /** `seq` of the `role_set` event. */
+  changed_seq: number;
+  prev_role: Role;
+  role: Role;
+  /**
+   * Signed `log_fence` of the `role_set`: the change-log position its author
+   * verified. `null` for a legacy `role_set` signed without a fence (spec §5).
+   */
+  log_fence: number | null;
+  /** Signed `log_head` of the `role_set`: the change-log head at `log_fence` (`""` at 0); `null` when legacy. */
+  log_head: string | null;
 }
 
 /**
@@ -86,6 +110,8 @@ export interface MembershipState {
   removed_device_ids: string[];
   /** Every removal in chain order (sorted by `removed_seq`, then `device_id`); a re-added device keeps its rows. */
   removals: DeviceRemoval[];
+  /** Every `role_set`, one row per device of the account at that event, in chain order (by `changed_seq`, then `device_id`). */
+  role_changes: RoleChange[];
 }
 
 /** Options for {@link verifyMembershipChain}. */

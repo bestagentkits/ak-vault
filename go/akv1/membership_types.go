@@ -85,11 +85,40 @@ type DeviceRemoval struct {
 	KeyEpoch   int64  // key epoch current at removal (the newest key the device could hold)
 	LogFence   int64  // signed log_fence of the removing event
 	LogHead    string // signed log_head of the removing event: the change-log head at LogFence ("" at 0)
+	Role       string // role of the device when it was removed
+	Kind       string // kind of the removed device
 }
 
 // JSONValue returns the wire object.
 func (r DeviceRemoval) JSONValue() any {
-	return map[string]any{"device_id": r.DeviceID, "sign_pub": r.SignPub, "removed_seq": r.RemovedSeq, "key_epoch": r.KeyEpoch, "log_fence": r.LogFence, "log_head": r.LogHead}
+	return map[string]any{"device_id": r.DeviceID, "sign_pub": r.SignPub, "removed_seq": r.RemovedSeq, "key_epoch": r.KeyEpoch, "log_fence": r.LogFence, "log_head": r.LogHead, "role": r.Role, "kind": r.Kind}
+}
+
+// RoleChange is one role_set as it applied to one device: the account's role
+// changed from PrevRole to Role at change-log position LogFence. Records at or
+// below the fence were accepted under PrevRole, records above it under Role.
+type RoleChange struct {
+	DeviceID   string
+	ChangedSeq int64  // seq of the role_set event
+	PrevRole   string // role before the change
+	Role       string // role after the change
+	// LogFence and LogHead are the signed log_fence and log_head of the
+	// role_set: the change-log position its author verified and the head at it
+	// ("" at 0). Both are nil for a legacy role_set signed without a fence.
+	LogFence *int64
+	LogHead  *string
+}
+
+// Fenced reports whether the change carries a signed log fence.
+func (c RoleChange) Fenced() bool { return c.LogFence != nil && c.LogHead != nil }
+
+// JSONValue returns the wire object; a legacy change has null log_fence and log_head.
+func (c RoleChange) JSONValue() any {
+	var fence, head any
+	if c.Fenced() {
+		fence, head = *c.LogFence, *c.LogHead
+	}
+	return map[string]any{"device_id": c.DeviceID, "changed_seq": c.ChangedSeq, "prev_role": c.PrevRole, "role": c.Role, "log_fence": fence, "log_head": head}
 }
 
 // Member is an account and its role.
@@ -118,6 +147,7 @@ type MembershipState struct {
 	Devices          []DeviceRecord
 	RemovedDeviceIDs []string
 	Removals         []DeviceRemoval // every removal in chain order; a re-added device keeps its rows
+	RoleChanges      []RoleChange    // every role_set, one row per device of the account, in chain order
 }
 
 // JSONValue returns the state in the same JSON shape as the TypeScript reference.
@@ -134,6 +164,10 @@ func (s MembershipState) JSONValue() any {
 	for i, r := range s.Removals {
 		removals[i] = r.JSONValue()
 	}
+	roleChanges := make([]any, len(s.RoleChanges))
+	for i, c := range s.RoleChanges {
+		roleChanges[i] = c.JSONValue()
+	}
 	var wd any
 	if s.WrapsDigest != "" {
 		wd = s.WrapsDigest
@@ -144,7 +178,7 @@ func (s MembershipState) JSONValue() any {
 		"seq": s.Seq, "head": s.Head, "membership_epoch": s.MembershipEpoch, "key_epoch": s.KeyEpoch,
 		"rekey_required": s.RekeyRequired, "needs_rotate": stringsToAny(s.NeedsRotate), "wraps_digest": wd,
 		"members": members, "devices": devices, "removed_device_ids": stringsToAny(s.RemovedDeviceIDs),
-		"removals": removals,
+		"removals": removals, "role_changes": roleChanges,
 	}
 }
 

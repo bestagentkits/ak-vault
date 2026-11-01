@@ -187,6 +187,15 @@ the bundle ciphertext and attempt offline guessing, which the Argon2id parameter
 this path, but a thief who still holds a live owner-account session can mint a token
 for a new device ID and fetch the ciphertext; after a loss the owner MUST revoke their
 ak-web sessions, and the password or recovery key remains the barrier.
+Because the device ID on this path is the caller's choice, every request on it whose
+proof verifies also spends a per-account budget in the vault,
+`recovery_identity_requests_per_window` per `rate_window_seconds` (§10), on top of the
+per-device budgets; once it is spent the path answers `429 rate_limited` with
+`Retry-After`, before the key and proof checks, for every not-yet-enrolled device ID of
+the account until the window ends. A refused proof does not spend it, so a token without
+its key cannot exhaust it; current devices do not spend it. The budget slows repeated
+reads and membership scraping; it cannot stop a single fetch of the bundle, and requests
+whose proof fails still cost their verification work.
 
 SAS transcript = `cjson({"ctx":"akv1/sas","vault_id","initiator":device_id,"joiner":device,
 "nonce_i":b64 16B,"nonce_j":b64 16B})`; both devices display
@@ -655,7 +664,15 @@ It keeps the intent ciphertext and, in the clear, the requesting account, `clien
 | `conflict` | `revision_conflict` | that PUT lost compare-and-swap; its record is a preserved branch (§5) |
 | `cancelled` | `user_cancelled`, `grant_revoked` | the person cancelled, or the requesting grant was revoked |
 | `failed` | `already_exists`, `not_found`, `device_error` | the browser device could not complete it |
+| `failed` | `device_lost`, `decrypt_failed`, `bad_request`, `denied`, `internal`, `timeout` | input requests only (§3.11): the issuing device could not take the submitted value |
 | `expired` | — | `expires_at` passed while it was open |
+
+An input request (§3.11) also has the intermediate state `submitted`: its one sealed
+submission was accepted and is being relayed to the device. It leaves `submitted` for
+`completed` (the device's item PUT), a closed state above, or back to `pending_user`
+only when the device was offline or busy before anything was sent. Input-request rows
+hold no intent ciphertext; they add in the clear the flow (`dashboard` or `device`),
+the issuing `device_id` and the public `input_pub`.
 
 The reason set is closed and never carries text from the request. The states
 `processing` and `queued` are reserved and not emitted: completion is a single step.
@@ -700,6 +717,206 @@ an extra wire or plaintext key (a `value` included), a missing `name`, an empty
 `alg` and `v` 2 → `unsupported_version`; sealing refuses an empty name, a `value` key
 and an oversize `purpose`.
 
+### 3.11 Input seals (device-sealed input requests)
+
+An **input request** is the write request of §3.10 for an account with no enrolled
+browser device ([ADR 0004](../../adr/0004-device-sealed-input-requests.md)). The
+person types the value into the `/input` form, the page seals it to a one-time X25519
+**input key** that one online device of the requesting account generated for this
+request and holds in memory only, and that device writes a normal signed record. The
+Worker relays the ciphertext and never stores it; it never holds the input secret.
+
+**Input seal (wire).** Exactly these keys:
+
+```json
+{"v":1,"alg":"x25519-xc20p-input","request_id":"<b64 16B>",
+ "epk":"<b64 32B>","n":"<b64 24B>","ct":"<b64 ct||tag>"}
+```
+
+```
+esk, epk = fresh X25519 keypair
+shared   = X25519(esk, input_pub)                         ; reject all-zero output
+key      = HKDF(ikm=shared, salt=epk || input_pub, info=utf8("akv1/input-seal"), L=32)
+aad      = {"ctx":"akv1/input-seal","request_id","vault_id","account","device_id",
+            "name","purpose","operation","expires_at"}
+pt       = cjson({"value":…,"sensitivity"?:"normal"|"high"})
+ct       = XC20P(key, n, pt, aad)
+```
+
+- The **input-seal context** is the AAD without `ctx`: `request_id` and `vault_id`
+  (IDs), `account` (1–256 UTF-16 code units, the requesting account), `device_id` (the
+  device that issued `input_pub`), `name` (1–4096, §3.6), `purpose` (1–200, or `null`
+  when the request has none; the key is always present), `operation` ∈ {`create`,
+  `replace`} and `expires_at` (unix ms). The device builds it from what **it** recorded
+  when it issued the key, never from the delivered message, so a seal moved to another
+  request, vault, account, device, name, purpose, operation or expiry fails
+  `decrypt_failed`.
+- The `alg`, HKDF `info` and AAD `ctx` are distinct from every other seal, so an input
+  seal never opens as a write intent (§3.10) or sealed operation (§3.6), nor the
+  reverse. `input_pub` is a fresh X25519 key per request (`generateInputKeyPair`),
+  never a device's `kx_pub` or a seal key.
+- `pt` is canonical with exactly `value` (well-formed text of 0–65 536 UTF-16 code
+  units, §3.6; an empty value is valid) and optional `sensitivity` from the item set;
+  `pt` ≤ 65 536 bytes (§3.1), so `ct` is 16–65 552 bytes.
+- `openInput(input_sk, wire, context)`, in order: parse the wire (`v`/`alg` unknown →
+  `unsupported_version`; keys, `request_id`, `epk` 32 B, `n` 24 B, `ct` length →
+  `bad_request`); `request_id` ≠ the context's → `bad_request`; an all-zero shared
+  secret → `bad_request`; AEAD failure → `decrypt_failed`; `pt` not canonical, no
+  `value`, unknown keys, or a field outside its limits → `bad_request`. `sealInput`
+  applies the same context and payload checks before encrypting.
+
+**Flow.** The Worker asks the online device for a key with relay tool `request_input`,
+returns the form link whose fragment carries `request_id`, `vault_id`, `input_pub`,
+`name` and `purpose` for display, accepts one sealed submission from the requesting
+account's `input` session, and relays it to the same device with `input_deliver`.
+Lifetime, caps, states and receipts are those of §3.10; the Worker completes the request
+in the same transaction as the device's item PUT.
+
+#### Device contract (relay side)
+
+A device that implements this section lists **both** `request_input` and
+`input_deliver` in `hello.tools`; a `hello` listing one without the other is refused
+(`bad_request`, close 4400). A device that lists neither never receives these calls.
+Both tools need `vault-mcp:write` in `caller.scopes` (`denied` otherwise, §9.7). The
+ADR's device error names map onto the closed relay error set:
+
+| Device condition | `error.code` |
+|---|---|
+| `caller.scopes` lack `vault-mcp:write`, the device's own grants refuse, or the device already holds its cap of input keys (suggested 8) | `denied` |
+| `args` shape, an unknown seal `v`/`alg`, a `sealed.request_id` other than `args.request_id`, an all-zero shared secret, or a plaintext that is not canonical, has unknown keys or a value over the item limit | `invalid_args` |
+| no held key for `request_id` (restarted, completed, or never issued): *unknown request* | `not_found` |
+| its clock is at or past `expires_at` | `expired` |
+| AEAD failure under the rebuilt AAD | `decrypt_failed` |
+| `request_input`: `create` with a live item of that name, `replace` without exactly one; `input_deliver`: the item PUT lost compare-and-swap | `conflict` |
+
+**`request_input`.** `args` =
+`{"request_id","name","purpose"?,"operation","sensitivity"?,"expires_at"}` (§9.7). In
+order the device refuses: scopes (`denied`); `args` (`invalid_args`); a `request_id`
+it already holds (`invalid_args`); `expires_at` at or before its clock (`expired`); its
+own grants or key cap (`denied`); `operation` against its own decrypted live items,
+resolving `name` as §3.6 step 3 (`conflict`). Otherwise it generates a fresh input key
+pair, keeps in memory only `{request_id, vault_id = call.vault_id, account = its
+relay token's sub, device_id = itself, name, purpose (null when absent), operation,
+sensitivity, expires_at, input_sk}`, never persists or logs `input_sk`, and answers
+`result` = `{"request_id","input_pub":<b64 32 B>}`, signed as every relay result
+(`akv1/relay-result`). It drops the key at `expires_at`.
+
+**`input_deliver`.** `args` = `{"request_id","sealed":<input seal>}` with
+`sealed.request_id` = `args.request_id`. In order the device refuses: scopes
+(`denied`); `args`, including the seal's shape and version (`invalid_args`); no held
+key for `request_id` (`not_found`); its clock at or past `expires_at` (`expired`);
+then `openInput(input_sk, sealed, context)` with the context it recorded (all-zero
+shared secret and invalid plaintext `invalid_args`, AEAD failure `decrypt_failed`). An
+`input_deliver` that reaches a held key **drops that key** whatever the outcome, and on
+success drops it **before** writing: the key is single use on the device too. It then
+writes a normal signed record (§5) as §3.6 step 4 writes a sealed `set` (sensitivity
+the higher of the head's and the payload's `sensitivity`, else the request's), with
+`PUT …/items/{item_id}?input_request=<request_id>`, and answers
+`{"status":"stored","receipt":<the receipt that PUT returned, 1–128 printable ASCII>}`,
+or `conflict` when the PUT loses compare-and-swap (the record is a preserved branch,
+§5). The device never logs, returns, caches or audits the value, and keeps it in
+memory no longer than the write.
+
+Vectors (`input-seal.json`): seal round trips reproduced byte for byte from a fixed
+input secret, ephemeral secret and nonce (with `sensitivity`, with `purpose` `null`,
+and an empty `replace` value); a wrong input key, a seal moved with its `request_id`
+to another request, another `vault_id`, `account`, `device_id`, `name`, `purpose`,
+`purpose` `null` instead of set, `operation` or `expires_at` in the context, a tampered
+`ct` or `epk`, and a key derived with the write-intent `info` or sealed under the
+write-intent `ctx` → `decrypt_failed`; a `request_id` other than the context's, an
+all-zero `epk`, an extra or missing wire key, short `epk`, `n` or `ct`, an oversize
+`ct`, a non-canonical `pt`, an extra `pt` key, no `value`, a non-string `value` and an
+unknown `sensitivity` → `bad_request`; unknown `alg` and `v` 2 →
+`unsupported_version`; sealing refuses an empty name or `purpose`, an oversize
+`purpose`, an unknown `operation`, an extra context or payload key and a plaintext
+over 65 536 bytes. `relay-frames.json` carries the two tools' `args` and `result`
+cases and the both-or-neither `hello` rule.
+
+#### Input sessions and routes (Worker)
+
+Everything in this subsection answers `404 not_found` unless remote access and
+`VAULT_INPUT_REQUESTS_ENABLED` = `true` are both set; while it is off,
+`secrets_request_input` (§9.8) uses only the §3.10 dashboard flow.
+
+**`input` session token.** ak-web mints it for the signed-in requesting account; it
+carries no device key and needs no proof. `Authorization: Bearer <ES256 JWT>` from the
+configured issuer and JWKS (§9 item 1 rules for `alg`, `kid`, skew and JWKS loading),
+header `typ` `JWT` or `at+jwt`, and **exactly** the claims `iss` (exact), `aud` =
+`<origin>/input` (exact), `sub` (the account), `sid` (the ak-web sign-in grant it was
+minted from), `session_kind` = `"input"`, `jti`, `iat`, `nbf`, `exp`, with
+`0 < exp − iat ≤ 600`. Any other or missing claim (`did`, `scope`, …) is
+`401 unauthorized`. After verification the Worker checks live revocation by `sid`
+(a lookup failure is `503`, fail closed). The request must be a device-flow request
+whose `account` equals `sub`; any other request ID is `404 not_found`, so the ID alone
+reveals and authorizes nothing. No other route accepts this token (its audience is
+refused there), and these two routes accept no other token.
+
+**`GET /v1/vaults/{vid}/input-requests/{rid}`** → `200`
+`{"request_id","state","operation","client_id","device_id","expires_at"}`; never the
+name, purpose, value or ciphertext.
+
+**`POST /v1/vaults/{vid}/input-requests/{rid}`**, body exactly `{"sealed":<input
+seal>}` with `sealed.request_id` = `rid` (`400 bad_request`; unknown `v`/`alg`
+`400 unsupported_version`). In one vault-object transaction the Worker claims the
+request: `pending_user` and not expired → `submitted` (expired → state `expired`,
+`410 expired`; any other state → `409 conflict`, so a second submission is refused).
+It then relays `input_deliver` to the recorded `device_id` only and never stores,
+logs or echoes the seal. Outcomes (each error carries `error.state`):
+
+| Outcome | HTTP | State after |
+|---|---|---|
+| device answered `stored` and its `?input_request` PUT completed the request | `200 {"status":"stored","receipt"}` | `completed` |
+| recorded device not online | `503 device_offline`, `Retry-After: 5` | `pending_user` (released) |
+| device busy | `429 rate_limited` | `pending_user` (released) |
+| the relay refused the call before sending it (oversize frame, caller) | `400 bad_request` | `pending_user` (released) |
+| device timeout | `504 device_timeout` | `failed` |
+| a revocation or membership lookup failed during the relay | `503` | `failed` (`internal`), since the frame may have been sent |
+| `decrypt_failed` / `invalid_args` | `400 bad_request` | `failed` |
+| `conflict` | `409 conflict` | `conflict` |
+| `denied` | `403 forbidden` | `failed` |
+| `not_found` / `expired` | `410 expired` | `failed` / `expired` |
+| anything else, or `stored` without a completed PUT | `500 internal` | `failed` |
+
+**Item PUT `?input_request=<rid>`** (only on `PUT …/items/{id}`, at most once, never
+with `?write_request`; `400 bad_request` otherwise) runs the full §9 pipeline and, in
+the same transaction as the write, requires a device-flow request in state
+`submitted`, not expired, whose `account` is the token's `sub` and `device_id` its
+`did`, from a session kind other than `browser` and `machine`, and the operation
+against the live item as §3.10; it then marks the request `completed` with a receipt
+and answers it as `input_request: {"state":"completed","receipt"}`. Any mismatch
+refuses the PUT and writes nothing. Expiry also moves `pending_user` and `submitted`
+requests to `expired`; revoking the requesting MCP grant cancels them as §3.10.
+
+#### Input form (browser)
+
+`GET`/`HEAD /input` answers `302` with `Location: /app/` and `Cache-Control: no-store`
+(`404 not_found` under the same flags as the routes above, and for any other method).
+The browser keeps the link's fragment across the redirect, so the dashboard bundle at
+`/app/` reads `#r=<request_id>&v=<vault_id>&k=<input_pub>&n=<name>[&p=<purpose>]`: IDs
+and `input_pub` (32 B) base64url, `name` and `purpose` percent-encoded, exactly these
+keys, each at most once. Any other fragment that carries one of these keys is an
+invalid link and is refused, never shown as the dashboard. The page drops the fragment
+from the address bar once read and never sends it to a server.
+
+The person signs in with the dashboard's OAuth client unchanged (`<origin>/app/client.json`,
+redirect `<origin>/app/`, resource `<origin>/app`, scope `vault-app:session`); the
+link waits in `sessionStorage` under its own key across the redirect; it is deleted when
+the callback, a new input link or a dashboard load reads it (or when the tab closes),
+and a callback more than 10 minutes after the sign-in started is refused. The page then trades the app access token for an `input`
+token at ak-web `POST <issuer>/api/agentkit/vault/input-token` (bearer app token, no
+body) and refuses it unless `aud` = `<origin>/input`, `session_kind` = `input`, `sub`
+is the signed-in account and there is no `did`. It fetches the request, shows the form
+only for `pending_user` before `expires_at`, and seals the value with the
+input-seal context built from: `request_id`, `vault_id`, `name` and `purpose` (`null`
+when absent) from the fragment; `device_id`, `operation` and `expires_at` from the
+`GET`; `account` = the app token's `sub`. The value is cleared from the field before
+sealing, never stored, logged or rendered, and posted as `{"sealed": …}`; the Worker's
+claim is what makes the request single use (a renewed token may repost the same seal,
+and an outcome that releases the request lets the person submit again). After a
+terminal outcome, and when the page is left, the page revokes the sign-in grant, which
+also ends the `input` token. A fragment edited to show another name or purpose seals
+under an AAD the device does not hold and fails `decrypt_failed`.
+
 ## 4. Membership log (owner-signed, hash-chained)
 
 ```json
@@ -718,7 +935,7 @@ Signing context `akv1/membership`. `seq` starts at 0 (genesis) and increments by
 | `device_remove` | `{"device_id","reason":"lost"|"stolen"|"retired"|"compromised","log_fence":n,"log_head":b64|""}` | closed reason set; `log_fence` and `log_head` are the removal fence (§5); sets `rekey_required`. |
 | `member_add` | `{"account","role","devices":[device],"wraps_digest":b64}` | shared vaults only; `wraps_digest` commits to the new devices' wrap set. |
 | `member_remove` | `{"account","log_fence":n,"log_head":b64|""}` | removes all its devices, each fenced at `log_fence` and `log_head` (§5); sets `rekey_required`. |
-| `role_set` | `{"account","role"}` | cannot demote the last owner. |
+| `role_set` | `{"account","role","log_fence":n,"log_head":b64|""}` | cannot demote the last owner; `log_fence` and `log_head` are the role fence (§5). A legacy `{"account","role"}` body still verifies before the chain's first fenced one; whether the Worker accepts a new one is a transition setting (§5). |
 | `rekey` | `{"new_key_epoch":e+1,"wraps_digest":b64,"needs_rotate":[item_id…]}` | clears `rekey_required`; `wraps_digest` (§11) commits to the wrap list for the new epoch. |
 | `recovery_rotate` | `{"recovery_sign_pub":b64}` | owner device only; replaces the recovery signing key (§3.5). The new key was never a recovery key of this chain and is not the key of a current or removed device (`bad_request`). |
 
@@ -802,6 +1019,37 @@ A device that is still live can write between the remover's pull and its removal
 so keep the fence stale. The device MUST therefore be revoked first (§9, live
 revocation stops its requests); the remover then retries a `409` fence with backoff.
 
+**Role fence.** A demoted editor stays a reader: it keeps its signing key and the vault
+keys, so with a colluding server it could keep appending validly signed records. A
+`reader` account or a `machine` device could do the same at any time. Every `role_set`
+therefore signs `log_fence` and `log_head` exactly like a removal, with the same server
+rules (`409 conflict` when behind the current head, `bad_request` when ahead or when
+`log_head` is not the stored head at the fence) and the same scope: records at or
+below the fence were accepted under the account's previous role, records above it
+under the new one. A writing editor can keep the fence of its own demotion stale like
+a removal's; revoke it first. The membership state lists each role change per device
+of the account at that event (`role_changes`: `device_id`, `changed_seq`, `prev_role`,
+`role`, `log_fence`, `log_head`, in chain order, then by `device_id`), and each removal
+also records the removed device's `role` and `kind`. A client checks a role fence's
+head and keeps the head at it exactly as for a removal fence; one that learns of a
+role change after its cursor passed the fence re-checks the records above it (replay
+again, or compare kept heads and re-verify those records).
+
+A **legacy** `role_set`, signed by a client of an earlier revision with the body
+`{"account","role"}` and no fence, still verifies, so a stored chain that holds one
+keeps working; a body with only one of `log_fence` and `log_head` is `bad_request`.
+Its `role_changes` rows have `log_fence` and `log_head` `null`; such a row binds no
+log position or head and is skipped wherever fences are checked. A legacy `role_set`
+after a fenced `role_set` in the same chain is `bad_request` (no Worker ever accepted
+that order), so once a vault holds a fenced `role_set` no legacy span can open. While
+clients of earlier revisions are still in use, the Worker accepts a new `role_set`
+without a fence; an operator setting later makes it refuse one (`bad_request`), and
+stored legacy events keep verifying either way. An owner bounds a legacy change by
+appending a fenced `role_set` for that account, which may keep the role unchanged (a
+re-affirm). A client of an earlier revision parses only the legacy body, so it
+refuses (`bad_request`) any chain that holds a fenced `role_set`, and treats that as
+a membership integrity failure.
+
 **Scope of the fence.** `log_fence` guarantees that no record by a removed author is
 accepted above the fence; `log_head` binds the contents of every position at or below
 it. A device that first reads the log after the removal (newly enrolled, recovered,
@@ -820,20 +1068,42 @@ replays the log again from position 1; it MUST NOT take the head from the server
 read the whole log, a fence beyond the last position means the log is behind a signed
 removal (`rollback`).
 
-`verifyLoggedRecord(record, state, log_seq)` (vectors: `removal-fence.json`) checks a
-record read from the change log against the verified membership state, in order:
-the record parses; same vault; `log_seq ≥ 1` (`bad_request`); the author is a current
-device, or a removed device whose record `key_epoch` is not newer than the key epoch
-current at its last removal (`forbidden`); the signature verifies under that device's
-key (`invalid_signature`); and for every removal of the author whose key epoch is ≥
-the record's `key_epoch`, a `log_seq` above that removal's `log_fence` is
-`forbidden`. Because writes are refused between a removal and the next rekey, every
-legitimate later write, including one by a re-added device ID, uses a newer key epoch
-and is unaffected. The membership state lists each removal (`removals`: `device_id`,
-`sign_pub`, `removed_seq`, `key_epoch`, `log_fence`, `log_head`).
+`verifyLoggedRecord(record, state, log_seq)` (vectors: `removal-fence.json`,
+`role-history.json`) checks a record read from the change log against the verified
+membership state, in order: the record parses; same vault; `log_seq ≥ 1`
+(`bad_request`); the record `key_epoch` is not above the state's `key_epoch`
+(`forbidden`); the author is a current device, or a removed device whose record
+`key_epoch` is not newer than the key epoch current at its last removal (`forbidden`);
+the signature verifies under that device's key (`invalid_signature`); for every
+removal of the author whose key epoch is ≥ the record's `key_epoch`, a `log_seq` above
+that removal's `log_fence` is `forbidden`; and the author was a writer at `log_seq`
+(`forbidden`): its kind is `human` and its role there is `owner` or `editor`, an
+allowlist, so any other role or kind is refused. Because writes are refused between a
+removal and the next rekey, every legitimate later write, including one by a re-added
+device ID, uses a newer key epoch and is unaffected. The same rule picks the author's
+**term**, the device as it was when it wrote the record: the first removal of the
+author (chain order) whose key epoch is ≥ the record's `key_epoch` ends it (kind and
+role from that removal), else the current device does. The term's role changes are
+those of the device after its previous removal (if any) and before the removal that
+ends the term (if any). Let *i* be the first fenced term change (chain order) whose
+`log_fence` is ≥ `log_seq`, and *j* the last fenced term change before *i*. The
+candidate roles at `log_seq` are the `prev_role` of every term change after *j* up to
+and including *i*, plus the role at the term's end when there is no *i*. Every
+candidate MUST be in the closed role set, and the author was a writer if at least one
+candidate is `owner` or `editor`. Without legacy changes there is exactly one
+candidate: the `prev_role` of the first change whose `log_fence` is ≥ `log_seq`, or
+the role at the term's end. A legacy change has no position, so around one any role
+the author held between the neighbouring fenced changes counts: for that span the
+Worker's check at write time is the only evidence (refusing instead would make every
+full replay of such a vault fail, with no way to repair the log). The membership state lists each removal (`removals`: `device_id`, `sign_pub`,
+`removed_seq`, `key_epoch`, `log_fence`, `log_head`, `role`, `kind`). A client that
+reads membership before the change log can see a legitimate record accepted after
+its membership read (a rekey, enrollment or promotion in between); on a refusal it
+reads membership again and replays once more before treating the refusal as final.
 
-`verifyChangeLog(entries, state, {from?, complete?, keptHeads?})` (vectors: `removal-fence.json`)
-replays change-log entries `{"log_seq","conflict_id","record"}` that continue from
+`verifyChangeLog(entries, state, {from?, complete?, keptHeads?})` (vectors: `removal-fence.json`,
+`role-history.json`) treats every fenced role change exactly like a removal fence
+(below, "removal" means either; a legacy role change binds nothing) and replays change-log entries `{"log_seq","conflict_id","record"}` that continue from
 `from` (a cursor `{log_seq, log_head}` the client computed itself; default position 0,
 head `""`). `keptHeads` are heads the client computed earlier, by position. In order:
 `from` is a valid position (`bad_request`); every removal whose `log_fence` is the
@@ -1174,15 +1444,16 @@ devices that honor it, not what a vault member can decrypt (§3).
 1. `Authorization: Bearer <ES256 JWT>` from the configured issuer. Required claims:
    `iss` (exact), `aud` = the deployment's own origin (exact; production
    `https://vault.agentkit.best`, staging `https://vault-staging.agentkit.best`), `sub`, `exp`, `nbf`,
-   `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`. Optional
-   `session_kind` ∈ {`email_otp`, `api_key_device`, `machine`, `browser`}: how the session behind the
-   token signed in. An absent claim means `email_otp` (the only kind issued before the claim
-   existed); any other value, or a non-string, is `401 unauthorized`. ak-web MUST set it for
-   every session that is not a human email-OTP sign-in; the Worker never infers it, so a
-   non-human session minted without it is read as `email_otp` (see the threat model's
-   recovery bundle limitation). The audiences `<origin>/mcp` and `<origin>/app` name
-   other resources (the remote MCP endpoint and the dashboard sign-in) and are refused
-   on every route of this section like any other wrong `aud`.
+   `iat`, `jti`, `scope` ⊆ {`vault:read`,`vault:write`}, `sid`, `did`, and
+   `session_kind` ∈ {`email_otp`, `api_key_device`, `machine`, `browser`}: how the
+   session behind the token signed in. ak-web MUST set it on every vault token. An
+   absent claim, any other value, or a non-string is `401 unauthorized`; the Worker
+   never infers a kind, so a token minted without the claim is refused rather than
+   read as a human session. The audiences `<origin>/mcp`, `<origin>/app` and
+   `<origin>/input` name other resources (the remote MCP endpoint, the dashboard
+   sign-in and the input form, §3.11) and are refused on every route of this section
+   like any other wrong `aud`; an `input` session token is accepted only on the two
+   input-request routes of §3.11.
 
    **Browser sessions.** `browser` marks a token ak-web minted for the vault dashboard
    in exchange for a dashboard sign-in grant; its `sid` is that grant's ID. The device
@@ -1197,7 +1468,9 @@ devices that honor it, not what a vault member can decrypt (§3).
    `browser` session may read or close a write request or complete one with an item
    PUT (§3.10, §9.6); every other kind is `403 forbidden` there. Every other route
    treats it as the member device it is. Header `alg`
-   MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. If the JWKS
+   MUST be `ES256` and `kid` MUST match a JWKS key; skew tolerance 60 s. The JWKS is
+   fetched only from the configured `https://` URL and a redirect is never followed:
+   any `3xx` answer is a load failure, whatever its target. If the JWKS
    cannot be loaded the server fails closed (`503`) and backs off for 30 s before
    fetching again; it never serves expired keys.
 2. `AKV-Proof: <b64(cjson(proof))>.<b64(sig)>`, proof =
@@ -1237,8 +1510,7 @@ devices that honor it, not what a vault member can decrypt (§3).
    transaction that stores it. Such a device keeps every other right of its role,
    removal and rekey included, but cannot reseal: after a rekey it makes, the stored
    bundle cannot enroll a device (§3.5) until an owner device in an `email_otp`
-   session reseals it. A token without `session_kind` is read as `email_otp`
-   (item 1).
+   session reseals it. A token without `session_kind` is refused (item 1).
 5. Wrap routes. Wraps are uploaded only inside `PUT /v1/vaults/{vid}` (genesis) and
    `POST /v1/vaults/{vid}/membership` (`{"event","wraps"?,"bundle"?}`); there is no
    separate wrap upload. `GET /v1/vaults/{vid}/wraps?membership_seq=n` returns the
@@ -1338,7 +1610,8 @@ closed. Any other frame closes the connection with 4400.
 - `hello` is the first device frame, within `relay_hello_timeout_ms` of the upgrade,
   and is sent once. Signing context `akv1/relay` over the frame without `sig`, by the
   `did` key. `device_id` = token `did`; `ts` (unix ms) within ±60 s; `vaults` 1–16 unique IDs;
-  `tools` 1–7 unique names from the tool set. For every listed vault, `did` MUST be a
+  `tools` 1–9 unique names from the tool set, listing `request_input` and
+  `input_deliver` both or neither (§3.11). For every listed vault, `did` MUST be a
   current `human` device of the token `sub` whose `sign_pub` is the upgrade key, else
   close 4403. The server answers `ready`.
 - `reauth` carries a fresh sync token for the same `sub` and `did` and its proof (the
@@ -1357,15 +1630,17 @@ closed. Any other frame closes the connection with 4400.
   device has from receipt, at most `relay_call_deadline_ms` (`run`:
   `relay_run_deadline_ms`). `caller.scopes` are the MCP token's scopes; a device MUST
   refuse a tool the scopes do not cover (`denied`): `search`, `list`, `describe` need
-  `vault-mcp:read`; `set`, `delete` need `vault-mcp:write`; `request`, `run` need
-  `vault-mcp:use`.
+  `vault-mcp:read`; `set`, `delete`, `request_input`, `input_deliver` need
+  `vault-mcp:write`; `request`, `run` need `vault-mcp:use`.
 - `result` answers one `call` once. Signing context `akv1/relay-result` over the frame
   without `sig`, by the `did` key; the server verifies it and drops a result that does
   not verify, arrives after the deadline, or names an unknown `call_id`. `ok:true`
   carries `result` and no `error`; `ok:false` carries `error` (exactly `code`) and no
   `result`. `error.code` is the closed set {`denied`, `pending_approval`, `not_found`,
-  `invalid_args`, `conflict`, `unsupported`, `internal`}; a tool the device did not
-  list in `hello` is `unsupported`.
+  `invalid_args`, `conflict`, `unsupported`, `internal`, `expired`, `decrypt_failed`};
+  a tool the device did not list in `hello` is `unsupported`. `expired` and
+  `decrypt_failed` are answered only by the input tools, as the
+  [device contract](#device-contract-relay-side) maps them.
 - Close codes: 4400 bad frame, 4401 token expired or revoked, 4403 not a member or
   wrong device kind, 4409 replaced by a newer connection of the same device, 4429 the
   device sent frames faster than the server accepts them (more than
@@ -1373,7 +1648,9 @@ closed. Any other frame closes the connection with 4400.
   `relay_reauth_per_token_lifetime` `reauth` frames within one token lifetime).
 
 **Tools.** `tool` is the closed set {`search`, `list`, `describe`, `set`, `delete`,
-`request`, `run`}. Arguments and results are `cjson`, so object keys are
+`request`, `run`, `request_input`, `input_deliver`}. The first seven are the MCP relay
+tools (§9.8); `request_input` and `input_deliver` serve only the Worker's input
+requests (§3.11) and are never MCP tools. Arguments and results are `cjson`, so object keys are
 `[a-z0-9_]+`. Names and values follow the item payload limits (§3.6); a `set` whose
 `{"op":"set","name","value","sensitivity"?}` object would exceed 65 536 bytes in
 `cjson` is `invalid_args` before it is relayed or sealed, so a `call` always fits
@@ -1388,6 +1665,8 @@ closed. Any other frame closes the connection with 4400.
 | `delete` | `{"name"}` | `{"status":"deleted"}`, `{"status":"conflict"}` or `{"status":"not_found"}` |
 | `request` | `{"name","purpose":1–200 code points,"project"?:≤128,"ttl_s"?:1–86400}` | `{"status":"pending"|"granted"|"denied","request_id":≤64 bytes}` |
 | `run` | `{"argv":[1–64 strings],"env":[{"var","name"}…1–16],"cwd_project"?:≤128,"timeout_s"?:1–110}` | `{"exit_code","stdout","stderr","truncated"}` |
+| `request_input` | `{"request_id":<b64 16 B>,"name","purpose"?:1–200 UTF-16 code units,"operation":"create"\|"replace","sensitivity"?,"expires_at":unix_ms}` | `{"request_id","input_pub":<b64 32 B>}` |
+| `input_deliver` | `{"request_id","sealed":<input seal, §3.11>}`; `sealed.request_id` = `request_id`, an unknown seal `v`/`alg` is `invalid_args` | `{"status":"stored","receipt":1–128 printable ASCII}` |
 
 - `entry` = `{"name","profile","updated_at"}`; `profile` maps each present profile
   key (§5.1) to `{"value","origin"}`, `origin` ∈ {`local`, `import`, `sync`} as this
@@ -1402,15 +1681,20 @@ closed. Any other frame closes the connection with 4400.
   arrive. The device decodes output as UTF-8, replacing invalid sequences with U+FFFD,
   truncates `stdout` and `stderr` so the whole frame fits `relay_frame_max_bytes`, and
   sets `truncated` when it cut anything.
+- `request_input` and `input_deliver` follow the
+  [device contract](#device-contract-relay-side) of §3.11: order of checks, error
+  codes, the held key and the item PUT with `?input_request=`.
 - A `result` MUST NOT contain an item value, except `run` output after the device
   redacted every value it released to the child. Redaction removes exact values only;
   output a command transformed (encoded, split, partial) is not caught. A `set` call carries the value from
-  the server to the device; nothing carries one back.
+  the server to the device, and an `input_deliver` call carries one sealed to the
+  device's input key; nothing carries one back.
 
 Vectors (`relay-frames.json`): each frame type valid; an unknown `type`, an extra or
 missing key, a binary-only or oversize frame, a bad `hello` or `result` signature, a
-`result` signed by another device, `ok:true` with `error`, and an unknown error code
-are refused.
+`result` signed by another device, `ok:true` with `error`, an unknown error code, and a
+`hello` listing only one input tool are refused; each tool's `args` and `result` are
+checked against the table, valid and invalid.
 
 ### 9.8 MCP endpoint
 
@@ -1477,10 +1761,23 @@ answers `503 sync_disabled` (§10 error body) before any token check.
     `{"state","reason"?,"receipt"?,"expires_at"}` (§3.10 states), only to the account,
     `client_id` and `grant_id` that asked; any other caller gets `not_found`, as for
     an unknown ID.
+  - `secrets_request_input` takes exactly the `secrets_prepare_write` arguments and
+    never a value. While input requests are off (§3.11) it is `secrets_prepare_write`
+    and adds `"flow":"dashboard"`. While they are on, for an `owner` or `editor`
+    account with room under the write-request caps, it asks one online device of
+    `sub` that lists the input tools for an input key (relay `request_input`) and
+    answers `{"status":"pending_user","request_id","vault_id","flow":"device","form_url","expires_at","next"}`,
+    `form_url` = `<origin>/input#r=<request_id>&v=<vault_id>&k=<input_pub>&n=<name>[&p=<purpose>]`
+    (IDs and key b64url, name and purpose percent-encoded). With no such device online
+    it falls back to the dashboard flow for an `owner` (`"flow":"dashboard"`) and
+    otherwise, or with no seal-key document, answers `device_offline`; it never asks
+    for the value. A device refusal answers its `error.code`. It spends the same rate
+    budget as `secrets_prepare_write`. The relay tools `request_input` and
+    `input_deliver` are never MCP tools.
   - Vault selection follows the relay tools: without `vault_id` the Worker uses the
     one vault the account's online devices list, else `invalid_args`. A vault the
     account cannot write is `invalid_args`.
-- **Errors.** A device `error.code`, `no_device_online`, `device_timeout`,
+- **Errors.** A device `error.code`, `no_device_online`, `device_offline`, `device_timeout`,
   `sealed_queue_full`, `no_seal_key`, `too_many_requests` and `rate_limited` are MCP tool errors (`isError` true) carrying
   `{"code"}`; a token or scope failure is an HTTP `401` or `403`, a rate-limited
   request that is not such a tool call (see rate limits) an HTTP `429 rate_limited`, and the
@@ -1496,6 +1793,12 @@ Errors are `{"error":{"code","message"}}` with stable codes: `unauthorized`,
 server-only `internal` (HTTP 500, fail closed, generic message; a retry may succeed).
 Messages never echo request bodies, item IDs beyond the path, tokens or names.
 Limits are published by `GET /v1/meta` and owned by `worker/src/limits.ts`.
+Request budgets are fixed windows of `rate_window_seconds`: per device, per vault,
+`rate_requests_per_window` for requests that pass authorization and as many again for
+requests the vault refuses at authorization; and per account, per vault,
+`recovery_identity_requests_per_window` for the recovery identity (§3.5). A spent budget
+answers `429 rate_limited` with `Retry-After`; a failure to read or update a budget is
+`internal` and serves nothing.
 They include per-vault totals for stored records (`records_per_vault`) and record
 bytes (`record_bytes_per_vault`), conflict branches included; exceeding either
 returns `quota_exceeded`. A request for a vault that has no genesis returns
@@ -1511,8 +1814,9 @@ are exempt (still bounded by `membership_events_per_vault` x `wraps_per_request`
 The last `membership_events_per_vault` slot is kept for a `rekey` that clears
 `rekey_required`.
 
-Remote access adds three codes, all returned only by the MCP endpoint as tool errors
-(§9.8) and never as the HTTP status of a `/v1` route: `no_device_online` (no opted-in
+Remote access adds three codes, returned by the MCP endpoint as tool errors (§9.8)
+and, except `device_timeout` on the input-request `POST`, never as the HTTP status of
+a `/v1` route: `no_device_online` (no opted-in
 device of the account holds the vault, or none is online for a read or `use` call
 without `vault_id`, and the call cannot be sealed),
 `device_timeout` (the device missed `deadline_ms`) and `sealed_queue_full` (the vault
@@ -1522,7 +1826,11 @@ has no seal-key document for its current epoch) and `too_many_requests` (the acc
 already has `write_requests_pending_per_account` open requests in the vault, the requesting
 client already has `write_requests_pending_per_client` of them, or the account
 holds `write_requests_retained_per_account` rows in the vault, closed ones kept until their retention
-ends included). `worker/src/limits.ts` owns the relay and MCP limits and `GET /v1/meta`
+ends included). Input requests (§3.11) add `device_offline` (an MCP tool error, and
+`503` with `Retry-After` on the input-request `POST`: the issuing device is not
+online), `410 expired` (the input request or its device key expired) and
+`504 device_timeout` on that `POST`; the full outcome table is in §3.11.
+`worker/src/limits.ts` owns the relay and MCP limits and `GET /v1/meta`
 publishes them where remote access is enabled; the table lists them for orientation,
 and `limits.ts` wins on any difference:
 
@@ -1698,6 +2006,19 @@ under an earlier revision does not verify and is reset rather than migrated.
   `log_fence`, and clients replay the head chain against it (`verifyChangeLog`); the
   change feed publishes per-entry and current heads; a recovery-authored `device_add`
   MUST deliver the current key epoch like every other device-adding event.
+- **2026-10 (issue #22):** `role_set` signs `log_fence` and `log_head` like a removal,
+  and the Worker enforces them the same way; the membership state lists
+  `role_changes` and each removal's `role` and `kind`; `verifyLoggedRecord` refuses a
+  record whose author was not a writer at its log position (a `reader`, a `machine`
+  device, or an editor demoted at or below it) or whose `key_epoch` is above the
+  state's, and `verifyChangeLog` checks role fences like removal fences. A legacy
+  `role_set` without a fence, written under an earlier revision, still verifies and is
+  listed with `null` fences; around one a record is accepted if the author was a writer
+  under any role it held between the neighbouring fenced changes, and a legacy
+  `role_set` after a fenced one is `bad_request`. During a transition the Worker still
+  accepts a new `role_set` without a fence, so clients of an earlier revision keep
+  working until an operator setting turns that off. A client of an earlier revision
+  refuses any chain that holds a fenced `role_set`.
 - **2026-10 (issue #7):** policy binding (§8.1): a policy item's payload layout,
   `meta.item_ids` naming the governed items, the payload `sensitivity` as a minimum,
   and `resolveItemPolicy`. Earlier revisions defined no policy-item layout and no
@@ -1715,3 +2036,13 @@ under an earlier revision does not verify and is reset rather than migrated.
   the write-request routes and the `write_request` item-PUT query (§9.6), the
   `secrets_prepare_write` and `secrets_write_status` MCP tools (§9.8) and their errors
   and limits (§10). Nothing existing changes meaning.
+- **2026-10 (issue #203, ADR 0004):** device-sealed input requests, additive and off
+  unless `VAULT_INPUT_REQUESTS_ENABLED` is set: the input seal and device contract
+  (§3.11), the relay tools `request_input` and `input_deliver` and the error codes
+  `expired` and `decrypt_failed` (§9.7), the `input` session token, the input-request
+  routes and the `input_request` item-PUT query (§3.11), the write-request state
+  `submitted` and device-flow reasons (§3.10), the `secrets_request_input` MCP tool
+  (§9.8) and its errors (§10). A device that lists neither input tool is unaffected;
+  every existing route, frame and body keeps its meaning. The input form (§3.11):
+  `GET /input` redirects to the dashboard bundle, which signs in with the dashboard
+  client, takes an `input` token from ak-web and seals the value in the browser.

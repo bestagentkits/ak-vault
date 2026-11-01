@@ -58,6 +58,8 @@ export async function mintToken(args: MintArgs): Promise<string> {
     iat: now,
     nbf: now,
     exp: now + 300,
+    // ak-web sets the claim on every vault token; a test removes it with `session_kind: undefined`.
+    session_kind: 'email_otp',
     ...args.claims,
   };
   for (const [k, v] of Object.entries(claims)) if (v === undefined) delete claims[k];
