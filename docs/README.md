@@ -9,6 +9,7 @@ page to find the owner of a question.
 | Why a browser device, device relay and remote MCP, and what they cost the zero-knowledge boundary? | [ADR 0002](./adr/0002-browser-device-relay-and-remote-mcp.md) |
 | How would an owner invite a new account to a shared vault (proposed; not implemented)? | [ADR 0003](./adr/0003-owner-signed-member-invitations.md) |
 | How would a user without a browser device enter a secret for an AI (accepted; implementation in progress)? | [ADR 0004](./adr/0004-device-sealed-input-requests.md) |
+| How would a user opt in to an emailed, client-encrypted copy of the Recovery Kit (proposed; not implemented)? | [ADR 0005](./adr/0005-client-encrypted-recovery-kit-email-backup.md) |
 | Exact wire format, primitives, encodings, errors | [Protocol v1 spec](./protocol/v1/spec.md) (normative) |
 | Who can attack what, and which test proves the defense? | [Threat model](./security/threat-model.md) |
 | What the server can see; logging and retention rules | [Data classification](./security/data-classification.md) |

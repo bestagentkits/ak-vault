@@ -155,6 +155,16 @@ directories themselves are the authority for exact file names.
 Rows X1–X16 cover remote access (ADR 0002, ADR 0004); their vectors and tests land
 with the implementation, before the feature leaves staging.
 
+## Proposed: emailed recovery-kit backup
+
+[ADR 0005](../adr/0005-client-encrypted-recovery-kit-email-backup.md) is **Proposed**.
+No guarantee here is claimed for it: per the rule that a guarantee needs a vector or a
+test, its threat rows (mailbox compromise alone, passphrase alone, tamper and
+downgrade, KDF denial of service, replay of a superseded kit, delivery failure shown as
+success) are added with the vectors and tests that prove them, in the implementing pull
+requests. Known residual: a file in a mailbox can be guessed offline for ever, so the
+passphrase strength is the only barrier and a rotation is the response to a leak.
+
 ## Explicit limitations
 
 These are accepted and must be stated wherever the guarantees are described:

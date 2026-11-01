@@ -24,6 +24,13 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Value typed into an input-request form | Sealed in the browser to the issuing device's one-time `input_pub` ([spec §3.11](../protocol/v1/spec.md#311-input-seals-device-sealed-input-requests)); the Worker relays the ciphertext and never stores or logs it; the device writes it as a normal item record |
 | Audit of drained sealed operations and dropped profile fields (`sealed_applied`, `sealed_refused`, `profile_invalid`, `profile_provenance_invalid`) and of dashboard rotation state changes (`rotation_*`: type, item ID, author device, time) | Encrypted audit stream |
 
+Proposed, not in force ([ADR 0005](../adr/0005-client-encrypted-recovery-kit-email-backup.md)):
+the optional **recovery-kit backup file** is encrypted on the client under a separate
+passphrase before it leaves the device. ak-web and the mail provider would see its
+ciphertext and the cleartext `vault_id` and `account` in transit; the Worker never
+receives it. The passphrase, the recovery key and the plaintext kit are never sent,
+logged or emailed, and ak-web keeps only opt-in state, last attempt time and outcome.
+
 ## Visible operational metadata (unavoidable)
 
 | Data | Why the server needs it |
