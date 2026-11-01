@@ -109,8 +109,9 @@ Issues are the coordination surface. Labels: `in progress`, `blocked`, `in revie
 2. Review in an **isolated subagent context** (fresh reviewer, no implementation
    history) against [REVIEW.md](./REVIEW.md). Set `in review` while it runs; fix
    blockers and re-review.
-3. Open the PR with `Closes #N`, the evidence, docs impact, and links to related
-   issues. Set `done` (PR opened).
+3. Open the PR from the [PR template](./.github/pull_request_template.md) with
+   `Closes #N`, a complete `## Intent` block (every field filled in), the evidence,
+   docs impact, and links to related issues. Set `done` (PR opened).
 4. After merge to `main`, set `shipped`.
 5. Clean up: remove test caches and temporary state you created (`.wrangler/`,
    coverage, temp dirs) and stop any dev servers or watchers you started.
