@@ -330,7 +330,6 @@ h1 :not(pre) > code, h1 code, h2 code { font-size: 0.8em; padding: 0 0.2em; bord
 .hero .lede { max-width: 40rem; margin: var(--sp-5) auto 0; font-size: var(--fs-xl); line-height: 1.5; color: var(--text-2); letter-spacing: -0.01em; }
 .cta-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-6); }
 .hero .cta-row { justify-content: center; }
-.hero-status { display: inline-flex; max-width: 44rem; margin-top: var(--sp-6); }
 
 /* Stage: the animated scene of a secret being sealed, relayed and opened. */
 .stage {

@@ -8,7 +8,7 @@ status: "Local vault available. Sync commands in preview; agent-discovery comman
 
 Part 1 works today with the AgentKit CLI. Part 2 describes the preview sync commands and Part 3 the agent commands (discovery in agentkit dev builds, the rest planned); each step is marked and its syntax may change before release. Parts 5 to 7 cover the browser dashboard and remote MCP, which run on staging only: pre-release, not for production credentials.
 
-**Legend:** *available* works in the current `ak` CLI. *preview* ships hidden in the released CLI but is not a supported workflow; syntax may change. *dev builds* is in agentkit dev builds and coming in the next release, not in a released version. *planned* is designed but not released; do not script against it yet. Sync is not generally available: the production sync API is live as a pre-release preview, enabled before the owner's review. The owner accepted the review gate on 2026-10-16 with no written findings; it is not an independent third-party review.
+**Legend:** *available* works in the current `ak` CLI. *preview* ships hidden in the released CLI but is not a supported workflow; syntax may change. *dev builds* is in agentkit dev builds and coming in the next release, not in a released version. *planned* is designed but not released; do not script against it yet. The production sync API is live as a pre-release preview, enabled before the owner's review. The owner accepted the review gate on 2026-10-16 with no written findings; it is not an independent third-party review.
 
 ## Part 1: Keep secrets in the local vault (available)
 
@@ -42,7 +42,7 @@ Everything stays on this machine: values live in the OS keychain by default, or 
 
 ## Part 2: Sync a second device (preview)
 
-The end-to-end encrypted sync described on this site. A pre-release preview is live in production, enabled before the owner's review, which is not an independent third-party review. Sync is not generally available: the steps below are not a supported workflow until every release gate is met, and production credentials do not belong in it yet.
+The end-to-end encrypted sync described on this site. A pre-release preview is live in production, enabled before the owner's review, which is not an independent third-party review. The steps below are not a supported workflow until every release gate is met, and production credentials do not belong in it yet.
 
 1. **Sign in to your AgentKit account** (available). `ak login` exists today for your AgentKit account; the preview sync commands use that sign-in.
 2. **Opt in to sync on your first device** (preview). Sync stays off until you turn it on. Enabling it creates the vault key on this device, wraps it to your device key, a password-derived key and a recovery key, and uploads only ciphertext.
