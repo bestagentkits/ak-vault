@@ -168,12 +168,12 @@ echoing them, and only after `pnpm install` (as CI does).
 lookup, seal-key, sealed-queue and write-request routes. Any value other than
 exactly `true` turns them off, and each then answers `404` (an item PUT with
 `?write_request=` answers `400`; the `/v1/vaults/…` ones answer
-`503 sync_disabled` instead while sync is also off). It is on for staging and off for production in
-`worker/wrangler.jsonc`; remote access is staging only, pre-release, and not for
-production credentials. `VAULT_INPUT_REQUESTS_ENABLED` adds the device-sealed input
+`503 sync_disabled` instead while sync is also off). It is on for staging and, by owner decision on
+[#203](https://github.com/bestagentkits/ak-vault/issues/203) (2026-11-01), for production in
+`worker/wrangler.jsonc`; remote access is pre-release, enabled in production before its
+[release gate](../security/release-gates.md#remote-access-gates) passes. `VAULT_INPUT_REQUESTS_ENABLED` adds the device-sealed input
 requests of [ADR 0004](../adr/0004-device-sealed-input-requests.md) (`/input` and the
-input-request routes) on top of remote access; it is on for staging and unset for
-production, and while off those routes answer `404` (an item PUT with
+input-request routes) on top of remote access; it is on for staging and production, and while off those routes answer `404` (an item PUT with
 `?input_request=` answers `400`); its gate is tested in `worker/test/input-request.test.ts`
 and `worker/test/input-form-redirect.test.ts`. The sync kill switch also stops it: with sync off, `/mcp`
 answers `503 sync_disabled`. Route behavior is owned by `worker/src/index.ts`,
@@ -193,8 +193,9 @@ the cause could touch sync itself, use the [kill switch](#kill-switch) instead.
    checkout of the commit it runs, as in the [staging rehearsal](#kill-switch), with
    `--var VAULT_REMOTE_ACCESS_ENABLED:false` instead of the sync variable; land the
    same change in `wrangler.jsonc` the same day, so the next deploy from `main` does
-   not turn it back on. Production already runs with it off; turning it on there is
-   a later owner decision, not an incident step.
+   not turn it back on. Production has no direct-deploy path for this flag: when it
+   must stop faster than a pull request and the Deploy workflow, use the
+   [kill switch](#kill-switch), which also answers `/mcp` with `503 sync_disabled`.
 3. Verify from outside until several consecutive probes agree: `/mcp`, `/app` and
    `/.well-known/oauth-protected-resource/mcp` answer `404`, and `GET /v1/meta` no
    longer lists the relay, sealed-queue and MCP limits.

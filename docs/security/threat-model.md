@@ -4,7 +4,7 @@ Scope: the opt-in sync protocol ([spec](../protocol/v1/spec.md)), the Worker and
 per-vault Durable Object in `worker/`, and the client obligations the spec places on
 AgentKit (agentkit#2298/#2299). Decisions and rationale are in
 [ADR 0001](../adr/0001-opt-in-zero-knowledge-sync.md); the browser device, relay and
-remote MCP (staging only) are in [ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md).
+remote MCP (pre-release; on in production by owner waiver) are in [ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md).
 What the server can see is in
 [data classification](./data-classification.md).
 

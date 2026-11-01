@@ -137,7 +137,7 @@ owns the wire. Where the implementation made a choice this ADR left open:
 - **Rollout.** The input routes and the device flow are off unless
   `VAULT_INPUT_REQUESTS_ENABLED` is `true`. They stay off until ak-web mints `input`
   tokens and the `/input` page ships; until then the tool behaves as D8. The flag is
-  on for staging and unset for production (`worker/wrangler.jsonc`).
+  on for staging and, by owner decision on 2026-11-01, production (`worker/wrangler.jsonc`).
 
 ## Alternatives rejected
 

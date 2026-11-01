@@ -198,9 +198,11 @@ page and docs, and its own CI run is linked from its pull request.
 ## Remote access gates
 
 The browser device, relay and remote MCP
-([ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md)) run on staging only,
-behind `VAULT_REMOTE_ACCESS_ENABLED`. They are not part of sync GA. Turning the flag on
-in production needs every box below, at the exact commit, plus an owner decision on
+([ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md)) run behind `VAULT_REMOTE_ACCESS_ENABLED`. They are not part of sync GA. The owner turned
+the flag on in production on 2026-11-01
+([record on #203](https://github.com/bestagentkits/ak-vault/issues/203)) **before** the boxes
+below were checked: that is an owner waiver, not a pass of this gate, and remote access
+stays pre-release until every box is checked at the exact commit and the owner decides on
 [#101](https://github.com/bestagentkits/ak-vault/issues/101):
 
 - [ ] ADR 0002 accepted by the owner, and REVIEW.md and AGENTS.md carry its
