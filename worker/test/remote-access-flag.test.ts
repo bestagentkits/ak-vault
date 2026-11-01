@@ -15,6 +15,7 @@ declare global {
   namespace Cloudflare {
     interface Env {
       TEST_DEPLOYED_REMOTE_ACCESS: string;
+      TEST_DEPLOYED_INPUT_REQUESTS: string;
     }
   }
 }
@@ -22,8 +23,9 @@ declare global {
 const OFF = { VAULT_REMOTE_ACCESS_ENABLED: 'false' };
 
 describe('remote access flag', () => {
-  it('is off in production and on in staging as deployed', () => {
-    expect(JSON.parse(env.TEST_DEPLOYED_REMOTE_ACCESS)).toEqual({ production: 'false', staging: 'true' });
+  it('is on in production and staging as deployed, with input requests', () => {
+    expect(JSON.parse(env.TEST_DEPLOYED_REMOTE_ACCESS)).toEqual({ production: 'true', staging: 'true' });
+    expect(JSON.parse(env.TEST_DEPLOYED_INPUT_REQUESTS)).toEqual({ production: 'true', staging: 'true' });
   });
 
   for (const value of ['false', 'TRUE', '1', '', ' true']) {
