@@ -257,8 +257,11 @@ stays pre-release until every box is checked at the exact commit and the owner d
       requesting-account and recorded-device binding, expiry, grant revocation, the
       no-device fallback and `VAULT_INPUT_REQUESTS_ENABLED` off
       ([`input-request.test.ts`](../../worker/test/input-request.test.ts)); the
-      `/input` form clears the typed value on submit and cancel and keeps the name and
-      purpose in `sessionStorage` only for the sign-in redirect.
+      `/input` form clears the typed value from the field before sealing, posts only
+      the seal, and keeps the name and purpose in `sessionStorage` only for the sign-in
+      redirect; the agentkit device tests for `request_input` rebuild the AAD from what
+      the device recorded and drop the per-request key
+      ([threat model X16](./threat-model.md)).
 - [ ] Disclosure scan rerun with remote access on: planted values and names sent
       through MCP set, `secrets_prepare_write`, `secrets_request_input`, relayed results and `run` output are absent from the Durable
       Object dump, Worker logs, live tail and errors (scenario 15 and
