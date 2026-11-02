@@ -34,12 +34,11 @@ session, and the value is sealed to a key that only the online device holds.
 
 1. **D1: one MCP tool, two flows.** `secrets_request_input` takes the same arguments as
    `secrets_prepare_write` (name, operation, purpose, sensitivity, ttl_s, vault_id) and
-   needs `vault-mcp:write`. When the requesting account has a current `browser` device
-   in the vault and the epoch's seal-key document is stored, it **is**
-   `secrets_prepare_write` (D8, unchanged) and says `flow: "dashboard"`. Otherwise it
-   uses the device-sealed flow below and says `flow: "device"`. With neither (no
-   browser device and no online device of that account listing the tool) it fails
-   `device_offline`; it never asks for the value.
+   needs `vault-mcp:write`. It tries the device-sealed flow below first and says
+   `flow: "device"` when an online device of the account lists the tool. When none is
+   online, an `owner` whose epoch has a stored seal-key document gets
+   `secrets_prepare_write` (D8, unchanged) and `flow: "dashboard"`. With neither it
+   fails `device_offline`; it never asks for the value.
 2. **D2: the online device holds the only key.** The Worker sends the account's online
    device a relay `call` for tool `request_input`. The device checks the operation
    against its own view (`create` needs an absent name, `replace` an existing one),
