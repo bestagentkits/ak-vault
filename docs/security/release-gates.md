@@ -249,8 +249,18 @@ stays pre-release until every box is checked at the exact commit and the owner d
       binding, single use with the item PUT, grant revocation, caps and rate; the
       dashboard form opens the intent, shows the requesting client, enforces the name
       binding and closes with the right reason.
+- [ ] Input requests ([ADR 0004](../adr/0004-device-sealed-input-requests.md)), on in
+      production with remote access: Go and TypeScript reproduce `input-seal.json`
+      including every negative case; Worker tests for the `input` session token (own
+      audience, refused by every sync, relay, MCP and dashboard route, and the input
+      routes refuse every other token), single use with the `?input_request` item PUT,
+      requesting-account and recorded-device binding, expiry, grant revocation, the
+      no-device fallback and `VAULT_INPUT_REQUESTS_ENABLED` off
+      ([`input-request.test.ts`](../../worker/test/input-request.test.ts)); the
+      `/input` form clears the typed value on submit and cancel and keeps the name and
+      purpose in `sessionStorage` only for the sign-in redirect.
 - [ ] Disclosure scan rerun with remote access on: planted values and names sent
-      through MCP set, `secrets_prepare_write`, relayed results and `run` output are absent from the Durable
+      through MCP set, `secrets_prepare_write`, `secrets_request_input`, relayed results and `run` output are absent from the Durable
       Object dump, Worker logs, live tail and errors (scenario 15 and
       [data classification](./data-classification.md#transits-worker-memory-never-stored-or-logged-remote-access-only)).
 - [ ] Red-team scenarios 16–21 executed and scenario 13 rerun with synced profiles
