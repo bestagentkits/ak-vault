@@ -22,6 +22,7 @@ Key facts for assistants:
 - [Security model](https://vault.agentkit.best/security/index.md): threat map, adversaries, defences, residual risks, release gate
 - [Guide](https://vault.agentkit.best/guide/index.md): step by step from a .env file to the local vault (available), then sync and lost-device steps (preview), agent discovery commands (dev builds), agent request and run (planned), and the browser dashboard and remote MCP (pre-release), each marked
 - [FAQ](https://vault.agentkit.best/faq/index.md): status, privacy, everyday use, teams and agents, recovery, the project
+- [Status](https://github.com/bestagentkits/ak-vault/blob/main/docs/status.md): one page listing each surface (local vault, sync, dashboard, remote MCP) with its state and gate, and the remote MCP plaintext boundary
 
 ## Specification
 
