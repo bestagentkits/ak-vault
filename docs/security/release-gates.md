@@ -261,7 +261,7 @@ stays pre-release until every box is checked at the exact commit and the owner d
       this gate. Evidence still open: nothing is ticked until it is linked here at the
       exact commit.
 - [ ] Disclosure scan rerun with remote access on: planted values and names sent
-      through MCP set, `secrets_prepare_write`, relayed results and `run` output are absent from the Durable
+      through MCP set, `secrets_prepare_write`, `secrets_request_input`, relayed results and `run` output are absent from the Durable
       Object dump, Worker logs, live tail and errors (scenario 15 and
       [data classification](./data-classification.md#transits-worker-memory-never-stored-or-logged-remote-access-only)).
 - [ ] Red-team scenarios 16–21 executed and scenario 13 rerun with synced profiles
