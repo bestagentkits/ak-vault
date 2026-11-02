@@ -69,7 +69,7 @@ never receives it. What each party may see:
 
 ## Transits Worker memory, never stored or logged (remote access only)
 
-While remote access is enabled (staging), these cross the Worker in plaintext after TLS
+While remote access is enabled (staging and production), these cross the Worker in plaintext after TLS
 termination and are held only for the request or relayed call
 ([ADR 0002 D7](../adr/0002-browser-device-relay-and-remote-mcp.md#decision)):
 
