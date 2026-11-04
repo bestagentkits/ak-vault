@@ -15,6 +15,7 @@ export interface MatchedRoute {
   itemId?: string;
   sealedId?: string;
   writeRequestId?: string;
+  approvalRequestId?: string;
 }
 
 const COLLECTIONS: Record<string, Partial<Record<string, VaultOp>>> = {
@@ -66,6 +67,19 @@ export function matchVaultRoute(method: string, pathname: string, opts: { remote
     if (parts.length === 7 && parts[6] === 'close' && method === 'POST') {
       return { op: 'writereq.close', template: 'POST /v1/vaults/:vid/write-requests/:rid/close', vaultId: opaqueId(vid), writeRequestId: opaqueId(parts[5]) };
     }
+    return null;
+  }
+  if (opts.remoteAccess && collection === 'approval-requests') {
+    const t = 'approval-requests';
+    if (parts.length === 5) {
+      if (method === 'POST') return { op: 'approval.post', template: `POST /v1/vaults/:vid/${t}`, vaultId: opaqueId(vid) };
+      if (method === 'GET') return { op: 'approval.list', template: `GET /v1/vaults/:vid/${t}`, vaultId: opaqueId(vid) };
+      return null;
+    }
+    if (!parts[5]) return null;
+    if (parts.length === 6 && method === 'GET') return { op: 'approval.get', template: `GET /v1/vaults/:vid/${t}/:rid`, vaultId: opaqueId(vid), approvalRequestId: opaqueId(parts[5]) };
+    if (parts.length === 7 && method === 'POST' && parts[6] === 'decision') return { op: 'approval.decide', template: `POST /v1/vaults/:vid/${t}/:rid/decision`, vaultId: opaqueId(vid), approvalRequestId: opaqueId(parts[5]) };
+    if (parts.length === 7 && method === 'POST' && parts[6] === 'cancel') return { op: 'approval.cancel', template: `POST /v1/vaults/:vid/${t}/:rid/cancel`, vaultId: opaqueId(vid), approvalRequestId: opaqueId(parts[5]) };
     return null;
   }
   if (parts.length !== 5) return null;

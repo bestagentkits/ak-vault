@@ -1,6 +1,7 @@
 /** Access-approval vectors (spec §3.13): request seal/open/digest and decision sign/verify. */
 import { describe, expect, it } from 'vitest';
-import { approvalRequestDigest, b64decode, cjson, openApprovalRequest, sealApprovalRequest, signApprovalDecision, verifyApprovalDecision } from '../src/index.js';
+import { approvalRequestDigest, b64decode, cjson, openApprovalRequest, sealApprovalRequest, signApprovalDecision, signApprovalDecisionAsync, verifyApprovalDecision } from '../src/index.js';
+import { ed25519 } from '@noble/curves/ed25519.js';
 import { sealApprovalRequestWithVectorValues } from '../src/approval.js';
 import { expectCode, loadVector, named } from './helpers.js';
 
@@ -21,10 +22,13 @@ describe('approval.json', () => {
     expect(openApprovalRequest(vk(c.key_epoch), w, { vaultId: w.vault_id, requesterSignPub: requester.record.sign_pub }).subject).toEqual(c.subject);
     expect(approvalRequestDigest(w)).toBe(c.digest);
   });
-  it.each(named(v.decisions))('signs and verifies %s', (_n, c) => {
+  it.each(named(v.decisions))('signs and verifies %s', async (_n, c) => {
     const d = c.decision;
     const signed = signApprovalDecision(b64decode(approver.sign_seed), { request: first, decision: d.decision, ...(d.ttl_s === undefined ? {} : { ttlS: d.ttl_s }), approver: d.approver, ts: d.ts });
     expect(signed).toEqual(d);
+    const seed = b64decode(approver.sign_seed);
+    const async = await signApprovalDecisionAsync({ sign: async (m) => ed25519.sign(m, seed) }, { request: first, decision: d.decision, ...(d.ttl_s === undefined ? {} : { ttlS: d.ttl_s }), approver: d.approver, ts: d.ts });
+    expect(async).toEqual(d);
     expect(verifyApprovalDecision(d, first, { approverSignPub: approver.record.sign_pub, maxTtlS: 86400 })).toEqual(d);
   });
   it.each(named(v.invalid))('refuses to open %s', (_n, c) => {

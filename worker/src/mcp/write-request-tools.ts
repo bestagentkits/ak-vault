@@ -40,7 +40,7 @@ type LocalErrorCode =
 const MESSAGES: Record<LocalErrorCode, string> = {
   invalid_args: 'The arguments do not match the tool input schema.',
   rate_limited: 'Too many calls. Retry after retry_after_s seconds.',
-  not_found: 'No write request matches.',
+  not_found: 'No write request or pending approval matches.',
   no_seal_key: 'The vault has no seal key for requests yet. Run `ak secrets sync now` once on an owner device.',
   too_many_requests: 'Too many open write requests. Ask the user to finish or cancel one, or wait for them to expire.',
   internal: 'Internal error.',
@@ -329,6 +329,46 @@ async function writeStatus(env: Env, claims: McpClaims, args: Record<string, unk
   return ok({ ...(status as unknown as JsonObject) }, status.state);
 }
 
+/** A pending approval's metadata, never its ciphertext (spec §3.13). */
+async function approvalsList(env: Env, claims: McpClaims, args: Record<string, unknown>): Promise<Outcome> {
+  if (!checkArgs(args, {}, [])) return fail('invalid_args');
+  const selected = await selectVault(env, claims, args);
+  if ('result' in selected) return selected;
+  const approvals = JSON.parse(await vaultStub(env, selected.vaultId).mcpListApprovals(claims.sub)) as unknown[];
+  return ok({ vault_id: selected.vaultId, approvals });
+}
+
+function approvalId(args: Record<string, unknown>): string | null {
+  if (!checkArgs(args, { request_id: 'string' }, ['request_id'])) return null;
+  try {
+    b64decodeLength(args['request_id'] as string, 16);
+  } catch {
+    return null;
+  }
+  return args['request_id'] as string;
+}
+
+/** An AI client never allows: it hands the person a dashboard link where their browser device signs. */
+async function approvalsAllow(env: Env, claims: McpClaims, args: Record<string, unknown>): Promise<Outcome> {
+  const id = approvalId(args);
+  if (id === null) return fail('invalid_args');
+  const selected = await selectVault(env, claims, args);
+  if ('result' in selected) return selected;
+  if (!(await vaultStub(env, selected.vaultId).mcpHasPendingApproval(id, claims.sub))) return fail('not_found');
+  const approveUrl = `${env.VAULT_AUDIENCE}/app#approval=${encodeURIComponent(id)}&vault=${encodeURIComponent(selected.vaultId)}`;
+  return ok({ status: 'pending', request_id: id, vault_id: selected.vaultId, approve_url: approveUrl, next: 'Give approve_url to the user to review and allow the request in the dashboard.' }, 'pending');
+}
+
+/** A deny only refuses access, so an unsigned MCP deny is safe; it is recorded with the client. */
+async function approvalsDeny(env: Env, claims: McpClaims, args: Record<string, unknown>): Promise<Outcome> {
+  const id = approvalId(args);
+  if (id === null) return fail('invalid_args');
+  const selected = await selectVault(env, claims, args);
+  if ('result' in selected) return selected;
+  const denied = await vaultStub(env, selected.vaultId).mcpDenyApproval(id, claims.sub, claims.client_id);
+  return denied ? ok({ status: 'denied', request_id: id, vault_id: selected.vaultId }, 'denied') : fail('not_found');
+}
+
 /**
  * Run one Worker-local tool for an authenticated token whose scopes cover it. Never throws.
  * The rate budget is charged before the arguments are checked, as for relay tools: a call
@@ -345,6 +385,9 @@ export async function callLocalTool(env: Env, claims: McpClaims, tool: LocalTool
     else if (!isObject(rawArgs)) outcome = fail('invalid_args');
     else if (tool === 'prepare_write') outcome = await prepareWrite(env, claims, rawArgs);
     else if (tool === 'request_input') outcome = await requestInput(env, claims, rawArgs);
+    else if (tool === 'approvals_list') outcome = await approvalsList(env, claims, rawArgs);
+    else if (tool === 'approvals_allow') outcome = await approvalsAllow(env, claims, rawArgs);
+    else if (tool === 'approvals_deny') outcome = await approvalsDeny(env, claims, rawArgs);
     else outcome = await writeStatus(env, claims, rawArgs);
   } catch {
     outcome = fail('internal');

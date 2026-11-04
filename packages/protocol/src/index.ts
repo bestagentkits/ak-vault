@@ -293,6 +293,7 @@ export {
   parseApprovalSubject,
   sealApprovalRequest,
   signApprovalDecision,
+  signApprovalDecisionAsync,
   verifyApprovalDecision,
   type ApprovalDecisionKind,
   type ApprovalDecisionWire,

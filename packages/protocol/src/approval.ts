@@ -21,6 +21,7 @@
  */
 import { NONCE_BYTES, TAG_BYTES, xc20pOpen, xc20pSeal } from './aead.js';
 import { b64decode, b64encode } from './base64url.js';
+import { signObjectAsync, type DeviceSigner } from './device-signer.js';
 import { randomBytes, sha256, utf8Encode } from './bytes.js';
 import { cjsonBytes, cjsonParse } from './canonical-json.js';
 import { fail } from './errors.js';
@@ -210,8 +211,8 @@ export interface OpenedApprovalRequest {
  * `bad_request`); `vault_id` ≠ expected (`bad_request`); signature under the
  * requester's `sign_pub` (`invalid_signature`); AEAD (`decrypt_failed`); subject not
  * canonical or invalid (`bad_request`). The caller resolves `requesterSignPub` from its
- * verified membership state and checks that the requester is a current human device
- * of its own account.
+ * verified membership state and checks that the requester is a current device of its
+ * own account.
  */
 export function openApprovalRequest(vk: Uint8Array, value: unknown, opts: { vaultId: string; requesterSignPub: Uint8Array | string }): OpenedApprovalRequest {
   const wire = parseApprovalRequest(value);
@@ -261,12 +262,11 @@ export interface SignApprovalDecisionArgs {
   ts: number;
 }
 
-/** Answer `args.request` and sign the answer with the approving device's key. */
-export function signApprovalDecision(signSecret: Uint8Array, args: SignApprovalDecisionArgs): ApprovalDecisionWire {
+function unsignedDecision(args: SignApprovalDecisionArgs): Omit<ApprovalDecisionWire, 'sig'> {
   const request = parseApprovalRequest(args.request);
   const decision = asEnum(args.decision, APPROVAL_DECISIONS, 'decision');
   if ((decision === 'allow_ttl') !== (args.ttlS !== undefined)) fail('bad_request', 'ttl_s is required for allow_ttl and refused otherwise');
-  const unsigned: Omit<ApprovalDecisionWire, 'sig'> = {
+  return {
     v: 1,
     request_id: request.request_id,
     vault_id: request.vault_id,
@@ -277,7 +277,16 @@ export function signApprovalDecision(signSecret: Uint8Array, args: SignApprovalD
     approver: asId(args.approver, 'approver'),
     ts: asInt(args.ts, 'ts'),
   };
-  return parseApprovalDecision(signObject(SIGN_CONTEXT.approvalDecision, unsigned, signSecret));
+}
+
+/** Answer `args.request` and sign the answer with the approving device's key. */
+export function signApprovalDecision(signSecret: Uint8Array, args: SignApprovalDecisionArgs): ApprovalDecisionWire {
+  return parseApprovalDecision(signObject(SIGN_CONTEXT.approvalDecision, unsignedDecision(args), signSecret));
+}
+
+/** `signApprovalDecision` with a key held elsewhere (the browser dashboard's non-extractable key). Same bytes. */
+export async function signApprovalDecisionAsync(signer: DeviceSigner, args: SignApprovalDecisionArgs): Promise<ApprovalDecisionWire> {
+  return parseApprovalDecision(await signObjectAsync(SIGN_CONTEXT.approvalDecision, unsignedDecision(args), signer));
 }
 
 export interface VerifyApprovalDecisionOptions {

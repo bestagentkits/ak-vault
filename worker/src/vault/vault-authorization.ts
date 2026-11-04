@@ -66,6 +66,13 @@ const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: r
   'sealed.ack': { scope: WRITE, role: 'writer' },
   'writereq.get': { scope: READ, role: 'writer' },
   'writereq.close': { scope: WRITE, role: 'writer' },
+  // Access approvals (spec §3.13): any member device may ask and follow its own requests
+  // (a background job's machine device included); only a human owner/editor answers.
+  'approval.post': { scope: READ, role: 'any_device' },
+  'approval.list': { scope: READ, role: 'any_device' },
+  'approval.get': { scope: READ, role: 'any_device' },
+  'approval.decide': { scope: WRITE, role: 'writer' },
+  'approval.cancel': { scope: READ, role: 'any_device' },
 };
 
 /**
@@ -74,7 +81,7 @@ const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: r
  * non-`email_otp` session by `requireHumanSession`; the relay refuses `browser`
  * at its upgrade.
  */
-const BROWSER_REFUSED: ReadonlySet<VaultOp> = new Set<VaultOp>(['genesis', 'membership.post', 'recovery.get', 'recovery.put', 'sealkey.put', 'sealed.get', 'sealed.ack']);
+const BROWSER_REFUSED: ReadonlySet<VaultOp> = new Set<VaultOp>(['genesis', 'membership.post', 'recovery.get', 'recovery.put', 'sealkey.put', 'sealed.get', 'sealed.ack', 'approval.post', 'approval.cancel']);
 
 /** Ops only a `browser` (dashboard) session may call: the person's side of a human write request (spec §3.10). */
 const BROWSER_ONLY: ReadonlySet<VaultOp> = new Set<VaultOp>(['writereq.get', 'writereq.close']);

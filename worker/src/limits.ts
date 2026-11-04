@@ -127,6 +127,16 @@ export const REMOTE_ACCESS_LIMITS = {
   /** Open requests one MCP client of an account may hold in one vault, so a single client cannot take every slot. */
   write_requests_pending_per_client: 4,
   write_requests_retained_per_account: 64,
+  /** Access approvals (spec §3.13): longest and shortest request lifetime, and how long a closed row stays as history. */
+  approval_request_ttl_s: 24 * 60 * 60,
+  approval_request_min_ttl_s: 60,
+  approval_request_retention_s: 7 * 24 * 60 * 60,
+  /** Pending requests per requesting device and per account, and rows (pending plus retained) per account, in one vault. */
+  approval_requests_pending_per_device: 16,
+  approval_requests_pending_per_account: 32,
+  approval_requests_retained_per_account: 256,
+  /** `GET /approval-requests` page size (default and maximum). */
+  approval_page_max: 50,
 } as const;
 
 export const PROTOCOL_VERSIONS = ['akv1'] as const;
