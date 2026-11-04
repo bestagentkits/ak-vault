@@ -43,7 +43,8 @@ user on such a release upgrades, or revokes a lost device in the ak-web account,
 which the Worker enforces on the device's next request (within 120 s for a
 short-lived token, [spec §9 item 3](../protocol/v1/spec.md#9-transport-authentication-worker)).
 
-**Capacity.** Every authenticated request checks the single revocation registry. A
+**Capacity.** Every authenticated request with a long-lived token checks the single
+revocation registry (a short-lived token is checked once, when it is issued). A
 lab ramp test put its knee between 800 and 1,000 checks a second for the whole
 service ([cost model](../operations/cost-model.md#revocation-registry-throughput),
 [#91](https://github.com/bestagentkits/ak-vault/issues/91)): at 1,000 a second registry

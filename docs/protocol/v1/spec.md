@@ -1612,8 +1612,8 @@ devices that honor it, not what a vault member can decrypt (§3).
    **Short-lived tokens** (`exp - iat` positive and at most 120 s; vector
    `vault-token-lifetime.json`) are the exception on `/v1` routes: the issuer MUST
    refuse to mint one for a revoked session, device or account at issue time, and the
-   Worker serves it without a registry lookup only while `now < exp` (no skew; at or
-   after `exp` it is `401 unauthorized`). A revocation therefore takes effect within
+   Worker serves it without a registry lookup only while `now < exp` and
+   `exp - now <= 120` (no skew; otherwise `401 unauthorized`). A revocation therefore takes effect within
    120 s for such a token. Every other token, the relay (§9.7, at the upgrade and
    before each `call`), MCP grants and write, input and sealed-queue grant checks keep
    the lookup.

@@ -21,10 +21,12 @@ export function vaultTokenLifetimeVectors(): Record<string, unknown> {
     [IAT, IAT + 120, IAT - 60],
     [IAT, IAT + 120, IAT - 61],
     [IAT, IAT + 300, IAT + 10],
+    [IAT + 30, IAT + 150, IAT],
+    [IAT + 30, IAT + 150, IAT + 30],
   ];
   return {
     version: 1,
-    description: 'Vault token lifetime classes (spec §9.3): short-lived tokens are served without a per-request revocation lookup only while now < exp.',
+    description: 'Vault token lifetime classes (spec §9 item 3): short-lived tokens are served without a per-request revocation lookup only while now < exp and exp - now <= short_max_seconds.',
     short_max_seconds: VAULT_TOKEN_SHORT_MAX_SECONDS,
     lifetime: lifetimes.map(([iat, exp]) => ({ iat, exp, short: isShortLivedVaultToken(iat, exp) })),
     usable: usableAt.map(([iat, exp, now]) => ({ iat, exp, now, usable: shortLivedVaultTokenUsable(iat, exp, now) })),

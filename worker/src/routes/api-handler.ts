@@ -166,7 +166,7 @@ export async function handleRelayUpgrade(request: Request, env: Env, info: Route
 /**
  * Revocation for a `/v1` request (spec §9 item 3). A short-lived token had revocation
  * checked when it was issued, so it is served without a registry lookup, but only while
- * `now < exp` (no skew): a revocation then takes effect within its lifetime. Any other
+ * `now < exp` and `exp - now` within the short lifetime (no skew): a revocation then takes effect within its lifetime. Any other
  * token is checked against the registry on every request.
  */
 async function assertTokenNotRevoked(env: Env, claims: VerifiedClaims, nowMs = Date.now()): Promise<void> {

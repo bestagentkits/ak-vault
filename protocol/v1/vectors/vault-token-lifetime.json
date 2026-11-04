@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Vault token lifetime classes (spec §9.3): short-lived tokens are served without a per-request revocation lookup only while now < exp.",
+  "description": "Vault token lifetime classes (spec §9 item 3): short-lived tokens are served without a per-request revocation lookup only while now < exp and exp - now <= short_max_seconds.",
   "short_max_seconds": 120,
   "lifetime": [
     {
@@ -68,7 +68,7 @@
       "iat": 1800000000,
       "exp": 1800000120,
       "now": 1799999940,
-      "usable": true
+      "usable": false
     },
     {
       "iat": 1800000000,
@@ -81,6 +81,18 @@
       "exp": 1800000300,
       "now": 1800000010,
       "usable": false
+    },
+    {
+      "iat": 1800000030,
+      "exp": 1800000150,
+      "now": 1800000000,
+      "usable": false
+    },
+    {
+      "iat": 1800000030,
+      "exp": 1800000150,
+      "now": 1800000030,
+      "usable": true
     }
   ]
 }

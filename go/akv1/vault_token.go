@@ -1,7 +1,7 @@
 package akv1
 
 // VaultTokenShortMaxSeconds is the longest lifetime (exp - iat, seconds) of a vault
-// token served without a per-request revocation lookup (spec §9.3).
+// token served without a per-request revocation lookup (spec §9 item 3).
 const VaultTokenShortMaxSeconds = 120
 
 // IsShortLivedVaultToken reports whether exp - iat is positive and at most
@@ -11,7 +11,9 @@ func IsShortLivedVaultToken(iat, exp int64) bool {
 }
 
 // ShortLivedVaultTokenUsable reports whether a short-lived token may be served at
-// nowSeconds without a revocation lookup: only while now < exp, with no clock skew.
+// nowSeconds without a revocation lookup: only while now < exp, with no clock skew, and
+// exp - now at most VaultTokenShortMaxSeconds (an issuer clock running fast cannot
+// stretch the time since its revocation check).
 func ShortLivedVaultTokenUsable(iat, exp, nowSeconds int64) bool {
-	return IsShortLivedVaultToken(iat, exp) && nowSeconds >= iat-60 && nowSeconds < exp
+	return IsShortLivedVaultToken(iat, exp) && nowSeconds >= iat-60 && nowSeconds < exp && exp-nowSeconds <= VaultTokenShortMaxSeconds
 }
