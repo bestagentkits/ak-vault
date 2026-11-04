@@ -11,8 +11,8 @@
  * session token instead of a device token; `input-request-routes.ts` owns them.
  */
 import { areGrantsRevoked, assertDeviceNotRevoked, isGrantRevoked } from '../auth/revocation-check.js';
-import { b64decodeLength } from '@ak-vault/protocol';
-import { bearerToken, verifyToken } from '../auth/jwt-verify.js';
+import { b64decodeLength, isShortLivedVaultToken, shortLivedVaultTokenUsable } from '@ak-vault/protocol';
+import { bearerToken, verifyToken, type VerifiedClaims } from '../auth/jwt-verify.js';
 import { inputRequestsEnabled, remoteAccessEnabled, type Env } from '../env.js';
 import { ApiError, type ApiResult } from '../http/errors.js';
 import { readBodyCapped } from '../http/read-body-capped.js';
@@ -50,7 +50,7 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
 
   const token = bearerToken(request);
   const claims = await verifyToken(token, env);
-  await assertDeviceNotRevoked(env, claims);
+  await assertTokenNotRevoked(env, claims);
   const body = await readBodyCapped(request, LIMITS.request_body_max_bytes);
   const idempotencyKey = request.headers.get('Idempotency-Key');
   if (isMutation(route.op) && !idempotencyKey) throw new ApiError('bad_request', { message: 'a valid Idempotency-Key header is required' });
@@ -161,4 +161,15 @@ export async function handleRelayUpgrade(request: Request, env: Env, info: Route
     },
   });
   return relayStub(env, claims.sub).fetch(forwarded);
+}
+
+/**
+ * Revocation for a `/v1` request (spec §9 item 3). A short-lived token had revocation
+ * checked when it was issued, so it is served without a registry lookup, but only while
+ * `now < exp` and `exp - now` within the short lifetime (no skew): a revocation then takes effect within its lifetime. Any other
+ * token is checked against the registry on every request.
+ */
+async function assertTokenNotRevoked(env: Env, claims: VerifiedClaims, nowMs = Date.now()): Promise<void> {
+  if (!isShortLivedVaultToken(claims.iat, claims.exp)) return assertDeviceNotRevoked(env, claims);
+  if (!shortLivedVaultTokenUsable(claims.iat, claims.exp, Math.floor(nowMs / 1000))) throw new ApiError('unauthorized');
 }

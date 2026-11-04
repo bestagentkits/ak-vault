@@ -20,6 +20,7 @@ import { enrollCodeVectors } from './enroll-codes.js';
 import { enrollCommitVectors } from './enroll-commit.js';
 import { profileVectors } from './profile-provenance.js';
 import { relayFrameVectors } from './relay-frames.js';
+import { vaultTokenLifetimeVectors } from './vault-token.js';
 
 const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'canonical-json.json': canonicalJsonVectors,
@@ -53,6 +54,7 @@ const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'enroll-commit.json': enrollCommitVectors,
   'profile.json': profileVectors,
   'relay-frames.json': relayFrameVectors,
+  'vault-token-lifetime.json': vaultTokenLifetimeVectors,
 };
 
 export const VECTOR_FILES = Object.keys(BUILDERS);
