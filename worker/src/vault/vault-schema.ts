@@ -42,6 +42,8 @@ export const VAULT_SCHEMA = `
     key_hash TEXT PRIMARY KEY, request_hash TEXT NOT NULL, status INTEGER NOT NULL, body_json TEXT NOT NULL, expires_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idempotency_expiry ON idempotency (expires_at);
+  -- proof_jti and the *rate_counters tables are no longer written by the vault object (request-replay-state.ts
+  -- keeps them in memory); they stay so vaults created before need no migration.
   CREATE TABLE IF NOT EXISTS proof_jti (did TEXT NOT NULL, jti TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY (did, jti));
   CREATE INDEX IF NOT EXISTS proof_jti_expiry ON proof_jti (expires_at);
   CREATE TABLE IF NOT EXISTS rate_counters (did TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL);

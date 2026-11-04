@@ -1601,7 +1601,11 @@ devices that honor it, not what a vault member can decrypt (§3).
 2. `AKV-Proof: <b64(cjson(proof))>.<b64(sig)>`, proof =
    `{"htm","htu","ts","jti","ath","bh"}` (`ath`/`bh` = b64 sha256 of token / body),
    signed with context `akv1/proof` by the device whose `device_id == did`. Valid for
-   ±60 s; `jti` single-use per device for 120 s.
+   ±60 s; `jti` single-use per device for 120 s. Single use holds across a restart of
+   the vault object: a server that cannot show which `jti`s it accepted before a
+   restart refuses every proof whose `ts` is earlier than the restart plus the 60 s
+   skew (`401 unauthorized`), so a client can see such a refusal once after a server
+   restart and succeeds with its next fresh proof after that point.
 3. Live revocation: every request consults the revocation registry (revoked `sid`,
    revoked `did`, per-`sub` minimum `iat`). Registry errors fail closed (`503`).
    The registry is fed by `POST /internal/v1/revocations` with headers
