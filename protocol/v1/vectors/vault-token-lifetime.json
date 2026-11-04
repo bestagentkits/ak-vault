@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "description": "Vault token lifetime classes (spec §9.3): short-lived tokens are served without a per-request revocation lookup only while now < exp.",
+  "short_max_seconds": 120,
+  "lifetime": [
+    {
+      "iat": 1800000000,
+      "exp": 1800000001,
+      "short": true
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1800000060,
+      "short": true
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1800000120,
+      "short": true
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1800000121,
+      "short": false
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1800000300,
+      "short": false
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1800000000,
+      "short": false
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1799999999,
+      "short": false
+    }
+  ],
+  "usable": [
+    {
+      "iat": 1800000000,
+      "exp": 1800000120,
+      "now": 1800000000,
+      "usable": true
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1800000120,
+      "now": 1800000119,
+      "usable": true
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1800000120,
+      "now": 1800000120,
+      "usable": false
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1800000120,
+      "now": 1800000150,
+      "usable": false
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1800000120,
+      "now": 1799999940,
+      "usable": true
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1800000120,
+      "now": 1799999939,
+      "usable": false
+    },
+    {
+      "iat": 1800000000,
+      "exp": 1800000300,
+      "now": 1800000010,
+      "usable": false
+    }
+  ]
+}

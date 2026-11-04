@@ -40,7 +40,8 @@ no signed `log_head`), recovery is blocked as well (the pre-fence client in the
 [Docker e2e run on #8](https://github.com/bestagentkits/ak-vault/issues/8#issuecomment-6206840562)
 showed both), and they do not verify change-log contents against removal fences. A
 user on such a release upgrades, or revokes a lost device in the ak-web account,
-which the Worker enforces on the device's next request.
+which the Worker enforces on the device's next request (within 120 s for a
+short-lived token, [spec §9 item 3](../protocol/v1/spec.md#9-transport-authentication-worker)).
 
 **Capacity.** Every authenticated request checks the single revocation registry. A
 lab ramp test put its knee between 800 and 1,000 checks a second for the whole
@@ -108,7 +109,9 @@ page and docs, and its own CI run is linked from its pull request.
       rests on the owner's statement. #61 stays open as later hardening (rename the
       headers).
 - [x] Revocation: a revoked session or device is refused on its next request even
-      with an unexpired token; revocation-registry failure returns `503`.
+      with an unexpired token (a short-lived token, at most 120 s, at its `exp`:
+      owner decision on [#63](https://github.com/bestagentkits/ak-vault/issues/63));
+      revocation-registry failure returns `503`.
       Evidence: [`revocation.test.ts`](../../worker/test/revocation.test.ts) in the
       CI run above (red-team scenario 3), and the Docker e2e's session revocation.
 - [x] Sync-off regression (agentkit#2298): zero HTTP requests; vault v1 behavior

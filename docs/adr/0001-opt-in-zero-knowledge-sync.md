@@ -78,7 +78,9 @@ ADR adds an **opt-in** layer next to v1; it does not reinterpret v1:
    vault-resource ES256 JWT (exact `iss`/`aud`, `sid`, `did`, scoped
    `vault:read`/`vault:write`). Each request also carries a proof signed by the
    device key. The Worker consults a revocation registry on every request and fails
-   closed if it cannot. ak-web pushes revocations to the Worker over an
+   closed if it cannot. Amended by [#63](https://github.com/bestagentkits/ak-vault/issues/63):
+   a token living at most 120 s is checked at issue and served without the lookup
+   until its `exp`, so revocation takes effect within 120 s for it. ak-web pushes revocations to the Worker over an
    HMAC-authenticated webhook ([ak-web#568](https://github.com/bestagentkits/ak-web/issues/568)
    implements the sender). The CLI's HS256 signing key is never given to the Worker.
 9. **One SQLite-backed Durable Object per vault**, inside a dedicated Worker at
