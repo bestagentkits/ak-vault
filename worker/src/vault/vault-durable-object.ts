@@ -88,7 +88,9 @@ export class VaultDurableObject extends DurableObject<Env> {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.membership = new MembershipStore(this.sql);
-    setReplayFlushScheduler(this.sql, (atMs) => void ctx.storage.setAlarm(atMs));
+    setReplayFlushScheduler(this.sql, (atMs) =>
+      ctx.storage.setAlarm(atMs).catch(() => replayStateFor(this.sql, Date.now()).flushNotScheduled()),
+    );
     // Reading sqlite_master writes nothing; re-running the idempotent schema on an
     // existing vault applies any newly added tables or indexes.
     this.schemaReady = this.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").toArray().length > 0;

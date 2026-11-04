@@ -150,6 +150,11 @@ export class RequestReplayState {
     if (this.active && !this.flushScheduled) this.schedule(this.lastActivityMs + IDLE_FLUSH_MS);
   }
 
+  /** The flush alarm could not be set: the next request schedules it again. */
+  flushNotScheduled(): void {
+    this.flushScheduled = false;
+  }
+
   private schedule(atMs: number): void {
     this.scheduleFlush(atMs);
     this.flushScheduled = true;

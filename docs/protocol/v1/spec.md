@@ -1604,8 +1604,9 @@ devices that honor it, not what a vault member can decrypt (§3).
    ±60 s; `jti` single-use per device for 120 s. Single use holds across a restart of
    the vault object: a server that cannot show which `jti`s it accepted before a
    restart refuses every proof whose `ts` is earlier than the restart plus the 60 s
-   skew (`401 unauthorized`), so a client can see such a refusal once after a server
-   restart and succeeds with its next fresh proof after that point.
+   skew (`401 unauthorized`). After such a restart a client's fresh proofs are refused
+   for up to 60 s; it retries with a fresh proof and backoff, keeping its token, and
+   MUST NOT treat this refusal as a revoked or expired session.
 3. Live revocation: every request consults the revocation registry (revoked `sid`,
    revoked `did`, per-`sub` minimum `iat`). Registry errors fail closed (`503`).
    The registry is fed by `POST /internal/v1/revocations` with headers
