@@ -58,7 +58,10 @@ Node 22+ and pnpm (version pinned in `package.json`) are required.
   (`browser` session of the requesting account only, ADR 0002 D8), and the
   `/input` redirect to `/app/` with the input-request routes and the `?input_request`
   item PUT (`input` session of the requesting account, recorded device only,
-  [ADR 0004](./docs/adr/0004-device-sealed-input-requests.md)) are the only new
+  [ADR 0004](./docs/adr/0004-device-sealed-input-requests.md)), and the
+  `approval-requests` routes (full shared pipeline, the token account's rows only,
+  decisions from a human `owner`/`editor` device other than the requester,
+  [ADR 0006](./docs/adr/0006-remote-access-approvals.md)) are the only new
   routes, each with the auth REVIEW.md lists;
   plaintext may transit Worker memory only as ADR 0002 D7 describes and is never
   logged, stored or put in an error. Nothing else widens.
