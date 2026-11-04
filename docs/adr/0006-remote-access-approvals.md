@@ -50,10 +50,11 @@ dashboard or a remote MCP client, without weakening local approval.
 - A machine device may publish a request (a background job is the main use) but never
   decide one.
 
-## Open questions
+## Owner answers (2026-11-04)
 
-- Should `secrets_approvals_allow` stay link-only, or may an MCP client with a stronger
-  grant allow directly?
-- Should a machine device be allowed to publish requests at all?
-- Should the CLI's agent-ancestor guard (refuse approval when an agent is in the process
-  tree) also apply to `ak secrets approvals approve`?
+The owner answered the three open questions in the session that drafted this ADR:
+
+- `secrets_approvals_allow` stays link-only; an MCP client never allows directly.
+- A machine device may publish requests and never decide them (as implemented).
+- `ak secrets approvals approve` applies the CLI's agent-ancestor guard, like local
+  approval (agentkit#2995).
