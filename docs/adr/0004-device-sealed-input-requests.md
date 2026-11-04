@@ -4,6 +4,10 @@
   owner approved it as written on 2026-10-30 (owner instruction in the orchestrator
   chat, relayed and recorded by an agent on the owner's behalf,
   [record on #203](https://github.com/bestagentkits/ak-vault/issues/203)).
+- **Amended:** 2026-11-02, D1 only: the accepted text chose the dashboard first when a
+  browser device exists; the Worker and spec §9.8 choose the online device first. D1 now
+  states the shipped order, as the owner asked in
+  [#227](https://github.com/bestagentkits/ak-vault/issues/227).
 - **Proposed:** 2026-10-30
 - **Amends:** [ADR 0002](./0002-browser-device-relay-and-remote-mcp.md) D8 (human write
   requests), which today needs an enrolled browser device. On acceptance and
@@ -34,12 +38,14 @@ session, and the value is sealed to a key that only the online device holds.
 
 1. **D1: one MCP tool, two flows.** `secrets_request_input` takes the same arguments as
    `secrets_prepare_write` (name, operation, purpose, sensitivity, ttl_s, vault_id) and
-   needs `vault-mcp:write`. When the requesting account has a current `browser` device
-   in the vault and the epoch's seal-key document is stored, it **is**
-   `secrets_prepare_write` (D8, unchanged) and says `flow: "dashboard"`. Otherwise it
-   uses the device-sealed flow below and says `flow: "device"`. With neither (no
-   browser device and no online device of that account listing the tool) it fails
-   `device_offline`; it never asks for the value.
+   needs `vault-mcp:write`. It first asks an online device of the requesting account
+   that lists the input tools for an input key and, on success, uses the device-sealed
+   flow below and says `flow: "device"`. When no such device is online, the account is an
+   `owner` and the epoch's seal-key document is stored, it **is** `secrets_prepare_write`
+   (D8, unchanged) and says `flow: "dashboard"`. With neither (no such device online and
+   no dashboard fallback) it fails `device_offline`; it never asks for the value. A device
+   that is online but fails or refuses does not trigger the fallback. While input
+   requests are off it is always `secrets_prepare_write`.
 2. **D2: the online device holds the only key.** The Worker sends the account's online
    device a relay `call` for tool `request_input`. The device checks the operation
    against its own view (`create` needs an absent name, `replace` an existing one),
@@ -121,12 +127,14 @@ section will restate it normatively.
 ### Implementation notes
 
 The spec ([§3.11](../protocol/v1/spec.md#311-input-seals-device-sealed-input-requests))
-owns the wire. Where the implementation made a choice this ADR left open:
+owns the wire. Where the implementation made a choice, or departed from the accepted
+text and the ADR was amended to match:
 
 - **D1 order.** The Worker has no record of which devices are browsers, so
   `secrets_request_input` tries the device-sealed flow first and falls back to the D8
-  dashboard flow when no online device of the account lists the input tools; with no
-  seal-key document either it fails `device_offline`. The device flow keeps the key
+  dashboard flow only for an `owner` when no online device of the account lists the
+  input tools; with no seal-key document, or for an `editor`, it fails `device_offline`.
+  The accepted D1 chose the dashboard first; it was amended on 2026-11-02 to this order. The device flow keeps the key
   in one device for ten minutes, narrower than D8's `VK[e]`.
 - **D3 token.** The `input` token is a vault token with its own audience
   `<origin>/input`, so no sync, relay or MCP route can accept it even before its
