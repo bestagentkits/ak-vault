@@ -52,7 +52,12 @@ export function forgetLogHead(sql: SqlStorage): void {
   logHeads.delete(sql);
 }
 
-/** The current `log_seq` and its head, from object memory when cached. */
+/**
+ * The current `log_seq` and its head, from object memory when cached. Invariant: every
+ * write to `records` or `log_heads` goes through `appendLogHead` or `backfillLogHeads`,
+ * which drop the cache, and a rolled-back mutation drops it too (the vault object's
+ * `handle`); otherwise a conditional pull would answer `304` for a changed head.
+ */
 export function cachedLogHead(sql: SqlStorage): { log_seq: number; log_head: string } {
   let head = logHeads.get(sql);
   if (!head) {

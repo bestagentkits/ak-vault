@@ -82,6 +82,13 @@ describe('conditional pull', () => {
     expect(behind.json.changes).toHaveLength(1);
   });
 
+  it('ignores an if_head that is not a current tag', async () => {
+    const fx = await VaultFixture.create();
+    const h = await head(fx);
+    expect((await fx.get(fx.owner, `/changes?cursor=${h.log_seq}&if_head=not-a-tag`)).status).toBe(200);
+    expect((await fx.get(fx.owner, `/changes?cursor=${h.log_seq}&if_head=`)).status).toBe(200);
+  });
+
   it('still authenticates: a conditional pull without a valid proof is refused', async () => {
     const fx = await VaultFixture.create();
     const h = await head(fx);
