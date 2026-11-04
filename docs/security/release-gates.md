@@ -249,8 +249,19 @@ stays pre-release until every box is checked at the exact commit and the owner d
       binding, single use with the item PUT, grant revocation, caps and rate; the
       dashboard form opens the intent, shows the requesting client, enforces the name
       binding and closes with the right reason.
+- [ ] Device-sealed input requests ([ADR 0004](../adr/0004-device-sealed-input-requests.md)):
+      Go and TypeScript reproduce `input-seal.json` including every changed-AAD and
+      context-separation case; Worker tests for the `input` token matrix (audience
+      `<origin>/input` only, refused on sync, relay and MCP routes), account binding,
+      single use, expiry, device offline, grant revocation by `sid` and the item PUT
+      device and account binding; the device holds the per-request key in memory only and
+      drops it before writing; the `/input` form clears the typed value on submit and
+      cancel. `VAULT_INPUT_REQUESTS_ENABLED` is on in production by the same owner
+      decision of 2026-11-01 as remote access, so this is an owner waiver, not a pass of
+      this gate. Evidence still open: nothing is ticked until it is linked here at the
+      exact commit.
 - [ ] Disclosure scan rerun with remote access on: planted values and names sent
-      through MCP set, `secrets_prepare_write`, relayed results and `run` output are absent from the Durable
+      through MCP set, `secrets_prepare_write`, `secrets_request_input`, relayed results and `run` output are absent from the Durable
       Object dump, Worker logs, live tail and errors (scenario 15 and
       [data classification](./data-classification.md#transits-worker-memory-never-stored-or-logged-remote-access-only)).
 - [ ] Red-team scenarios 16–21 executed and scenario 13 rerun with synced profiles
