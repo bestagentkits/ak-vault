@@ -50,6 +50,39 @@ Sources: [Workers pricing](https://developers.cloudflare.com/workers/platform/pr
 | Stored data per vault | 1 MB | Ciphertext, change log, tombstones, membership |
 | Days per month | 30 | |
 
+## Measured 2026-11-04: zero-write pulls
+
+Same lab workload as [2026-10-16](#measured-2026-10-16-staging-configuration), at the
+commit that keeps proof `jti`s and rate windows in vault-object memory
+([#63](https://github.com/bestagentkits/ak-vault/issues/63) item 1; design in
+[`request-replay-state.ts`](../../worker/src/vault/request-replay-state.ts)).
+
+| Per no-op pull, steady state | 2026-10-16 | 2026-11-04 |
+|---|---|---|
+| Rows written | 4.74 | **0.02** (6 in 293 pulls: one `active` and one `clean` marker per busy period) |
+| Rows read | 6.6 | 2.9 |
+| Vault + registry duration | 0.0116 + 0.0150 GB-s | 0.0024 + 0.0018 GB-s |
+| Durable Object requests | 2 | 2.35 (vault 1.35: about one idle-flush alarm per 3 pulls; registry 1) |
+| Worker CPU | 1.9 ms | 1.8 ms |
+
+A first run that flushed with a 30 s `setTimeout` billed 0.35 GB-s of vault duration
+per pull, because a pending timer keeps the object awake; the flush is a Durable
+Object alarm instead. The registry is still asked once per pull until short-lived
+tokens land (item 2).
+
+Projected with [`cost-projection.ts`](../../worker/scripts/cost-measurement/cost-projection.ts)
+(3 devices, 20 writes a day, writes as measured on 2026-10-16), USD per month:
+
+| Vaults | Lazy, before | Lazy, now | Active, before | Active, now | Active, with item 2 (projected: no registry call) |
+|---|---|---|---|---|---|
+| 1,000 | $6 | $7 | $695 | **$93** | $71 |
+| 10,000 | $287 | **$66** | $7,431 | **$1,016** | $792 |
+| 100,000 | $3,359 | **$1,132** | $74,859 | **$10,655** | $8,419 |
+
+With rows written gone, Worker and Durable Object **requests** are now the largest
+lines in the active rows; conditional pulls (item 3) and less frequent polling
+(item 4) are the levers for them.
+
 ## Measured 2026-10-16 (staging configuration)
 
 Method: [`pnpm cost:measure`](../../worker/scripts/cost-measurement/README.md) at

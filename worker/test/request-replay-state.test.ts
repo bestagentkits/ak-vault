@@ -5,7 +5,7 @@
  */
 import { randomId } from '@ak-vault/protocol';
 import { env } from 'cloudflare:workers';
-import { runInDurableObject } from 'cloudflare:test';
+import { runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { replayStateFor } from '../src/vault/request-replay-state.js';
 import type { VaultDurableObject } from '../src/vault/vault-durable-object.js';
@@ -40,6 +40,13 @@ async function rowsWrittenDuring(vaultId: string, run: () => Promise<void>): Pro
   return runInDurableObject(stubOf(vaultId), (instance: VaultDurableObject) => {
     delete (sqlOf(instance) as { exec?: unknown }).exec;
     return cursors.reduce((sum, c) => sum + c.rowsWritten, 0);
+  });
+}
+
+async function marker(vaultId: string): Promise<string | undefined> {
+  return runInDurableObject(stubOf(vaultId), (_i: unknown, state: DurableObjectState) => {
+    const row = state.storage.sql.exec<{ v: string }>("SELECT v FROM meta WHERE k = 'request_replay_state'").toArray()[0];
+    return row ? (JSON.parse(row.v) as { s: string }).s : undefined;
   });
 }
 
@@ -89,6 +96,34 @@ describe('request replay state', () => {
     expect((await fx.get(fx.owner, '/changes')).status).toBe(401);
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 61_000 });
     expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
+  });
+
+  it('the idle alarm saves the session, so a restart serves fresh proofs at once', async () => {
+    const fx = await VaultFixture.create();
+    const first = await fx.get(fx.owner, '/changes');
+    expect(first.status).toBe(200);
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 11_000 });
+    expect(await runDurableObjectAlarm(stubOf(fx.vaultId))).toBe(true);
+    expect(await marker(fx.vaultId)).toBe('clean');
+    await restart(fx.vaultId);
+    expect((await fx.get(fx.owner, '/changes', { token: first.token, proof: first.proof })).status).toBe(401);
+    expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
+  });
+
+  it('after an unclean stop the alarm does not mark the session clean while old proofs could be live', async () => {
+    const fx = await VaultFixture.create();
+    expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
+    await restart(fx.vaultId);
+    await runInDurableObject(stubOf(fx.vaultId), (instance: VaultDurableObject, state: DurableObjectState) => {
+      replayStateFor(sqlOf(instance), Date.now());
+      return state.storage.setAlarm(Date.now());
+    });
+    await runDurableObjectAlarm(stubOf(fx.vaultId));
+    expect(await marker(fx.vaultId)).toBe('active');
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 121_000 });
+    await runInDurableObject(stubOf(fx.vaultId), (_i: unknown, state: DurableObjectState) => state.storage.setAlarm(Date.now()));
+    await runDurableObjectAlarm(stubOf(fx.vaultId));
+    expect(await marker(fx.vaultId)).toBe('clean');
   });
 
   it('an unreadable session marker fails closed', async () => {

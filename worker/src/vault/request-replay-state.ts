@@ -7,8 +7,9 @@
  * one session marker in `meta`:
  * - Before the first proof of a session is accepted, the marker is set to `active`
  *   (one row). Nothing is accepted before that write succeeds.
- * - After `IDLE_FLUSH_MS` without requests, the live `jti`s and rate windows are saved
- *   and the marker set to `clean` (one row).
+ * - After `IDLE_FLUSH_MS` without requests, a Durable Object alarm saves the live
+ *   `jti`s and rate windows and sets the marker to `clean` (one row). An alarm, not a
+ *   timer: a pending timer keeps the object awake and billed for duration.
  * - A start that finds `clean` reloads the saved `jti`s and windows. A start that finds
  *   `active` (the object stopped while it was serving, so `jti`s accepted since the
  *   last save are lost) refuses every proof whose `ts` is earlier than the start plus
@@ -20,8 +21,8 @@
  */
 import { LIMITS } from '../limits.js';
 
-/** Idle time after which the session is saved and marked clean. Below the platform's idle eviction. */
-export const IDLE_FLUSH_MS = 30_000;
+/** Idle time after which the session is saved and marked clean. Well below the platform's idle eviction. */
+export const IDLE_FLUSH_MS = 10_000;
 /** Saved entries above this stay unsaved; the marker then stays `active` and the next start fails closed. */
 const MAX_SAVED_ENTRIES = 20_000;
 const MARKER_KEY = 'request_replay_state';
@@ -46,13 +47,19 @@ export class RequestReplayState {
   private refuseProofsBeforeMs = 0;
   /** Whether storage currently says `active`. */
   private active = false;
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  /** Last request that changed state; 0 in an object that has served none. */
+  private lastActivityMs = 0;
+  /** Whether a flush alarm is pending. */
+  private flushScheduled = false;
 
-  private constructor(private readonly sql: SqlStorage) {}
+  private constructor(
+    private readonly sql: SqlStorage,
+    private readonly scheduleFlush: (atMs: number) => void,
+  ) {}
 
   /** Load the saved session; `nowMs` is the start time used for the unclean-stop floor. */
-  static load(sql: SqlStorage, nowMs: number): RequestReplayState {
-    const state = new RequestReplayState(sql);
+  static load(sql: SqlStorage, nowMs: number, scheduleFlush: (atMs: number) => void = () => undefined): RequestReplayState {
+    const state = new RequestReplayState(sql, scheduleFlush);
     const row = sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', MARKER_KEY).toArray()[0];
     if (!row) return state;
     const saved = JSON.parse(row.v) as SavedState;
@@ -103,10 +110,21 @@ export class RequestReplayState {
     this.touch();
   }
 
-  /** Save live entries and mark the session clean. Kept `active` (fail closed) if too large. */
-  flush(nowMs: number): void {
-    this.timer = undefined;
+  /** The flush alarm fired: save when idle long enough, otherwise wait for the idle point. */
+  onFlushAlarm(nowMs: number): void {
+    this.flushScheduled = false;
     if (!this.active) return;
+    const due = Math.max(this.lastActivityMs + IDLE_FLUSH_MS, this.cleanAllowedFromMs());
+    if (nowMs < due) return this.schedule(due);
+    this.flush(nowMs);
+  }
+
+  /**
+   * Save live entries and mark the session clean. Kept `active` (fail closed) if too large,
+   * and while `jti`s accepted before an unclean stop could still be inside the proof window.
+   */
+  flush(nowMs: number): void {
+    if (!this.active || nowMs < this.cleanAllowedFromMs()) return;
     const j: [string, string, number][] = [];
     for (const [key, exp] of this.jtis) {
       if (exp < nowMs) continue;
@@ -119,15 +137,22 @@ export class RequestReplayState {
     this.active = false;
   }
 
+  /**
+   * After an unclean stop, `jti`s the earlier run accepted are unknown; their proofs carry a
+   * `ts` before the floor, so they are outside the window once the floor is a skew behind.
+   */
+  private cleanAllowedFromMs(): number {
+    return this.refuseProofsBeforeMs === 0 ? 0 : this.refuseProofsBeforeMs + LIMITS.clock_skew_seconds * 1000;
+  }
+
   private touch(): void {
-    if (this.timer !== undefined) clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
-      try {
-        this.flush(Date.now());
-      } catch {
-        // Left `active`: the next start refuses proofs from before it (fail closed).
-      }
-    }, IDLE_FLUSH_MS);
+    this.lastActivityMs = Date.now();
+    if (this.active && !this.flushScheduled) this.schedule(this.lastActivityMs + IDLE_FLUSH_MS);
+  }
+
+  private schedule(atMs: number): void {
+    this.scheduleFlush(atMs);
+    this.flushScheduled = true;
   }
 
   private write(saved: SavedState): void {
@@ -140,12 +165,18 @@ function jtiKey(did: string, jti: string): string {
 }
 
 const states = new WeakMap<SqlStorage, RequestReplayState>();
+const schedulers = new WeakMap<SqlStorage, (atMs: number) => void>();
+
+/** Register how a vault object schedules the flush alarm for its storage. */
+export function setReplayFlushScheduler(sql: SqlStorage, scheduleFlush: (atMs: number) => void): void {
+  schedulers.set(sql, scheduleFlush);
+}
 
 /** The state for a vault object's storage, loaded on first use (after its schema exists). */
 export function replayStateFor(sql: SqlStorage, nowMs: number): RequestReplayState {
   let state = states.get(sql);
   if (!state) {
-    state = RequestReplayState.load(sql, nowMs);
+    state = RequestReplayState.load(sql, nowMs, schedulers.get(sql));
     states.set(sql, state);
   }
   return state;
