@@ -17,6 +17,7 @@ import { b64decode, b64encode, randomBytes, sha256, utf8Decode, utf8Encode } fro
 import { AppError } from '../app-error.js';
 import { APP_SCOPE, type AppConfig } from '../config.js';
 import { checkInputLink, type InputLink } from '../input/input-link.js';
+import type { ApprovalLink } from '../sync/approval-request.js';
 import { isOpaqueId, type WriteLink } from '../sync/write-request.js';
 
 /** The subset of RFC 8414 metadata the dashboard uses, validated. */
@@ -53,6 +54,8 @@ export interface PendingSignIn {
   writeLink?: WriteLink;
   /** The input-request link this sign-in continues to (input form only). */
   inputLink?: InputLink;
+  /** The access-approval link this sign-in continues to. */
+  approvalLink?: ApprovalLink;
 }
 
 /** Where the pending sign-in waits across the redirect (sessionStorage in the browser). */
@@ -81,11 +84,12 @@ export function sessionPendingStore(storage: Storage, key: string = PENDING_KEY)
         const v = JSON.parse(raw) as Record<string, unknown>;
         if (typeof v['state'] !== 'string' || typeof v['verifier'] !== 'string' || typeof v['createdAt'] !== 'number') return null;
         const pending: PendingSignIn = { state: v['state'], verifier: v['verifier'], createdAt: v['createdAt'] };
-        const link = v['writeLink'] as Record<string, unknown> | undefined;
-        if (link !== undefined) {
+        for (const key of ['writeLink', 'approvalLink'] as const) {
+          const link = v[key] as Record<string, unknown> | undefined;
+          if (link === undefined) continue;
           const { requestId, vaultId } = link ?? {};
           if (typeof requestId !== 'string' || typeof vaultId !== 'string' || !isOpaqueId(requestId) || !isOpaqueId(vaultId)) return null;
-          pending.writeLink = { requestId, vaultId };
+          pending[key] = { requestId, vaultId };
         }
         if (v['inputLink'] !== undefined) {
           const inputLink = checkInputLink(v['inputLink']);
@@ -149,10 +153,13 @@ export function pkceChallenge(verifier: string): string {
  * Start a sign-in: store `{state, verifier}` and return the authorization URL.
  * The verifier is 32 random bytes in base64url (43 characters, RFC 7636 §4.1).
  */
-export function beginSignIn(config: AppConfig, as: AuthServerMetadata, store: PendingStore, now = Date.now(), writeLink: WriteLink | null = null, inputLink: InputLink | null = null): string {
+export function beginSignIn(
+  config: AppConfig, as: AuthServerMetadata, store: PendingStore, now = Date.now(),
+  writeLink: WriteLink | null = null, inputLink: InputLink | null = null, approvalLink: ApprovalLink | null = null,
+): string {
   const pending: PendingSignIn = {
     state: b64encode(randomBytes(32)), verifier: b64encode(randomBytes(32)), createdAt: now,
-    ...(writeLink ? { writeLink } : {}), ...(inputLink ? { inputLink } : {}),
+    ...(writeLink ? { writeLink } : {}), ...(inputLink ? { inputLink } : {}), ...(approvalLink ? { approvalLink } : {}),
   };
   store.save(pending);
   const url = new URL(as.authorization_endpoint);
@@ -232,7 +239,7 @@ async function tokenRequest(fetchFn: typeof fetch, as: AuthServerMetadata, confi
 export async function completeSignIn(
   url: URL,
   deps: { config: AppConfig; as: AuthServerMetadata; store: PendingStore; fetchFn: typeof fetch; now?: number },
-): Promise<{ session: OAuthSession; writeLink: WriteLink | null; inputLink: InputLink | null }> {
+): Promise<{ session: OAuthSession; writeLink: WriteLink | null; inputLink: InputLink | null; approvalLink: ApprovalLink | null }> {
   const now = deps.now ?? Date.now();
   const pending = deps.store.take();
   const q = url.searchParams;
@@ -253,7 +260,7 @@ export async function completeSignIn(
     code_verifier: pending.verifier,
     resource: deps.config.resource,
   }, now);
-  return { session, writeLink: pending.writeLink ?? null, inputLink: pending.inputLink ?? null };
+  return { session, writeLink: pending.writeLink ?? null, inputLink: pending.inputLink ?? null, approvalLink: pending.approvalLink ?? null };
 }
 
 /** Rotate the in-memory refresh token for a fresh access token of the same grant. */

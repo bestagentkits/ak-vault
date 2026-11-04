@@ -7,6 +7,10 @@
  */
 import {
   applyRecord,
+  sealApprovalRequest,
+  verifyApprovalDecision,
+  type ApprovalRequestWire,
+  type ApprovalSubject,
   b64encode,
   buildGenesisEvent,
   cjson,
@@ -130,6 +134,8 @@ export class FakeWorld {
   readonly tags = new Map<string, { key_epoch: number; tag: string }>();
   readonly exchanges: LoggedExchange[] = [];
   readonly writeRequests = new Map<string, FakeWriteRequest>();
+  /** Access approvals as the Worker keeps them: the signed wire, its state and the decision. */
+  readonly approvals = new Map<string, { account: string; wire: ApprovalRequestWire; state: string; decision: JsonObject | null }>();
   readonly revoked: string[] = [];
   /** The encrypted audit stream, as the Worker stores it. */
   readonly audit: Envelope[] = [];
@@ -376,6 +382,21 @@ export class FakeWorld {
     return `${ORIGIN}/app#write=${requestId}&vault=${vaultId}`;
   }
 
+  /** Seal and store an access-approval request from `requester` (a device of this vault). */
+  seedApproval(requester: DeviceKeys, subject: ApprovalSubject, opts: { ttlMs?: number; account?: string } = {}): ApprovalRequestWire {
+    const epoch = this.state().key_epoch;
+    const ts = Date.now();
+    const wire = sealApprovalRequest(this.vks.get(epoch)!, requester.signSecret, {
+      vaultId: this.vaultId, keyEpoch: epoch, requester: requester.record.device_id, ts, expiresAt: ts + (opts.ttlMs ?? 600_000), subject,
+    });
+    this.approvals.set(wire.request_id, { account: opts.account ?? requester.record.account, wire, state: 'pending', decision: null });
+    return wire;
+  }
+
+  approvalUrl(requestId: string, vaultId = this.vaultId): string {
+    return `${ORIGIN}/app#approval=${requestId}&vault=${vaultId}`;
+  }
+
   /** The caller's open request: 404 unknown or another account's, 400 closed or expired. */
   private openRequest(id: string, sub: string): FakeWriteRequest | Response {
     const row = this.writeRequests.get(id);
@@ -387,6 +408,38 @@ export class FakeWorld {
 
   private closeRequest(row: FakeWriteRequest, state: FakeWriteRequest['state'], reason: string | null, receipt: string | null): void {
     Object.assign(row, { state, reason, receipt, intent: null });
+  }
+
+  private routeApproval(parts: string[], url: URL, method: string, body: string, headers: Headers, sub: string, did: string): Response {
+    const view = (id: string, r: { wire: ApprovalRequestWire; state: string; decision: JsonObject | null }, withWire: boolean) => ({
+      request_id: id, requester: r.wire.requester, key_epoch: r.wire.key_epoch, state: r.state, created_at: r.wire.ts, expires_at: r.wire.expires_at,
+      ...(withWire ? { request: r.wire } : {}), ...(withWire && r.decision ? { decision: r.decision } : {}),
+    });
+    if (method === 'GET' && parts.length === 5) {
+      const pending = url.searchParams.get('state') === 'pending';
+      const rows = [...this.approvals.entries()].filter(([, r]) => r.account === sub && (!pending || r.state === 'pending'));
+      return json(200, { approvals: rows.map(([id, r]) => view(id, r, false)) });
+    }
+    const id = decodeURIComponent(parts[5] ?? '');
+    const row = this.approvals.get(id);
+    if (!row || row.account !== sub) return apiError(404, 'not_found');
+    if (method === 'GET' && parts.length === 6) return json(200, view(id, row, true));
+    if (method === 'POST' && parts.length === 7 && parts[6] === 'decision') {
+      if (!headers.get('Idempotency-Key')) return apiError(400, 'bad_request');
+      if (row.state !== 'pending') return apiError(409, 'conflict');
+      const b = JSON.parse(body) as { decision?: JsonObject };
+      const approver = this.state().devices.find((d) => d.device_id === did);
+      if (!approver || approver.kind !== 'human' || did === row.wire.requester) return apiError(403, 'forbidden');
+      try {
+        verifyApprovalDecision(b.decision, row.wire, { approverSignPub: approver.sign_pub });
+      } catch {
+        return apiError(400, 'bad_request');
+      }
+      row.decision = b.decision!;
+      row.state = (b.decision as { decision: string }).decision === 'deny' ? 'denied' : 'allowed';
+      return json(200, view(id, row, false));
+    }
+    return apiError(404, 'not_found');
   }
 
   /** What the authorization server does with the dashboard's redirect: returns the callback URL. */
@@ -598,6 +651,7 @@ export class FakeWorld {
         .map(([item_id, t]) => ({ item_id, revision: this.itemStates.get(item_id)!.revision, key_epoch: t.key_epoch, tag: t.tag }));
       return json(200, { hits });
     }
+    if (coll === 'approval-requests') return this.routeApproval(parts, url, method, body, headers, who.sub, who.did);
     if (coll === 'write-requests' && parts[5]) {
       const row = this.openRequest(parts[5], who.sub);
       if (method === 'GET' && parts.length === 6) {

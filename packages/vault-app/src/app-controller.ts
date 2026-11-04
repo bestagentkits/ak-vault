@@ -30,6 +30,18 @@ import { appendRotationAudit, type RotationAuditAction } from './sync/audit.js';
 import { deleteItem, findByName, requestTarget, restoreRevision, resolveConflicts, rotateValue, setItem, updateRotation, type RotationPatch } from './sync/write-ops.js';
 import type { RotationWorkflow } from './sync/rotation.js';
 import {
+  decideApproval,
+  fetchApproval,
+  isApprovalFragment,
+  listPendingApprovals,
+  openApproval,
+  parseApprovalLink,
+  ttlChoices,
+  type ApprovalLink,
+  type OpenedApproval,
+} from './sync/approval-request.js';
+import type { ApprovalDecisionKind } from '@ak-vault/protocol';
+import {
   closeWriteRequest,
   fetchWriteRequest,
   isWriteFragment,
@@ -49,6 +61,14 @@ const STATE_AUDIT_ACTION: Record<RotationWorkflow['state'] | 'cleared', Rotation
   cleared: 'rotation_cleared',
 };
 
+export type ApprovalNoticeCode =
+  | 'approval_signin'
+  | 'approval_enroll'
+  | 'approval_wrong_vault'
+  | 'approval_unavailable'
+  | 'approval_allowed'
+  | 'approval_denied';
+
 export type WriteNoticeCode =
   | 'write_signin'
   | 'write_enroll'
@@ -61,12 +81,28 @@ export type WriteNoticeCode =
   | 'write_missing'
   | 'write_device_error';
 
-export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | WriteNoticeCode | 'locked' | 'saved' | 'deleted' | 'restored' | 'resolved' | 'signed_out' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved' };
+export type Notice = { kind: 'info' | 'error'; code: AppErrorCode | WriteNoticeCode | ApprovalNoticeCode | 'locked' | 'saved' | 'deleted' | 'restored' | 'resolved' | 'signed_out' | 'rotation_started' | 'rotation_updated' | 'rotation_saved' | 'rotation_revoked' | 'settings_saved' };
 
 /** The write request on screen: its link and, once fetched and opened, its target. */
 interface WriteInFlight {
   link: WriteLink;
   opened: OpenedWriteRequest | null;
+}
+
+/** What the approval screen shows: the opened, verified subject. Every field is shown as plain text. */
+export interface ApprovalView {
+  secret: string;
+  agent: string;
+  fingerprint: string;
+  project: string | null;
+  purpose: string | null;
+  reason: string | null;
+  /** device_id of the requesting device. */
+  requester: string;
+  /** Unix ms. */
+  expiresAt: number;
+  /** "Allow for a while" choices this request accepts, in seconds. */
+  ttlChoices: number[];
 }
 
 /** What the write-request screen shows about the request. Never a value. */
@@ -85,9 +121,10 @@ export type Screen =
   | { kind: 'signed_out'; notice: Notice | null }
   | { kind: 'join'; joinCode: string; deviceId: string; notice: Notice | null }
   | { kind: 'approve'; sas: string; deviceId: string; notice: Notice | null }
-  | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; canWrite: boolean; membership: MembershipView; nowMs: number; deviceId: string; notice: Notice | null; busy: boolean }
+  | { kind: 'vault'; items: ItemView[]; matches: string[] | null; unreadable: number; hidden: number; rekeyRequired: boolean; canWrite: boolean; membership: MembershipView; nowMs: number; deviceId: string; notice: Notice | null; busy: boolean; approvals: string[] }
   | { kind: 'history'; history: ItemHistory; canWrite: boolean; deviceId: string; notice: Notice | null; busy: boolean }
   | { kind: 'write'; deviceId: string; request: WriteRequestView | null; open: boolean; busy: boolean; retry: boolean; receipt: string | null; notice: Notice | null }
+  | { kind: 'approval'; deviceId: string; request: ApprovalView | null; open: boolean; busy: boolean; retry: boolean; notice: Notice | null }
   | { kind: 'removed' };
 
 interface WriteScreenState {
@@ -144,6 +181,12 @@ export class AppController {
   private writeLink: WriteLink | null = null;
   /** The write request on screen. */
   private writeReq: WriteInFlight | null = null;
+  /** An access-approval link waiting for sign-in, enrollment and sync. */
+  private approvalLink: ApprovalLink | null = null;
+  /** The access approval on screen and, once fetched and verified, its subject. */
+  private approvalReq: { link: ApprovalLink; opened: OpenedApproval | null } | null = null;
+  /** Request IDs of the account's pending approvals in this vault, from the last pull. */
+  private pendingApprovals: string[] = [];
   private readonly now: () => number;
   /** `deps.fetchFn` plus a note of the vault origin's clock, read from its `Date` header. */
   private readonly fetchFn: typeof fetch;
@@ -194,7 +237,9 @@ export class AppController {
     if (!isAuthorizationResponse(url)) {
       this.deps.pending.take();
       this.writeLink = this.takeWriteLink(url);
-      this.show({ kind: 'signed_out', notice: this.clockSkewed() ? { kind: 'error', code: 'clock_skew' } : this.writeLink ? { kind: 'info', code: 'write_signin' } : null });
+      this.approvalLink = this.takeApprovalLink(url);
+      const linkNotice: Notice | null = this.writeLink ? { kind: 'info', code: 'write_signin' } : this.approvalLink ? { kind: 'info', code: 'approval_signin' } : null;
+      this.show({ kind: 'signed_out', notice: this.clockSkewed() ? { kind: 'error', code: 'clock_skew' } : linkNotice });
       return;
     }
     // The code and state leave the address bar and history before anything else runs.
@@ -203,6 +248,7 @@ export class AppController {
       const done = await completeSignIn(url, { config: this.config, as: this.as, store: this.deps.pending, fetchFn: this.fetchFn, now: this.now() });
       this.session = done.session;
       this.writeLink = done.writeLink;
+      this.approvalLink = done.approvalLink;
     } catch (err) {
       const code = appErrorCode(err, 'signin_refused');
       this.show({ kind: 'signed_out', notice: { kind: 'error', code: this.clockSkewed() && (code === 'signin_refused' || code === 'token_exchange_failed') ? 'clock_skew' : code } });
@@ -221,8 +267,23 @@ export class AppController {
     return parseWriteLink(url.hash);
   }
 
-  /** A write-request link opened in a page that is already running (the fragment changed). */
+  /**
+   * Read an access-approval link from the URL fragment. Any `#approval=` fragment
+   * leaves the address bar and history at once; only an exact one is kept.
+   */
+  private takeApprovalLink(url: URL): ApprovalLink | null {
+    if (!this.config || !isApprovalFragment(url.hash)) return null;
+    this.deps.replaceUrl(this.config.redirectUri);
+    return parseApprovalLink(url.hash);
+  }
+
+  /** A write-request or approval link opened in a page that is already running (the fragment changed). */
   async openLink(url: URL): Promise<void> {
+    const approval = this.takeApprovalLink(url);
+    if (approval) {
+      await this.openApprovalLink(approval);
+      return;
+    }
     const link = this.takeWriteLink(url);
     if (!link) return;
     const kind = this.screen.kind;
@@ -245,8 +306,9 @@ export class AppController {
   async signIn(): Promise<void> {
     if (!this.config || !this.as) return;
     const link = this.writeLink ?? this.writeReq?.link ?? null;
+    const approval = this.approvalLink ?? this.approvalReq?.link ?? null;
     await this.dropSession(false);
-    this.deps.navigate(beginSignIn(this.config, this.as, this.deps.pending, this.now(), link));
+    this.deps.navigate(beginSignIn(this.config, this.as, this.deps.pending, this.now(), link, null, approval));
   }
 
   /** Lock: forget tokens, keys and the snapshot and revoke the grant. The device stays enrolled. */
@@ -272,6 +334,9 @@ export class AppController {
     this.device = null;
     this.writeLink = null;
     this.writeReq = null;
+    this.approvalLink = null;
+    this.approvalReq = null;
+    this.pendingApprovals = [];
     if (session && this.config && this.as) await revokeSession(session, { config: this.config, as: this.as, fetchFn: this.fetchFn, keepalive });
   }
 
@@ -315,6 +380,7 @@ export class AppController {
     const device = this.device!;
     const deviceId = deviceIdOf(device.keys);
     if (!device.enrollment?.confirmed && this.writeLink) notice ??= { kind: 'info', code: 'write_enroll' };
+    if (!device.enrollment?.confirmed && this.approvalLink) notice ??= { kind: 'info', code: 'approval_enroll' };
     if (!device.enrollment) {
       this.show({ kind: 'join', joinCode: joinCodeFor(device), deviceId, notice });
       return;
@@ -427,6 +493,13 @@ export class AppController {
         await this.openWrite(link);
         return;
       }
+      const approval = this.approvalLink;
+      if (approval) {
+        this.approvalLink = null;
+        await this.openApproval(approval);
+        return;
+      }
+      this.pendingApprovals = await this.loadPendingApprovals();
       this.showVault(notice, null);
     } catch (err) {
       // Locked, signed out or replaced while the pull was in flight: that state stands, not this pull's error.
@@ -480,6 +553,7 @@ export class AppController {
     this.show({
       kind: 'vault', items: s.items, matches, unreadable: s.unreadable, hidden: s.hidden, rekeyRequired: s.state.rekey_required,
       canWrite: roleCanWrite(membership.selfRole), membership, nowMs: this.now(), deviceId: s.self.device_id, notice, busy,
+      approvals: this.pendingApprovals,
     });
   }
 
@@ -717,6 +791,138 @@ export class AppController {
     if (this.screen.kind !== 'write' || this.screen.busy) return;
     this.writeReq = null;
     await this.sync(null);
+  }
+
+  /** Pending approvals for the vault list. Best effort: the routes are off unless remote access is enabled. */
+  private async loadPendingApprovals(): Promise<string[]> {
+    const { client, snapshot } = this;
+    if (!client || !snapshot || snapshot.self.kind !== 'human' || !roleCanWrite(snapshot.self.role)) return [];
+    try {
+      return (await listPendingApprovals(client, snapshot.vaultId)).map((l) => l.requestId);
+    } catch {
+      return [];
+    }
+  }
+
+  /** An approval link, or a pending approval picked from the vault list. */
+  async openApprovalLink(link: ApprovalLink): Promise<void> {
+    const kind = this.screen.kind;
+    if ((kind === 'approval' || kind === 'write') && this.screen.busy) return;
+    if (this.snapshot && (kind === 'vault' || kind === 'write' || kind === 'approval' || kind === 'history')) {
+      await this.openApproval(link);
+      return;
+    }
+    this.approvalLink = link;
+    if (kind === 'signed_out') this.show({ kind: 'signed_out', notice: this.clockSkewed() ? { kind: 'error', code: 'clock_skew' } : { kind: 'info', code: 'approval_signin' } });
+    else if (kind === 'join' || kind === 'approve') await this.route();
+  }
+
+  /** Open a pending approval of this vault by its request ID (from the vault list). */
+  async openPendingApproval(requestId: string): Promise<void> {
+    if (!this.snapshot || !this.pendingApprovals.includes(requestId)) return;
+    await this.openApprovalLink({ requestId, vaultId: this.snapshot.vaultId });
+  }
+
+  private async openApproval(link: ApprovalLink): Promise<void> {
+    const snapshot = this.snapshot;
+    if (!snapshot) return;
+    this.approvalReq = null;
+    if (link.vaultId !== snapshot.vaultId) {
+      this.showVault({ kind: 'error', code: 'approval_wrong_vault' }, null);
+      return;
+    }
+    this.approvalReq = { link, opened: null };
+    await this.loadApproval();
+  }
+
+  /** Fetch the request and verify it against the snapshot before anything is shown. */
+  private async loadApproval(): Promise<void> {
+    const a = this.approvalReq;
+    const { snapshot, client } = this;
+    if (!a || !snapshot || !client) return;
+    this.showApproval({ busy: true });
+    let raw: unknown;
+    try {
+      raw = await fetchApproval(client, a.link);
+    } catch (err) {
+      if (await this.approvalRouteFailed(err)) return;
+      this.showApproval({ retry: true, notice: { kind: 'error', code: appErrorCode(err, 'server') === 'network' ? 'network' : 'server' } });
+      return;
+    }
+    if (this.approvalReq !== a) return;
+    try {
+      a.opened = openApproval(snapshot, a.link, raw, this.now());
+    } catch (err) {
+      const code = appErrorCode(err, 'vault_verification_failed');
+      this.showApproval({ notice: { kind: 'error', code: code === 'item_unreadable' ? 'item_unreadable' : 'approval_unavailable' } });
+      return;
+    }
+    this.showApproval({ open: true });
+  }
+
+  async retryApproval(): Promise<void> {
+    const s = this.screen;
+    if (s.kind !== 'approval' || !s.retry || s.busy) return;
+    await this.loadApproval();
+  }
+
+  /** Sign and send the person's answer. A machine device never answers (the server refuses it too). */
+  async decide(decision: ApprovalDecisionKind, ttlS?: number): Promise<void> {
+    const s = this.screen;
+    const a = this.approvalReq;
+    const { snapshot, client, signer } = this;
+    if (s.kind !== 'approval' || !s.open || s.busy || !a?.opened || !snapshot || !client || !signer) return;
+    this.showApproval({ open: true, busy: true });
+    try {
+      await decideApproval({ client, snapshot, signer, opened: a.opened, decision, ...(ttlS === undefined ? {} : { ttlS }), nowMs: this.now() });
+    } catch (err) {
+      if (this.approvalReq !== a) return;
+      if (await this.approvalRouteFailed(err)) return;
+      this.showApproval({ open: true, notice: { kind: 'error', code: appErrorCode(err, 'server') === 'network' ? 'network' : 'server' } });
+      return;
+    }
+    if (this.approvalReq !== a) return;
+    this.pendingApprovals = this.pendingApprovals.filter((id) => id !== a.link.requestId);
+    this.showApproval({ notice: { kind: 'info', code: decision === 'deny' ? 'approval_denied' : 'approval_allowed' } });
+  }
+
+  /** Leave the approval screen for the vault list, refreshed. */
+  async leaveApproval(): Promise<void> {
+    if (this.screen.kind !== 'approval' || this.screen.busy) return;
+    this.approvalReq = null;
+    await this.sync(null);
+  }
+
+  /** A removed device or lost sign-in is terminal; a request no longer pending gets the stale-link message. */
+  private async approvalRouteFailed(err: unknown): Promise<boolean> {
+    if (isVaultApiError(err, 'forbidden') || isVaultApiError(err, 'unauthorized')) {
+      await this.fail(err);
+      return true;
+    }
+    if (isVaultApiError(err) && (err.status === 400 || err.status === 404 || err.status === 409)) {
+      this.showApproval({ notice: { kind: 'error', code: 'approval_unavailable' } });
+      return true;
+    }
+    return false;
+  }
+
+  private showApproval(st: { open?: boolean; busy?: boolean; retry?: boolean; notice?: Notice | null }): void {
+    const o = this.approvalReq?.opened ?? null;
+    this.show({
+      kind: 'approval',
+      deviceId: this.snapshot!.self.device_id,
+      request: o
+        ? {
+          secret: o.subject.secret, agent: o.subject.agent, fingerprint: o.subject.fingerprint,
+          project: o.subject.project ?? null, purpose: o.subject.purpose ?? null, reason: o.subject.reason ?? null,
+          requester: o.requester, expiresAt: o.expiresAt, ttlChoices: ttlChoices(o),
+        }
+        : null,
+      open: st.open ?? false,
+      busy: st.busy ?? false,
+      retry: st.retry ?? false,
+      notice: st.notice ?? null,
+    });
   }
 
   private showWrite(st: WriteScreenState): void {
