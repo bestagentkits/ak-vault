@@ -19,7 +19,7 @@ import { randomId, type MembershipState, type Role, type SealKeyDoc } from '@ak-
 import { refuseLegacyRoleSet, type Env } from '../env.js';
 import { ApiError, errorResult, okResult, toApiError, type ApiResult } from '../http/errors.js';
 import { appendAudit, readAudit } from './audit-store.js';
-import { backfillLogHeads } from './change-log-heads.js';
+import { backfillLogHeads, forgetLogHead } from './change-log-heads.js';
 import { getChanges } from './changes-feed.js';
 import { listCheckpoints, postCheckpoint } from './checkpoint-store.js';
 import { lookupIdempotent, storeIdempotent, validateIdempotencyKey } from './idempotency.js';
@@ -155,6 +155,7 @@ export class VaultDurableObject extends DurableObject<Env> {
         });
       } catch (err) {
         this.membership.invalidate(); // the cached state may describe a rolled-back append
+        forgetLogHead(this.sql);
         throw err;
       }
     } catch (err) {

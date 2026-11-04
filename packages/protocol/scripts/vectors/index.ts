@@ -21,6 +21,7 @@ import { enrollCommitVectors } from './enroll-commit.js';
 import { profileVectors } from './profile-provenance.js';
 import { relayFrameVectors } from './relay-frames.js';
 import { vaultTokenLifetimeVectors } from './vault-token.js';
+import { changesHeadTagVectors } from './changes-head.js';
 
 const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'canonical-json.json': canonicalJsonVectors,
@@ -55,6 +56,7 @@ const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'profile.json': profileVectors,
   'relay-frames.json': relayFrameVectors,
   'vault-token-lifetime.json': vaultTokenLifetimeVectors,
+  'changes-head-tag.json': changesHeadTagVectors,
 };
 
 export const VECTOR_FILES = Object.keys(BUILDERS);

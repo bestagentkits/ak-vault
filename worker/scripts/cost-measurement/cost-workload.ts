@@ -12,7 +12,7 @@
  * stay out of another phase; README.md lists what still carries over. Nothing here
  * prints a token, proof, key or body.
  */
-import { randomId, utf8Encode } from '@ak-vault/protocol';
+import { changesHeadTag, randomId, utf8Encode, type ChangesHead } from '@ak-vault/protocol';
 import { labDevice, webhookSignature, type CallResult, type LabClient, type LabDevice } from '../platform-log-scan/lab-client.js';
 import { LabVault } from '../platform-log-scan/lab-vault-model.js';
 import type { NeedleSet } from '../platform-log-scan/needle-scan.js';
@@ -116,11 +116,11 @@ class PhaseRun {
 }
 
 /** Change-log head as a device sees it from an incremental pull at `cursor`. */
-async function pullHead(phase: PhaseRun, v: LabVault, device: LabDevice, cursor: number): Promise<{ log_seq: number; log_head: string; changes: number }> {
+async function pullHead(phase: PhaseRun, v: LabVault, device: LabDevice, cursor: number): Promise<{ log_seq: number; log_head: string; tag: string; changes: number }> {
   const res = phase.must(await v.call(device, 'GET', `/changes?cursor=${cursor}&limit=500`), 'pull', 200);
-  const head = res.json?.head as { log_seq?: unknown; log_head?: unknown } | undefined;
+  const head = res.json?.head as ChangesHead | undefined;
   if (typeof head?.log_seq !== 'number' || typeof head.log_head !== 'string') throw new Error('pull response lacks the change-log head');
-  return { log_seq: head.log_seq, log_head: head.log_head, changes: Array.isArray(res.json?.changes) ? (res.json.changes as unknown[]).length : -1 };
+  return { log_seq: head.log_seq, log_head: head.log_head, tag: changesHeadTag(head), changes: Array.isArray(res.json?.changes) ? (res.json.changes as unknown[]).length : -1 };
 }
 
 /** Genesis, enrol a second device (with its wrap), and write `items` items as the owner. */
@@ -171,6 +171,7 @@ export async function runCostWorkload(client: LabClient, needles: NeedleSet, web
   const pushVaults: TwoDeviceVault[] = [];
   const memberVaults: TwoDeviceVault[] = [];
   const cursors = new Map<LabDevice, number>();
+  const tags = new Map<LabDevice, string>();
   await run('setup', async (phase) => {
     // A few vaults at a time: many parallel first requests on a fresh workers.dev host made the operator
     // network time out, and the identical retry is then refused as a proof replay.
@@ -182,12 +183,17 @@ export async function runCostWorkload(client: LabClient, needles: NeedleSet, web
     pullVaults.push(...(await make(shape.pullVaults, 3)));
     pushVaults.push(...(await make(shape.pushVaults, 3)));
     memberVaults.push(...(await make(shape.memberVaults, 3)));
-    for (const t of pullVaults) for (const d of [t.owner, t.laptop]) cursors.set(d, (await pullHead(phase, t.vault, d, 0)).log_seq);
+    for (const t of pullVaults)
+      for (const d of [t.owner, t.laptop]) {
+        const head = await pullHead(phase, t.vault, d, 0);
+        cursors.set(d, head.log_seq);
+        tags.set(d, head.tag);
+      }
     for (const t of memberVaults) cursors.set(t.owner, (await pullHead(phase, t.vault, t.owner, 0)).log_seq);
     phase.record.operations = pullVaults.length + pushVaults.length + memberVaults.length;
   });
 
-  await run('pull', (phase) => pullPhase(phase, pullVaults, cursors, shape));
+  await run('pull', (phase) => pullPhase(phase, pullVaults, cursors, tags, shape));
 
   await run('push', async (phase) => {
     await Promise.all(
@@ -265,9 +271,9 @@ export async function runCostWorkload(client: LabClient, needles: NeedleSet, web
   return { phases, vaults: pullVaults.length + pushVaults.length + memberVaults.length, requests: phases.reduce((n, p) => n + p.requests, 0) };
 }
 
-/** No-op polls by both devices of each vault, from the head each saw in setup. */
-async function pullPhase(phase: PhaseRun, vaults: TwoDeviceVault[], cursors: Map<LabDevice, number>, shape: WorkloadShape): Promise<void> {
-  const pollers = vaults.flatMap((t) => [t.owner, t.laptop].map((device) => ({ v: t.vault, device, cursor: cursors.get(device) ?? 0 })));
+/** No-op conditional polls (`if_head`, answered `304`) by both devices of each vault, from the head each saw in setup. */
+async function pullPhase(phase: PhaseRun, vaults: TwoDeviceVault[], cursors: Map<LabDevice, number>, tags: Map<LabDevice, string>, shape: WorkloadShape): Promise<void> {
+  const pollers = vaults.flatMap((t) => [t.owner, t.laptop].map((device) => ({ v: t.vault, device, cursor: cursors.get(device) ?? 0, tag: tags.get(device) ?? '' })));
   const deadline = phase.record.startedAt + shape.pullSeconds * 1000;
   await Promise.all(
     pollers.map(async (p, i) => {
@@ -275,8 +281,7 @@ async function pullPhase(phase: PhaseRun, vaults: TwoDeviceVault[], cursors: Map
       await sleep(offset);
       for (let k = 1; Date.now() < deadline; k++) {
         // Counted, not fatal: one lost poll (for example a network retry refused as a replay) does not end the series.
-        const res = phase.check(await p.v.call(p.device, 'GET', `/changes?cursor=${p.cursor}`), 200);
-        if (res.status === 200 && (res.json?.changes as unknown[] | undefined)?.length !== 0) phase.record.unexpected++;
+        phase.check(await p.v.call(p.device, 'GET', `/changes?cursor=${p.cursor}&if_head=${p.tag}`), 304);
         phase.record.operations++;
         await sleep(phase.record.startedAt + offset + k * shape.pullIntervalMs - Date.now());
       }

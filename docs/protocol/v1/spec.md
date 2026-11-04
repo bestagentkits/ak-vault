@@ -1247,6 +1247,18 @@ It returns the new cursor and the verified records. Apart from fences below `fro
 no position requires a kept head, and on a page that is not `complete` a kept head
 beyond the last entry is not checked.
 
+**Conditional pull.** `GET /v1/vaults/{vid}/changes?cursor=<n>&limit=<n>` answers
+`{"changes","next_cursor","has_more","head"}`, where `head` is
+`{log_seq, log_head, membership_seq, membership_head, key_epoch, rekey_required}`.
+`changesHeadTag(head)` = b64url(sha256(cjson(head))) over exactly those six fields
+(vectors: `changes-head-tag.json`). A client that holds a head may add
+`if_head=<changesHeadTag of that head>`. When the server's current head has that tag
+and `cursor >= head.log_seq`, it answers `304` with no body; otherwise the query is
+ignored and the answer is the full `200`. Authentication, proof single use and rate
+limits apply to a conditional pull exactly as to any other. A `304` tells the client
+only that nothing it verifies has changed; it never replaces verification, and a client
+that sees a `304` keeps its own cursor, heads and checkpoints unchanged.
+
 ### 5.1 Profile layout
 
 A secret item MAY carry a **profile**: operator-facing text that helps a person or an
@@ -2223,3 +2235,6 @@ under an earlier revision does not verify and is reset rather than migrated.
   (§3.13), the `approval-requests` routes (§9.6) and three MCP tools
   (`secrets_approvals_list`, `secrets_approvals_allow`, `secrets_approvals_deny`, §9.8).
   No existing wire changes.
+- **2026-11 (issue #63):** conditional pull, additive: the optional `if_head` query of
+  `GET …/changes` and `changesHeadTag` (§5). A client that never sends `if_head` gets
+  exactly the answers it got before; no existing body or vector changes.

@@ -439,3 +439,4 @@ export {
 } from './relay-frames.js';
 export { ENTRY_ORIGINS, SEARCH_FIELDS, parseToolArgs, parseToolResult } from './relay-tools.js';
 export { VAULT_TOKEN_SHORT_MAX_SECONDS, isShortLivedVaultToken, shortLivedVaultTokenUsable } from './vault-token.js';
+export { changesHeadTag, type ChangesHead } from './changes-head.js';
