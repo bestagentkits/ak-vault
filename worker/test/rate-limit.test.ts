@@ -3,6 +3,7 @@ import { randomBytes, randomId } from '@ak-vault/protocol';
 import { env } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { rateCounters } from './helpers/replay-state.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 const stubFor = (vaultId: string) => env.VAULT.get(env.VAULT.idFromName(vaultId));
@@ -68,10 +69,7 @@ describe('rate limit', () => {
     // Anyone presenting the token now gets 429 without a proof check, and the refused budget is untouched.
     expect((await fx.get(fx.owner, '/changes', { proofSecret: randomBytes(32) })).status).toBe(429);
     expect((await fx.get(fx.owner, '/changes')).status).toBe(429);
-    const refusedRows = await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) =>
-      state.storage.sql.exec('SELECT 1 FROM refused_rate_counters').toArray().length,
-    );
-    expect(refusedRows).toBe(0);
+    expect(await rateCounters(fx.vaultId, 'refused')).toEqual([]);
   });
 
   it('a mutation without a valid Idempotency-Key is charged to the refused budget', async () => {
@@ -100,27 +98,23 @@ describe('rate limit', () => {
     const limited = await fx.get(outsider, '/changes');
     expect(limited.status).toBe(429);
     expect(limited.json.error.code).toBe('rate_limited');
-    const rows = await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) => ({
-      refused: state.storage.sql.exec('SELECT count FROM refused_rate_counters WHERE did = ?', outsider.keys.record.device_id).toArray(),
-      authorized: state.storage.sql.exec('SELECT 1 FROM rate_counters WHERE did = ?', outsider.keys.record.device_id).toArray().length,
-    }));
-    expect(rows.refused).toEqual([{ count: 121 }]);
-    expect(rows.authorized).toBe(0);
+    const did = outsider.keys.record.device_id;
+    expect((await rateCounters(fx.vaultId, 'refused')).filter((c) => c.subject === did).map((c) => c.count)).toEqual([121]);
+    expect((await rateCounters(fx.vaultId, 'authorized')).filter((c) => c.subject === did)).toEqual([]);
   });
 
-  it('prunes counter rows of earlier windows, so fresh device IDs never accumulate', async () => {
+  it('prunes counters of earlier windows, so fresh device IDs never accumulate', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: Math.floor(Date.now() / 60_000) * 60_000 + 10_000 });
     const fx = await VaultFixture.create();
-    const counts = () =>
-      runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) => ({
-        refused: state.storage.sql.exec('SELECT 1 FROM refused_rate_counters').toArray().length,
-        authorized: state.storage.sql.exec('SELECT 1 FROM rate_counters').toArray().length,
-      }));
-    // Each outsider is refused at authorization and writes one refused row in this window.
+    const counts = async () => ({
+      refused: (await rateCounters(fx.vaultId, 'refused')).length,
+      authorized: (await rateCounters(fx.vaultId, 'authorized')).length,
+    });
+    // Each outsider is refused at authorization and adds one refused counter in this window.
     for (let i = 0; i < 5; i++) expect((await fx.get(fx.newDevice({ account: `acct-${randomId()}` }), '/changes')).status).toBe(403);
     expect((await counts()).refused).toBe(5);
 
-    // In the next window the first request of any device drops every row of the old one.
+    // In the next window the first request of any device drops every counter of the old one.
     vi.setSystemTime(Date.now() + 60_000);
     expect((await fx.get(fx.newDevice({ account: `acct-${randomId()}` }), '/changes')).status).toBe(403);
     expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
@@ -133,12 +127,9 @@ describe('rate limit', () => {
     const laptop = await fx.addDevice();
     for (let i = 0; i < 5; i++) expect((await fx.get(laptop, '/membership')).status).toBe(200);
     vi.setSystemTime(Date.now() + 60_000);
-    // The owner's first request of the new window prunes the old rows, leaving only its own.
+    // The owner's first request of the new window prunes the old counters, leaving only its own.
     expect((await fx.get(fx.owner, '/membership')).status).toBe(200);
-    const rows = await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) =>
-      state.storage.sql.exec('SELECT did FROM rate_counters').toArray().length,
-    );
-    expect(rows).toBe(1);
+    expect(await rateCounters(fx.vaultId, 'authorized')).toHaveLength(1);
     // A device that already spent budget in this window keeps it when another device prunes.
     for (let i = 0; i < 119; i++) expect((await fx.get(laptop, '/membership')).status).toBe(200);
     expect((await fx.get(fx.owner, '/membership')).status).toBe(200);
