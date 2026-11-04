@@ -15,6 +15,7 @@ page to find the owner of a question.
 | Who can attack what, and which test proves the defense? | [Threat model](./security/threat-model.md) |
 | What the server can see; logging and retention rules | [Data classification](./security/data-classification.md) |
 | Devices, rekey, recovery, compromise response | [Key lifecycle and recovery](./security/key-lifecycle-and-recovery.md) |
+| What is live, preview and gated today, and the remote MCP plaintext boundary | [Status](./status.md) |
 | What must be true before GA | [Release gates](./security/release-gates.md) |
 | Which tests exercised each red-team scenario, and what they found | [Red-team evidence](./security/red-team-evidence.md) |
 | How to run the real CLI on two devices against a local Worker (soak, latency, disclosure) | [Docker two-device e2e](../e2e/docker/README.md) |

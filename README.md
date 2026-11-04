@@ -8,6 +8,9 @@ Landing page: https://vault.agentkit.best
 
 ## Status
 
+The current state of every surface (local vault, sync, dashboard, remote MCP) and
+its gate is on one page: [docs/status.md](./docs/status.md).
+
 - **Design: Accepted by the owner** (2026-10-16):
   [ADR 0001](./docs/adr/0001-opt-in-zero-knowledge-sync.md).
 - **Security review: accepted by the owner** (2026-10-16, owner instruction recorded

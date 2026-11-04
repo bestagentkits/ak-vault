@@ -97,7 +97,7 @@ Work is tracked in the [epic, issue #1](https://github.com/bestagentkits/ak-vaul
 - **Can I give a teammate access to just one secret?** Not within one vault. Put shared secrets in a separate shared vault.
 - **What if I lose my laptop?** Revoke the device. Anything it already decrypted cannot be clawed back, so rotate sensitive credentials at the provider.
 
-All questions: [FAQ](https://vault.agentkit.best/faq/index.md).
+All questions: [FAQ](https://vault.agentkit.best/faq/index.md). What is live, preview and gated, surface by surface: [status](https://github.com/bestagentkits/ak-vault/blob/main/docs/status.md).
 
 ## Links
 
