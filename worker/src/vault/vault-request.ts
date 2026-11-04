@@ -28,6 +28,12 @@ export const VAULT_OPS = [
   // Human write requests (spec §9.6), routed only where remote access is enabled.
   'writereq.get',
   'writereq.close',
+  // Access approvals (spec §9.6, §3.13), routed only where remote access is enabled.
+  'approval.post',
+  'approval.list',
+  'approval.get',
+  'approval.decide',
+  'approval.cancel',
 ] as const;
 export type VaultOp = (typeof VAULT_OPS)[number];
 
@@ -41,6 +47,8 @@ export interface VaultRequest {
   writeRequestId?: string;
   /** The `input_request` query of an item PUT: the issuing device's completion of a device-sealed input request (ADR 0004). */
   inputRequestId?: string;
+  /** `request_id` path segment of `…/approval-requests/{request_id}`. */
+  approvalRequestId?: string;
   method: string;
   /** Exact request URL compared with the proof `htu`. */
   htu: string;
@@ -63,5 +71,5 @@ export interface VaultRequest {
 
 /** Ops that mutate state: Idempotency-Key is required and the handler runs in one transaction. */
 export function isMutation(op: VaultOp): boolean {
-  return op === 'genesis' || op === 'sealed.ack' || op === 'writereq.close' || op.endsWith('.post') || op.endsWith('.put');
+  return op === 'genesis' || op === 'sealed.ack' || op === 'writereq.close' || op === 'approval.post' || op === 'approval.decide' || op === 'approval.cancel' || op.endsWith('.post') || op.endsWith('.put');
 }

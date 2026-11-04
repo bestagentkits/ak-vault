@@ -79,6 +79,12 @@ export const VAULT_SCHEMA = `
     flow TEXT NOT NULL DEFAULT 'dashboard', device_id TEXT, input_pub TEXT
   );
   CREATE INDEX IF NOT EXISTS write_requests_account ON write_requests (account, state);
+  CREATE TABLE IF NOT EXISTS approval_requests (
+    request_id TEXT PRIMARY KEY, account TEXT NOT NULL, requester TEXT NOT NULL, key_epoch INTEGER NOT NULL,
+    wire TEXT NOT NULL, state TEXT NOT NULL, decision TEXT, decision_kind TEXT, approver TEXT, source TEXT, mcp_client TEXT,
+    created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, decided_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS approval_requests_account ON approval_requests (account, state, created_at);
 `;
 
 /**

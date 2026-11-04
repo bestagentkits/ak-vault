@@ -999,6 +999,49 @@ bounds the rate, entropy bounds the outcome. Opening a file made for an earlier 
 key yields that key and the vault keys its bundle held; the chain refuses enrollment by
 it (§3.5). Vectors: `kit-backup.json`.
 
+### 3.13 Access approvals (remote approval of a secret use)
+
+A device whose local resolve finds no grant for an agent MAY publish an approval
+request and wait; the person answers it from another enrolled human device of the same
+account (a CLI device elsewhere, or the `/app` browser device). No secret value ever
+travels on this channel: the request carries metadata only, and a decision only
+authorises the requesting device to use a value it already holds.
+
+```
+subject = {secret, agent, fingerprint:"sha256:<hex>", max_ttl_s, project?, purpose?, reason?}
+key     = HKDF(ikm=VK[e], salt=b64decode(request_id), info=utf8("akv1/approval-request"), L=32)
+aad     = {ctx:"akv1/approval-request", vault_id, request_id, key_epoch, requester, ts, expires_at}
+request = {v:1, alg:"xc20p", request_id, vault_id, key_epoch, requester, n, ct, ts, expires_at, sig}
+          ct = XC20P(key, n, cjson(subject), cjson(aad)); sig = Ed25519(requester, "akv1/approval-request", request without sig)
+decision = {v:1, request_id, vault_id, requester, request_digest, decision, ttl_s?, approver, ts, sig}
+          request_digest = b64(SHA-256(cjson(request))); sig = Ed25519(approver, "akv1/approval-decision", decision without sig)
+```
+
+- `decision` is `deny`, `allow_once` or `allow_ttl`; `ttl_s` is present exactly for
+  `allow_ttl`, within `60..max_ttl_s`, and `max_ttl_s` within `60..2592000`.
+- **Requester checks** (before writing any local grant): the decision parses, its
+  `request_id`, `vault_id`, `requester` and `request_digest` match a request this device
+  has open, `approver` is a current human `owner`/`editor` device of the same account
+  other than this device, the signature verifies against its `sign_pub`, and the
+  decision arrived before `expires_at`. It accepts at most one decision per request; a
+  second, a replay or one for a closed request is ignored. An `allow_once` grant is
+  consumed by one resolve; an `allow_ttl` grant lapses after `ttl_s`.
+- **Approver checks** (before showing anything): the request names this vault, the
+  requester is a current human device of this account and not this device, the key
+  epoch is held, the signature verifies, the subject opens and the request has not
+  expired. Any current device of the account may ask (a `machine` device included);
+  only a human `owner`/`editor` device answers. `reason` is the agent's own text and is shown as unverified.
+- **Server** (§9.6) stores the request and decision opaque, enforces account binding,
+  both signatures against current membership, the clock window, lifetime, caps and
+  single use (a second decision is `409 conflict`), refuses a decision once the key
+  epoch moved past the request's (`409`), and refuses a self-approval or a
+  non-human or non-writer approver (`forbidden`). It cannot forge or upgrade a
+  decision; it can only withhold one, which fails closed (the request expires).
+- **MCP** (§9.8) may list pending requests (metadata only) and deny one; a deny there is
+  unsigned, recorded with `source:"mcp"` and its client ID, and can only refuse access.
+  An MCP allow returns the dashboard link `/app#approval=<request_id>&vault=<vault_id>`,
+  so every allow is signed by an enrolled device key.
+
 ## 4. Membership log (owner-signed, hash-chained)
 
 ```json
@@ -1624,6 +1667,11 @@ Served only where the deployment enables remote access (every route below answer
 | `GET /v1/vaults/{vid}/write-requests/{request_id}` | `writereq.get` | `vault:read` | `owner`/`editor` device of a `browser` session only |
 | `POST /v1/vaults/{vid}/write-requests/{request_id}/close` | `writereq.close` | `vault:write` | `owner`/`editor` device of a `browser` session only |
 | `PUT /v1/vaults/{vid}/items/{iid}?write_request=<request_id>` | `item.put` | `vault:write` | `owner`/`editor` device of a `browser` session only |
+| `POST /v1/vaults/{vid}/approval-requests` | `approval.post` | `vault:read` | any member device of the token `sub`, not `browser` |
+| `GET /v1/vaults/{vid}/approval-requests[?state=&limit=]` | `approval.list` | `vault:read` | any member device |
+| `GET /v1/vaults/{vid}/approval-requests/{request_id}` | `approval.get` | `vault:read` | any member device |
+| `POST /v1/vaults/{vid}/approval-requests/{request_id}/decision` | `approval.decide` | `vault:write` | human `owner`/`editor` device other than the requester |
+| `POST /v1/vaults/{vid}/approval-requests/{request_id}/cancel` | `approval.cancel` | `vault:read` | the requesting device, not `browser` |
 | `GET /v1/relay` (WebSocket upgrade, §9.7) | `relay.open` | `vault:read` and `vault:write` | human device, not `browser` or `machine` |
 
 - **Lookup.** The *i*-th `tag` pairs with the *i*-th `key_epoch`; unequal counts, more
@@ -1661,6 +1709,20 @@ Served only where the deployment enables remote access (every route below answer
   `"write_request":{"state":"completed","receipt"}`; a `409` closes it `conflict`; any
   other failure writes nothing and leaves it open. A malformed or repeated
   `write_request`, or one where remote access is disabled, is `bad_request`.
+
+- **Access approvals** (§3.13). Rows are served only to their account; another account's
+  or an unknown `request_id` is `not_found`. `POST` takes `{"request":<wire>}` from the
+  requesting device itself (`requester` = token `did`) and returns
+  `{"request_id","state":"pending","expires_at"}`; a lifetime outside
+  `approval_request_min_ttl_s..approval_request_ttl_s`, a stale epoch or a bad signature
+  is `bad_request`, a reused `request_id` `409`, a full pending cap `rate_limited`;
+  past the retained cap the oldest closed rows are dropped, never the new request. `GET` lists
+  `{"approvals":[…]}` newest first (`state=pending|all`, `limit` up to
+  `approval_page_max`); each entry carries `request_id, requester, key_epoch, state,
+  created_at, expires_at`, after a decision `decided_at, decision_kind, approver,
+  source, mcp_client?`, plus the opaque `request` and `decision` wires. `decision` takes
+  `{"decision":<wire>}` and returns `{"request_id","state"}`; `cancel` takes `{}` from the
+  requester. Closed rows stay `approval_request_retention_s` as the approval history.
 
 ### 9.7 Relay
 
@@ -1859,6 +1921,20 @@ answers `503 sync_disabled` (§10 error body) before any token check.
   - Vault selection follows the relay tools: without `vault_id` the Worker uses the
     one vault the account's online devices list, else `invalid_args`. A vault the
     account cannot write is `invalid_args`.
+- **Access approvals** (§3.13), answered by the Worker with no device online, only while
+  remote access is enabled (otherwise `[]` and `not_found`); each takes an optional
+  `vault_id` and answers only the token `sub`'s rows:
+  - `secrets_approvals_list` (`vault-mcp:read`) takes `{"vault_id"?}` and answers
+    `{"vault_id","approvals":[…]}`, pending requests as metadata only (no subject, which
+    is sealed).
+  - `secrets_approvals_allow` (`vault-mcp:read`) takes `{"request_id","vault_id"?}` and
+    signs nothing: it answers `{"status":"pending","request_id","vault_id","approve_url","next"}`,
+    `approve_url` = `<origin>/app#approval=<request_id>&vault=<vault_id>`, where an
+    enrolled browser device signs the answer.
+  - `secrets_approvals_deny` (`vault-mcp:write`) takes `{"request_id","vault_id"?}`,
+    closes a pending request `denied` with `source:"mcp"` and the client ID, and
+    answers `{"status":"denied"}`.
+  An unknown, closed or other account's request is `not_found`.
 - **Errors.** A device `error.code`, `no_device_online`, `device_offline`, `device_timeout`,
   `sealed_queue_full`, `no_seal_key`, `too_many_requests` and `rate_limited` are MCP tool errors (`isError` true) carrying
   `{"code"}`; a token or scope failure is an HTTP `401` or `403`, a rate-limited
@@ -2130,3 +2206,7 @@ under an earlier revision does not verify and is reset rather than migrated.
   client, takes an `input` token from ak-web and seals the value in the browser.
 - **2026-11 (issue #209):** the recovery kit backup file (§3.12), additive and client-side;
   no existing wire body, route, error or vector changes.
+- **2026-11 (access approvals):** additive: approval requests and signed decisions
+  (§3.13), the `approval-requests` routes (§9.6) and three MCP tools
+  (`secrets_approvals_list`, `secrets_approvals_allow`, `secrets_approvals_deny`, §9.8).
+  No existing wire changes.

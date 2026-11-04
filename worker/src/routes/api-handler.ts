@@ -82,6 +82,7 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
     ...(route.itemId ? { itemId: route.itemId } : {}),
     ...(route.sealedId ? { sealedId: route.sealedId } : {}),
     ...(writeRequestId !== undefined ? { writeRequestId } : {}),
+    ...(route.approvalRequestId ? { approvalRequestId: route.approvalRequestId } : {}),
     ...(inputRequestId !== undefined ? { inputRequestId } : {}),
     method: request.method,
     htu: request.url,

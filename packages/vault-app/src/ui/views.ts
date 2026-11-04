@@ -10,6 +10,7 @@ import type { AppController, Notice, Screen } from '../app-controller.js';
 import type { HistoryEntry } from '../sync/history.js';
 import type { ItemView } from '../sync/vault-sync.js';
 import { h, replaceChildren, type Child } from './dom.js';
+import { approvalScreen, pendingApprovalsPanel } from './approval-view.js';
 import { membersScreen } from './members-view.js';
 import { messageFor } from './messages.js';
 import { DAY_MS, MAX_ROTATE_TTL_DAYS, rotationInfo, type ExpiryHealth, type RotationHealth, type RotationInfo } from '../sync/rotation.js';
@@ -488,6 +489,7 @@ function vaultScreen(c: AppController, s: Extract<Screen, { kind: 'vault' }>, vs
       noticeEl(s.notice),
       s.rekeyRequired ? h('p', { class: 'notice notice-error', role: 'status' }, [messageFor('rekey_required')]) : null,
       !s.canWrite ? h('p', { class: 'notice notice-info', role: 'status', 'data-testid': 'read-only' }, ['Your role in this vault is reader, so this browser can list metadata only.']) : null,
+      pendingApprovalsPanel(c, s.approvals),
       tabs(vs, rerender),
       vs.tab === 'members' ? membersScreen(s.membership) : null,
       vs.tab === 'secrets' ? rotationSummary(s) : null,
@@ -636,6 +638,9 @@ export function render(root: Element, c: AppController, screen: Screen, vs: View
       break;
     case 'write':
       nodes = writeScreen(c, screen);
+      break;
+    case 'approval':
+      nodes = approvalScreen(c, screen, header(c, screen.deviceId), noticeEl(screen.notice), countdown);
       break;
     case 'removed':
       nodes = [header(c, null), h('main', {}, [

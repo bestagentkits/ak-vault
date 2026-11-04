@@ -136,10 +136,19 @@ const DEFINITIONS: Record<McpRelayTool, Omit<ToolDefinition, 'name'>> = {
  * device-sealed input request (spec §3.11). None takes a secret value: the person
  * types it into a form in their browser.
  */
-export const LOCAL_TOOLS = ['prepare_write', 'request_input', 'write_status'] as const;
+export const LOCAL_TOOLS = ['prepare_write', 'request_input', 'write_status', 'approvals_list', 'approvals_allow', 'approvals_deny'] as const;
 export type LocalTool = (typeof LOCAL_TOOLS)[number];
 
-const LOCAL_SCOPE: Record<LocalTool, McpScope> = { prepare_write: 'vault-mcp:write', request_input: 'vault-mcp:write', write_status: 'vault-mcp:write' };
+const LOCAL_SCOPE: Record<LocalTool, McpScope> = {
+  prepare_write: 'vault-mcp:write',
+  request_input: 'vault-mcp:write',
+  write_status: 'vault-mcp:write',
+  approvals_list: 'vault-mcp:read',
+  approvals_allow: 'vault-mcp:read',
+  approvals_deny: 'vault-mcp:write',
+};
+
+const approvalRequestId = { type: 'string', minLength: 1, maxLength: 64, description: 'request_id from secrets_approvals_list.' };
 
 /** Default and maximum write-request lifetime, in whole minutes, for the tool description. */
 const WRITE_TTL_MINUTES = Math.floor(REMOTE_ACCESS_LIMITS.write_request_ttl_s / 60);
@@ -185,6 +194,25 @@ const LOCAL_DEFINITIONS: Record<LocalTool, Omit<ToolDefinition, 'name'>> = {
     description: `Status of a request made with secrets_request_input or secrets_prepare_write: pending_user, submitted, completed, conflict, cancelled, expired or failed, with a sanitized reason and, once completed, an opaque receipt. ${NEVER_VALUES}`,
     inputSchema: schema({ request_id: requestId }, ['request_id']),
     annotations: { title: 'Check a secret write request', readOnlyHint: true, openWorldHint: false },
+  },
+  approvals_list: {
+    title: 'List pending secret-access approvals',
+    description: `Pending requests from the user's devices to use a secret (spec §3.13): request id, requesting device, state and expiry only. The secret scope is end-to-end encrypted and never shown here. ${NEVER_VALUES}`,
+    inputSchema: schema({}, []),
+    annotations: { title: 'List pending secret-access approvals', readOnlyHint: true, openWorldHint: false },
+  },
+  approvals_allow: {
+    title: 'Get the link to allow a secret-access request',
+    description:
+      'An AI client can never allow secret access. This returns approve_url: give it to the user, who opens it in the vault dashboard, reads the request and allows it once or for a while there with their own signed device. ' + NEVER_VALUES,
+    inputSchema: schema({ request_id: approvalRequestId }, ['request_id']),
+    annotations: { title: 'Get the link to allow a secret-access request', readOnlyHint: true, openWorldHint: false },
+  },
+  approvals_deny: {
+    title: 'Deny a secret-access request',
+    description: `Refuse a pending secret-access request on the user's behalf. Only refuses; the requesting device keeps no access. ${NEVER_VALUES}`,
+    inputSchema: schema({ request_id: approvalRequestId }, ['request_id']),
+    annotations: { title: 'Deny a secret-access request', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
 };
 

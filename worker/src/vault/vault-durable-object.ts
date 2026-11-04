@@ -53,6 +53,17 @@ import {
   type WriteRequestState,
   type WriteRequestStatus,
 } from './write-request-store.js';
+import {
+  cancelApprovalRequest,
+  createApprovalRequest,
+  decideApprovalRequest,
+  denyApprovalForMcp,
+  getApprovalRequest,
+  hasPendingApproval,
+  listApprovalRequests,
+  listApprovalsForMcp,
+  type ApprovalState,
+} from './approval-request-store.js';
 import { enforceRateLimit, requireRateBudget } from './request-guard.js';
 import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
 import { isMutation, type VaultRequest } from './vault-request.js';
@@ -347,6 +358,29 @@ export class VaultDurableObject extends DurableObject<Env> {
     return this.ctx.storage.transactionSync(() => settleInputRequest(this.sql, requestId, state, reason, nowMs));
   }
 
+  /*
+   * Access approvals for the MCP handler (spec §3.13): metadata only, and denial only.
+   * Allowing needs a signed decision from an enrolled device, which MCP never holds.
+   */
+
+  /** The caller's pending approvals as a JSON array string (metadata only). */
+  async mcpListApprovals(sub: string, nowMs: number = Date.now()): Promise<string> {
+    if (!this.remoteState()) return '[]';
+    return JSON.stringify(this.ctx.storage.transactionSync(() => listApprovalsForMcp(this.sql, sub, nowMs)));
+  }
+
+  /** Deny one of account `sub`'s pending requests on behalf of MCP client `clientId`; null when none is pending. */
+  async mcpDenyApproval(requestId: string, sub: string, clientId: string, nowMs: number = Date.now()): Promise<ApprovalState | null> {
+    if (!this.remoteState()) return null;
+    return this.ctx.storage.transactionSync(() => denyApprovalForMcp(this.sql, requestId, sub, clientId, nowMs));
+  }
+
+  /** Whether account `sub` has this request pending (MCP offers the dashboard link only then). */
+  async mcpHasPendingApproval(requestId: string, sub: string, nowMs: number = Date.now()): Promise<boolean> {
+    if (!this.remoteState()) return false;
+    return this.ctx.storage.transactionSync(() => hasPendingApproval(this.sql, requestId, sub, nowMs));
+  }
+
   private read(req: VaultRequest, auth: Authorized): ApiResult {
     switch (req.op) {
       case 'membership.get':
@@ -371,6 +405,10 @@ export class VaultDurableObject extends DurableObject<Env> {
         return listSealedOps(this.sql, req);
       case 'writereq.get':
         return this.ctx.storage.transactionSync(() => getWriteRequest(this.sql, req));
+      case 'approval.list':
+        return this.ctx.storage.transactionSync(() => listApprovalRequests(this.sql, req));
+      case 'approval.get':
+        return this.ctx.storage.transactionSync(() => getApprovalRequest(this.sql, req));
       default:
         throw new ApiError('not_found');
     }
@@ -395,6 +433,12 @@ export class VaultDurableObject extends DurableObject<Env> {
         return ackSealedOp(this.sql, req, body);
       case 'writereq.close':
         return closeWriteRequest(this.sql, req, body);
+      case 'approval.post':
+        return createApprovalRequest(this.sql, auth.state, req, body);
+      case 'approval.decide':
+        return decideApprovalRequest(this.sql, auth.state, req, body);
+      case 'approval.cancel':
+        return cancelApprovalRequest(this.sql, req, body);
       case 'checkpoints.post':
         return postCheckpoint(this.sql, this.membership, auth.state, req.claims.did, body);
       case 'audit.post':
