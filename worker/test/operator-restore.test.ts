@@ -11,7 +11,7 @@
 import { b64encode, concatBytes, randomBytes, randomId, utf8Encode } from '@ak-vault/protocol';
 import { env } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/env.js';
 import type { VaultDurableObject } from '../src/vault/vault-durable-object.js';
 import { OPERATOR_SIGN_CONTEXT } from '../src/routes/operator-restore.js';
@@ -142,6 +142,10 @@ describe('operator restore route: authentication and shape', () => {
   });
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('operator restore: pending restore and restart', () => {
   const stubOf = (vaultId: string) => env.VAULT.get(env.VAULT.idFromName(vaultId));
 
@@ -170,6 +174,10 @@ describe('operator restore: pending restore and restart', () => {
     const after = await stubOf(fx.vaultId).operatorInstance();
     expect(after.instance).not.toBe(before.instance);
     expect(after.restorePending).toBe(false);
+    // The stop was unclean for the request-replay session, so proofs from before the restart plus
+    // the clock skew are refused; a proof made after that point is served.
+    expect((await fx.get(fx.owner, '/membership')).status).toBe(401);
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 61_000 });
     expect((await fx.get(fx.owner, '/membership')).status).toBe(200);
   });
 
@@ -185,6 +193,10 @@ describe('operator restore: pending restore and restart', () => {
     const after = await stubOf(fx.vaultId).operatorInstance();
     expect(after.instance).not.toBe(before.instance);
     expect(after.restorePending).toBe(false);
+    // The stop was unclean for the request-replay session, so proofs from before the restart plus
+    // the clock skew are refused; a proof made after that point is served.
+    expect((await fx.get(fx.owner, '/membership')).status).toBe(401);
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 61_000 });
     expect((await fx.get(fx.owner, '/membership')).status).toBe(200);
   });
 });

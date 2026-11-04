@@ -9,10 +9,11 @@
  * to the separate `refused` budget, so it cannot exhaust the budget of the
  * device it names.
  */
-import { isAkvError, verifyProof, type DeviceRecord, type MembershipState } from '@ak-vault/protocol';
+import { isAkvError, verifyProof, type DeviceRecord, type MembershipState, type TransportProof } from '@ak-vault/protocol';
 import type { Scope } from '../auth/jwt-verify.js';
 import { ApiError } from '../http/errors.js';
 import { LIMITS } from '../limits.js';
+import { replayStateFor } from './request-replay-state.js';
 import type { VaultRequest } from './vault-request.js';
 
 /** Who may call an op once authenticated. */
@@ -28,14 +29,13 @@ export type RoleRule = 'any_device' | 'writer' | 'human_owner';
  */
 export type RateBucket = 'authorized' | 'refused' | 'recovery_identity';
 
-const RATE_BUCKETS: Record<RateBucket, { table: string; key: string; limit: number }> = {
-  authorized: { table: 'rate_counters', key: 'did', limit: LIMITS.rate_requests_per_window },
-  refused: { table: 'refused_rate_counters', key: 'did', limit: LIMITS.rate_requests_per_window },
-  recovery_identity: { table: 'recovery_identity_rate_counters', key: 'account', limit: LIMITS.recovery_identity_requests_per_window },
+const RATE_BUCKETS: Record<RateBucket, number> = {
+  authorized: LIMITS.rate_requests_per_window,
+  refused: LIMITS.rate_requests_per_window,
+  recovery_identity: LIMITS.recovery_identity_requests_per_window,
 };
 
 interface RateWindow {
-  table: string;
   key: string;
   limit: number;
   windowStart: number;
@@ -45,13 +45,15 @@ interface RateWindow {
   retryAfter: number;
 }
 
+// Windows and burned `jti`s live in the vault object's memory (request-replay-state.ts), so a
+// steady-state request writes no rows.
 function rateWindow(sql: SqlStorage, bucket: RateBucket, subject: string, nowMs: number): RateWindow {
-  const { table, key, limit } = RATE_BUCKETS[bucket];
   const windowMs = LIMITS.rate_window_seconds * 1000;
   const windowStart = Math.floor(nowMs / windowMs) * windowMs;
-  const row = sql.exec<{ window_start: number; count: number }>(`SELECT window_start, count FROM ${table} WHERE ${key} = ?`, subject).toArray()[0];
-  const used = row && row.window_start === windowStart ? row.count : 0;
-  return { table, key, limit, windowStart, used, retryAfter: Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000)) };
+  const key = `${bucket}\n${subject}`;
+  const row = replayStateFor(sql, nowMs).rate(key);
+  const used = row && row.windowStart === windowStart ? row.count : 0;
+  return { key, limit: RATE_BUCKETS[bucket], windowStart, used, retryAfter: Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000)) };
 }
 
 function rateLimited(retryAfter: number): ApiError {
@@ -60,23 +62,16 @@ function rateLimited(retryAfter: number): ApiError {
 
 /**
  * Count one request against `bucket` for `subject` (a device ID, or an account for
- * `recovery_identity`); `rate_limited` once the window's budget is spent. A storage
- * error propagates, so the request fails closed.
+ * `recovery_identity`); `rate_limited` once the window's budget is spent.
  */
 export function enforceRateLimit(sql: SqlStorage, bucket: RateBucket, subject: string, nowMs: number): void {
   const w = rateWindow(sql, bucket, subject, nowMs);
   const count = w.used + 1;
-  sql.exec(
-    `INSERT INTO ${w.table} (${w.key}, window_start, count) VALUES (?, ?, ?) ON CONFLICT (${w.key}) DO UPDATE SET window_start = excluded.window_start, count = excluded.count`,
-    subject,
-    w.windowStart,
-    count,
-  );
-  // A subject's first request of a window drops every row of earlier windows (each counts as zero), so the
-  // table holds at most the subjects seen in the current window, however many fresh device IDs are named.
-  // Request times are stamped in the Worker, so a request delayed across a boundary can see its own
-  // window's rows already gone; that grants it at most a fresh budget for that window, never a larger one.
-  if (w.used === 0) sql.exec(`DELETE FROM ${w.table} WHERE window_start < ?`, w.windowStart);
+  const state = replayStateFor(sql, nowMs);
+  // A subject's first request of a window drops the bucket's counters of earlier windows, so memory
+  // holds at most the subjects seen in the current window, however many fresh device IDs are named.
+  if (w.used === 0) state.dropRatesBefore(`${bucket}\n`, w.windowStart);
+  state.setRate(w.key, { windowStart: w.windowStart, count });
   if (count > w.limit) throw rateLimited(w.retryAfter);
 }
 
@@ -94,14 +89,15 @@ export function requireRateBudget(sql: SqlStorage, bucket: RateBucket, subject: 
 /**
  * Verify `AKV-Proof` against `signPub` and burn its `jti` for this device. With
  * `sql === null` only the signature and bindings are checked and nothing is
- * written (genesis preflight before the vault has storage).
+ * kept (genesis preflight before the vault has storage).
  */
 export function verifyRequestProof(sql: SqlStorage | null, req: VaultRequest, signPub: string): void {
   if (!req.proof) throw new ApiError('unauthorized');
   const did = req.claims.did;
-  sql?.exec('DELETE FROM proof_jti WHERE expires_at < ?', req.nowMs);
+  const state = sql ? replayStateFor(sql, req.nowMs) : null;
+  let proof: TransportProof;
   try {
-    const proof = verifyProof(req.proof, {
+    proof = verifyProof(req.proof, {
       htm: req.method,
       htu: req.htu,
       token: req.token,
@@ -109,13 +105,14 @@ export function verifyRequestProof(sql: SqlStorage | null, req: VaultRequest, si
       now: req.nowMs,
       signPub,
       maxSkewMs: LIMITS.clock_skew_seconds * 1000,
-      isReplay: (jti) => (sql ? sql.exec('SELECT 1 FROM proof_jti WHERE did = ? AND jti = ?', did, jti).toArray().length > 0 : false),
     });
-    sql?.exec('INSERT INTO proof_jti (did, jti, expires_at) VALUES (?, ?, ?)', did, proof.jti, req.nowMs + LIMITS.proof_jti_ttl_seconds * 1000);
   } catch (err) {
     if (isAkvError(err) && err.code === 'invalid_signature') throw new ApiError('invalid_signature', { status: 401 });
     throw new ApiError('unauthorized');
   }
+  if (state?.isReplay(did, proof.jti, proof.ts, req.nowMs)) throw new ApiError('unauthorized');
+  // A storage error writing the session marker propagates, so the request fails closed.
+  state?.burn(did, proof.jti, req.nowMs);
 }
 
 export function requireScope(scopes: readonly Scope[], needed: readonly Scope[]): void {

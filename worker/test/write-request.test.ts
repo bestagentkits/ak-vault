@@ -11,6 +11,7 @@ import { LIMITS, REMOTE_ACCESS_LIMITS as L } from '../src/limits.js';
 import { call, type CallOptions, type TestDevice } from './helpers/api-client.js';
 import { callTool, mintMcpToken, publishSealKey, structured } from './helpers/mcp-client.js';
 import { awaitRateWindowHeadroom } from './helpers/rate-window.js';
+import { setRateCounter } from './helpers/replay-state.js';
 import { sendRevocation } from './helpers/webhook.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
@@ -457,16 +458,8 @@ describe('write request device and route checks', () => {
     const { body } = await prepare(s);
     await awaitRateWindowHeadroom(LIMITS.rate_window_seconds * 1000);
     const did = s.fx.owner.keys.record.device_id;
-    await runInDurableObject(env.VAULT.get(env.VAULT.idFromName(s.fx.vaultId)), (_i: unknown, state: DurableObjectState) => {
-      const windowMs = LIMITS.rate_window_seconds * 1000;
-      const windowStart = Math.floor(Date.now() / windowMs) * windowMs;
-      state.storage.sql.exec(
-        'INSERT INTO rate_counters (did, window_start, count) VALUES (?, ?, ?) ON CONFLICT (did) DO UPDATE SET window_start = excluded.window_start, count = excluded.count',
-        did,
-        windowStart,
-        LIMITS.rate_requests_per_window - 1,
-      );
-    });
+    const windowMs = LIMITS.rate_window_seconds * 1000;
+    await setRateCounter(s.fx.vaultId, 'authorized', did, Math.floor(Date.now() / windowMs) * windowMs, LIMITS.rate_requests_per_window - 1);
     expect((await fetchIntent(s.fx, body.request_id)).status).toBe(200);
     const limited = await fetchIntent(s.fx, body.request_id);
     expect(limited.status).toBe(429);

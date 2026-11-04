@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LIMITS } from '../src/limits.js';
 import { createDevice, type CallOptions, type TestDevice } from './helpers/api-client.js';
 import { putTestBundle, sealTestBundle } from './helpers/recovery-bundle.js';
+import { rateCounters, setRateCounter } from './helpers/replay-state.js';
 import { VaultFixture } from './helpers/vault-fixture.js';
 
 const BUDGET = LIMITS.recovery_identity_requests_per_window;
@@ -35,10 +36,8 @@ function freshRead(fx: VaultFixture, i: number, opts: CallOptions = {}) {
   return fx.get(fresh, i % 2 === 0 ? '/recovery' : '/membership', { ...keyHeader(fresh), ...opts });
 }
 
-const accountRows = (fx: VaultFixture) =>
-  runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) =>
-    state.storage.sql.exec('SELECT account, count FROM recovery_identity_rate_counters').toArray(),
-  );
+const accountRows = async (fx: VaultFixture) =>
+  (await rateCounters(fx.vaultId, 'recovery_identity')).map((c) => ({ account: c.subject, count: c.count }));
 
 afterEach(() => {
   vi.useRealTimers();
@@ -135,27 +134,12 @@ describe('recovery-identity rate limit per account', () => {
     expect(await accountRows(fx)).toEqual([{ account: fx.owner.account, count: 3 }]);
   });
 
-  it('prunes account rows of earlier windows like the per-device counters', async () => {
+  it('prunes account counters of earlier windows like the per-device counters', async () => {
     freezeIntoWindow();
     const fx = await vaultWithBundle();
     const stale = Math.floor(Date.now() / 60_000) * 60_000 - 120_000;
-    await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) => {
-      state.storage.sql.exec('INSERT INTO recovery_identity_rate_counters (account, window_start, count) VALUES (?, ?, ?)', 'acct-stale', stale, 7);
-    });
+    await setRateCounter(fx.vaultId, 'recovery_identity', 'acct-stale', stale, 7);
     expect((await freshRead(fx, 0)).status).toBe(200);
     expect(await accountRows(fx)).toEqual([{ account: fx.owner.account, count: 1 }]);
-  });
-
-  it('fails closed when the limiter storage errors', async () => {
-    const fx = await vaultWithBundle();
-    await runInDurableObject(stubFor(fx.vaultId), (_instance: unknown, state: DurableObjectState) => {
-      state.storage.sql.exec('DROP TABLE recovery_identity_rate_counters');
-    });
-    const res = await freshRead(fx, 0);
-    expect(res.status).toBe(500);
-    expect(res.json.error.code).toBe('internal');
-    expect(res.json.bundle).toBeUndefined();
-    // The enrolled path does not touch the per-account table.
-    expect((await fx.get(fx.owner, '/recovery')).status).toBe(200);
   });
 });

@@ -68,6 +68,7 @@ import { enforceRateLimit, requireRateBudget } from './request-guard.js';
 import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
 import { isMutation, type VaultRequest } from './vault-request.js';
 import { applyVaultSchema } from './vault-schema.js';
+import { replayStateFor, setReplayFlushScheduler } from './request-replay-state.js';
 
 export class VaultDurableObject extends DurableObject<Env> {
   private readonly sql: SqlStorage;
@@ -87,6 +88,9 @@ export class VaultDurableObject extends DurableObject<Env> {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.membership = new MembershipStore(this.sql);
+    setReplayFlushScheduler(this.sql, (atMs) =>
+      ctx.storage.setAlarm(atMs).catch(() => replayStateFor(this.sql, Date.now()).flushNotScheduled()),
+    );
     // Reading sqlite_master writes nothing; re-running the idempotent schema on an
     // existing vault applies any newly added tables or indexes.
     this.schemaReady = this.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").toArray().length > 0;
@@ -94,6 +98,17 @@ export class VaultDurableObject extends DurableObject<Env> {
       applyVaultSchema(this.sql);
       // Vaults that stored records before change-log heads existed get them once, in log order.
       ctx.storage.transactionSync(() => backfillLogHeads(this.sql));
+    }
+  }
+
+  /** The only alarm of a vault object: save the request replay state once idle. */
+  override async alarm(): Promise<void> {
+    if (!this.schemaReady) return;
+    const now = Date.now();
+    try {
+      replayStateFor(this.sql, now).onFlushAlarm(now);
+    } catch {
+      // Left `active`: the next start refuses proofs from before it (fail closed).
     }
   }
 
