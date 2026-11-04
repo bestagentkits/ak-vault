@@ -22,6 +22,8 @@ export const SIGN_CONTEXT = {
   sealKey: 'akv1/seal-key',
   relay: 'akv1/relay',
   relayResult: 'akv1/relay-result',
+  approvalRequest: 'akv1/approval-request',
+  approvalDecision: 'akv1/approval-decision',
 } as const;
 export type SignContext = (typeof SIGN_CONTEXT)[keyof typeof SIGN_CONTEXT];
 

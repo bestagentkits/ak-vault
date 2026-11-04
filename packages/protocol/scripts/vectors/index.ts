@@ -13,6 +13,7 @@ import { removalFenceVectors } from './removal-fence.js';
 import { roleHistoryVectors } from './role-history.js';
 import { nameTagVectors, sealedOpVectors, sealKeyVectors } from './seal-and-name-tag.js';
 import { writeIntentVectors } from './write-intent.js';
+import { approvalVectors } from './approval.js';
 import { inputSealVectors } from './input-seal.js';
 import { kitBackupVectors } from './kit-backup.js';
 import { enrollCodeVectors } from './enroll-codes.js';
@@ -45,6 +46,7 @@ const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'sealed-op.json': sealedOpVectors,
   'name-tag.json': nameTagVectors,
   'write-intent.json': writeIntentVectors,
+  'approval.json': approvalVectors,
   'input-seal.json': inputSealVectors,
   'kit-backup.json': kitBackupVectors,
   'enroll-codes.json': enrollCodeVectors,
