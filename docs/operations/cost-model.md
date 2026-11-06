@@ -50,6 +50,34 @@ Sources: [Workers pricing](https://developers.cloudflare.com/workers/platform/pr
 | Stored data per vault | 1 MB | Ciphertext, change log, tombstones, membership |
 | Days per month | 30 | |
 
+## Evaluated 2026-11-06: push over the relay socket
+
+[#63](https://github.com/bestagentkits/ak-vault/issues/63) item 5 asked whether a
+hibernated WebSocket that tells a device "the head moved" could replace the one-minute
+poll. Not adopted. The estimate below counts the Durable Object calls the existing relay
+code makes ([account-relay-durable-object.ts](../../worker/src/relay/account-relay-durable-object.ts)),
+per active device per day, one vault, with short-lived (≤ 120 s) tokens:
+
+| | Poll every minute (conditional, after item 2) | Push + 15-minute safety poll |
+|---|---|---|
+| Pulls (1.39 = vault-object requests per conditional pull measured 2026-11-04; the registry call is assumed gone with short-lived tokens, projected, not measured) | 1,440 × 1.39 = 2,002 DO requests | 96 × 1.39 = 133 |
+| `reauth` before each 120 s token expires | none | 720 × (1/20 for the incoming `reauth` message to the hibernated relay object, billed at 20:1 + 1 revocation registry + 1 vault role check) = 1,476 |
+| Head notifications (20 writes per vault, one account) | none | about 20 |
+| **DO requests per device per day** | **≈ 2,000** | **≈ 1,630 (−19%)** |
+
+- The hibernated socket is not free: every `reauth` re-runs revocation and the vault
+  role check, so the floor is set by token lifetime, not by writes. Duration is about
+  the same (three objects wake per `reauth` against two per pull).
+- For lazy clients (50 pulls a day) push is strictly more expensive.
+- The relay socket is scoped to remote access by
+  [ADR 0002](../adr/0002-browser-device-relay-and-remote-mcp.md); carrying sync
+  notifications over it is a new use that needs a new server-to-device frame (spec,
+  vectors, Go) and an ADR, for at most a 19% cut of one line item.
+
+Reconsider if `reauth` can stop asking the registry and vault objects on every token,
+or if product needs sub-minute propagation; the request count, not latency, is what
+this model prices.
+
 ## Measured 2026-11-04: conditional pulls
 
 Same lab workload, with every no-op poll sent as a conditional pull (`if_head`,
@@ -98,8 +126,8 @@ commit that keeps proof `jti`s and rate windows in vault-object memory
 
 A first run that flushed with a 30 s `setTimeout` billed 0.35 GB-s of vault duration
 per pull, because a pending timer keeps the object awake; the flush is a Durable
-Object alarm instead. The registry is still asked once per pull until short-lived
-tokens land (item 2).
+Object alarm instead. The registry is still asked once per pull until clients use short-lived
+tokens (item 2, merged in #233).
 
 Projected with [`cost-projection.ts`](../../worker/scripts/cost-measurement/cost-projection.ts)
 (3 devices, 20 writes a day, writes as measured on 2026-10-16), USD per month:
