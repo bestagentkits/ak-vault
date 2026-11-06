@@ -98,7 +98,7 @@ Cloud Sync is a pre-release preview and **free for AgentKit users** while we use
 | Preview (now) | Free with an AgentKit sign-in | 3 | 5 | 10 MB |
 | AgentKit customers, after GA | $9 / year with a valid AgentKit license | 5 | 5 | 25 MB |
 | Everyone else, after GA | $19 / year | 5 | 5 | 25 MB |
-| Self-hosted | Free, open source (MIT) | Your choice | Your choice | Your choice |
+| Self-hosted | Free, open source (MIT); in progress | Your choice | Your choice | Your choice |
 
 Every plan is end-to-end encrypted. Limits are planned and not yet enforced; fair use applies. If a plan lapses, your vaults turn read-only and are never deleted. No lock-in: you will be able to deploy ak-vault to your own Cloudflare account and point `ak secrets` at it (in progress, [#236](https://github.com/bestagentkits/ak-vault/issues/236)).
 
