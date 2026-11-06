@@ -403,6 +403,30 @@
       </div>
     </section>
 
+    <!-- Pricing -->
+    <section class="section" id="pricing" aria-labelledby="pricing-title">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow">Pricing</span>
+          <h2 id="pricing-title">Free while it is a preview. Yours to host, always.</h2>
+          <p>Cloud Sync is a pre-release preview and <strong>free for AgentKit users</strong> while we use it ourselves. It is not yet recommended for production credentials. Paid annual plans start only after general availability, and preview users are told before any billing begins. Progress toward GA: <a href="https://github.com/bestagentkits/ak-vault/issues/237">#237</a>.</p>
+        </div>
+        <div class="table-wrap reveal">
+          <table class="stack">
+            <caption>Cloud Sync plans (limits planned, not yet enforced)</caption>
+            <thead><tr><th scope="col">Plan</th><th scope="col">Price</th><th scope="col">Vaults</th><th scope="col">Devices per vault</th><th scope="col">Storage per vault</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Preview (now)</th><td>Free with an AgentKit sign-in</td><td>3</td><td>5</td><td>10 MB</td></tr>
+              <tr><th scope="row">AgentKit customers, after GA</td><td>$9 / year with a valid AgentKit license</td><td>5</td><td>5</td><td>25 MB</td></tr>
+              <tr><th scope="row">Everyone else, after GA</td><td>$19 / year</td><td>5</td><td>5</td><td>25 MB</td></tr>
+              <tr><th scope="row">Self-hosted</th><td>Free, open source (MIT)</td><td>Your choice</td><td>Your choice</td><td>Your choice</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note reveal">Every plan is end-to-end encrypted: the server stores ciphertext and cannot read your secrets. Limits are planned and not yet enforced; fair use applies. If a plan lapses, your vaults turn read-only and are never deleted. <strong>No lock-in:</strong> ak-vault is open source, and you will be able to deploy it to your own Cloudflare account and point <code>ak secrets</code> at it (in progress, <a href="https://github.com/bestagentkits/ak-vault/issues/236">#236</a>).</p>
+      </div>
+    </section>
+
     <!-- FAQ (the full list lives on /faq/) -->
     <section class="section" id="faq" aria-labelledby="faq-title">
       <div class="container narrow">
