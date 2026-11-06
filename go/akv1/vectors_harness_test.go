@@ -277,6 +277,7 @@ var vectorHandlers = map[string]fileHandler{
 	"profile.json":              checkProfile,
 	"relay-frames.json":         checkRelayFrames,
 	"vault-token-lifetime.json": checkVaultTokenLifetime,
+	"changes-head-tag.json":     checkChangesHeadTag,
 }
 
 // TestVectors verifies every vector file; an unknown file fails the test.

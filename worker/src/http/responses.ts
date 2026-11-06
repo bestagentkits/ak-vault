@@ -91,5 +91,7 @@ export function jsonResponse(body: unknown, status = 200, headers: Record<string
 }
 
 export function resultResponse(result: ApiResult): Response {
+  // A conditional pull that matched (`304`) carries no body.
+  if (result.status === 304) return new Response(null, { status: 304, headers: { 'Cache-Control': 'no-store', ...(result.headers ?? {}) } });
   return jsonResponse(result.body, result.status, result.headers ?? {});
 }

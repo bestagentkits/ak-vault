@@ -20,6 +20,7 @@ export function logHeadAt(sql: SqlStorage, logSeq: number): string {
 export function appendLogHead(sql: SqlStorage, logSeq: number, conflictId: string | null, digest: string): string {
   const head = nextLogHead(logHeadAt(sql, logSeq - 1), logSeq, conflictId, digest);
   sql.exec('INSERT INTO log_heads (log_seq, head) VALUES (?, ?)', logSeq, head);
+  forgetLogHead(sql);
   return head;
 }
 
@@ -40,5 +41,29 @@ export function backfillLogHeads(sql: SqlStorage): void {
   for (const r of pending) {
     prev = nextLogHead(prev, r.log_seq, r.conflict_id, r.digest);
     sql.exec('INSERT INTO log_heads (log_seq, head) VALUES (?, ?)', r.log_seq, prev);
+    forgetLogHead(sql);
   }
+}
+
+const logHeads = new WeakMap<SqlStorage, { log_seq: number; log_head: string }>();
+
+/** Drop the cached log head: called on every record append and on a rolled-back mutation. */
+export function forgetLogHead(sql: SqlStorage): void {
+  logHeads.delete(sql);
+}
+
+/**
+ * The current `log_seq` and its head, from object memory when cached. Invariant: every
+ * write to `records` or `log_heads` goes through `appendLogHead` or `backfillLogHeads`,
+ * which drop the cache, and a rolled-back mutation drops it too (the vault object's
+ * `handle`); otherwise a conditional pull would answer `304` for a changed head.
+ */
+export function cachedLogHead(sql: SqlStorage): { log_seq: number; log_head: string } {
+  let head = logHeads.get(sql);
+  if (!head) {
+    const seq = sql.exec<{ n: number | null }>('SELECT MAX(log_seq) AS n FROM records').one().n ?? 0;
+    head = { log_seq: seq, log_head: logHeadAt(sql, seq) };
+    logHeads.set(sql, head);
+  }
+  return head;
 }

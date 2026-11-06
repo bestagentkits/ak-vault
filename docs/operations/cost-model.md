@@ -50,6 +50,37 @@ Sources: [Workers pricing](https://developers.cloudflare.com/workers/platform/pr
 | Stored data per vault | 1 MB | Ciphertext, change log, tombstones, membership |
 | Days per month | 30 | |
 
+## Measured 2026-11-04: conditional pulls
+
+Same lab workload, with every no-op poll sent as a conditional pull (`if_head`,
+[spec §5](../protocol/v1/spec.md#5-records-revisions-conflicts-and-tombstones);
+[#63](https://github.com/bestagentkits/ak-vault/issues/63) item 3). All 714 polls were
+answered `304` with no body.
+
+| Per no-op pull, steady state (282 pulls) | Zero-write pulls | Conditional pulls |
+|---|---|---|
+| Rows read | 2.9 | **0.05** |
+| Rows written | 0.02 | 0.05 (idle-flush markers) |
+| Durable Object requests | 2.35 | 2.44 (vault 1.39, registry 1.05) |
+| Vault + registry duration | 0.0024 + 0.0018 GB-s | 0.0098 + 0.0057 GB-s |
+| Worker CPU | 1.8 ms | 2.6 ms |
+
+A `304` removes the SQL work and the response body, but not the request: the Worker,
+the vault object and (with long-lived lab tokens) the registry are still called once
+per poll, and rows read are the cheapest line ($0.001 per million). The higher duration
+and CPU in this run are within the run-to-run spread of the lab (wall p99 of the vault
+object 247 ms here against 150 ms in setup); nothing in the change adds work to a pull.
+Projected the same way, USD per month, the change is cost-neutral:
+
+| Vaults | Lazy, zero-write | Lazy, this run | Active, zero-write | Active, this run | Active, this run with zero-write duration |
+|---|---|---|---|---|---|
+| 1,000 | $7 | $7 | $93 | $115 | $97 |
+| 10,000 | $66 | $74 | $1,016 | $1,275 | $1,093 |
+| 100,000 | $1,132 | $1,222 | $10,655 | $13,239 | $11,414 |
+
+Requests remain the lever: short-lived tokens (item 2) remove the registry call, and
+less frequent polling (item 4) removes requests.
+
 ## Measured 2026-11-04: zero-write pulls
 
 Same lab workload as [2026-10-16](#measured-2026-10-16-staging-configuration), at the

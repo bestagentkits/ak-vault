@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "description": "Change-feed head tag (spec §5 GET /changes): b64url(sha256(cjson(head))) over log_seq, log_head, membership_seq, membership_head, key_epoch, rekey_required.",
+  "cases": [
+    {
+      "head": {
+        "log_seq": 7,
+        "log_head": "g2_xhOe0Gx4Ty1_Yn6HemNu6uZ6dKRiRP_Q7hqXHwhM",
+        "membership_seq": 3,
+        "membership_head": "v1z1njVmUiUyaMYEy_jfjP2wOkoNMrJ60VjlgXCcgOQ",
+        "key_epoch": 1,
+        "rekey_required": false
+      },
+      "tag": "X8G75xvsjnbmiiwLGm114U-Vnjf14IB5Zs86Gwwqfk0"
+    },
+    {
+      "head": {
+        "log_seq": 0,
+        "log_head": "g2_xhOe0Gx4Ty1_Yn6HemNu6uZ6dKRiRP_Q7hqXHwhM",
+        "membership_seq": 3,
+        "membership_head": "v1z1njVmUiUyaMYEy_jfjP2wOkoNMrJ60VjlgXCcgOQ",
+        "key_epoch": 1,
+        "rekey_required": false
+      },
+      "tag": "95_Volb2qvJ-IPC9C0IPzL1p9CcEKWBoRdCFW2YgG5A"
+    },
+    {
+      "head": {
+        "log_seq": 8,
+        "log_head": "kvaSjvqilviWAGQ1n7TTpXdQFkQrvd-G9cqtDrrLbgI",
+        "membership_seq": 3,
+        "membership_head": "v1z1njVmUiUyaMYEy_jfjP2wOkoNMrJ60VjlgXCcgOQ",
+        "key_epoch": 1,
+        "rekey_required": false
+      },
+      "tag": "gic073TW3hXKjx0EMkciMWv0y3JiBKN45_WpdxlEYM8"
+    },
+    {
+      "head": {
+        "log_seq": 7,
+        "log_head": "g2_xhOe0Gx4Ty1_Yn6HemNu6uZ6dKRiRP_Q7hqXHwhM",
+        "membership_seq": 4,
+        "membership_head": "d2gYCWrtxBqm-0WjL2h6RiMpczS7aA-1v1kurcGn9k8",
+        "key_epoch": 1,
+        "rekey_required": false
+      },
+      "tag": "XEtu2lKABBzjGbCxNqAueNiivFDmicwaeWylT2WTfms"
+    },
+    {
+      "head": {
+        "log_seq": 7,
+        "log_head": "g2_xhOe0Gx4Ty1_Yn6HemNu6uZ6dKRiRP_Q7hqXHwhM",
+        "membership_seq": 3,
+        "membership_head": "v1z1njVmUiUyaMYEy_jfjP2wOkoNMrJ60VjlgXCcgOQ",
+        "key_epoch": 2,
+        "rekey_required": false
+      },
+      "tag": "nYOIgkGjPUq3rbxHeptJjKhp2wDUHtFN4507EJ8e-RA"
+    },
+    {
+      "head": {
+        "log_seq": 7,
+        "log_head": "g2_xhOe0Gx4Ty1_Yn6HemNu6uZ6dKRiRP_Q7hqXHwhM",
+        "membership_seq": 3,
+        "membership_head": "v1z1njVmUiUyaMYEy_jfjP2wOkoNMrJ60VjlgXCcgOQ",
+        "key_epoch": 1,
+        "rekey_required": true
+      },
+      "tag": "EQ9xwAggZEVRqTv1JqrLRgVfl6befkQ4Y5mSpFupYfY"
+    }
+  ]
+}
