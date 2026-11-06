@@ -89,7 +89,20 @@ Work is tracked in the [epic, issue #1](https://github.com/bestagentkits/ak-vaul
 - **Security gate: required for GA.** Red team, a two-device end-to-end run with real clients, rollback rehearsal and a review by the owner (not independent) ([#8](https://github.com/bestagentkits/ak-vault/issues/8)).
 - After personal sync: read-only CI identities ([#6](https://github.com/bestagentkits/ak-vault/issues/6)) and portable policy with encrypted audit ([#7](https://github.com/bestagentkits/ak-vault/issues/7)).
 
-## 7. Questions
+## 7. Pricing
+
+Cloud Sync is a pre-release preview and **free for AgentKit users** while we use it ourselves. It is not yet recommended for production credentials. Paid annual plans start only after general availability, and preview users are told before any billing begins ([#237](https://github.com/bestagentkits/ak-vault/issues/237)).
+
+| Plan | Price | Vaults | Devices per vault | Storage per vault |
+|---|---|---|---|---|
+| Preview (now) | Free with an AgentKit sign-in | 3 | 5 | 10 MB |
+| AgentKit customers, after GA | $9 / year with a valid AgentKit license | 5 | 5 | 25 MB |
+| Everyone else, after GA | $19 / year | 5 | 5 | 25 MB |
+| Self-hosted | Free, open source (MIT); in progress | Your choice | Your choice | Your choice |
+
+Every plan is end-to-end encrypted. Limits are planned and not yet enforced; fair use applies. If a plan lapses, your vaults turn read-only and are never deleted. No lock-in: you will be able to deploy ak-vault to your own Cloudflare account and point `ak secrets` at it (in progress, [#236](https://github.com/bestagentkits/ak-vault/issues/236)).
+
+## 8. Questions
 
 - **Can I use cloud sync today?** Only as a preview. Protocol v1 is proposed; its review gate was accepted by the owner, not by an independent third party. By owner decision the production sync API went live before that review as a pre-release preview: if you are signed in and run the preview `ak secrets sync` commands, your device syncs with it. It is not yet recommended for production credentials. The local `ak secrets` vault works today.
 - **Can AgentKit read my secrets?** The design says no: the server stores ciphertext and wrapped keys only. It can see the metadata in the table above. Treat this as a design claim: the owner accepted the review gate with no written findings, no independent third party has reviewed it, and the release gates are not all met. Remote MCP (pre-release, not for production credentials) narrows this: during a call, plaintext passes through the server's memory, though it is never stored or logged ([remote access](https://vault.agentkit.best/security/#remote-access)).

@@ -14,6 +14,14 @@ Straight answers about status, privacy, everyday use, teams, agents and recovery
 
 Only as a preview. Protocol v1 is proposed; its review gate was accepted by the owner, not by an independent third party ([issue #8](https://github.com/bestagentkits/ak-vault/issues/8)). By owner decision the production sync API went live before that review as a pre-release preview: if you are signed in and run the preview `ak secrets sync` commands, your device syncs with it. It is not yet recommended for production credentials. The local `ak secrets` vault works today.
 
+### What does Cloud Sync cost?
+
+Nothing during the preview for AgentKit users. After general availability: $9 a year for AgentKit customers with a valid license, $19 a year for everyone else. Self-hosting is free ([#237](https://github.com/bestagentkits/ak-vault/issues/237)).
+
+### Can I run my own server instead?
+
+That is the plan: ak-vault is MIT-licensed, and self-hosting on your own Cloudflare account with `ak secrets` pointed at it is in progress ([#236](https://github.com/bestagentkits/ak-vault/issues/236)). Hosted sync is a convenience, not a lock-in.
+
 ### What works right now?
 
 The local vault in the AgentKit CLI: importing a `.env` file, setting, rotating and inspecting secrets, `${secret:NAME}` references, agent grants and approvals, and the access audit. See [Part 1 of the guide](https://vault.agentkit.best/guide/#local).
