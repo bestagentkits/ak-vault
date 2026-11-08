@@ -14,6 +14,7 @@ page to find the owner of a question.
 | Exact wire format, primitives, encodings, errors | [Protocol v1 spec](./protocol/v1/spec.md) (normative) |
 | Who can attack what, and which test proves the defense? | [Threat model](./security/threat-model.md) |
 | What the server can see; logging and retention rules | [Data classification](./security/data-classification.md) |
+| How can a protected CI job use selected secrets without cloud access (CI bundle: format, threat model, rotation)? | [CI bundle](./ci-bundle.md) |
 | Devices, rekey, recovery, compromise response | [Key lifecycle and recovery](./security/key-lifecycle-and-recovery.md) |
 | What is live, preview and gated today, and the remote MCP plaintext boundary | [Status](./status.md) |
 | What must be true before GA | [Release gates](./security/release-gates.md) |

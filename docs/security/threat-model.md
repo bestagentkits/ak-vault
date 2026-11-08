@@ -194,6 +194,11 @@ These are accepted and must be stated wherever the guarantees are described:
   service cannot help. Disabling the backup cannot erase delivered mail, and a file
   made for an earlier recovery key still opens to that key and the vault keys its
   bundle held. The format has had no independent review.
+- **CI bundle.** The [CI bundle](../ci-bundle.md) is outside sync and protocol v1: a
+  file of selected values sealed with age to one dedicated key. The CI provider holds
+  that key, the runner and child process see plaintext, a compromised job can exfiltrate
+  it, a copy of a bundle cannot be revoked remotely, and refresh and rotation are an
+  operator action. It is not workload-side zero knowledge.
 - **Withholding never-seen updates.** A malicious server can freeze a new or
   long-offline device at any state it has not yet witnessed. Detection needs a
   second channel (another device's checkpoint, SAS transfer, or the recovery
