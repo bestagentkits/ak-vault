@@ -1117,7 +1117,8 @@ grant    = {v:1, alg:"x25519-xc20p-lease", lease_id, vault_id, account, requeste
   grant per lease from a human `owner`/`editor` device of the same account whose `sign_pub`
   is `approver_key` (`forbidden` otherwise) and that verifies against the stored request;
   refuses a grant once the key epoch moved past the request's (`409`); and releases an
-  allow at most once.
+  allow at most once, only while its approver is still current with the same key and the
+  key epoch is unchanged (§9.6).
 
 ## 4. Membership log (owner-signed, hash-chained)
 
