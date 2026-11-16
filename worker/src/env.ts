@@ -24,6 +24,11 @@ export interface Env {
    */
   VAULT_INPUT_REQUESTS_ENABLED?: string;
   /**
+   * Sandbox secret leases (ADR 0007): the `/v1/vaults/:vid/leases` routes serve only when
+   * exactly "true" and remote access is on. Unset (off) in every deployed environment.
+   */
+  VAULT_LEASES_ENABLED?: string;
+  /**
    * Refuse a new `role_set` without a signed log fence (spec §5). "false" in every
    * environment until the CLIs that sign the fence have replaced older ones; any
    * other value, or none, refuses (fail closed).
@@ -54,6 +59,11 @@ export function remoteAccessEnabled(env: Pick<Env, 'VAULT_REMOTE_ACCESS_ENABLED'
 /** Whether the device-sealed input requests serve: remote access on and the input flag exactly "true" (fail closed). */
 export function inputRequestsEnabled(env: Pick<Env, 'VAULT_REMOTE_ACCESS_ENABLED' | 'VAULT_INPUT_REQUESTS_ENABLED'>): boolean {
   return remoteAccessEnabled(env) && env.VAULT_INPUT_REQUESTS_ENABLED === 'true';
+}
+
+/** Whether the sandbox lease routes serve: remote access on and the lease flag exactly "true" (fail closed). */
+export function leasesEnabled(env: Pick<Env, 'VAULT_REMOTE_ACCESS_ENABLED' | 'VAULT_LEASES_ENABLED'>): boolean {
+  return remoteAccessEnabled(env) && env.VAULT_LEASES_ENABLED === 'true';
 }
 
 /** Whether a new unfenced `role_set` is refused (fail closed: anything but exactly "false" refuses). */

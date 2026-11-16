@@ -87,6 +87,13 @@ export const VAULT_SCHEMA = `
     created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, decided_at INTEGER
   );
   CREATE INDEX IF NOT EXISTS approval_requests_account ON approval_requests (account, state, created_at);
+  -- Sandbox leases (spec §3.14): request and grant wires are opaque; grant is NULL once fetched, revoked or expired.
+  CREATE TABLE IF NOT EXISTS leases (
+    lease_id TEXT PRIMARY KEY, account TEXT NOT NULL, requester TEXT NOT NULL, key_epoch INTEGER NOT NULL,
+    request TEXT NOT NULL, state TEXT NOT NULL, grant_wire TEXT, decision TEXT, approver TEXT,
+    created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, grant_expires_at INTEGER, decided_at INTEGER, closed_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS leases_account ON leases (account, state, created_at);
 `;
 
 /**

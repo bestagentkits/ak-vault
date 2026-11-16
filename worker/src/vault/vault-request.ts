@@ -34,8 +34,26 @@ export const VAULT_OPS = [
   'approval.get',
   'approval.decide',
   'approval.cancel',
+  // Sandbox leases (spec §9.6, §3.14), routed only where remote access and leases are enabled.
+  // The first four are called by the non-member lease identity, the rest by member devices.
+  'lease.sealkey',
+  'lease.post',
+  'lease.status',
+  'lease.fetch',
+  'lease.list',
+  'lease.get',
+  'lease.grant',
+  'lease.revoke',
 ] as const;
 export type VaultOp = (typeof VAULT_OPS)[number];
+
+/** Ops called by a sandbox's lease identity (not a vault member, spec §9.6). */
+export const LEASE_IDENTITY_OPS = ['lease.sealkey', 'lease.post', 'lease.status', 'lease.fetch'] as const;
+export type LeaseIdentityOp = (typeof LEASE_IDENTITY_OPS)[number];
+
+export function isLeaseIdentityOp(op: VaultOp): op is LeaseIdentityOp {
+  return (LEASE_IDENTITY_OPS as readonly VaultOp[]).includes(op);
+}
 
 export interface VaultRequest {
   op: VaultOp;
@@ -49,6 +67,8 @@ export interface VaultRequest {
   inputRequestId?: string;
   /** `request_id` path segment of `…/approval-requests/{request_id}`. */
   approvalRequestId?: string;
+  /** `lease_id` path segment of `…/leases/{lease_id}`. */
+  leaseId?: string;
   method: string;
   /** Exact request URL compared with the proof `htu`. */
   htu: string;
@@ -60,7 +80,7 @@ export interface VaultRequest {
   token: string;
   proof: string;
   idempotencyKey: string | null;
-  /** `AKV-Device-Key` header: the caller's sign_pub, used only by a not-yet-enrolled device reading the recovery bundle or membership. */
+  /** `AKV-Device-Key` header: the caller's sign_pub, used only by a not-yet-enrolled device reading the recovery bundle or membership, and by a sandbox lease identity. */
   deviceKey: string | null;
   body: Uint8Array;
   claims: VerifiedClaims;
@@ -71,5 +91,5 @@ export interface VaultRequest {
 
 /** Ops that mutate state: Idempotency-Key is required and the handler runs in one transaction. */
 export function isMutation(op: VaultOp): boolean {
-  return op === 'genesis' || op === 'sealed.ack' || op === 'writereq.close' || op === 'approval.post' || op === 'approval.decide' || op === 'approval.cancel' || op.endsWith('.post') || op.endsWith('.put');
+  return op === 'genesis' || op === 'sealed.ack' || op === 'writereq.close' || op === 'approval.post' || op === 'approval.decide' || op === 'approval.cancel' || op === 'lease.fetch' || op === 'lease.grant' || op === 'lease.revoke' || op.endsWith('.post') || op.endsWith('.put');
 }

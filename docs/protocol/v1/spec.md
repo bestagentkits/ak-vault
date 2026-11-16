@@ -1860,7 +1860,10 @@ Served only where the deployment enables remote access (every route below answer
   takes `{}`: an `allowed` lease returns `{"lease_id","state":"fetched","grant"}` and, in
   the same transaction, becomes `fetched` without its ciphertext; a `denied` lease returns
   its grant and stays `denied`; any other state is `409 conflict` (a lost response means a
-  new lease). `list` returns `{"leases":[…]}` newest first (`state=pending|all`, `limit` up
+  new lease; a fetch is never answered from the idempotency store, so a retry with the same
+  `Idempotency-Key` is also `409`). `expires_at` in `status`, `list` and `get` is the
+  grant's expiry once a lease is allowed, the request's otherwise; a grant whose expiry has
+  already passed is `bad_request`. `list` returns `{"leases":[…]}` newest first (`state=pending|all`, `limit` up
   to `lease_page_max`), each entry `lease_id, requester, key_epoch, state, created_at,
   expires_at`, plus after a grant `decided_at, decision, approver`, and the opaque
   `request`; `get` returns one such entry. `grant` takes `{"grant":<wire>}` from the device

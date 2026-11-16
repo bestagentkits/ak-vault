@@ -3,7 +3,7 @@
  * mutation. For an existing vault `handle` runs read-only check of the device's
  * `authorized` rate budget -> Idempotency-Key format (mutations) -> authorization
  * (membership, proof, scope, role) -> charge the `authorized` budget ->
- * idempotency replay -> one `transactionSync` per mutation. A refusal by the
+ * idempotency replay (never for a lease fetch) -> one `transactionSync` per mutation. A refusal by the
  * Idempotency-Key check or authorization is charged to the device's separate
  * `refused` budget instead; a 429 from the pre-check charges nothing. A missing
  * vault answers 404 and a fresh-vault genesis runs its storage-free checks
@@ -64,6 +64,7 @@ import {
   listApprovalsForMcp,
   type ApprovalState,
 } from './approval-request-store.js';
+import { createLease, fetchLease, getLease, grantLease, leaseStatus, listLeases, revokeLease } from './lease-store.js';
 import { enforceRateLimit, requireRateBudget } from './request-guard.js';
 import { authorize, preflightGenesis, type Authorized } from './vault-authorization.js';
 import { isMutation, type VaultRequest } from './vault-request.js';
@@ -145,12 +146,14 @@ export class VaultDurableObject extends DurableObject<Env> {
       } else if (!this.vaultExists()) throw new ApiError('not_found');
       const auth = this.authorizeAndCharge(req);
       if (!isMutation(req.op)) return this.read(req, auth);
-      const replayed = lookupIdempotent(this.sql, req);
+      const replayed = req.op === 'lease.fetch' ? null : lookupIdempotent(this.sql, req);
       if (replayed) return replayed;
       try {
         return this.ctx.storage.transactionSync(() => {
           const result = this.mutate(req, auth);
-          storeIdempotent(this.sql, req, result);
+          // A fetched grant is delivered once: never copied into the idempotency store, so a
+          // lost response means a new lease (spec §9.6) and no ciphertext outlives the fetch.
+          if (req.op !== 'lease.fetch') storeIdempotent(this.sql, req, result);
           return result;
         });
       } catch (err) {
@@ -425,6 +428,14 @@ export class VaultDurableObject extends DurableObject<Env> {
         return this.ctx.storage.transactionSync(() => listApprovalRequests(this.sql, req));
       case 'approval.get':
         return this.ctx.storage.transactionSync(() => getApprovalRequest(this.sql, req));
+      case 'lease.sealkey':
+        return getSealKey(this.sql, auth.state);
+      case 'lease.status':
+        return this.ctx.storage.transactionSync(() => leaseStatus(this.sql, req));
+      case 'lease.list':
+        return this.ctx.storage.transactionSync(() => listLeases(this.sql, req));
+      case 'lease.get':
+        return this.ctx.storage.transactionSync(() => getLease(this.sql, req));
       default:
         throw new ApiError('not_found');
     }
@@ -455,6 +466,14 @@ export class VaultDurableObject extends DurableObject<Env> {
         return decideApprovalRequest(this.sql, auth.state, req, body);
       case 'approval.cancel':
         return cancelApprovalRequest(this.sql, req, body);
+      case 'lease.post':
+        return createLease(this.sql, auth.state, req, body);
+      case 'lease.fetch':
+        return fetchLease(this.sql, req, body);
+      case 'lease.grant':
+        return grantLease(this.sql, auth.state, req, body);
+      case 'lease.revoke':
+        return revokeLease(this.sql, req, body);
       case 'checkpoints.post':
         return postCheckpoint(this.sql, this.membership, auth.state, req.claims.did, body);
       case 'audit.post':

@@ -2,7 +2,8 @@
  * `/v1/vaults/...` route table: method + path -> vault op and the route template
  * used in operational logs. IDs in the path must be canonical b64 of 16 bytes.
  * The remote-access routes (spec §9.6) match only when remote access is enabled;
- * otherwise they are unknown paths (404).
+ * otherwise they are unknown paths (404). The sandbox lease routes also need the lease
+ * flag (`opts.leases`).
  */
 import { b64decodeLength } from '@ak-vault/protocol';
 import { ApiError } from '../http/errors.js';
@@ -16,6 +17,7 @@ export interface MatchedRoute {
   sealedId?: string;
   writeRequestId?: string;
   approvalRequestId?: string;
+  leaseId?: string;
 }
 
 const COLLECTIONS: Record<string, Partial<Record<string, VaultOp>>> = {
@@ -43,7 +45,27 @@ function opaqueId(value: string): string {
 }
 
 /** Match `/v1/vaults/...`; returns null for paths that are not vault routes (404). */
-export function matchVaultRoute(method: string, pathname: string, opts: { remoteAccess: boolean }): MatchedRoute | null {
+/** `…/leases` routes (spec §9.6). `seal-key` is a literal segment: a lease ID is 22 b64 characters. */
+function matchLeaseRoute(method: string, parts: string[], vid: string): MatchedRoute | null {
+  const t = '/v1/vaults/:vid/leases';
+  if (parts.length === 5) {
+    if (method === 'POST') return { op: 'lease.post', template: `POST ${t}`, vaultId: opaqueId(vid) };
+    if (method === 'GET') return { op: 'lease.list', template: `GET ${t}`, vaultId: opaqueId(vid) };
+    return null;
+  }
+  const seg = parts[5];
+  if (!seg) return null;
+  if (seg === 'seal-key') return parts.length === 6 && method === 'GET' ? { op: 'lease.sealkey', template: `GET ${t}/seal-key`, vaultId: opaqueId(vid) } : null;
+  if (parts.length === 6) return method === 'GET' ? { op: 'lease.get', template: `GET ${t}/:lid`, vaultId: opaqueId(vid), leaseId: opaqueId(seg) } : null;
+  if (parts.length !== 7) return null;
+  const action = parts[6];
+  if (method === 'GET' && action === 'status') return { op: 'lease.status', template: `GET ${t}/:lid/status`, vaultId: opaqueId(vid), leaseId: opaqueId(seg) };
+  if (method !== 'POST') return null;
+  const op: VaultOp | undefined = action === 'fetch' ? 'lease.fetch' : action === 'grant' ? 'lease.grant' : action === 'revoke' ? 'lease.revoke' : undefined;
+  return op ? { op, template: `POST ${t}/:lid/${action}`, vaultId: opaqueId(vid), leaseId: opaqueId(seg) } : null;
+}
+
+export function matchVaultRoute(method: string, pathname: string, opts: { remoteAccess: boolean; leases?: boolean }): MatchedRoute | null {
   const parts = pathname.split('/');
   // ['', 'v1', 'vaults', vid, collection?, itemId?]
   if (parts.length < 4 || parts[1] !== 'v1' || parts[2] !== 'vaults' || !parts[3]) return null;
@@ -82,6 +104,7 @@ export function matchVaultRoute(method: string, pathname: string, opts: { remote
     if (parts.length === 7 && method === 'POST' && parts[6] === 'cancel') return { op: 'approval.cancel', template: `POST /v1/vaults/:vid/${t}/:rid/cancel`, vaultId: opaqueId(vid), approvalRequestId: opaqueId(parts[5]) };
     return null;
   }
+  if (opts.remoteAccess && opts.leases === true && collection === 'leases') return matchLeaseRoute(method, parts, vid);
   if (parts.length !== 5) return null;
   const op = COLLECTIONS[collection]?.[method] ?? (opts.remoteAccess ? REMOTE_COLLECTIONS[collection]?.[method] : undefined);
   if (!op) return null;

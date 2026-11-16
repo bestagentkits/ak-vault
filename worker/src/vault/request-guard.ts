@@ -12,7 +12,7 @@
 import { isAkvError, verifyProof, type DeviceRecord, type MembershipState, type TransportProof } from '@ak-vault/protocol';
 import type { Scope } from '../auth/jwt-verify.js';
 import { ApiError } from '../http/errors.js';
-import { LIMITS } from '../limits.js';
+import { LIMITS, REMOTE_ACCESS_LIMITS } from '../limits.js';
 import { replayStateFor } from './request-replay-state.js';
 import type { VaultRequest } from './vault-request.js';
 
@@ -25,14 +25,17 @@ export type RoleRule = 'any_device' | 'writer' | 'human_owner';
  * device key can spend it), `refused` for requests refused before or during it. Per
  * account (`recovery_identity_requests_per_window`): `recovery_identity` for every
  * request on the recovery-identity path whose proof verifies, so device IDs the
- * caller chooses cannot multiply that path's budget.
+ * caller chooses cannot multiply that path's budget. Per account
+ * (`lease_identity_requests_per_window`): `lease_identity`, the same for the sandbox
+ * lease-identity path, whose request keys the caller also chooses.
  */
-export type RateBucket = 'authorized' | 'refused' | 'recovery_identity';
+export type RateBucket = 'authorized' | 'refused' | 'recovery_identity' | 'lease_identity';
 
 const RATE_BUCKETS: Record<RateBucket, number> = {
   authorized: LIMITS.rate_requests_per_window,
   refused: LIMITS.rate_requests_per_window,
   recovery_identity: LIMITS.recovery_identity_requests_per_window,
+  lease_identity: REMOTE_ACCESS_LIMITS.lease_identity_requests_per_window,
 };
 
 interface RateWindow {
@@ -62,7 +65,7 @@ function rateLimited(retryAfter: number): ApiError {
 
 /**
  * Count one request against `bucket` for `subject` (a device ID, or an account for
- * `recovery_identity`); `rate_limited` once the window's budget is spent.
+ * `recovery_identity` and `lease_identity`); `rate_limited` once the window's budget is spent.
  */
 export function enforceRateLimit(sql: SqlStorage, bucket: RateBucket, subject: string, nowMs: number): void {
   const w = rateWindow(sql, bucket, subject, nowMs);

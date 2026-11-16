@@ -13,13 +13,13 @@
 import { areGrantsRevoked, assertDeviceNotRevoked, isGrantRevoked } from '../auth/revocation-check.js';
 import { b64decodeLength, isShortLivedVaultToken, shortLivedVaultTokenUsable } from '@ak-vault/protocol';
 import { bearerToken, verifyToken, type VerifiedClaims } from '../auth/jwt-verify.js';
-import { inputRequestsEnabled, remoteAccessEnabled, type Env } from '../env.js';
+import { inputRequestsEnabled, leasesEnabled, remoteAccessEnabled, type Env } from '../env.js';
 import { ApiError, type ApiResult } from '../http/errors.js';
 import { readBodyCapped } from '../http/read-body-capped.js';
 import { LIMITS } from '../limits.js';
 import { relayStub } from '../relay/relay-rpc.js';
 import { RELAY_OPEN_HEADER, deviceKeyMatches, encodeRelayOpen, relaySessionRefusal } from '../relay/relay-session.js';
-import { isMutation } from '../vault/vault-request.js';
+import { isLeaseIdentityOp, isMutation } from '../vault/vault-request.js';
 import { matchVaultRoute } from './api-routes.js';
 import { handleInputRequest, matchInputRoute } from './input-request-routes.js';
 import { meta, syncEnabled } from './meta-routes.js';
@@ -43,14 +43,17 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
   const inputRequests = inputRequestsEnabled(env);
   const inputRoute = inputRequests ? matchInputRoute(request.method, url.pathname) : null;
   if (inputRoute) return handleInputRequest(request, env, info, inputRoute);
-  const route = matchVaultRoute(request.method, url.pathname, { remoteAccess });
+  const route = matchVaultRoute(request.method, url.pathname, { remoteAccess, leases: leasesEnabled(env) });
   if (!route) throw new ApiError('not_found');
   info.template = route.template;
   info.vaultId = route.vaultId;
 
   const token = bearerToken(request);
   const claims = await verifyToken(token, env);
-  await assertTokenNotRevoked(env, claims);
+  // The lease identity is not a vault member, so its token never takes the short-lived
+  // exemption: the registry is consulted on every request (spec §9.6).
+  if (isLeaseIdentityOp(route.op)) await assertDeviceNotRevoked(env, claims);
+  else await assertTokenNotRevoked(env, claims);
   const body = await readBodyCapped(request, LIMITS.request_body_max_bytes);
   const idempotencyKey = request.headers.get('Idempotency-Key');
   if (isMutation(route.op) && !idempotencyKey) throw new ApiError('bad_request', { message: 'a valid Idempotency-Key header is required' });
@@ -83,6 +86,7 @@ export async function handleApi(request: Request, env: Env, info: RouteInfo): Pr
     ...(route.sealedId ? { sealedId: route.sealedId } : {}),
     ...(writeRequestId !== undefined ? { writeRequestId } : {}),
     ...(route.approvalRequestId ? { approvalRequestId: route.approvalRequestId } : {}),
+    ...(route.leaseId ? { leaseId: route.leaseId } : {}),
     ...(inputRequestId !== undefined ? { inputRequestId } : {}),
     method: request.method,
     htu: request.url,
@@ -167,7 +171,7 @@ export async function handleRelayUpgrade(request: Request, env: Env, info: Route
  * Revocation for a `/v1` request (spec §9 item 3). A short-lived token had revocation
  * checked when it was issued, so it is served without a registry lookup, but only while
  * `now < exp` and `exp - now` within the short lifetime (no skew): a revocation then takes effect within its lifetime. Any other
- * token is checked against the registry on every request.
+ * token, and every token on a lease-identity route, is checked against the registry on every request.
  */
 async function assertTokenNotRevoked(env: Env, claims: VerifiedClaims, nowMs = Date.now()): Promise<void> {
   if (!isShortLivedVaultToken(claims.iat, claims.exp)) return assertDeviceNotRevoked(env, claims);
