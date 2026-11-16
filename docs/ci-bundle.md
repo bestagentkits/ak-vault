@@ -61,6 +61,7 @@ What the bundle protects, and what it does not.
 | Refresh | Updating or rotating is an operator action: re-run `bundle create` on the trusted device and replace the CI copy. |
 | Log redaction | Output is struck of the delivered values. This is best effort: it misses encoded, split, reversed or otherwise transformed forms. It is not a control. |
 | Wrong environment | A bundle made for another profile, sealed to another key, altered, truncated or oversized is refused and no program starts. |
+| No agent or grant check | `run --bundle` reads no vault, grant, approval or ledger: the key is the whole authorization, and whatever program follows `--` gets every value. Feed a bundle only to reviewed code, **never to a step that runs a coding agent** or any program that takes instructions from issues, pull requests, model output or other untrusted input. Agents get secrets through the grant-checked paths (`ak secrets run` with grants, remote access approvals), not a bundle. |
 | Fork and untrusted code | Secrets must not reach untrusted pull-request code. See the workflow rules below. `ak secrets run --bundle` also refuses `pull_request_target` under GitHub Actions. |
 
 Not in Phase 1: OIDC, machine enrollment, a cloud retrieval endpoint, per-secret
@@ -123,7 +124,10 @@ Repository settings that make this safe:
 - Do not upload the bundle, the key or the job environment as an artifact or
   cache, and do not enable step debug logging on the deploy job.
 - The program after `--` is yours: it receives the values. Run only reviewed
-  code, and avoid interpreters fed untrusted input.
+  code, and avoid interpreters fed untrusted input. Never run a coding agent
+  (or anything that acts on prompts, issue text or model output) under
+  `run --bundle`, in that step or any later step of the same job: bundle mode has
+  no agent or grant check.
 
 ### Update or rotate a secret
 
@@ -166,7 +170,11 @@ the key variable not reaching the child (`secretscmd` bundle tests and
 CI half in an empty home with no vault, no terminal and a scrubbed environment
 (`TestCIBundleFreshRunner` in `apps/cli`).
 
-Open: a run of this on a GitHub-hosted fresh runner (a workflow that checks out a
-pinned `ak`, decrypts an example bundle and scans the recorded logs and artifacts)
-is tracked on [#239](https://github.com/bestagentkits/ak-vault/issues/239); the
-Phase 1 definition of done waits on it.
+On a fresh GitHub-hosted runner, the `ci-bundle-e2e` workflow in agentkit
+(`.github/workflows/ci-bundle-e2e.yml`, added by
+[bestagentkits/agentkit#3191](https://github.com/bestagentkits/agentkit/pull/3191))
+builds `ak`, opens a committed test bundle holding one synthetic value with a
+test-only key from a protected Environment, checks that the child received the
+value (by hash) and not the key, that a wrong profile and a missing key are
+refused, and that the value appears nowhere in the step output, the recorded job
+log or artifacts.
