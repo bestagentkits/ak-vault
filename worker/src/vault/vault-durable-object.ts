@@ -431,11 +431,11 @@ export class VaultDurableObject extends DurableObject<Env> {
       case 'lease.sealkey':
         return getSealKey(this.sql, auth.state);
       case 'lease.status':
-        return this.ctx.storage.transactionSync(() => leaseStatus(this.sql, req));
+        return this.ctx.storage.transactionSync(() => leaseStatus(this.sql, auth.state, req));
       case 'lease.list':
-        return this.ctx.storage.transactionSync(() => listLeases(this.sql, req));
+        return this.ctx.storage.transactionSync(() => listLeases(this.sql, auth.state, req));
       case 'lease.get':
-        return this.ctx.storage.transactionSync(() => getLease(this.sql, req));
+        return this.ctx.storage.transactionSync(() => getLease(this.sql, auth.state, req));
       default:
         throw new ApiError('not_found');
     }
@@ -469,11 +469,11 @@ export class VaultDurableObject extends DurableObject<Env> {
       case 'lease.post':
         return createLease(this.sql, auth.state, req, body);
       case 'lease.fetch':
-        return fetchLease(this.sql, req, body);
+        return fetchLease(this.sql, auth.state, req, body);
       case 'lease.grant':
         return grantLease(this.sql, auth.state, req, body);
       case 'lease.revoke':
-        return revokeLease(this.sql, req, body);
+        return revokeLease(this.sql, auth.state, req, body);
       case 'checkpoints.post':
         return postCheckpoint(this.sql, this.membership, auth.state, req.claims.did, body);
       case 'audit.post':

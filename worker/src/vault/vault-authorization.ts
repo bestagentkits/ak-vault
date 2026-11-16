@@ -252,7 +252,9 @@ const LEASE_IDENTITY_KINDS: ReadonlySet<string> = new Set(['api_key_device', 'em
 function authorizeLeaseIdentity(req: VaultRequest, sql: SqlStorage, state: MembershipState): Authorized {
   if (!LEASE_IDENTITY_KINDS.has(req.claims.kind)) throw new ApiError('forbidden');
   const did = req.claims.did;
-  if (!state.members.some((m) => m.account === req.claims.sub)) throw new ApiError('forbidden');
+  // Only an account that may approve (owner/editor) may ask: a reader-only account could never be granted.
+  const role = state.members.find((m) => m.account === req.claims.sub)?.role;
+  if (role !== 'owner' && role !== 'editor') throw new ApiError('forbidden');
   if (state.devices.some((d) => d.device_id === did) || state.removed_device_ids.includes(did)) throw new ApiError('forbidden');
   requireRateBudget(sql, 'lease_identity', req.claims.sub, req.nowMs);
   let signPub: string;

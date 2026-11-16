@@ -52,14 +52,42 @@ type Row = {
 };
 
 /**
- * Expire lapsed leases and purge history past retention: a pending lease at its request's
- * `expires_at`, an allowed one at its grant's (its ciphertext deleted). Caller holds the
- * transaction.
+ * Expire lapsed leases, revoke allowed leases that are no longer releasable, and purge
+ * history past retention: a pending lease expires at its request's `expires_at`, an
+ * allowed one at its grant's (its ciphertext deleted). Caller holds the transaction.
  */
-function sweep(sql: SqlStorage, nowMs: number): void {
+function sweep(sql: SqlStorage, state: MembershipState, nowMs: number): void {
   sql.exec("UPDATE leases SET state = 'expired', closed_at = ? WHERE state = 'pending' AND expires_at <= ?", nowMs, nowMs);
   sql.exec("UPDATE leases SET state = 'expired', grant_wire = NULL, closed_at = ? WHERE state = 'allowed' AND grant_expires_at <= ?", nowMs, nowMs);
+  revokeUnreleasable(sql, state, nowMs);
   sql.exec("DELETE FROM leases WHERE state NOT IN ('pending', 'allowed') AND closed_at <= ?", nowMs - L.lease_retention_s * 1000);
+}
+
+/**
+ * Fail closed on release: an allowed lease is released only while its approver is still a
+ * current human owner/editor device of the lease's account with the `sign_pub` the grant
+ * carries, and the vault key epoch is still the lease's. Otherwise (approver removed,
+ * demoted or re-keyed device; vault rekeyed) the lease becomes `revoked` and its grant is
+ * deleted, so the sandbox's fetch answers 409.
+ */
+function revokeUnreleasable(sql: SqlStorage, state: MembershipState, nowMs: number): void {
+  const rows = sql.exec<{ lease_id: string; account: string; key_epoch: number; grant_wire: string | null }>("SELECT lease_id, account, key_epoch, grant_wire FROM leases WHERE state = 'allowed'").toArray();
+  for (const r of rows) {
+    if (releasable(state, r.account, r.key_epoch, r.grant_wire)) continue;
+    sql.exec("UPDATE leases SET state = 'revoked', grant_wire = NULL, closed_at = ? WHERE lease_id = ? AND state = 'allowed'", nowMs, r.lease_id);
+  }
+}
+
+function releasable(state: MembershipState, account: string, keyEpoch: number, grantWire: string | null): boolean {
+  if (grantWire === null || keyEpoch !== state.key_epoch) return false;
+  let grant: LeaseGrantWire;
+  try {
+    grant = parseLeaseGrant(JSON.parse(grantWire));
+  } catch {
+    return false;
+  }
+  const device = state.devices.find((d) => d.device_id === grant.approver);
+  return !!device && device.account === account && device.kind === 'human' && (device.role === 'owner' || device.role === 'editor') && device.sign_pub === grant.approver_key;
 }
 
 /** The expiry a client acts on: the grant's once allowed, else the request's approval window. */
@@ -121,7 +149,7 @@ export function createLease(sql: SqlStorage, state: MembershipState, req: VaultR
   if (wire.ts > req.nowMs + SEALED_MAX_FUTURE_MS || req.nowMs - wire.ts > SEALED_MAX_FUTURE_MS) throw new ApiError('bad_request', { message: 'lease request ts outside the clock window' });
   const life = wire.expires_at - wire.ts;
   if (life < L.lease_request_min_ttl_s * 1000 || life > L.lease_request_ttl_s * 1000) throw new ApiError('bad_request', { message: 'lease request lifetime out of range' });
-  sweep(sql, req.nowMs);
+  sweep(sql, state, req.nowMs);
   if (sql.exec('SELECT 1 FROM leases WHERE lease_id = ?', wire.lease_id).toArray().length > 0) throw new ApiError('conflict');
   const count = (where: string, ...args: unknown[]) => sql.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM leases WHERE ${where}`, ...args).one().n;
   if (count("account = ? AND state = 'pending'", req.claims.sub) >= L.leases_pending_per_account) throw new ApiError('rate_limited', { message: 'too many pending leases' });
@@ -148,8 +176,8 @@ export function createLease(sql: SqlStorage, state: MembershipState, req: VaultR
 }
 
 /** `GET /leases/{id}/status` for the requesting sandbox. */
-export function leaseStatus(sql: SqlStorage, req: VaultRequest): ApiResult {
-  sweep(sql, req.nowMs);
+export function leaseStatus(sql: SqlStorage, state: MembershipState, req: VaultRequest): ApiResult {
+  sweep(sql, state, req.nowMs);
   const row = requesterRowOf(sql, req);
   return okResult({ lease_id: row.lease_id, state: row.state, expires_at: effectiveExpiry(row) });
 }
@@ -160,9 +188,9 @@ export function leaseStatus(sql: SqlStorage, req: VaultRequest): ApiResult {
  * lease returns its (value-free) grant and stays `denied`; anything else is `409`.
  * Caller holds the transaction; the result is never stored for idempotent replay.
  */
-export function fetchLease(sql: SqlStorage, req: VaultRequest, body: JsonObject): ApiResult {
+export function fetchLease(sql: SqlStorage, state: MembershipState, req: VaultRequest, body: JsonObject): ApiResult {
   requireKeys(body, []);
-  sweep(sql, req.nowMs);
+  sweep(sql, state, req.nowMs);
   const row = requesterRowOf(sql, req);
   if (row.state === 'denied' && row.grant_wire !== null) {
     return okResult({ lease_id: row.lease_id, state: 'denied', grant: JSON.parse(row.grant_wire) as JsonObject });
@@ -176,14 +204,14 @@ export function fetchLease(sql: SqlStorage, req: VaultRequest, body: JsonObject)
 }
 
 /** `GET /leases?state=pending|all&limit=`: the caller's account's leases, newest first. */
-export function listLeases(sql: SqlStorage, req: VaultRequest): ApiResult {
+export function listLeases(sql: SqlStorage, state: MembershipState, req: VaultRequest): ApiResult {
   const names = req.queryList.map(([n]) => n);
   if (names.some((n) => n !== 'state' && n !== 'limit') || new Set(names).size !== names.length) throw new ApiError('bad_request');
   const which = req.query['state'] ?? 'pending';
   if (which !== 'pending' && which !== 'all') throw new ApiError('bad_request');
   const limit = queryInt(req.query, 'limit', L.lease_page_max, L.lease_page_max);
   if (limit < 1) throw new ApiError('bad_request');
-  sweep(sql, req.nowMs);
+  sweep(sql, state, req.nowMs);
   const rows = sql
     .exec<Row>(`SELECT * FROM leases WHERE account = ? ${which === 'pending' ? "AND state = 'pending'" : ''} ORDER BY created_at DESC, lease_id LIMIT ?`, req.claims.sub, limit)
     .toArray();
@@ -191,8 +219,8 @@ export function listLeases(sql: SqlStorage, req: VaultRequest): ApiResult {
 }
 
 /** `GET /leases/{id}`: one lease of the caller's account. */
-export function getLease(sql: SqlStorage, req: VaultRequest): ApiResult {
-  sweep(sql, req.nowMs);
+export function getLease(sql: SqlStorage, state: MembershipState, req: VaultRequest): ApiResult {
+  sweep(sql, state, req.nowMs);
   return okResult(view(rowOf(sql, req.leaseId!, req.claims.sub)));
 }
 
@@ -204,7 +232,7 @@ export function getLease(sql: SqlStorage, req: VaultRequest): ApiResult {
  */
 export function grantLease(sql: SqlStorage, state: MembershipState, req: VaultRequest, body: JsonObject): ApiResult {
   requireKeys(body, ['grant']);
-  sweep(sql, req.nowMs);
+  sweep(sql, state, req.nowMs);
   const row = rowOf(sql, req.leaseId!, req.claims.sub);
   let grant: LeaseGrantWire;
   try {
@@ -230,7 +258,7 @@ export function grantLease(sql: SqlStorage, state: MembershipState, req: VaultRe
   } catch {
     throw new ApiError('bad_request', { message: 'lease grant does not verify against this request' });
   }
-  if (grant.ts > req.nowMs + SEALED_MAX_FUTURE_MS) throw new ApiError('bad_request', { message: 'lease grant ts outside the clock window' });
+  if (grant.ts > req.nowMs + SEALED_MAX_FUTURE_MS || req.nowMs - grant.ts > SEALED_MAX_FUTURE_MS) throw new ApiError('bad_request', { message: 'lease grant ts outside the clock window' });
   const allow = grant.decision === 'allow';
   // An allow always carries `expires_at` (parseLeaseGrant); one already past is useless to the sandbox.
   const grantExpiresAt = allow ? (grant.expires_at ?? 0) : null;
@@ -254,9 +282,9 @@ export function grantLease(sql: SqlStorage, state: MembershipState, req: VaultRe
 }
 
 /** `POST /leases/{id}/revoke` (`{}`): close a pending or allowed lease and delete its grant. */
-export function revokeLease(sql: SqlStorage, req: VaultRequest, body: JsonObject): ApiResult {
+export function revokeLease(sql: SqlStorage, state: MembershipState, req: VaultRequest, body: JsonObject): ApiResult {
   requireKeys(body, []);
-  sweep(sql, req.nowMs);
+  sweep(sql, state, req.nowMs);
   const row = rowOf(sql, req.leaseId!, req.claims.sub);
   const updated = sql
     .exec("UPDATE leases SET state = 'revoked', grant_wire = NULL, closed_at = ? WHERE lease_id = ? AND state IN ('pending', 'allowed') RETURNING lease_id", req.nowMs, row.lease_id)

@@ -196,6 +196,40 @@ describe('sandbox leases: flow', () => {
     expect(await dumpLeases(fx.vaultId)).not.toContain(grant.ct!);
   });
 
+  it('fails closed at fetch: approver device removed after the allow revokes the lease', async () => {
+    const fx = await VaultFixture.create();
+    const laptop = await fx.addDevice();
+    const { sb, wire } = await postedLease(fx);
+    const grant = signGrant(laptop, wire, 'allow');
+    expect((await memberCall(laptop, 'POST', leasesPath(fx, `/${wire.lease_id}/grant`), { grant })).status).toBe(200);
+    expect((await fx.removeDevice(laptop)).status).toBe(201);
+    expect((await sandboxCall(sb, 'POST', leasesPath(fx, `/${wire.lease_id}/fetch`), {})).status).toBe(409);
+    expect((await sandboxCall(sb, 'GET', leasesPath(fx, `/${wire.lease_id}/status`))).json.state).toBe('revoked');
+    expect(await dumpLeases(fx.vaultId)).not.toContain(grant.ct!);
+  });
+
+  it('fails closed at fetch: a rekey after the allow revokes the lease', async () => {
+    const fx = await VaultFixture.create();
+    const { sb, wire } = await postedLease(fx);
+    const grant = signGrant(fx.owner, wire, 'allow');
+    expect((await memberCall(fx.owner, 'POST', leasesPath(fx, `/${wire.lease_id}/grant`), { grant })).status).toBe(200);
+    expect((await fx.rekey()).status).toBe(201);
+    expect((await sandboxCall(sb, 'POST', leasesPath(fx, `/${wire.lease_id}/fetch`), {})).status).toBe(409);
+    expect((await memberCall(fx.owner, 'GET', leasesPath(fx, `/${wire.lease_id}`))).json.state).toBe('revoked');
+    expect(await dumpLeases(fx.vaultId)).not.toContain(grant.ct!);
+  });
+
+  it('refuses a grant whose ts is older than the clock window', async () => {
+    const fx = await VaultFixture.create();
+    const t0 = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'], now: t0 });
+    const { wire } = await postedLease(fx, { life: 900_000 });
+    vi.setSystemTime(t0 + 400_000);
+    const res = await memberCall(fx.owner, 'POST', leasesPath(fx, `/${wire.lease_id}/grant`), { grant: signGrant(fx.owner, wire, 'allow', { ts: t0 + 1000 }) });
+    expect(res.json.error.code).toBe('bad_request');
+    expect((await memberCall(fx.owner, 'POST', leasesPath(fx, `/${wire.lease_id}/grant`), { grant: signGrant(fx.owner, wire, 'allow') })).status).toBe(200);
+  });
+
   it('revoke closes a pending or allowed lease and deletes its grant; nothing else', async () => {
     const fx = await VaultFixture.create();
     const { sb, wire } = await postedLease(fx);

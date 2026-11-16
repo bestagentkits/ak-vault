@@ -44,7 +44,6 @@ function opaqueId(value: string): string {
   return value;
 }
 
-/** Match `/v1/vaults/...`; returns null for paths that are not vault routes (404). */
 /** `…/leases` routes (spec §9.6). `seal-key` is a literal segment: a lease ID is 22 b64 characters. */
 function matchLeaseRoute(method: string, parts: string[], vid: string): MatchedRoute | null {
   const t = '/v1/vaults/:vid/leases';
@@ -65,6 +64,7 @@ function matchLeaseRoute(method: string, parts: string[], vid: string): MatchedR
   return op ? { op, template: `POST ${t}/:lid/${action}`, vaultId: opaqueId(vid), leaseId: opaqueId(seg) } : null;
 }
 
+/** Match `/v1/vaults/...`; returns null for paths that are not vault routes (404). */
 export function matchVaultRoute(method: string, pathname: string, opts: { remoteAccess: boolean; leases?: boolean }): MatchedRoute | null {
   const parts = pathname.split('/');
   // ['', 'v1', 'vaults', vid, collection?, itemId?]

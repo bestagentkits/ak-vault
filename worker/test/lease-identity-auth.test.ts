@@ -96,6 +96,15 @@ describe('sandbox leases: lease identity', () => {
     expect((await sealKey(fx, newSandbox(`acct-${randomId()}`))).json.error.code).toBe('forbidden');
   });
 
+  it('refuses a reader-only account', async () => {
+    const fx = await VaultFixture.create('shared');
+    const reader = await fx.addDevice({ account: `acct-${randomId()}`, role: 'reader' });
+    await sealPubFor(fx, newSandbox(fx.owner.account));
+    const res = await sealKey(fx, newSandbox(reader.account));
+    expect(res.status).toBe(403);
+    expect(res.json.error.code).toBe('forbidden');
+  });
+
   it('admits only api_key_device and email_otp sessions; machine and browser are forbidden, input is not a sync token', async () => {
     const fx = await VaultFixture.create();
     await sealPubFor(fx, newSandbox(fx.owner.account));
@@ -160,6 +169,13 @@ describe('sandbox leases: lease identity', () => {
     record(await sandboxCall(sb, 'POST', leasesPath(fx, `/${wire.lease_id}/fetch`), {}));
     record(await sandboxCall(sb, 'GET', leasesPath(fx, `/${wire.lease_id}/status`)));
     record(await memberCall(fx.owner, 'GET', leasesPath(fx, '?state=all')));
+    record(await memberCall(fx.owner, 'GET', leasesPath(fx, `/${wire.lease_id}`)));
+    const { wire: second } = await postedLease(fx);
+    record(await memberCall(fx.owner, 'GET', leasesPath(fx, `/${second.lease_id}`)));
+    record(await memberCall(fx.owner, 'POST', leasesPath(fx, `/${second.lease_id}/grant`), { grant: signGrant(fx.owner, second, 'allow') }));
+    record(await memberCall(fx.owner, 'GET', leasesPath(fx, '?state=all')));
+    record(await memberCall(fx.owner, 'POST', leasesPath(fx, `/${second.lease_id}/revoke`), {}));
+    record(await memberCall(fx.owner, 'GET', leasesPath(fx, `/${second.lease_id}`)));
     record(await sandboxCall(sb, 'POST', leasesPath(fx), { request: buildRequest(fx, newSandbox(fx.owner.account), wire.epk) }));
 
     const all = [...bodies, ...logs].join('\n');
