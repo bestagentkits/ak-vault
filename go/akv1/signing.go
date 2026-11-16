@@ -13,6 +13,8 @@ const (
 	ContextCheckpoint      = "akv1/checkpoint"
 	ContextAuditCheckpoint = "akv1/audit-checkpoint"
 	ContextProof           = "akv1/proof"
+	ContextLeaseRequest    = "akv1/lease-request"
+	ContextLeaseGrant      = "akv1/lease-grant"
 )
 
 // KeyBytes is the size of Ed25519 seeds, X25519 secrets and all public keys.
