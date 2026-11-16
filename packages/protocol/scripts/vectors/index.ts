@@ -15,6 +15,7 @@ import { nameTagVectors, sealedOpVectors, sealKeyVectors } from './seal-and-name
 import { writeIntentVectors } from './write-intent.js';
 import { approvalVectors } from './approval.js';
 import { inputSealVectors } from './input-seal.js';
+import { leaseVectors } from './lease.js';
 import { kitBackupVectors } from './kit-backup.js';
 import { enrollCodeVectors } from './enroll-codes.js';
 import { enrollCommitVectors } from './enroll-commit.js';
@@ -50,6 +51,7 @@ const BUILDERS: Record<string, () => Record<string, unknown>> = {
   'write-intent.json': writeIntentVectors,
   'approval.json': approvalVectors,
   'input-seal.json': inputSealVectors,
+  'lease.json': leaseVectors,
   'kit-backup.json': kitBackupVectors,
   'enroll-codes.json': enrollCodeVectors,
   'enroll-commit.json': enrollCommitVectors,

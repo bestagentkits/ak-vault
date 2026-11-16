@@ -158,6 +158,11 @@ directories themselves are the authority for exact file names.
 | A2 | The approval channel leaks which secret, agent or project is in use, or a value | Server, network | The subject is sealed under HKDF(VK[e]); the server stores ciphertext plus account, device, epoch, state and times; no value is ever part of a request or decision | Vectors: approval AEAD; dashboard test asserts the subject never crosses the wire in the clear |
 | A3 | A remote MCP client or prompt-injected agent approves its own request | Agent, MCP client | MCP can only list metadata and deny; `secrets_approvals_allow` returns a dashboard link where an enrolled browser device signs; the requesting device cannot approve itself | `worker/test/approval-request.test.ts` (MCP tools) |
 | A5 | An MCP client of the account denies every pending request | MCP client | Accepted: a deny only refuses access and is recorded with the client ID; disconnect the client | `worker/test/approval-request.test.ts` |
+| L1 | A fabricated or swapped lease request gets values sealed to an attacker's lease key | Server, leaked API key, network | The request is self-signed, so the approving device opens and grants only a request whose full digest equals the lease code the person entered from the sandbox (`forbidden` otherwise); the code is 32 bytes, never truncated ([spec §3.14](../protocol/v1/spec.md#314-sandbox-secret-leases)) | Vectors: `lease.json` (`wrong_lease_code`, `swapped_lease_pub_same_code`, `resigned_swapped_lease_pub`) |
+| L2 | The lease channel leaks which secrets a sandbox asked for, or a value | Server, network | References are sealed to `seal_pub[e]`, values to the one-time lease key; the server stores ciphertext plus account, request device ID, approver, decision, state and times | Vectors: `lease.json` AEAD; `worker/test/` lease tests (no reference or value in any response or log) |
+| L3 | A grant is replayed, moved to another lease, outlives its TTL, or carries a var the person did not approve | Server, network | Grant AAD and signature bind lease ID, account, requester, lease key and request digest; expiry ≤ `ts + ttl_s`; the sandbox refuses a var it did not request; the server releases an allow once (`fetch` in the vault transaction) | Vectors: `lease.json` (`replay_on_other_request`, `expired`, `ttl_overrun`, `non_approved_var`); worker lease tests (second fetch `409`) |
+| L4 | An agent or non-human device approves a lease | Agent, machine device | Grants are signed by a human `owner`/`editor` device whose current `sign_pub` is `approver_key`; machine and reader devices are refused; the CLI applies its agent-ancestor guard; a requester never grants itself | Vectors: `lease.json` (`self_grant`); worker lease tests (machine, reader, wrong key) |
+| L5 | A sandbox token or non-member key reaches other vault data | Leaked API key, sandbox | The lease identity reaches only its four routes, needs a member account's `api_key_device`/`email_otp` token, a key that is not a current or removed device, a proof, a live revocation lookup and a per-account budget; status and fetch answer only the requesting key | Worker lease tests (auth, isolation, budget) |
 | A4 | Request flooding or stale requests | Member device | Per-device, per-account and retained caps, 60 s..24 h lifetime, sweep to `expired`; a withheld decision fails closed | `worker/test/approval-request.test.ts` (caps, expiry) |
 
 Rows X1–X16 cover remote access (ADR 0002, ADR 0004); their vectors and tests land
@@ -167,6 +172,13 @@ recovery kit email backup (ADR 0005).
 ## Explicit limitations
 
 These are accepted and must be stated wherever the guarantees are described:
+
+- **Sandbox leases hand plaintext to the sandbox.** Every approved value is readable by
+  the sandbox and its agent until the lease expires, and there is no clawback after the
+  fetch. The sandbox cannot verify the vault's membership: unless it pins the approver
+  device IDs, a hostile Worker can seal values of its own choosing to the lease key (it
+  never learns a vault value), and a substituted seal key exposes the requested
+  references, not values ([ADR 0007](../adr/0007-sandbox-secret-leases.md#honest-boundary)).
 
 - **Input requests and a live compromised Worker.** A Worker under attacker control
   can put its own public key in an input-request link or serve a hostile form, and

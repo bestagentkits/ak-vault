@@ -175,7 +175,10 @@ exactly `true` turns them off, and each then answers `404` (an item PUT with
 requests of [ADR 0004](../adr/0004-device-sealed-input-requests.md) (`/input` and the
 input-request routes) on top of remote access; it is on for staging and production, and while off those routes answer `404` (an item PUT with
 `?input_request=` answers `400`); its gate is tested in `worker/test/input-request.test.ts`
-and `worker/test/input-form-redirect.test.ts`. The sync kill switch also stops it: with sync off, `/mcp`
+and `worker/test/input-form-redirect.test.ts`. `VAULT_LEASES_ENABLED` adds the sandbox secret leases of
+[ADR 0007](../adr/0007-sandbox-secret-leases.md) (the `…/leases` routes) on top of remote access;
+it is unset (off) everywhere until the owner accepts the ADR, and while off those routes answer
+`404`; its gate is tested in the Worker lease tests. The sync kill switch also stops it: with sync off, `/mcp`
 answers `503 sync_disabled`. Route behavior is owned by `worker/src/index.ts`,
 `worker/src/env.ts` and `worker/test/remote-access-flag.test.ts`; the design and its
 plaintext-in-memory boundary by
