@@ -84,6 +84,8 @@ long, without the Worker learning names or values.
 - **A leaked API key now gains more:** besides its member-device rights it can publish
   lease requests (each needs the person's lease code to be granted) and read the
   seal-key document of every vault of that account.
+- An unfetched allow dies with its approver: removing the approving device, changing its
+  role, or a rekey revokes it before release.
 - No clawback after fetch; revoking the account session stops future fetches only.
 
 ## Consequences
