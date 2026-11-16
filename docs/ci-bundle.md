@@ -37,7 +37,14 @@ Rules a reader enforces, all fail closed:
   set `PATH`, `LD_*`, `NODE_OPTIONS`, `GIT_*`, proxy or other runtime-steering
   variables;
 - the payload `profile` must equal the profile the job asks for (`--profile`), so
-  a staging bundle handed to a production job is refused after it authenticates.
+  a staging bundle handed to a production job is refused after it authenticates;
+- a bundle entry may not name the decryption key variable.
+
+Some of these rules are enforced by the reader (`cibundle.Open`) but tested only
+on the sealing side or not yet by a dedicated decrypt-path test: unknown fields,
+trailing data, an oversized payload, a payload `version` other than 1, empty or
+duplicate entries, too many entries, and an entry naming the key variable. See
+[Evidence](#evidence) for what is tested.
 
 The bundle carries no vault ref names, grants, membership, device keys, recovery
 material or metadata. It carries only the variable names and values you selected.
@@ -55,7 +62,7 @@ What the bundle protects, and what it does not.
 |---|---|
 | At rest | The file is safe to store in a repository, artifact or cache **only as long as the key stays secret**. Anyone with the bundle and the key reads **every** included value. |
 | Key holder | The CI provider holds the decryption key (its secret store), and so can read the bundle. A CI provider compromise exposes the bundled values. |
-| At runtime | The runner decrypts in memory and the child process receives plaintext in its environment. The program, anything it starts, and any process of the same user on the runner can read it. |
+| At runtime | The runner decrypts in memory and the child process receives plaintext in its environment, together with the rest of the job's environment (everything except the decryption key variable and any variable the bundle replaces). The program, anything it starts, and any process of the same user on the runner can read it. |
 | Compromised job | A malicious or compromised job step can read the key and the values and exfiltrate them. The bundle does not prevent this and is not workload-side zero knowledge. |
 | Revocation | A copy of a bundle cannot be revoked remotely. Rotating the underlying secret at its provider is the only revocation. |
 | Refresh | Updating or rotating is an operator action: re-run `bundle create` on the trusted device and replace the CI copy. |
@@ -174,7 +181,8 @@ On a fresh GitHub-hosted runner, the `ci-bundle-e2e` workflow in agentkit
 (`.github/workflows/ci-bundle-e2e.yml`, added by
 [bestagentkits/agentkit#3191](https://github.com/bestagentkits/agentkit/pull/3191))
 builds `ak`, opens a committed test bundle holding one synthetic value with a
-test-only key from a protected Environment, checks that the child received the
+test-only key from a dedicated `ci-bundle-e2e` Environment (no reviewers: it
+holds only that test key), checks that the child received the
 value (by hash) and not the key, that a wrong profile and a missing key are
-refused, and that the value appears nowhere in the step output, the recorded job
+refused with the refusal exit code and reason before any child starts, and that the value appears nowhere in the step output, the recorded job
 log or artifacts.
