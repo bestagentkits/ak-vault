@@ -175,8 +175,8 @@ describe('operator restore: pending restore and restart', () => {
     expect(after.instance).not.toBe(before.instance);
     expect(after.restorePending).toBe(false);
     // The stop was unclean for the request-replay session, so proofs from before the restart plus
-    // the clock skew are refused; a proof made after that point is served.
-    expect((await fx.get(fx.owner, '/membership')).status).toBe(401);
+    // the clock skew are answered with a transient 503; a proof made after that point is served.
+    expect((await fx.get(fx.owner, '/membership')).status).toBe(503);
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 61_000 });
     expect((await fx.get(fx.owner, '/membership')).status).toBe(200);
   });
@@ -194,8 +194,8 @@ describe('operator restore: pending restore and restart', () => {
     expect(after.instance).not.toBe(before.instance);
     expect(after.restorePending).toBe(false);
     // The stop was unclean for the request-replay session, so proofs from before the restart plus
-    // the clock skew are refused; a proof made after that point is served.
-    expect((await fx.get(fx.owner, '/membership')).status).toBe(401);
+    // the clock skew are answered with a transient 503; a proof made after that point is served.
+    expect((await fx.get(fx.owner, '/membership')).status).toBe(503);
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 61_000 });
     expect((await fx.get(fx.owner, '/membership')).status).toBe(200);
   });
