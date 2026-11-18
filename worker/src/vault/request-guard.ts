@@ -114,7 +114,8 @@ export function verifyRequestProof(sql: SqlStorage | null, req: VaultRequest, si
   if (floor > 0) {
     // Not a refusal of the caller: a fresh proof made after the floor is served, so
     // answer the transient 503 a client waits out instead of a 401 it reports as revoked.
-    const retryAfter = Math.max(1, Math.ceil((floor - req.nowMs) / 1000));
+    // Measured on the proof's clock: the client's next proof must clear the floor by its own clock.
+    const retryAfter = Math.min(LIMITS.clock_skew_seconds + 1, Math.max(1, Math.ceil((floor - proof.ts) / 1000)));
     throw new ApiError('unauthorized', { status: 503, message: 'vault restarting', headers: { 'Retry-After': String(retryAfter) } });
   }
   if (state?.isReplay(did, proof.jti, req.nowMs)) throw new ApiError('unauthorized');
