@@ -429,6 +429,8 @@ export class VaultDurableObject extends DurableObject<Env> {
       case 'approval.get':
         return this.ctx.storage.transactionSync(() => getApprovalRequest(this.sql, req));
       case 'lease.sealkey':
+        // A removed device may still derive this epoch's seal key (spec §3.6): no lease subject is sealed to it.
+        if (auth.state.rekey_required) throw new ApiError('rekey_required');
         return getSealKey(this.sql, auth.state);
       case 'lease.status':
         return this.ctx.storage.transactionSync(() => leaseStatus(this.sql, auth.state, req));

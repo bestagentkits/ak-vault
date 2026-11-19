@@ -98,8 +98,26 @@ long, without the Worker learning names or values.
 - The CLI half (`ak secrets lease request`, the lease branch of `ak secrets approvals
   approve`, `ak secrets run --lease`) lives in agentkit.
 
-## Open questions for the owner
+## Owner decisions
 
-1. Accept the unpinned "forged values" exposure (D6), or require an approver pin?
-2. Admit `email_otp` sessions on the sandbox side, or `api_key_device` only?
-3. Is 24 hours the right lease ceiling?
+On 2026-11-19 the owner told an agent to decide the open questions and record the result;
+an agent recorded these decisions on the owner's behalf. They settle the questions below,
+not the ADR itself, which stays Proposed.
+
+1. **Unpinned approver: accepted for the pre-release preview, pin recommended.** Without a
+   pin a malicious Worker can inject values of its choosing, but cannot read a vault value;
+   the CLI keeps the approver pin optional and the docs recommend it for any credential that
+   matters. Revisit before GA (making the pin the default is the expected outcome).
+2. **`email_otp` admitted alongside `api_key_device`.** Both are revocable account sessions
+   under the same lease-identity checks, live revocation and per-account budget; a person
+   signing in inside a sandbox is a real use, and admitting it adds no path the API key does
+   not already have.
+3. **24-hour ceiling kept** (`ttl_s` 60..86400). Long enough for a working day or a long CI
+   job, short enough that a forgotten lease dies the same day; shorter leases are the
+   requester's choice.
+4. **Budget kept at 60 lease-identity calls per minute per account.** A request, a few status
+   polls and one fetch per lease fit easily; abuse is bounded. Tune from staging data.
+5. **Seal key refused while `rekey_required` is set.** `GET …/leases/seal-key` and
+   `POST …/leases` answer `409 rekey_required` until the vault is rekeyed, because a removed
+   device may still derive that epoch's seal key and would read the requested references;
+   this matches the MCP seal-key rule (spec §3.6). Implemented and tested in this PR.

@@ -141,6 +141,7 @@ export function createLease(sql: SqlStorage, state: MembershipState, req: VaultR
   }
   if (wire.account !== req.claims.sub || wire.requester !== req.claims.did) throw new ApiError('bad_request');
   if (wire.vault_id !== state.vault_id || wire.key_epoch !== state.key_epoch) throw new ApiError('bad_request');
+  if (state.rekey_required) throw new ApiError('rekey_required');
   try {
     verifyLeaseRequestSignature(wire);
   } catch {

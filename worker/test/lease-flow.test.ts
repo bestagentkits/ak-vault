@@ -219,6 +219,16 @@ describe('sandbox leases: flow', () => {
     expect(await dumpLeases(fx.vaultId)).not.toContain(grant.ct!);
   });
 
+  it('refuses the seal key and new requests while the vault needs a rekey', async () => {
+    const fx = await VaultFixture.create();
+    const sb = newSandbox(fx.owner.account);
+    const sealPub = await sealPubFor(fx, sb);
+    const laptop = await fx.addDevice();
+    expect((await fx.removeDevice(laptop)).status).toBe(201);
+    expect((await sandboxCall(sb, 'GET', leasesPath(fx, '/seal-key'))).status).toBe(409);
+    expect((await sandboxCall(sb, 'POST', leasesPath(fx), { request: buildRequest(fx, sb, sealPub) })).status).toBe(409);
+  });
+
   it('refuses a grant whose ts is older than the clock window', async () => {
     const fx = await VaultFixture.create();
     const t0 = Date.now();

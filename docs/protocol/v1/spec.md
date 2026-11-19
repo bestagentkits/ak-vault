@@ -1113,7 +1113,7 @@ grant    = {v:1, alg:"x25519-xc20p-lease", lease_id, vault_id, account, requeste
   Worker's check (§9.6) for that binding. It keeps values in memory only and discards them
   and both keys at `expires_at`.
 - **Server** (§9.6) stores the request and grant opaque; checks the request signature,
-  account and vault binding, current key epoch, clock window, lifetime and caps; accepts one
+  account and vault binding, current key epoch (and no pending `rekey_required`), clock window, lifetime and caps; accepts one
   grant per lease from a human `owner`/`editor` device of the same account whose `sign_pub`
   is `approver_key` (`forbidden` otherwise) and that verifies against the stored request;
   refuses a grant once the key epoch moved past the request's (`409`); and releases an
@@ -1868,7 +1868,7 @@ Served only where the deployment enables remote access (every route below answer
   lease is released only while its approver is still a current human `owner`/`editor`
   device of the account with the same `sign_pub` and the vault's key epoch is still the
   lease's; otherwise it becomes `revoked` without its grant and `fetch` is `409`. The
-  lease-identity routes also refuse (`forbidden`) an account with no `owner`/`editor` role. `list` returns `{"leases":[…]}` newest first (`state=pending|all`, `limit` up
+  lease-identity routes also refuse (`forbidden`) an account with no `owner`/`editor` role. While the vault has `rekey_required` set, `GET …/leases/seal-key` and `POST …/leases` are `409 rekey_required`: a removed device may still derive that epoch's seal key (§3.6), so no lease subject is sealed to it. `list` returns `{"leases":[…]}` newest first (`state=pending|all`, `limit` up
   to `lease_page_max`), each entry `lease_id, requester, key_epoch, state, created_at,
   expires_at`, plus after a grant `decided_at, decision, approver`, and the opaque
   `request`; `get` returns one such entry. `grant` takes `{"grant":<wire>}` from the device
