@@ -28,7 +28,9 @@ Algorithm identifiers are closed sets. A verifier MUST reject an unknown `v`, `a
 event `type` or `suite` value (fail closed). Crypto agility = a new identifier plus a
 new protocol version; never silent negotiation down.
 
-Remote access (§3.6–§3.8, §3.10, §9.6, §9.7) adds no primitive. The seal construction
+Remote access (§3.6–§3.8, §3.10, §3.14, §9.6, §9.7) adds no primitive; a sandbox lease
+(§3.14) is the same X25519 + HKDF-SHA256 + XChaCha20-Poly1305 shape aimed at the seal key
+and at a one-time lease key, under its own `info`, AAD `ctx` and signing contexts. The seal construction
 (§3.6), and the write intent (§3.10) that reuses it under its own HKDF `info` and AAD
 context, is the §3.3 shape (X25519, HKDF-SHA256, XChaCha20-Poly1305) aimed at a
 recipient key derived from `VK[e]`, and a name tag (§3.7) is HKDF-SHA256 output used
@@ -1042,6 +1044,82 @@ decision = {v:1, request_id, vault_id, requester, request_digest, decision, ttl_
   An MCP allow returns the dashboard link `/app#approval=<request_id>&vault=<vault_id>`,
   so every allow is signed by an enrolled device key.
 
+### 3.14 Sandbox secret leases
+
+A **lease** gives a sandbox that is not a vault member exactly the values a person
+approved, for a bounded time ([ADR 0007](../../adr/0007-sandbox-secret-leases.md)). The
+sandbox holds a one-time X25519 **lease key** and an Ed25519 **request key**, both in
+memory; the person approves on an enrolled human device, which seals the approved values to
+the lease key. The Worker relays ciphertext and never sees a reference or value.
+
+```
+subject  = {secrets:[{var, ref}…], purpose?}
+shared   = X25519(esk, seal_pub[e])                              ; reject all-zero output
+key      = HKDF(ikm=shared, salt=epk || seal_pub[e], info=utf8("akv1/lease-request"), L=32)
+aad      = {ctx:"akv1/lease-request", lease_id, vault_id, key_epoch, account, requester, lease_pub, ttl_s, ts, expires_at}
+request  = {v:1, alg:"x25519-xc20p-lease-req", lease_id, vault_id, key_epoch, account, requester, requester_key,
+            lease_pub, ttl_s, ts, expires_at, epk, n, ct, sig}
+           ct = XC20P(key, n, cjson(subject), aad); requester = kid(requester_key)
+           sig = Ed25519(request key, "akv1/lease-request", request without sig)
+code     = b64(SHA-256(cjson(request)))                          ; the lease code (request digest)
+payload  = {secrets:[{var, value}…]}
+shared'  = X25519(esk', lease_pub)
+key'     = HKDF(ikm=shared', salt=epk' || lease_pub, info=utf8("akv1/lease-seal"), L=32)
+aad'     = {ctx:"akv1/lease-seal", lease_id, vault_id, account, requester, lease_pub, request_digest, approver, ts, expires_at}
+grant    = {v:1, alg:"x25519-xc20p-lease", lease_id, vault_id, account, requester, request_digest:code, decision,
+            approver, approver_key, ts, [expires_at, epk', n', ct'], sig}
+           ct' = XC20P(key', n', cjson(payload), aad'); approver = kid(approver_key)
+           sig = Ed25519(approver device key, "akv1/lease-grant", grant without sig)
+```
+
+- `lease_id` is 16 random bytes; `account` is the requesting account (1–256); `ttl_s`, the
+  lease lifetime counted from the grant, is `60..86400`; `expires_at > ts` bounds the
+  approval window. `subject.secrets` has 1–32 entries with unique `var` matching
+  `^[A-Z_][A-Z0-9_]{0,127}$` and `ref` an item name (1–4096, well-formed); `purpose` is
+  1–200. The subject plaintext is at most 16 384 bytes. `payload.secrets` has 1–32 unique
+  vars, values well-formed text of 0–65 536 code units, and the whole payload plaintext is at
+  most 65 536 bytes (§3.1), so a lease whose values do not fit is split by the person into
+  several leases.
+- `decision` ∈ {`allow`, `deny`}. An allow carries exactly `expires_at`, `epk`, `n`, `ct`
+  (`expires_at` in `(ts, ts + ttl_s·1000]`); a deny carries none of them.
+- Every HKDF `info`, AAD `ctx`, `alg` and signing context here is distinct from every other
+  seal and signature, so a lease request never opens as a write intent or sealed operation
+  and a grant never verifies as an approval decision, nor the reverse. `lease_pub` is fresh
+  per lease, never a device `kx_pub` or a seal key.
+- **Lease code.** The request is self-signed, so a holder of the account's token (or the
+  Worker) can publish a look-alike request with its own lease key. The sandbox shows the
+  full code; the approving device MUST refuse a request whose digest is not the code the
+  person entered (`forbidden`). Implementations never shorten or truncate the code.
+- **Approver** (`openLeaseRequest(SealSK[key_epoch], request, {vault_id, account,
+  lease_code})`), in order: parse (`v`/`alg` unknown → `unsupported_version`; keys, IDs,
+  `requester` = kid(`requester_key`), key and nonce lengths, `ct` length, `ttl_s`,
+  `expires_at > ts` → `bad_request`); `vault_id` or `account` other than the approver's
+  (`bad_request`); signature under `requester_key` (`invalid_signature`); digest ≠ the lease
+  code (`forbidden`); all-zero shared secret (`bad_request`); AEAD (`decrypt_failed`);
+  subject not canonical or out of limits (`bad_request`). The approver also checks its clock
+  is before `expires_at`, that it is a human `owner`/`editor` device of `account`, and holds
+  `VK[key_epoch]`; it seals only vars the subject names (`forbidden` otherwise) and the
+  values it resolves for their references.
+- **Sandbox** (`openLeaseGrant(lease_sk, grant, request, {now, requested_vars,
+  approvers?})`), in order: parse (`unsupported_version` / `bad_request`, `approver` =
+  kid(`approver_key`), allow/deny key sets); `lease_id`, `vault_id`, `account`,
+  `requester` or `request_digest` other than its request (`bad_request`); `ts` outside
+  `[request.ts, request.expires_at)` or `expires_at > ts + ttl_s·1000` (`bad_request`);
+  `approver` = `requester` (`forbidden`); signature under `approver_key`
+  (`invalid_signature`); `approver` outside a pinned set (`forbidden`); a deny returns;
+  `now ≥ expires_at` (`bad_request`); lease key not the request's, or AEAD failure
+  (`decrypt_failed`); payload invalid (`bad_request`); a var not requested (`forbidden`).
+  The sandbox cannot check `approver_key` against membership; without a pin it trusts the
+  Worker's check (§9.6) for that binding. It keeps values in memory only and discards them
+  and both keys at `expires_at`.
+- **Server** (§9.6) stores the request and grant opaque; checks the request signature,
+  account and vault binding, current key epoch (and no pending `rekey_required`), clock window, lifetime and caps; accepts one
+  grant per lease from a human `owner`/`editor` device of the same account whose `sign_pub`
+  is `approver_key` (`forbidden` otherwise) and that verifies against the stored request;
+  refuses a grant once the key epoch moved past the request's (`409`); and releases an
+  allow at most once, only while its approver is still current with the same key and the
+  key epoch is unchanged (§9.6).
+
 ## 4. Membership log (owner-signed, hash-chained)
 
 ```json
@@ -1627,8 +1705,8 @@ devices that honor it, not what a vault member can decrypt (§3).
    Worker serves it without a registry lookup only while `now < exp` and
    `exp - now <= 120` (no skew; otherwise `401 unauthorized`). A revocation therefore takes effect within
    120 s for such a token. Every other token, the relay (§9.7, at the upgrade and
-   before each `call`), MCP grants and write, input and sealed-queue grant checks keep
-   the lookup.
+   before each `call`), MCP grants, write, input and sealed-queue grant checks and the
+   lease-identity routes (§9.6) keep the lookup.
    The registry is fed by `POST /internal/v1/revocations` with headers
    `AKV-Webhook-Timestamp: <unix s>` (±300 s) and
    `AKV-Webhook-Signature: b64(HMAC-SHA256(secret, utf8(ts) || "\n" || body))`, body
@@ -1641,7 +1719,8 @@ devices that honor it, not what a vault member can decrypt (§3).
    audit entries or the recovery bundle. Scope never grants cross-vault access. The
    only requests from a device outside membership are the recovery bundle fetch, the
    read-only membership fetch (§3.5) and the recovery-signed `device_add` that
-   enrolls it, and only for an `email_otp` session. A device of an `api_key_device`
+   enrolls it, only for an `email_otp` session, and the four lease-identity routes of a
+   sandbox lease (§3.14, §9.6). A device of an `api_key_device`
    session (an AgentKit API key exchanged for a revocable device session) may create a
    new vault with genesis and, once enrolled, acts as a member under its role; it joins an
    existing vault only through a `device_add` signed by an existing owner device, never
@@ -1697,6 +1776,14 @@ Served only where the deployment enables remote access (every route below answer
 | `GET /v1/vaults/{vid}/approval-requests/{request_id}` | `approval.get` | `vault:read` | any member device |
 | `POST /v1/vaults/{vid}/approval-requests/{request_id}/decision` | `approval.decide` | `vault:write` | human `owner`/`editor` device other than the requester |
 | `POST /v1/vaults/{vid}/approval-requests/{request_id}/cancel` | `approval.cancel` | `vault:read` | the requesting device, not `browser` |
+| `GET /v1/vaults/{vid}/leases/seal-key` | `lease.sealkey` | `vault:read` | lease identity (below) |
+| `POST /v1/vaults/{vid}/leases` | `lease.post` | `vault:read` | lease identity |
+| `GET /v1/vaults/{vid}/leases/{lease_id}/status` | `lease.status` | `vault:read` | lease identity of the requester |
+| `POST /v1/vaults/{vid}/leases/{lease_id}/fetch` | `lease.fetch` | `vault:read` | lease identity of the requester |
+| `GET /v1/vaults/{vid}/leases[?state=&limit=]` | `lease.list` | `vault:read` | human `owner`/`editor` device |
+| `GET /v1/vaults/{vid}/leases/{lease_id}` | `lease.get` | `vault:read` | human `owner`/`editor` device |
+| `POST /v1/vaults/{vid}/leases/{lease_id}/grant` | `lease.grant` | `vault:write` | human `owner`/`editor` device |
+| `POST /v1/vaults/{vid}/leases/{lease_id}/revoke` | `lease.revoke` | `vault:write` | human `owner`/`editor` device |
 | `GET /v1/relay` (WebSocket upgrade, §9.7) | `relay.open` | `vault:read` and `vault:write` | human device, not `browser` or `machine` |
 
 - **Lookup.** The *i*-th `tag` pairs with the *i*-th `key_epoch`; unequal counts, more
@@ -1748,6 +1835,49 @@ Served only where the deployment enables remote access (every route below answer
   source, mcp_client?`, plus the opaque `request` and `decision` wires. `decision` takes
   `{"decision":<wire>}` and returns `{"request_id","state"}`; `cancel` takes `{}` from the
   requester. Closed rows stay `approval_request_retention_s` as the approval history.
+
+- **Sandbox leases** (§3.14). Served only where `VAULT_LEASES_ENABLED` is also set
+  (`404` otherwise). The four `lease identity` routes take a sandbox that is not a member:
+  a token of the requesting account (`sub` a current member account; `session_kind`
+  `api_key_device` or `email_otp`, any other kind `403 forbidden`), whose `did` is
+  kid(`AKV-Device-Key`) of a key that is neither a current nor a removed device of the vault
+  (`forbidden`), with the item-2 proof verified under that key and the item-3 lookup always
+  made (no short-lived exemption). They spend a per-account budget
+  (`lease_identity_requests_per_window`). The other four run the member pipeline and need a
+  human `owner`/`editor` device (a `browser` device included, a `machine` device refused).
+  Rows are served only to their account: another account's or an unknown `lease_id` is
+  `not_found`, and the status and fetch routes also answer `not_found` to any `did` but the
+  request's `requester`. `seal-key` returns `{"seal_key":<doc>}` for the current key epoch,
+  or `not_found` (the sandbox then fails closed). `POST` takes `{"request":<wire>}` with
+  `account` = token `sub`, `requester` = token `did`, the current `vault_id` and
+  `key_epoch`, a verifying signature, `ts` within the clock window and `expires_at - ts`
+  within `lease_request_min_ttl_s..lease_request_ttl_s` (`bad_request` otherwise), and
+  returns `{"lease_id","state":"pending","expires_at"}`; a reused `lease_id` is `409`, a
+  full pending cap (`leases_pending_per_account`) `rate_limited`; past
+  `leases_retained_per_account` the oldest closed rows are dropped. States are `pending`,
+  `allowed`, `denied`, `fetched`, `revoked` and `expired`: a pending lease expires at its
+  `expires_at`, an allowed one at its grant's `expires_at`, and an expired or fetched lease
+  holds no grant ciphertext. `status` returns `{"lease_id","state","expires_at"}`. `fetch`
+  takes `{}`: an `allowed` lease returns `{"lease_id","state":"fetched","grant"}` and, in
+  the same transaction, becomes `fetched` without its ciphertext; a `denied` lease returns
+  its grant and stays `denied`; any other state is `409 conflict` (a lost response means a
+  new lease; a fetch is never answered from the idempotency store, so a retry with the same
+  `Idempotency-Key` is also `409`). `expires_at` in `status`, `list` and `get` is the
+  grant's expiry once a lease is allowed, the request's otherwise; a grant whose expiry has
+  already passed, or whose `ts` is outside the clock window, is `bad_request`. An `allowed`
+  lease is released only while its approver is still a current human `owner`/`editor`
+  device of the account with the same `sign_pub` and the vault's key epoch is still the
+  lease's; otherwise it becomes `revoked` without its grant and `fetch` is `409`. The
+  lease-identity routes also refuse (`forbidden`) an account with no `owner`/`editor` role. While the vault has `rekey_required` set, `GET …/leases/seal-key` and `POST …/leases` are `409 rekey_required`: a removed device may still derive that epoch's seal key (§3.6), so no lease subject is sealed to it. `list` returns `{"leases":[…]}` newest first (`state=pending|all`, `limit` up
+  to `lease_page_max`), each entry `lease_id, requester, key_epoch, state, created_at,
+  expires_at`, plus after a grant `decided_at, decision, approver`, and the opaque
+  `request`; `get` returns one such entry. `grant` takes `{"grant":<wire>}` from the device
+  whose `sign_pub` is `approver_key` (`approver` = token `did`, `forbidden` otherwise),
+  verified against the stored request (`bad_request`), on a `pending` lease (`409`
+  otherwise, also when the key epoch moved since the request), and returns
+  `{"lease_id","state"}`. `revoke` takes `{}`, closes a `pending` or `allowed` lease as
+  `revoked` and deletes its grant (`409` in any other state). Closed rows stay
+  `lease_retention_s` as history.
 
 ### 9.7 Relay
 
@@ -2238,3 +2368,6 @@ under an earlier revision does not verify and is reset rather than migrated.
 - **2026-11 (issue #63):** conditional pull, additive: the optional `if_head` query of
   `GET …/changes` and `changesHeadTag` (§5). A client that never sends `if_head` gets
   exactly the answers it got before; no existing body or vector changes.
+- **2026-11 (issue #242, ADR 0007 Proposed):** sandbox secret leases, additive: lease
+  requests and grants (§3.14), the `leases` routes and the lease identity (§9.6, §9 item
+  4), behind `VAULT_LEASES_ENABLED`. No existing wire body, route or vector changes.

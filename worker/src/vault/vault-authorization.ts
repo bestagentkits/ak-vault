@@ -8,7 +8,7 @@
  *  - recovery enrollment: a fresh device posts a `device_add` for itself signed by
  *    the owner recovery key (spec §3.5). The event is chain-verified first, then
  *    the proof is checked against the key the owner-signed event adds.
- * One header-dependent case:
+ * Two header-dependent cases, the only non-member paths besides recovery enrollment:
  *  - recovery identity: a fresh device (not current, never removed) of the owner
  *    account may `GET /recovery` to obtain the bundle that holds
  *    `recovery_sign_sk`, and `GET /membership` to verify the chain it must append
@@ -22,6 +22,17 @@
  *    holder of an owner-account token plus a key it generates can fetch the
  *    bundle and attempt offline guessing of the bundle password, and can read
  *    membership metadata (accounts, roles, device public keys).
+ *  - lease identity: a sandbox (never a vault device, current or removed) of a member
+ *    account calls the four sandbox-lease routes (seal key, post, status, fetch; spec
+ *    §3.14, §9.6) and nothing else. It presents its one-time request key in
+ *    `AKV-Device-Key`; the token `did` must equal `kid(key)` and the proof must verify
+ *    against it. Only `api_key_device` and `email_otp` sessions may take this path
+ *    (refused before the proof is consumed). Requests spend a per-account budget
+ *    (`lease_identity_requests_per_window`), and the Worker always consults the
+ *    revocation registry for them (no short-lived exemption). Exposure: any holder of a
+ *    member-account token can read the current seal-key document (public anyway to
+ *    members), publish lease requests that a person must still approve with the lease
+ *    code, and follow only its own requests.
  * Recovery operations by members (`GET`/`PUT /recovery` and `recovery_rotate`)
  * also require an `email_otp` session, whatever the device's role (spec §9.4): a
  * long-lived API key or machine credential may never read, replace or rotate the
@@ -36,7 +47,7 @@ import { hasIdempotentResult } from './idempotency.js';
 import { hasRecoveryBundle } from './recovery-store.js';
 import { parseBodyObject, requireKeys } from './request-body.js';
 import { enforceRateLimit, enforceRole, memberDevice, requireRateBudget, requireScope, verifyRequestProof, type RoleRule } from './request-guard.js';
-import { isMutation, type VaultOp, type VaultRequest } from './vault-request.js';
+import { isLeaseIdentityOp, isMutation, type LeaseIdentityOp, type VaultOp, type VaultRequest } from './vault-request.js';
 
 const READ: readonly Scope[] = ['vault:read'];
 const WRITE: readonly Scope[] = ['vault:write'];
@@ -46,7 +57,7 @@ const WRITE: readonly Scope[] = ['vault:write'];
  * read-only, so checkpoint and audit appends need `vault:write` and a writer;
  * read-only devices still read both streams.
  */
-const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: readonly Scope[]; role: RoleRule }> = {
+const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post' | LeaseIdentityOp>, { scope: readonly Scope[]; role: RoleRule }> = {
   'membership.get': { scope: READ, role: 'any_device' },
   'wraps.get': { scope: READ, role: 'any_device' },
   'item.get': { scope: READ, role: 'any_device' },
@@ -73,6 +84,12 @@ const POLICY: Record<Exclude<VaultOp, 'genesis' | 'membership.post'>, { scope: r
   'approval.get': { scope: READ, role: 'any_device' },
   'approval.decide': { scope: WRITE, role: 'writer' },
   'approval.cancel': { scope: READ, role: 'any_device' },
+  // Sandbox leases (spec §3.14): only a human owner/editor device (a browser one included)
+  // sees or answers them; the sandbox side runs `authorizeLeaseIdentity`.
+  'lease.list': { scope: READ, role: 'writer' },
+  'lease.get': { scope: READ, role: 'writer' },
+  'lease.grant': { scope: WRITE, role: 'writer' },
+  'lease.revoke': { scope: WRITE, role: 'writer' },
 };
 
 /**
@@ -222,12 +239,45 @@ function authorizeRecoveryFetch(req: VaultRequest, sql: SqlStorage, state: Membe
   return { state, device: null, body: null };
 }
 
+/** Session kinds a sandbox's lease identity may hold (spec §9.6): an AgentKit API-key device session or a human one. */
+const LEASE_IDENTITY_KINDS: ReadonlySet<string> = new Set(['api_key_device', 'email_otp']);
+
+/**
+ * The lease identity: a sandbox of a member account, holding a one-time request key that
+ * is neither a current nor a removed device of the vault, calls one of the four
+ * sandbox-lease routes. Same mechanics as the recovery identity: kind refused before the
+ * proof is consumed, a per-account budget checked before verification and spent only
+ * after the proof verifies.
+ */
+function authorizeLeaseIdentity(req: VaultRequest, sql: SqlStorage, state: MembershipState): Authorized {
+  if (!LEASE_IDENTITY_KINDS.has(req.claims.kind)) throw new ApiError('forbidden');
+  const did = req.claims.did;
+  // Only an account that may approve (owner/editor) may ask: a reader-only account could never be granted.
+  const role = state.members.find((m) => m.account === req.claims.sub)?.role;
+  if (role !== 'owner' && role !== 'editor') throw new ApiError('forbidden');
+  if (state.devices.some((d) => d.device_id === did) || state.removed_device_ids.includes(did)) throw new ApiError('forbidden');
+  requireRateBudget(sql, 'lease_identity', req.claims.sub, req.nowMs);
+  let signPub: string;
+  try {
+    signPub = req.deviceKey ?? '';
+    b64decodeLength(signPub, 32);
+    if (deviceIdFromSignPub(signPub) !== did) throw new ApiError('unauthorized');
+  } catch {
+    throw new ApiError('unauthorized');
+  }
+  verifyRequestProof(sql, req, signPub);
+  enforceRateLimit(sql, 'lease_identity', req.claims.sub, req.nowMs);
+  requireScope(req.claims.scope, READ);
+  return { state, device: null, body: isMutation(req.op) ? parseBodyObject(req.body) : null };
+}
+
 export function authorize(req: VaultRequest, sql: SqlStorage, store: MembershipStore): Authorized {
   refuseBrowserSession(req);
   refuseNonHumanRecovery(req, sql);
   if (req.op === 'genesis') return authorizeGenesis(req, sql);
   if (req.op === 'membership.post') return authorizeMembershipPost(req, sql, store);
   const state = store.requireState();
+  if (isLeaseIdentityOp(req.op)) return authorizeLeaseIdentity(req, sql, state);
   // The bundle is only ever fetched this way; a membership read takes this path only
   // when the caller presents its key, so other non-member reads stay `forbidden`.
   const recoveryIdentity = req.op === 'recovery.get' || (req.op === 'membership.get' && req.deviceKey !== null);

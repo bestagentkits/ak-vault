@@ -11,6 +11,7 @@ page to find the owner of a question.
 | How would a user without a browser device enter a secret for an AI (accepted; implementation in progress)? | [ADR 0004](./adr/0004-device-sealed-input-requests.md) |
 | How can a user opt in to an emailed, client-encrypted recovery kit backup? | [ADR 0005](./adr/0005-client-encrypted-recovery-kit-email-backup.md) |
 | How does a person answer a waiting agent's secret request from another device (proposed)? | [ADR 0006](./adr/0006-remote-access-approvals.md) |
+| How does a cloud sandbox that is not a vault member get pre-approved secrets (proposed)? | [ADR 0007](./adr/0007-sandbox-secret-leases.md) |
 | Exact wire format, primitives, encodings, errors | [Protocol v1 spec](./protocol/v1/spec.md) (normative) |
 | Who can attack what, and which test proves the defense? | [Threat model](./security/threat-model.md) |
 | What the server can see; logging and retention rules | [Data classification](./security/data-classification.md) |

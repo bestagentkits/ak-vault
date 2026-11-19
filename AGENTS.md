@@ -61,7 +61,10 @@ Node 22+ and pnpm (version pinned in `package.json`) are required.
   [ADR 0004](./docs/adr/0004-device-sealed-input-requests.md)), and the
   `approval-requests` routes (full shared pipeline, the token account's rows only,
   decisions from a human `owner`/`editor` device other than the requester,
-  [ADR 0006](./docs/adr/0006-remote-access-approvals.md)) are the only new
+  [ADR 0006](./docs/adr/0006-remote-access-approvals.md)), and the `leases` routes
+  (a non-member sandbox's lease identity on its four routes, a human `owner`/`editor`
+  device for list, get, grant and revoke, behind `VAULT_LEASES_ENABLED`,
+  [ADR 0007](./docs/adr/0007-sandbox-secret-leases.md)) are the only new
   routes, each with the auth REVIEW.md lists;
   plaintext may transit Worker memory only as ADR 0002 D7 describes and is never
   logged, stored or put in an error. Nothing else widens.

@@ -137,6 +137,21 @@ export const REMOTE_ACCESS_LIMITS = {
   approval_requests_retained_per_account: 256,
   /** `GET /approval-requests` page size (default and maximum). */
   approval_page_max: 50,
+  /** Sandbox leases (spec §3.14): longest and shortest approval window, and how long a closed row stays as history. */
+  lease_request_ttl_s: 24 * 60 * 60,
+  lease_request_min_ttl_s: 60,
+  lease_retention_s: 7 * 24 * 60 * 60,
+  /** Pending leases, and rows (open plus retained), per account in one vault. */
+  leases_pending_per_account: 32,
+  leases_retained_per_account: 256,
+  /** `GET /leases` page size (default and maximum). */
+  lease_page_max: 50,
+  /**
+   * Per account, per vault, per rate window: requests by a sandbox on the lease-identity
+   * path (seal key, post, status, fetch) whose proof verifies, whatever request key it
+   * presents. Status polling spends it too. Counted on top of the per-device budgets.
+   */
+  lease_identity_requests_per_window: 60,
 } as const;
 
 export const PROTOCOL_VERSIONS = ['akv1'] as const;

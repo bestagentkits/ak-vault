@@ -24,6 +24,8 @@ export const SIGN_CONTEXT = {
   relayResult: 'akv1/relay-result',
   approvalRequest: 'akv1/approval-request',
   approvalDecision: 'akv1/approval-decision',
+  leaseRequest: 'akv1/lease-request',
+  leaseGrant: 'akv1/lease-grant',
 } as const;
 export type SignContext = (typeof SIGN_CONTEXT)[keyof typeof SIGN_CONTEXT];
 

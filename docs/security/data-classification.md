@@ -23,6 +23,8 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | Value typed into a write-request form | Encrypted and signed by the browser device as a normal item record; never in the MCP client or Worker in plaintext |
 | Value typed into an input-request form | Sealed in the browser to the issuing device's one-time `input_pub` ([spec §3.11](../protocol/v1/spec.md#311-input-seals-device-sealed-input-requests)); the Worker relays the ciphertext and never stores or logs it; the device writes it as a normal item record |
 | Recovery kit backup (recovery key and vault origin) | Inside the AEAD of the backup file, under a key derived from a separate backup passphrase that only the user holds ([spec §3.12](../protocol/v1/spec.md#312-recovery-kit-backup-client-encrypted-email-backup)); never sent to the Worker |
+| Lease request subject (env var names, secret references, purpose) | Sealed by the sandbox to the epoch's `seal_pub` under its own context ([spec §3.14](../protocol/v1/spec.md#314-sandbox-secret-leases)); the Worker never sees it in plaintext |
+| Lease grant values | Sealed by the approving device to the sandbox's one-time lease key; deleted from the server when fetched, revoked or expired |
 | Audit of drained sealed operations and dropped profile fields (`sealed_applied`, `sealed_refused`, `profile_invalid`, `profile_provenance_invalid`) and of dashboard rotation state changes (`rotation_*`: type, item ID, author device, time) | Encrypted audit stream |
 
 ## Visible operational metadata (unavoidable)
@@ -46,6 +48,7 @@ the browser device, relay and remote MCP, [ADR 0002](../adr/0002-browser-device-
 | `input` session token claims: `sub`, `sid`, `session_kind` (`input`), `jti` ([spec §3.11](../protocol/v1/spec.md#input-sessions-and-routes-worker)) | Binding the input form to the requesting account and revoking it with its sign-in grant |
 | Lookup requests: the requested `(key_epoch, tag)` pairs and the hits served | Answering name lookups; reveals which names a reader looks for, not the names |
 | Relay connection and call metadata: device ID, vault IDs and tool names from `hello`, `call_id`, vault ID and tool of each call, caller `client_id`/`grant_id`/scopes, result `ok` and error code, timing | Routing calls to a device and enforcing scopes, deadlines and rate limits |
+| Lease row: `lease_id`, account, sandbox request device ID and its public request and lease keys, key epoch, requested `ttl_s`, state, approver device ID and public key, decision, created, decided and expiry times, ciphertext sizes; the lease-identity token's `did` | Binding the lease to its account and requesting key, single use, expiry, caps and history |
 | Quota and rate-limit counters | Abuse protection |
 | Durable Object point-in-time bookmarks (operator restore route only) | Positions in a vault object's storage history; they carry no vault contents |
 | Client IP and TLS metadata at the Cloudflare edge | Inherent to the platform |
