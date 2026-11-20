@@ -113,7 +113,15 @@ export function verifyRequestProof(sql: SqlStorage | null, req: VaultRequest, si
     if (isAkvError(err) && err.code === 'invalid_signature') throw new ApiError('invalid_signature', { status: 401 });
     throw new ApiError('unauthorized');
   }
-  if (state?.isReplay(did, proof.jti, proof.ts, req.nowMs)) throw new ApiError('unauthorized');
+  const floor = state?.refusedUntil(proof.ts) ?? 0;
+  if (floor > 0) {
+    // Not a refusal of the caller: a fresh proof made after the floor is served, so
+    // answer the transient 503 a client waits out instead of a 401 it reports as revoked.
+    // Measured on the proof's clock: the client's next proof must clear the floor by its own clock.
+    const retryAfter = Math.min(LIMITS.clock_skew_seconds + 1, Math.max(1, Math.ceil((floor - proof.ts) / 1000)));
+    throw new ApiError('unauthorized', { status: 503, message: 'vault restarting', headers: { 'Retry-After': String(retryAfter) } });
+  }
+  if (state?.isReplay(did, proof.jti, req.nowMs)) throw new ApiError('unauthorized');
   // A storage error writing the session marker propagates, so the request fails closed.
   state?.burn(did, proof.jti, req.nowMs);
 }

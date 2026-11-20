@@ -92,9 +92,32 @@ describe('request replay state', () => {
     const first = await fx.get(fx.owner, '/changes');
     expect(first.status).toBe(200);
     await restart(fx.vaultId);
-    expect((await fx.get(fx.owner, '/changes', { token: first.token, proof: first.proof })).status).toBe(401);
-    expect((await fx.get(fx.owner, '/changes')).status).toBe(401);
+    const replayed = await fx.get(fx.owner, '/changes', { token: first.token, proof: first.proof });
+    expect(replayed.status).toBe(503);
+    expect(replayed.json.error.code).toBe('unauthorized');
+    const early = await fx.get(fx.owner, '/changes');
+    expect(early.status).toBe(503);
+    const retryAfter = Number(early.headers.get('Retry-After'));
+    expect(retryAfter).toBeGreaterThanOrEqual(59);
+    expect(retryAfter).toBeLessThanOrEqual(61);
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 61_000 });
+    expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
+  });
+
+  it('restarts that accept no proof keep the unclean-stop floor instead of moving it forward', async () => {
+    const fx = await VaultFixture.create();
+    const first = await fx.get(fx.owner, '/changes');
+    expect(first.status).toBe(200);
+    const start = Date.now();
+    await restart(fx.vaultId);
+    // A short burst wakes the object, is refused before the floor, and the object stops again.
+    for (let i = 0; i < 3; i++) {
+      vi.useFakeTimers({ toFake: ['Date'], now: start + i * 25_000 });
+      expect((await fx.get(fx.owner, '/changes')).status).toBe(503);
+      await restart(fx.vaultId);
+    }
+    vi.useFakeTimers({ toFake: ['Date'], now: start + 75_000 });
+    expect((await fx.get(fx.owner, '/changes', { token: first.token, proof: first.proof })).status).not.toBe(200);
     expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
   });
 
@@ -110,20 +133,22 @@ describe('request replay state', () => {
     expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
   });
 
-  it('after an unclean stop the alarm does not mark the session clean while old proofs could be live', async () => {
+  it('after an unclean stop the floor survives the clean marker, a served session and its save', async () => {
     const fx = await VaultFixture.create();
-    expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
+    const first = await fx.get(fx.owner, '/changes');
+    expect(first.status).toBe(200);
+    const start = Date.now();
     await restart(fx.vaultId);
-    await runInDurableObject(stubOf(fx.vaultId), (instance: VaultDurableObject, state: DurableObjectState) => {
-      replayStateFor(sqlOf(instance), Date.now());
-      return state.storage.setAlarm(Date.now());
-    });
-    await runDurableObjectAlarm(stubOf(fx.vaultId));
-    expect(await marker(fx.vaultId)).toBe('active');
-    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 121_000 });
-    await runInDurableObject(stubOf(fx.vaultId), (_i: unknown, state: DurableObjectState) => state.storage.setAlarm(Date.now()));
-    await runDurableObjectAlarm(stubOf(fx.vaultId));
+    expect((await fx.get(fx.owner, '/changes')).status).toBe(503);
     expect(await marker(fx.vaultId)).toBe('clean');
+    vi.useFakeTimers({ toFake: ['Date'], now: start + 61_000 });
+    expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
+    vi.useFakeTimers({ toFake: ['Date'], now: start + 72_000 });
+    expect(await runDurableObjectAlarm(stubOf(fx.vaultId))).toBe(true);
+    expect(await marker(fx.vaultId)).toBe('clean');
+    await restart(fx.vaultId);
+    expect((await fx.get(fx.owner, '/changes', { token: first.token, proof: first.proof })).status).not.toBe(200);
+    expect((await fx.get(fx.owner, '/changes')).status).toBe(200);
   });
 
   it('an unreadable session marker fails closed', async () => {

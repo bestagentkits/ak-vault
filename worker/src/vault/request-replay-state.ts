@@ -15,6 +15,9 @@
  *   last save are lost) refuses every proof whose `ts` is earlier than the start plus
  *   the clock skew. Any proof the earlier run accepted has such a `ts`, so none can be
  *   replayed; a client's next fresh proof after that point is accepted. Fail closed.
+ *   That floor is saved at once (marker `clean` with `f`) and in every later marker, so
+ *   a start after a run that accepted nothing keeps it rather than moving it forward;
+ *   otherwise a vault woken only by short request bursts would refuse every proof.
  *
  * Rate windows lost by an unclean stop start again from zero: the budget is abuse
  * control, not an authorization rule, and the stop is not under a caller's control.
@@ -38,6 +41,8 @@ interface SavedState {
   j?: [string, string, number][];
   /** [bucketKey, windowStart, count] */
   r?: [string, number, number][];
+  /** Proofs with an earlier `ts` are refused (unix ms; set after an unclean stop). */
+  f?: number;
 }
 
 export class RequestReplayState {
@@ -63,9 +68,14 @@ export class RequestReplayState {
     const row = sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', MARKER_KEY).toArray()[0];
     if (!row) return state;
     const saved = JSON.parse(row.v) as SavedState;
+    state.refuseProofsBeforeMs = typeof saved.f === 'number' ? saved.f : 0;
     if (saved.s === 'active') {
-      state.active = true;
-      state.refuseProofsBeforeMs = nowMs + LIMITS.clock_skew_seconds * 1000;
+      // `jti`s accepted since the last save are lost; every proof that run accepted has a
+      // `ts` before this start plus the skew. The floor is saved at once with a clean
+      // marker, so a later start keeps it instead of moving it forward again: a start
+      // that accepted nothing before the next stop must not refuse fresh proofs anew.
+      state.refuseProofsBeforeMs = Math.max(state.refuseProofsBeforeMs, nowMs + LIMITS.clock_skew_seconds * 1000);
+      state.write({ s: 'clean', f: state.refuseProofsBeforeMs });
       return state;
     }
     for (const [did, jti, exp] of saved.j ?? []) if (exp >= nowMs) state.jtis.set(jtiKey(did, jti), exp);
@@ -92,9 +102,16 @@ export class RequestReplayState {
     for (const [key, c] of this.rates) if (key.startsWith(bucketPrefix) && c.windowStart < windowStart) this.rates.delete(key);
   }
 
-  /** True when this proof must be refused: replayed, or possibly accepted before an unclean stop. */
-  isReplay(did: string, jti: string, proofTsMs: number, nowMs: number): boolean {
-    if (proofTsMs < this.refuseProofsBeforeMs) return true;
+  /**
+   * The floor a proof's `ts` falls under after an unclean stop (it may have been accepted
+   * before the stop), or 0. The client's next fresh proof made at or after it is served.
+   */
+  refusedUntil(proofTsMs: number): number {
+    return proofTsMs < this.refuseProofsBeforeMs ? this.refuseProofsBeforeMs : 0;
+  }
+
+  /** True when this proof's `jti` was already accepted and is still live. */
+  isReplay(did: string, jti: string, nowMs: number): boolean {
     const exp = this.jtis.get(jtiKey(did, jti));
     return exp !== undefined && exp >= nowMs;
   }
@@ -102,7 +119,7 @@ export class RequestReplayState {
   /** Burn a `jti`. Persists the `active` marker first when the session is not yet marked. */
   burn(did: string, jti: string, nowMs: number): void {
     if (!this.active) {
-      this.write({ s: 'active' });
+      this.write({ s: 'active', ...this.floor() });
       this.active = true;
     }
     for (const [key, exp] of this.jtis) if (exp < nowMs) this.jtis.delete(key);
@@ -114,17 +131,17 @@ export class RequestReplayState {
   onFlushAlarm(nowMs: number): void {
     this.flushScheduled = false;
     if (!this.active) return;
-    const due = Math.max(this.lastActivityMs + IDLE_FLUSH_MS, this.cleanAllowedFromMs());
+    const due = this.lastActivityMs + IDLE_FLUSH_MS;
     if (nowMs < due) return this.schedule(due);
     this.flush(nowMs);
   }
 
   /**
-   * Save live entries and mark the session clean. Kept `active` (fail closed) if too large,
-   * and while `jti`s accepted before an unclean stop could still be inside the proof window.
+   * Save live entries and mark the session clean. Kept `active` (fail closed) if too large.
+   * The unclean-stop floor is saved with it, so it keeps refusing the lost run's proofs.
    */
   flush(nowMs: number): void {
-    if (!this.active || nowMs < this.cleanAllowedFromMs()) return;
+    if (!this.active) return;
     const j: [string, string, number][] = [];
     for (const [key, exp] of this.jtis) {
       if (exp < nowMs) continue;
@@ -133,16 +150,13 @@ export class RequestReplayState {
     }
     const r: [string, number, number][] = [...this.rates].map(([key, c]) => [key, c.windowStart, c.count]);
     if (j.length + r.length > MAX_SAVED_ENTRIES) return;
-    this.write({ s: 'clean', j, r });
+    this.write({ s: 'clean', j, r, ...this.floor() });
     this.active = false;
   }
 
-  /**
-   * After an unclean stop, `jti`s the earlier run accepted are unknown; their proofs carry a
-   * `ts` before the floor, so they are outside the window once the floor is a skew behind.
-   */
-  private cleanAllowedFromMs(): number {
-    return this.refuseProofsBeforeMs === 0 ? 0 : this.refuseProofsBeforeMs + LIMITS.clock_skew_seconds * 1000;
+  /** The floor to save; omitted when there is none. */
+  private floor(): Pick<SavedState, 'f'> {
+    return this.refuseProofsBeforeMs > 0 ? { f: this.refuseProofsBeforeMs } : {};
   }
 
   private touch(): void {
