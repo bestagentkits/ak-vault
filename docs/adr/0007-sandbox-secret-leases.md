@@ -1,6 +1,6 @@
 # ADR 0007: Sandbox secret leases
 
-- **Status:** Proposed. An agent drafted it; the owner has not approved it.
+- **Status:** Accepted on 2026-11-26 by the owner (owner instruction in chat, recorded by an agent on the owner's behalf). Leases stay off until `VAULT_LEASES_ENABLED` is turned on through a reviewed config PR and the gated Deploy workflow.
 - **Proposed:** 2026-11-16
 - **Amends:** the new-endpoint row of the [REVIEW.md](../../REVIEW.md) hard rejection
   criteria and the remote-access route list in
@@ -102,7 +102,7 @@ long, without the Worker learning names or values.
 
 On 2026-11-19 the owner told an agent to decide the open questions and record the result;
 an agent recorded these decisions on the owner's behalf. They settle the questions below,
-not the ADR itself, which stays Proposed.
+not the ADR itself; the owner accepted the ADR on 2026-11-26.
 
 1. **Unpinned approver: accepted for the pre-release preview, pin recommended.** Without a
    pin a malicious Worker can inject values of its choosing, but cannot read a vault value;
